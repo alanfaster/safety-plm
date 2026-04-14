@@ -1451,10 +1451,12 @@ input, select, textarea { font-family: var(--font); }
 /* Viewport */
 .arch-viewport{position:absolute;top:0;left:0;width:4000px;height:3000px;transform-origin:0 0}
 
-/* Layers */
-.arch-group-layer{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0}
+/* Layers — containers transparent to pointer events; only actual elements receive them */
+.arch-group-layer{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}
 .arch-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:1}
-.arch-comp-layer{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2}
+.arch-comp-layer{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;pointer-events:none}
+.arch-group{pointer-events:all}
+.arch-block{pointer-events:all}
 
 /* ── System Group box ── */
 .arch-group{position:absolute;border:2px dashed #9AA0A6;border-radius:10px;background:rgba(248,249,250,0.7);backdrop-filter:blur(2px);min-width:240px;min-height:160px;user-select:none}
@@ -1512,7 +1514,7 @@ input, select, textarea { font-family: var(--font); }
 .arch-rename-input{flex:1;background:rgba(255,255,255,0.15);border:none;border-bottom:1.5px solid rgba(255,255,255,0.6);outline:none;color:#fff;font-weight:800;font-size:var(--text-sm);min-width:60px;padding:0 2px}
 
 /* ── SVG connection ── */
-.arch-conn-g{cursor:pointer}
+.arch-conn-g{cursor:pointer;pointer-events:all}
 .arch-conn-g:hover path[stroke]:last-of-type{filter:brightness(1.2)}
 .arr-poly{fill:currentColor}
 .arch-conn-icon{font-size:11px;pointer-events:none}
