@@ -133,13 +133,14 @@ function summaryBar(hazards, sevField) {
 function featSection(feat, hazByUC, scope) {
   const ucs = feat.use_cases || [];
   const totalHaz = ucs.reduce((s, uc) => s + (hazByUC[uc.id]?.length || 0), 0);
+  const desc = feat.description ? `: <span class="pha-ctx-desc">${esc(feat.description)}</span>` : '';
 
   return `
     <div class="pha-feat">
       <div class="pha-feat-hdr">
         <span class="pha-feat-icon">${ICONS.feat}</span>
         <span class="pha-mono">${esc(feat.feat_code)}</span>
-        <span class="pha-feat-name">${esc(feat.name)}</span>
+        <span class="pha-feat-name"><strong>${esc(feat.name)}</strong>${desc}</span>
         ${totalHaz ? `<span class="pha-cnt">${totalHaz} △</span>` : ''}
       </div>
       ${ucs.length === 0
@@ -166,7 +167,7 @@ function ucRow(uc, ucHazards, scope) {
         <span class="pha-uc-indent">├</span>
         <span class="pha-uc-icon">${ICONS.uc}</span>
         <span class="pha-mono pha-uc-code">${esc(uc.uc_code)}</span>
-        <span class="pha-uc-name">${esc(uc.name)}</span>
+        <span class="pha-uc-name"><strong>${esc(uc.name)}</strong>${uc.description ? `: <span class="pha-ctx-desc">${esc(uc.description)}</span>` : ''}</span>
         <span class="pha-spacer"></span>
         ${mini}
         <button class="btn-ghost btn-sm btn-add-uc-haz"
@@ -188,13 +189,17 @@ function hazRow(h, scope) {
   const sevColor  = sev && sevField?.colors ? (sevField.colors[sev] || '#6B778C') : null;
   const sc = { open:'#FF8B00', in_progress:'#0065FF', closed:'#00875A', 'n/a':'#97A0AF' }[h.status] || '#97A0AF';
 
+  const nameStr = d.hazard_name ? `<strong>${esc(d.hazard_name)}</strong>` : '';
+  const descStr = d.hazard_desc ? `<span class="pha-ctx-desc">${esc(d.hazard_desc)}</span>` : '';
+  const nameDesc = nameStr && descStr ? `${nameStr}: ${descStr}` : nameStr || descStr || '<span style="color:var(--color-text-subtle)">—</span>';
+
   return `
     <div class="pha-haz-row" data-haz-id="${h.id}">
       <span class="pha-haz-tree-indent">│  └</span>
       <span class="pha-haz-icon">△</span>
       <span class="pha-mono pha-haz-code">${esc(h.haz_code)}</span>
       ${sevColor ? `<span class="pha-badge" style="background:${sevColor}20;color:${sevColor}">${esc(sev)}</span>` : ''}
-      <span class="pha-haz-desc">${esc(d.hazard_desc || '—')}</span>
+      <span class="pha-haz-desc">${nameDesc}</span>
       ${d.phase_of_op && d.phase_of_op !== '—' ? `<span class="pha-meta">${esc(d.phase_of_op)}</span>` : ''}
       <span class="pha-spacer"></span>
       <span class="pha-status-chip" style="background:${sc}20;color:${sc}">${esc(h.status)}</span>
@@ -357,7 +362,7 @@ function inlineRowHTML(haz, ucId, scope) {
   const d   = haz?.data || {};
   const fld = (key) => scope.fields.find(f => f.key === key);
 
-  // Key fields shown inline in the row
+  const hazNameF  = fld('hazard_name');
   const hazDescF  = fld('hazard_desc');
   const sevF      = fld('severity');
   const phaseF    = fld('phase_of_op');
@@ -369,11 +374,11 @@ function inlineRowHTML(haz, ucId, scope) {
     <div class="pha-ir-tree">│  └</div>
     <div class="pha-ir-body">
       <div class="pha-ir-row1">
-        ${hazDescF ? `
-          <div class="pha-ir-field pha-ir-desc">
-            <label>Hazard Description${hazDescF.required ? ' *' : ''}</label>
-            <textarea id="ir-hazard_desc" class="form-input form-textarea ir-textarea" rows="2"
-              placeholder="Describe the hazard...">${esc(d.hazard_desc || '')}</textarea>
+        ${hazNameF ? `
+          <div class="pha-ir-field pha-ir-name">
+            <label>Hazard Name *</label>
+            <input id="ir-hazard_name" class="form-input" value="${esc(d.hazard_name || '')}"
+              placeholder="Short name for this hazard..."/>
           </div>` : ''}
         ${sevF ? `
           <div class="pha-ir-field pha-ir-narrow">
@@ -403,11 +408,20 @@ function inlineRowHTML(haz, ucId, scope) {
           </select>
         </div>
       </div>
+      ${hazDescF ? `
+        <div class="pha-ir-row2">
+          <div class="pha-ir-field pha-ir-full">
+            <label>Hazard Description *</label>
+            <textarea id="ir-hazard_desc" class="form-input form-textarea ir-textarea" rows="2"
+              placeholder="Describe the hazard condition in detail...">${esc(d.hazard_desc || '')}</textarea>
+          </div>
+        </div>` : ''}
       ${mitF ? `
         <div class="pha-ir-row2">
           <div class="pha-ir-field pha-ir-full">
             <label>Mitigation / Action</label>
-            <input id="ir-mitigation" class="form-input" value="${esc(d.mitigation || '')}" placeholder="Mitigation or corrective action..."/>
+            <input id="ir-mitigation" class="form-input" value="${esc(d.mitigation || '')}"
+              placeholder="Mitigation or corrective action..."/>
           </div>
         </div>` : ''}
       <div class="pha-ir-actions">
@@ -436,6 +450,13 @@ async function saveRow(row, existing, ucId, scope, onDone) {
   }
 
   // Validate required fields
+  if (!data.hazard_name?.trim()) {
+    const el = row.querySelector('#ir-hazard_name');
+    if (el) { el.focus(); el.style.borderColor = 'var(--color-error)'; }
+    saveBtn.disabled = false;
+    saveBtn.textContent = existing ? 'Save changes' : '＋ Add hazard';
+    return;
+  }
   if (!data.hazard_desc?.trim()) {
     const el = row.querySelector('#ir-hazard_desc');
     if (el) { el.focus(); el.style.borderColor = 'var(--color-error)'; }

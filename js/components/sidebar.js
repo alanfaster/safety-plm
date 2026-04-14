@@ -128,12 +128,9 @@ export async function renderSidebar(ctx) {
 
   const helpers = makeHelpers(parentId, parentType);
 
-  if (systemId) {
-    container.innerHTML = buildSystemSidebar({
-      projectId, itemId, systemId, systemName, activePage, activePageId,
-      safetyItems, ...helpers,
-    });
-  } else if (systems.length > 0) {
+  // Always show the full tree.
+  // Never collapse into a system-only sidebar when navigating into a system.
+  if (systems.length > 0) {
     container.innerHTML = buildMultiSystemSidebar({
       projectId, itemId, itemName, activePage, activePageId,
       safetyItems, systems, makeHelpers, ...helpers,
@@ -185,6 +182,7 @@ function buildSingleSystemSidebar({ projectId, itemId, itemName, activePage, act
       getPath: (ph) => `${base}/domain/${domain.key}/vcycle/${ph}`,
       activePage, activePageId, activeDomainPrefix: `domain:${domain.key}:`,
       phaseName, phaseHidden, subPages,
+      parentType: 'item', parentId: itemId,
     });
   }
 
@@ -205,6 +203,7 @@ function buildMultiSystemSidebar({ projectId, itemId, itemName, activePage, acti
     getPath: (ph) => `${base}/vcycle/${ph}`,
     activePage, activePageId, activeDomainPrefix: '',
     phaseName, phaseHidden, subPages,
+    parentType: 'item', parentId: itemId,
   });
 
   html += buildSafetyGroup({ groupKey: `item-${itemId}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
@@ -266,6 +265,7 @@ function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId,
       getPath: (ph) => `${base}/domain/${domain.key}/vcycle/${ph}`,
       activePage, activePageId, activeDomainPrefix: `domain:${domain.key}:`,
       phaseName, phaseHidden, subPages,
+      parentType: 'system', parentId: s.id,
     });
   }
   body += buildSafetyGroup({ groupKey: `sys-${s.id}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
@@ -293,7 +293,7 @@ function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId,
 
 // ── Group builders ────────────────────────────────────────────────────────────
 
-function buildDomainGroup({ groupKey, domain, icon, phases, getPath, activePage, activePageId, activeDomainPrefix, phaseName, phaseHidden, subPages }) {
+function buildDomainGroup({ groupKey, domain, icon, phases, getPath, activePage, activePageId, activeDomainPrefix, phaseName, phaseHidden, subPages, parentType, parentId }) {
   const visiblePhases = phases.filter(p => !phaseHidden(domain, p.key));
   const anyActive = visiblePhases.some(p => {
     const key = `${activeDomainPrefix}${p.key}`;
@@ -312,7 +312,9 @@ function buildDomainGroup({ groupKey, domain, icon, phases, getPath, activePage,
         </button>
         ${domain !== 'item' ? `
         <span class="sb-domain-actions">
-          <button class="sb-act-btn btn-hide-domain" data-domain="${domain}" title="Hide ${escHtml(domainLabel)}">✕</button>
+          <button class="sb-act-btn btn-hide-domain" data-domain="${domain}"
+            data-parent-type="${parentType}" data-parent-id="${parentId}"
+            title="Hide ${escHtml(domainLabel)}">✕</button>
         </span>` : ''}
       </div>
       <div class="sb-group-body">
@@ -322,15 +324,19 @@ function buildDomainGroup({ groupKey, domain, icon, phases, getPath, activePage,
           const subs  = subPages(domain, p.key);
           const label = phaseName(domain, p.key);
           return `
-            <div class="sb-phase-row" data-domain="${domain}" data-phase="${p.key}" data-path="${getPath(p.key)}">
+            <div class="sb-phase-row" data-domain="${domain}" data-phase="${p.key}" data-path="${getPath(p.key)}"
+              data-parent-type="${parentType}" data-parent-id="${parentId}">
               <button class="sb-item ${isAct ? 'active' : ''}" data-nav="${getPath(p.key)}">
                 <span class="sb-item-icon">${p.icon}</span>
                 <span class="sb-item-label">${escHtml(label)}</span>
               </button>
               <span class="sb-phase-actions">
-                <button class="sb-act-btn btn-rename-phase" data-domain="${domain}" data-phase="${p.key}" title="Rename">✎</button>
-                <button class="sb-act-btn btn-hide-phase"   data-domain="${domain}" data-phase="${p.key}" title="Hide">✕</button>
-                <button class="sb-act-btn btn-add-subpage sb-add-always"  data-domain="${domain}" data-phase="${p.key}" data-path="${getPath(p.key)}" title="Add page">↳</button>
+                <button class="sb-act-btn btn-rename-phase" data-domain="${domain}" data-phase="${p.key}"
+                  data-parent-type="${parentType}" data-parent-id="${parentId}" title="Rename">✎</button>
+                <button class="sb-act-btn btn-hide-phase"   data-domain="${domain}" data-phase="${p.key}"
+                  data-parent-type="${parentType}" data-parent-id="${parentId}" title="Hide">✕</button>
+                <button class="sb-act-btn btn-add-subpage sb-add-always"  data-domain="${domain}" data-phase="${p.key}"
+                  data-parent-type="${parentType}" data-parent-id="${parentId}" data-path="${getPath(p.key)}" title="Add page">↳</button>
               </span>
             </div>
             ${subs.map(sp => {
@@ -425,29 +431,40 @@ function wireNav(container) {
   });
 }
 
-function wirePhaseActions(container, parentType, parentId, onReload) {
+function wirePhaseActions(container, _parentType, _parentId, onReload) {
+  // Each button carries data-parent-type / data-parent-id so multi-system sidebars
+  // operate on the correct parent instead of a shared closure value.
+  function ctx(btn) {
+    return {
+      pType: btn.dataset.parentType || _parentType,
+      pId:   btn.dataset.parentId   || _parentId,
+    };
+  }
+
   // Rename phase label — inline
   container.querySelectorAll('.btn-rename-phase').forEach(btn => {
     btn.onclick = async (e) => {
       e.stopPropagation();
       const { domain, phase } = btn.dataset;
+      const { pType, pId } = ctx(btn);
       const row = btn.closest('.sb-phase-row');
       const labelSpan = row.querySelector('.sb-item-label');
       const navBtn    = row.querySelector('.sb-item');
       inlineRenameEl(navBtn, labelSpan, async (newName) => {
-        await upsertPhaseConfig(parentType, parentId, domain, phase, { custom_name: newName });
+        await upsertPhaseConfig(pType, pId, domain, phase, { custom_name: newName });
         onReload();
       });
     };
   });
 
-  // Hide/delete phase
+  // Hide phase
   container.querySelectorAll('.btn-hide-phase').forEach(btn => {
     btn.onclick = async (e) => {
       e.stopPropagation();
       const { domain, phase } = btn.dataset;
+      const { pType, pId } = ctx(btn);
       confirmDialog(`Hide "${t(`vcycle.${phase}`)}" from this sidebar?`, async () => {
-        await upsertPhaseConfig(parentType, parentId, domain, phase, { is_hidden: true });
+        await upsertPhaseConfig(pType, pId, domain, phase, { is_hidden: true });
         onReload();
       });
     };
@@ -458,13 +475,14 @@ function wirePhaseActions(container, parentType, parentId, onReload) {
     btn.onclick = async (e) => {
       e.stopPropagation();
       const { domain, phase, path } = btn.dataset;
+      const { pType, pId } = ctx(btn);
       openNameModal('New page name', '', async (name) => {
         const count = (await sb.from('nav_pages').select('id', { count: 'exact', head: true })
-          .eq('parent_type', parentType).eq('parent_id', parentId)
+          .eq('parent_type', pType).eq('parent_id', pId)
           .eq('domain', domain).eq('phase', phase)).count || 0;
 
         const { data: pg, error } = await sb.from('nav_pages').insert({
-          parent_type: parentType, parent_id: parentId,
+          parent_type: pType, parent_id: pId,
           domain, phase, name, sort_order: count,
         }).select().single();
 
@@ -551,15 +569,23 @@ function wireSystemActions(container, systems, projectId, itemId, onReload) {
   });
 }
 
-function wireDomainActions(container, parentType, parentId, onReload) {
+function wireDomainActions(container, _parentType, _parentId, onReload) {
+  function ctx(btn) {
+    return {
+      pType: btn.dataset.parentType || _parentType,
+      pId:   btn.dataset.parentId   || _parentId,
+    };
+  }
+
   // Hide domain
   container.querySelectorAll('.btn-hide-domain').forEach(btn => {
     btn.onclick = async (e) => {
       e.stopPropagation();
       const { domain } = btn.dataset;
+      const { pType, pId } = ctx(btn);
       const label = t(`domain.${domain}`);
       confirmDialog(`Hide "${label}" from this sidebar? You can restore it later.`, async () => {
-        await upsertPhaseConfig(parentType, parentId, domain, '__domain__', { is_hidden: true });
+        await upsertPhaseConfig(pType, pId, domain, '__domain__', { is_hidden: true });
         onReload();
       });
     };
@@ -570,7 +596,8 @@ function wireDomainActions(container, parentType, parentId, onReload) {
     btn.onclick = async (e) => {
       e.stopPropagation();
       const { domain } = btn.dataset;
-      await upsertPhaseConfig(parentType, parentId, domain, '__domain__', { is_hidden: false });
+      const { pType, pId } = ctx(btn);
+      await upsertPhaseConfig(pType, pId, domain, '__domain__', { is_hidden: false });
       onReload();
     };
   });

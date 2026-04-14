@@ -57,6 +57,7 @@ export async function nextIndex(table, conditions) {
  */
 export const DEFAULT_PHA_FIELDS = [
   { key: 'use_case_id',      label: 'Use Case',              type: 'uc_select',    required: true,  visible: true  },
+  { key: 'hazard_name',      label: 'Hazard Name',           type: 'text',         required: true,  visible: true  },
   { key: 'hazard_desc',      label: 'Hazard Description',    type: 'textarea',     required: true,  visible: true  },
   { key: 'phase_of_op',      label: 'Phase of Operation',    type: 'select',       required: false, visible: true,
     options: ['—','Ground','Taxi','Takeoff','Initial Climb','En Route / Cruise','Descent','Approach','Landing','All Phases'] },

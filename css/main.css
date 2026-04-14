@@ -938,7 +938,8 @@ input, select, textarea { font-family: var(--font); }
   border-bottom: 1px solid var(--color-border);
 }
 .pha-feat-icon { font-size: 13px; color: #FF8B00; flex-shrink: 0; }
-.pha-feat-name { font-size: var(--text-sm); font-weight: 700; color: var(--color-text); }
+.pha-feat-name { font-size: var(--text-sm); color: var(--color-text); }
+.pha-ctx-desc  { font-weight: 400; color: var(--color-text-muted); }
 .pha-cnt {
   font-size: 11px; font-weight: 700; color: #FF8B00;
   background: #FF8B0015; padding: 2px 8px; border-radius: 10px; margin-left: auto;
@@ -1058,6 +1059,7 @@ input, select, textarea { font-family: var(--font); }
 
 .pha-ir-field { display: flex; flex-direction: column; gap: 3px; }
 .pha-ir-field label { font-size: 10px; font-weight: 700; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.pha-ir-name   { flex: 1 1 220px; min-width: 160px; }
 .pha-ir-desc   { flex: 1 1 280px; min-width: 200px; }
 .pha-ir-narrow { flex: 0 1 160px; min-width: 130px; }
 .pha-ir-full   { flex: 1; }
