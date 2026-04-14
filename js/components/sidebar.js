@@ -241,22 +241,14 @@ function buildSystemSidebar({ projectId, itemId, systemId, systemName, activePag
 }
 
 function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId, safetyItems, phaseName, phaseHidden, domainHidden, subPages }) {
-  const base = `/project/${projectId}/item/${itemId}/system/${s.id}`;
-  let html = `
-    <div class="sb-system-title" data-system-id="${s.id}">
-      <span class="sb-system-title-name">${escHtml(s.name)}</span>
-      <span class="sb-system-title-code">${escHtml(s.system_code)}</span>
-      <span class="sb-system-title-actions">
-        ${i > 0         ? `<button class="btn-up-sys" data-id="${s.id}" title="Up">▲</button>` : ''}
-        ${i < total - 1 ? `<button class="btn-dn-sys" data-id="${s.id}" title="Down">▼</button>` : ''}
-        <button class="btn-edit-sys" data-id="${s.id}" data-name="${escHtml(s.name)}" title="Rename">✎</button>
-        <button class="btn-del-sys"  data-id="${s.id}" data-name="${escHtml(s.name)}" title="Delete">✕</button>
-      </span>
-    </div>`;
+  const base     = `/project/${projectId}/item/${itemId}/system/${s.id}`;
+  const blockKey = `sys-block-${s.id}`;
+  const open     = isOpen(blockKey, true); // default expanded
 
+  let body = '';
   for (const domain of DOMAINS) {
     if (domainHidden(domain.key)) continue;
-    html += buildDomainGroup({
+    body += buildDomainGroup({
       groupKey: `sys-${s.id}-${domain.key}`,
       domain: domain.key, icon: domain.icon,
       phases: domain.phases,
@@ -265,9 +257,27 @@ function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId,
       phaseName, phaseHidden, subPages,
     });
   }
+  body += buildSafetyGroup({ groupKey: `sys-${s.id}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
 
-  html += buildSafetyGroup({ groupKey: `sys-${s.id}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
-  return html;
+  return `
+    <div class="sb-sys-block ${open ? 'open' : 'closed'}" data-sys-block="${blockKey}">
+      <div class="sb-system-title" data-system-id="${s.id}">
+        <button class="sb-sys-toggle" data-block="${blockKey}" title="${open ? 'Collapse' : 'Expand'}">
+          <span class="sb-chevron">▶</span>
+        </button>
+        <span class="sb-system-title-name">${escHtml(s.name)}</span>
+        <span class="sb-system-title-code">${escHtml(s.system_code)}</span>
+        <span class="sb-system-title-actions">
+          ${i > 0         ? `<button class="btn-up-sys" data-id="${s.id}" title="Up">▲</button>` : ''}
+          ${i < total - 1 ? `<button class="btn-dn-sys" data-id="${s.id}" title="Down">▼</button>` : ''}
+          <button class="btn-edit-sys" data-id="${s.id}" data-name="${escHtml(s.name)}" title="Rename">✎</button>
+          <button class="btn-del-sys"  data-id="${s.id}" data-name="${escHtml(s.name)}" title="Delete">✕</button>
+        </span>
+      </div>
+      <div class="sb-sys-body">
+        ${body}
+      </div>
+    </div>`;
 }
 
 // ── Group builders ────────────────────────────────────────────────────────────
@@ -485,6 +495,18 @@ function wirePhaseActions(container, parentType, parentId, onReload) {
 }
 
 function wireSystemActions(container, systems, projectId, itemId, onReload) {
+  // Collapse / expand system block
+  container.querySelectorAll('.sb-sys-toggle').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const blockKey = btn.dataset.block;
+      const block    = container.querySelector(`[data-sys-block="${blockKey}"]`);
+      const open     = block.classList.toggle('open');
+      block.classList.toggle('closed', !open);
+      setGroupOpen(blockKey, open);
+    };
+  });
+
   container.querySelectorAll('.btn-edit-sys').forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();

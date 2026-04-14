@@ -346,6 +346,19 @@ input, select, textarea { font-family: var(--font); }
 
 .sb-empty-hint { padding: 4px 14px; font-size: var(--text-xs); color: #6080a0; }
 
+/* System block — collapsible container */
+.sb-sys-block.closed .sb-sys-body { display: none; }
+.sb-sys-block.open   .sb-sys-body { display: block; }
+.sb-sys-block.open   .sb-sys-toggle .sb-chevron { transform: rotate(90deg); color: #8fc8f0; }
+
+.sb-sys-toggle {
+  border: none; background: transparent; cursor: pointer;
+  padding: 0 4px 0 0; color: #5a80a0; flex-shrink: 0;
+  display: flex; align-items: center;
+}
+.sb-sys-toggle:hover { color: #9ed4ff; }
+.sb-sys-toggle .sb-chevron { font-size: 8px; transition: transform 0.15s, color 0.15s; }
+
 /* System block title in multi-system sidebar */
 .sb-system-title {
   display: flex; align-items: center; justify-content: space-between;

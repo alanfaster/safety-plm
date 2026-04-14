@@ -18,7 +18,26 @@
  *   ICONS                                  — { feat, uc, fun } for consistency
  */
 
-import { sb, buildCode, nextIndex } from '../config.js';
+import { sb, nextIndex, nameInitials } from '../config.js';
+
+/**
+ * Build hierarchical codes:
+ *   Feature  → FEAT-{PROJ}-{IDX}               e.g. FEAT-EPB-001
+ *   Use Case → UC-{PROJ}-F{FEAT_IDX}-{IDX}     e.g. UC-EPB-F001-001
+ *   Function → FUN-{PROJ}-F{FEAT_IDX}-U{UC_IDX}-{IDX}  e.g. FUN-EPB-F001-U001-001
+ * Unique per project because PROJ initials are embedded.
+ */
+function codeLastIdx(code) {
+  // Extract last numeric segment: "FEAT-EPB-003" → "003"
+  const parts = (code || '').split('-');
+  return parts[parts.length - 1] || '001';
+}
+function pad(n) { return String(n).padStart(3, '0'); }
+function featCode(projName, idx)            { return `FEAT-${nameInitials(projName)}-${pad(idx)}`; }
+function ucCode(projName, featC, ucIdx)     { return `UC-${nameInitials(projName)}-F${codeLastIdx(featC)}-${pad(ucIdx)}`; }
+function funCode(projName, featC, ucC, fnIdx) {
+  return `FUN-${nameInitials(projName)}-F${codeLastIdx(featC)}-U${codeLastIdx(ucC)}-${pad(fnIdx)}`;
+}
 import { t } from '../i18n/index.js';
 import { toast } from '../toast.js';
 import { confirmDialog } from '../components/modal.js';
@@ -364,13 +383,12 @@ function refreshFunCol() {
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 
 async function addItem(type) {
-  const { parentType, parentId, domain, project, system, item } = _state;
+  const { parentType, parentId, domain, project } = _state;
   const projName = project?.name || '';
-  const sysName  = system?.name || item?.name || '';
 
   if (type === 'feat') {
-    const idx = await nextIndex('features', { parent_id: parentId });
-    const code = buildCode('FEAT', { domain: domain.toUpperCase(), projectName: projName, index: idx });
+    const idx  = await nextIndex('features', { parent_id: parentId });
+    const code = featCode(projName, idx);
     const { data, error } = await sb.from('features').insert({
       feat_code: code, parent_type: parentType, parent_id: parentId,
       domain, project_id: project.id,
@@ -379,13 +397,13 @@ async function addItem(type) {
     if (error) { toast(t('common.error'), 'error'); return; }
     _state.features.push(data);
     refreshFeatCol();
-    // Auto-open inline edit for new item
     setTimeout(() => openInlineEdit('feat', data.id), 50);
 
   } else if (type === 'uc') {
     if (!_state.selFeatId) return;
-    const idx = await nextIndex('use_cases', { feature_id: _state.selFeatId });
-    const code = buildCode('UC', { domain: domain.toUpperCase(), projectName: projName, index: idx });
+    const parentFeat = _state.features.find(f => f.id === _state.selFeatId);
+    const idx  = await nextIndex('use_cases', { feature_id: _state.selFeatId });
+    const code = ucCode(projName, parentFeat?.feat_code || '', idx);
     const { data, error } = await sb.from('use_cases').insert({
       uc_code: code, feature_id: _state.selFeatId,
       name: `Use Case ${idx}`, sort_order: _state.useCases.length,
@@ -397,8 +415,10 @@ async function addItem(type) {
 
   } else if (type === 'fun') {
     if (!_state.selUCId) return;
-    const idx = await nextIndex('functions', { use_case_id: _state.selUCId });
-    const code = buildCode('FUN', { domain: domain.toUpperCase(), projectName: projName, index: idx });
+    const parentFeat = _state.features.find(f => f.id === _state.selFeatId);
+    const parentUC   = _state.useCases.find(u => u.id === _state.selUCId);
+    const idx  = await nextIndex('functions', { use_case_id: _state.selUCId });
+    const code = funCode(projName, parentFeat?.feat_code || '', parentUC?.uc_code || '', idx);
     const { data, error } = await sb.from('functions').insert({
       func_code: code, use_case_id: _state.selUCId,
       name: `Function ${idx}`, sort_order: _state.functions.length,
