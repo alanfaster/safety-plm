@@ -79,27 +79,40 @@ export async function renderSidebar(ctx) {
   const parentType  = systemId ? 'system' : 'item';
   const parentId    = systemId || itemId;
 
-  // Fetch sub-pages and phase config for current parent
-  const [{ data: navPages }, { data: phaseConfigs }] = await Promise.all([
-    sb.from('nav_pages').select('*').eq('parent_type', parentType).eq('parent_id', parentId).order('sort_order'),
-    sb.from('nav_phase_config').select('*').eq('parent_type', parentType).eq('parent_id', parentId),
-  ]);
+  // Collect all parent IDs to fetch nav data for (item + all systems if multi)
+  const allParentIds = [{ type: parentType, id: parentId }];
+  if (!systemId && systems.length > 0) {
+    systems.forEach(s => allParentIds.push({ type: 'system', id: s.id }));
+  }
 
-  const pages    = navPages    || [];
-  const pConfig  = phaseConfigs || [];
+  // Fetch nav_pages + nav_phase_config for all relevant parents in parallel
+  const fetchResults = await Promise.all(
+    allParentIds.flatMap(p => [
+      sb.from('nav_pages').select('*').eq('parent_type', p.type).eq('parent_id', p.id).order('sort_order'),
+      sb.from('nav_phase_config').select('*').eq('parent_type', p.type).eq('parent_id', p.id),
+    ])
+  );
 
-  // Helper: get custom name for a phase+domain
-  const phaseName = (domain, phaseKey) => {
-    const cfg = pConfig.find(c => c.domain === domain && c.phase === phaseKey);
-    return cfg?.custom_name || t(`vcycle.${phaseKey}`);
-  };
-  const phaseHidden = (domain, phaseKey) => {
-    const cfg = pConfig.find(c => c.domain === domain && c.phase === phaseKey);
-    return cfg?.is_hidden || false;
-  };
-  // Sub-pages for a given domain+phase
-  const subPages = (domain, phaseKey) =>
-    pages.filter(p => p.domain === domain && p.phase === phaseKey);
+  // Build per-parentId lookup maps
+  const pagesMap  = {};
+  const configMap = {};
+  allParentIds.forEach((p, i) => {
+    pagesMap[p.id]  = fetchResults[i * 2].data     || [];
+    configMap[p.id] = fetchResults[i * 2 + 1].data || [];
+  });
+
+  // Helpers scoped to a parentId
+  function makeHelpers(pid) {
+    const cfg   = configMap[pid] || [];
+    const pages = pagesMap[pid]  || [];
+    return {
+      phaseName:   (domain, phaseKey) => cfg.find(c => c.domain === domain && c.phase === phaseKey)?.custom_name || t(`vcycle.${phaseKey}`),
+      phaseHidden: (domain, phaseKey) => cfg.find(c => c.domain === domain && c.phase === phaseKey)?.is_hidden || false,
+      subPages:    (domain, phaseKey) => pages.filter(p => p.domain === domain && p.phase === phaseKey),
+    };
+  }
+
+  const { phaseName, phaseHidden, subPages } = makeHelpers(parentId);
 
   if (systemId) {
     // System view
@@ -108,10 +121,10 @@ export async function renderSidebar(ctx) {
       safetyItems, phaseName, phaseHidden, subPages,
     });
   } else if (systems.length > 0) {
-    // Multi-system item view
+    // Multi-system item view — each system gets its own helpers
     container.innerHTML = buildMultiSystemSidebar({
       projectId, itemId, itemName, activePage, activePageId,
-      safetyItems, systems, phaseName, phaseHidden, subPages,
+      safetyItems, systems, phaseName, phaseHidden, subPages, makeHelpers,
     });
   } else {
     // Single-system: item IS the system
@@ -154,13 +167,12 @@ function buildSingleSystemSidebar({ projectId, itemId, itemName, activePage, act
     });
   }
 
-  html += sectionLabel(t('safety.title'));
   html += buildSafetyGroup({ groupKey: `item-${itemId}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
   html += addSystemBtn();
   return html;
 }
 
-function buildMultiSystemSidebar({ projectId, itemId, itemName, activePage, activePageId, safetyItems, systems, phaseName, phaseHidden, subPages }) {
+function buildMultiSystemSidebar({ projectId, itemId, itemName, activePage, activePageId, safetyItems, systems, phaseName, phaseHidden, subPages, makeHelpers }) {
   const base = `/project/${projectId}/item/${itemId}`;
   let html = entityHeader(itemName, base, projectId);
 
@@ -174,15 +186,22 @@ function buildMultiSystemSidebar({ projectId, itemId, itemName, activePage, acti
     phaseName, phaseHidden, subPages,
   });
 
-  html += sectionLabel(t('safety.title'));
   html += buildSafetyGroup({ groupKey: `item-${itemId}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
 
-  html += sectionLabel(t('systems.title'), true, 'sidebar-add-system');
-  for (let i = 0; i < systems.length; i++) {
-    html += systemItem(systems[i], i, systems.length, projectId, itemId, activePage);
-  }
+  // All systems expanded inline, scrollable
+  html += `<div class="sb-section-label" style="margin-top:6px">
+    ${escHtml(t('systems.title'))}
+    <button class="sb-section-add" id="sidebar-add-system" title="${t('systems.new')}">＋</button>
+  </div>`;
+
   if (!systems.length) {
     html += `<div class="sb-empty-hint">No systems yet</div>`;
+  } else {
+    for (let i = 0; i < systems.length; i++) {
+      const s = systems[i];
+      const h = makeHelpers ? makeHelpers(s.id) : { phaseName, phaseHidden, subPages };
+      html += systemBlock({ s, i, total: systems.length, projectId, itemId, activePage, activePageId, safetyItems, ...h });
+    }
   }
   return html;
 }
@@ -203,8 +222,36 @@ function buildSystemSidebar({ projectId, itemId, systemId, systemName, activePag
     });
   }
 
-  html += sectionLabel(t('safety.title'));
   html += buildSafetyGroup({ groupKey: `sys-${systemId}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
+  return html;
+}
+
+function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId, safetyItems, phaseName, phaseHidden, subPages }) {
+  const base = `/project/${projectId}/item/${itemId}/system/${s.id}`;
+  let html = `
+    <div class="sb-system-title" data-system-id="${s.id}">
+      <span class="sb-system-title-name">${escHtml(s.name)}</span>
+      <span class="sb-system-title-code">${escHtml(s.system_code)}</span>
+      <span class="sb-system-title-actions">
+        ${i > 0         ? `<button class="btn-up-sys" data-id="${s.id}" title="Up">▲</button>` : ''}
+        ${i < total - 1 ? `<button class="btn-dn-sys" data-id="${s.id}" title="Down">▼</button>` : ''}
+        <button class="btn-edit-sys" data-id="${s.id}" data-name="${escHtml(s.name)}" title="Rename">✎</button>
+        <button class="btn-del-sys"  data-id="${s.id}" data-name="${escHtml(s.name)}" title="Delete">✕</button>
+      </span>
+    </div>`;
+
+  for (const domain of DOMAINS) {
+    html += buildDomainGroup({
+      groupKey: `sys-${s.id}-${domain.key}`,
+      domain: domain.key, icon: domain.icon,
+      phases: domain.phases,
+      getPath: (ph) => `${base}/domain/${domain.key}/vcycle/${ph}`,
+      activePage, activePageId, activeDomainPrefix: `domain:${domain.key}:`,
+      phaseName, phaseHidden, subPages,
+    });
+  }
+
+  html += buildSafetyGroup({ groupKey: `sys-${s.id}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
   return html;
 }
 
