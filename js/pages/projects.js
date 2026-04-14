@@ -17,7 +17,7 @@ const NORMS = {
   military:   ['MIL-STD-882', 'DEF STAN 00-56', 'MIL-STD-461'],
 };
 
-export async function render(container) {
+export async function render(container, { user } = {}) {
   setBreadcrumb([{ label: t('nav.projects') }]);
   renderSidebar({ view: 'projects', activePage: 'projects' });
 
@@ -34,13 +34,22 @@ export async function render(container) {
   `;
 
   document.getElementById('btn-new-project').onclick = openNewProjectModal;
-  await loadProjects();
+  await loadProjects(user);
 }
 
-async function loadProjects() {
-  const { data, error } = await sb.from('projects').select('*').order('created_at', { ascending: false });
-  const list = document.getElementById('projects-list');
+async function loadProjects(user) {
+  const userId = user?.id;
+  const [
+    { data, error },
+    { data: memberships },
+    { data: profile },
+  ] = await Promise.all([
+    sb.from('projects').select('*').order('created_at', { ascending: false }),
+    userId ? sb.from('project_members').select('project_id,role').eq('user_id', userId) : Promise.resolve({ data: [] }),
+    userId ? sb.from('user_profiles').select('is_app_admin').eq('user_id', userId).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
 
+  const list = document.getElementById('projects-list');
   if (error) { list.innerHTML = `<p class="text-muted">${t('common.error')}</p>`; return; }
 
   if (!data.length) {
@@ -57,21 +66,101 @@ async function loadProjects() {
     return;
   }
 
-  list.innerHTML = `<div class="projects-grid">${data.map(projectCard).join('')}</div>`;
-  list.querySelectorAll('[data-project-id]').forEach(card => {
-    card.onclick = () => navigate(`/project/${card.dataset.projectId}`);
+  const isAppAdmin = profile?.is_app_admin || false;
+  const roleMap = {};
+  (memberships || []).forEach(m => { roleMap[m.project_id] = m.role; });
+
+  // Determine effective role per project
+  function roleFor(pid) {
+    if (isAppAdmin) return 'admin';
+    return roleMap[pid] || null;
+  }
+
+  list.innerHTML = `<div class="projects-grid">${data.map(p => projectCard(p, roleFor(p.id))).join('')}</div>`;
+
+  // Wire navigate on card body (not on action buttons)
+  list.querySelectorAll('.project-card-body').forEach(body => {
+    body.onclick = () => navigate(`/project/${body.dataset.projectId}`);
+  });
+
+  // Wire settings button
+  list.querySelectorAll('.btn-project-settings').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      navigate(`/project/${btn.dataset.id}/settings`);
+    };
+  });
+
+  // Wire rename (admin only)
+  list.querySelectorAll('.btn-rename-project').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const card = btn.closest('.project-card');
+      const titleEl = card.querySelector('.project-card-title');
+      const currentName = btn.dataset.name;
+      const input = document.createElement('input');
+      input.className = 'form-input project-inline-input';
+      input.value = currentName;
+      titleEl.style.display = 'none';
+      titleEl.parentNode.insertBefore(input, titleEl);
+      input.focus(); input.select();
+      let done = false;
+      async function save() {
+        if (done) return; done = true;
+        const newName = input.value.trim();
+        input.remove(); titleEl.style.display = '';
+        if (newName && newName !== currentName) {
+          const { error } = await sb.from('projects').update({ name: newName }).eq('id', btn.dataset.id);
+          if (error) { toast(t('common.error'), 'error'); return; }
+          titleEl.textContent = newName;
+          toast('Project renamed.', 'success');
+        }
+      }
+      input.onblur = save;
+      input.onkeydown = (ev) => {
+        if (ev.key === 'Enter') save();
+        if (ev.key === 'Escape') { done = true; input.remove(); titleEl.style.display = ''; }
+      };
+    };
+  });
+
+  // Wire delete (admin only)
+  list.querySelectorAll('.btn-delete-project').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      confirmDialog(`Delete project "${btn.dataset.name}"? This cannot be undone.`, async () => {
+        const { error } = await sb.from('projects').delete().eq('id', btn.dataset.id);
+        if (error) { toast(t('common.error'), 'error'); return; }
+        toast('Project deleted.', 'success');
+        await loadProjects(user);
+      });
+    };
   });
 }
 
-function projectCard(p) {
+function projectCard(p, role) {
   const typeLabel = t(`projects.type.${p.type}`);
+  const isAdmin = role === 'admin';
+  const roleLabel = role ? `<span class="role-badge role-${role}">${role}</span>` : '';
   return `
-    <div class="project-card" data-project-id="${p.id}">
-      <div class="project-card-title">${escHtml(p.name)}</div>
-      <div class="project-card-desc">${escHtml(p.item_name || '')}</div>
-      <div class="project-card-footer">
-        <span class="badge badge-${p.type}">${typeLabel}</span>
-        ${p.norm ? `<span class="text-muted">${escHtml(p.norm)}</span>` : ''}
+    <div class="project-card">
+      <div class="project-card-body" data-project-id="${p.id}">
+        <div class="project-card-title-row">
+          <div class="project-card-title">${escHtml(p.name)}</div>
+          ${roleLabel}
+        </div>
+        <div class="project-card-desc">${escHtml(p.item_name || '')}</div>
+        <div class="project-card-footer">
+          <span class="badge badge-${p.type}">${typeLabel}</span>
+          ${p.norm ? `<span class="text-muted">${escHtml(p.norm)}</span>` : ''}
+        </div>
+      </div>
+      <div class="project-card-actions">
+        <button class="btn-icon btn-project-settings" data-id="${p.id}" title="Settings">⚙</button>
+        ${isAdmin ? `
+          <button class="btn-icon btn-rename-project" data-id="${p.id}" data-name="${escHtml(p.name)}" title="Rename">✎</button>
+          <button class="btn-icon btn-delete-project" data-id="${p.id}" data-name="${escHtml(p.name)}" title="Delete">✕</button>
+        ` : ''}
       </div>
     </div>
   `;
@@ -184,6 +273,16 @@ function openNewProjectModal() {
         name: `System ${i + 1}`,
       }));
       await sb.from('systems').insert(sysInserts);
+    }
+
+    // 4. Assign creator as project admin
+    const { data: { user } } = await sb.auth.getUser();
+    if (user) {
+      await sb.from('project_members').insert({
+        project_id: project.id,
+        user_id: user.id,
+        role: 'admin',
+      }).onConflict('project_id,user_id').ignore();
     }
 
     btn.disabled = false; btn.textContent = t('projects.create');

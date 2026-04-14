@@ -60,6 +60,23 @@ let _state = {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/** Context-aware title for the item_definition phase */
+export function getDefinitionTitle(domain, parentType) {
+  if (domain === 'sw')   return 'SW Definition';
+  if (domain === 'hw')   return 'HW Definition';
+  if (domain === 'mech') return 'MECH Definition';
+  if (parentType === 'system') return 'System Definition';
+  return 'Item Definition';
+}
+
+function getDefinitionHint(domain, parentType) {
+  if (domain === 'sw')   return 'Define the SW scope, decomposition, allocated requirements, and interfaces.';
+  if (domain === 'hw')   return 'Define the HW scope, components, environmental conditions, and constraints.';
+  if (domain === 'mech') return 'Define the mechanical scope, structural elements, tolerances, and interfaces.';
+  if (parentType === 'system') return 'Define the system scope, boundaries, interfaces, and operating conditions.';
+  return 'Define the item scope, purpose, boundaries, and operating environment.';
+}
+
 export async function renderItemDefinition(container, { project, item, system, domain = 'system', pageId = null }) {
   const parentType = system ? 'system' : 'item';
   const parentId   = system ? system.id : item.id;
@@ -90,17 +107,15 @@ export async function renderItemDefinition(container, { project, item, system, d
   const status    = _state.doc?.status || 'draft';
   const textContent = _state.doc?.content?.text || '';
   const parentName  = system?.name || item?.name || '';
+  const defTitle    = getDefinitionTitle(domain, parentType);
+  const defHint     = getDefinitionHint(domain, parentType);
 
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-top">
         <div>
-          <h1>${t('vcycle.item_definition')}
-            <span style="font-weight:400;font-size:15px;color:var(--color-text-muted)">
-              ${domain !== 'default' ? ` — ${t(`domain.${domain}`)}` : ''}
-            </span>
-          </h1>
-          <p class="text-muted">${escHtml(parentName)} · ${t('vcycle.item_definition')}</p>
+          <h1>${escHtml(defTitle)}</h1>
+          <p class="text-muted">${escHtml(parentName)} · ${escHtml(defTitle)}</p>
         </div>
         <div class="flex gap-2 items-center">
           <select class="form-input form-select" id="doc-status" style="width:140px">
@@ -118,12 +133,8 @@ export async function renderItemDefinition(container, { project, item, system, d
       <!-- Description card -->
       <div class="card">
         <div class="card-header">
-          <h3>${t('vcycle.item_definition')} — Description</h3>
-          <div class="card" style="background:var(--color-info-bg);border:none;padding:0">
-            <div style="color:var(--color-primary);font-size:var(--text-sm);padding:4px 0">
-              ℹ️ Define the item scope, purpose, boundaries, and operating environment.
-            </div>
-          </div>
+          <h3>${escHtml(defTitle)} — Description</h3>
+          <div style="color:var(--color-primary);font-size:var(--text-sm)">ℹ️ ${escHtml(defHint)}</div>
         </div>
         <div class="card-body">
           <textarea class="form-input form-textarea" id="doc-text" rows="7"

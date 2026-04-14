@@ -104,18 +104,29 @@ export async function renderSidebar(ctx) {
   });
 
   // Helpers scoped to a parentId
-  function makeHelpers(pid) {
+  function makeHelpers(pid, pType) {
     const cfg   = configMap[pid] || [];
     const pages = pagesMap[pid]  || [];
     return {
-      phaseName:    (domain, phaseKey) => cfg.find(c => c.domain === domain && c.phase === phaseKey)?.custom_name || t(`vcycle.${phaseKey}`),
+      phaseName: (domain, phaseKey) => {
+        const custom = cfg.find(c => c.domain === domain && c.phase === phaseKey)?.custom_name;
+        if (custom) return custom;
+        if (phaseKey === 'item_definition') {
+          if (domain === 'sw')   return 'SW Definition';
+          if (domain === 'hw')   return 'HW Definition';
+          if (domain === 'mech') return 'MECH Definition';
+          if (domain === 'system' || pType === 'system') return 'System Definition';
+          return 'Item Definition';
+        }
+        return t(`vcycle.${phaseKey}`);
+      },
       phaseHidden:  (domain, phaseKey) => cfg.find(c => c.domain === domain && c.phase === phaseKey)?.is_hidden || false,
       domainHidden: (domain)           => cfg.find(c => c.domain === domain && c.phase === '__domain__')?.is_hidden || false,
       subPages:     (domain, phaseKey) => pages.filter(p => p.domain === domain && p.phase === phaseKey),
     };
   }
 
-  const helpers = makeHelpers(parentId);
+  const helpers = makeHelpers(parentId, parentType);
 
   if (systemId) {
     container.innerHTML = buildSystemSidebar({
@@ -209,7 +220,7 @@ function buildMultiSystemSidebar({ projectId, itemId, itemName, activePage, acti
   } else {
     for (let i = 0; i < systems.length; i++) {
       const s = systems[i];
-      const h = makeHelpers ? makeHelpers(s.id) : { phaseName, phaseHidden, domainHidden, subPages };
+      const h = makeHelpers ? makeHelpers(s.id, 'system') : { phaseName, phaseHidden, domainHidden, subPages };
       html += systemBlock({ s, i, total: systems.length, projectId, itemId, activePage, activePageId, safetyItems, ...h });
     }
   }

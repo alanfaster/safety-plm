@@ -48,3 +48,36 @@ export async function nextIndex(table, conditions) {
   const { count } = await q;
   return (count || 0) + 1;
 }
+
+/**
+ * Default PHL/PHA fields per ARP4761.
+ * These are the base fields; individual projects can override label/visibility
+ * via project_config.config.pha_fields.
+ * type: 'text' | 'textarea' | 'select' | 'uc_select' | 'badge_select'
+ */
+export const DEFAULT_PHA_FIELDS = [
+  { key: 'use_case_id',      label: 'Use Case',              type: 'uc_select',    required: true,  visible: true  },
+  { key: 'hazard_desc',      label: 'Hazard Description',    type: 'textarea',     required: true,  visible: true  },
+  { key: 'phase_of_op',      label: 'Phase of Operation',    type: 'select',       required: false, visible: true,
+    options: ['—','Ground','Taxi','Takeoff','Initial Climb','En Route / Cruise','Descent','Approach','Landing','All Phases'] },
+  { key: 'immediate_effect', label: 'Immediate Effect',      type: 'text',         required: false, visible: true  },
+  { key: 'system_effect',    label: 'System Level Effect',   type: 'text',         required: false, visible: true  },
+  { key: 'aircraft_effect',  label: 'Aircraft Level Effect', type: 'text',         required: false, visible: false },
+  { key: 'severity',         label: 'Severity',              type: 'badge_select', required: true,  visible: true,
+    options: ['—','Catastrophic','Hazardous','Major','Minor','No Safety Effect'],
+    colors:  { Catastrophic: '#BF2600', Hazardous: '#FF8B00', Major: '#FFAB00', Minor: '#0065FF', 'No Safety Effect': '#00875A' } },
+  { key: 'probability',      label: 'Probability',           type: 'select',       required: false, visible: true,
+    options: ['—','Probable (> 10⁻⁵)','Remote (10⁻⁵ – 10⁻⁷)','Extremely Remote (10⁻⁷ – 10⁻⁹)','Extremely Improbable (< 10⁻⁹)'] },
+  { key: 'dal',              label: 'DAL Requirement',       type: 'badge_select', required: false, visible: true,
+    options: ['—','DAL-A','DAL-B','DAL-C','DAL-D','DAL-E'],
+    colors:  { 'DAL-A':'#BF2600','DAL-B':'#FF8B00','DAL-C':'#FFAB00','DAL-D':'#0065FF','DAL-E':'#00875A' } },
+  { key: 'failure_condition',label: 'Failure Condition',     type: 'text',         required: false, visible: false },
+  { key: 'mitigation',       label: 'Mitigation / Action',   type: 'textarea',     required: false, visible: true  },
+  { key: 'remarks',          label: 'Remarks',               type: 'textarea',     required: false, visible: false },
+];
+
+/** Merge DEFAULT_PHA_FIELDS with project overrides from project_config.config.pha_fields */
+export function effectivePHAFields(projectConfig) {
+  const overrides = projectConfig?.config?.pha_fields || {};
+  return DEFAULT_PHA_FIELDS.map(f => ({ ...f, ...(overrides[f.key] || {}) }));
+}

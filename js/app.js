@@ -11,12 +11,14 @@ import { renderSidebar } from './components/sidebar.js';
 import { showModal, hideModal } from './components/modal.js';
 import { toast } from './toast.js';
 
-import { render as renderProjects } from './pages/projects.js';
-import { render as renderProject  } from './pages/project.js';
-import { renderVcycle }              from './pages/vcycle.js';
-import { renderHara }                from './pages/safety/hara.js';
-import { renderFmea }                from './pages/safety/fmea.js';
-import { renderSafetyGeneric }       from './pages/safety/generic.js';
+import { render as renderProjects }    from './pages/projects.js';
+import { render as renderProject  }    from './pages/project.js';
+import { renderVcycle }                from './pages/vcycle.js';
+import { renderHara }                  from './pages/safety/hara.js';
+import { renderFmea }                  from './pages/safety/fmea.js';
+import { renderPHA }                   from './pages/safety/pha.js';
+import { renderSafetyGeneric }         from './pages/safety/generic.js';
+import { renderProjectSettings }       from './pages/project-settings.js';
 
 // ── Shared state ──────────────────────────────────────────────────────
 const state = {
@@ -167,7 +169,7 @@ async function loadItemContext(projectId, itemId, systemId, activePage, activeDo
 route('/projects', async () => {
   setLoading();
   try {
-    await renderProjects(getContent());
+    await renderProjects(getContent(), { user: state.user });
   } catch(e) {
     getContent().innerHTML = `<div style="padding:40px;color:red;font-family:monospace;font-size:13px"><strong>ERROR /projects:</strong>\n${e.message}</div>`;
   }
@@ -262,12 +264,22 @@ route('/project/:projectId/item/:itemId/system/:systemId', async ({ projectId, i
   navigate(`/project/${projectId}/item/${itemId}/system/${systemId}/domain/system/vcycle/item_definition`);
 });
 
+// ── Project settings route ────────────────────────────────────────────
+route('/project/:projectId/settings', async ({ projectId }) => {
+  setLoading();
+  const project = await getProject(projectId);
+  if (!project) { navigate('/projects'); return; }
+  await renderProjectSettings(getContent(), { project });
+});
+
 // ── Safety dispatcher ─────────────────────────────────────────────────
 async function renderSafetyPage(container, ctx, parentType, parentId, analysisType) {
   if (analysisType === 'HARA') {
     await renderHara(container, { ...ctx, parentType, parentId });
   } else if (analysisType === 'FMEA') {
     await renderFmea(container, { ...ctx, parentType, parentId });
+  } else if (analysisType === 'PHL_PHA') {
+    await renderPHA(container, { ...ctx, parentType, parentId });
   } else {
     await renderSafetyGeneric(container, { ...ctx, parentType, parentId, analysisType });
   }
