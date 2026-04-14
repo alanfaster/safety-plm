@@ -6,9 +6,15 @@
 import { sb } from '../config.js';
 import { t } from '../i18n/index.js';
 import { toast } from '../toast.js';
-import { renderRequirements } from './requirements.js';
+import { renderRequirements }   from './requirements.js';
+import { renderItemDefinition } from './item-definition.js';
 
 export async function renderVcycle(container, { project, item, system, phase, domain = 'default', pageId = null }) {
+  if (phase === 'item_definition') {
+    await renderItemDefinition(container, { project, item, system, domain, pageId });
+    return;
+  }
+
   if (phase === 'requirements') {
     const parentType = system ? 'system' : 'item';
     const parentId   = system ? system.id : item.id;

@@ -681,6 +681,124 @@ input, select, textarea { font-family: var(--font); }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
 
+/* ── Item Definition — Features / Use Cases / Functions ── */
+.idef-page-body { display: flex; flex-direction: column; gap: 20px; }
+
+.idef-fuf-wrap { overflow-x: auto; }
+.idef-fuf-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  min-width: 600px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Column */
+.fuf-col {
+  display: flex; flex-direction: column;
+  border-right: 1px solid var(--color-border);
+  min-height: 320px;
+}
+.fuf-col:last-child { border-right: none; }
+
+.fuf-col-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px 8px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky; top: 0; z-index: 1;
+}
+.fuf-col-title {
+  flex: 1;
+  font-size: var(--text-xs); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+}
+.fuf-col-icon {
+  font-size: 14px; flex-shrink: 0;
+}
+.feat-icon { color: #f5a623; }
+.uc-icon   { color: #0052CC; }
+.fun-icon  { color: #00875A; font-style: italic; }
+
+.fuf-add-btn {
+  font-size: 16px; padding: 0 4px; line-height: 1;
+  color: var(--color-text-muted);
+  border: none; background: transparent; cursor: pointer;
+  border-radius: 3px; transition: color 0.12s, background 0.12s;
+}
+.fuf-add-btn:hover { color: var(--color-primary); background: var(--color-primary-bg); }
+
+.fuf-col-body { flex: 1; overflow-y: auto; }
+
+/* Item row */
+.fuf-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background 0.1s;
+  gap: 8px;
+}
+.fuf-row:hover { background: var(--color-bg); }
+.fuf-row.selected { background: var(--color-primary-bg); border-left: 3px solid var(--color-primary); padding-left: 9px; }
+.fuf-row.selected:hover { background: #cce0ff; }
+
+.fuf-row-main { display: flex; align-items: flex-start; gap: 7px; flex: 1; min-width: 0; }
+
+.fuf-icon { font-size: 12px; flex-shrink: 0; margin-top: 2px; }
+
+.fuf-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fuf-code {
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--color-text-muted); letter-spacing: 0.02em;
+}
+.fuf-name {
+  font-size: var(--text-sm); font-weight: 500;
+  color: var(--color-text); word-break: break-word;
+}
+.fuf-desc {
+  font-size: 11px; color: var(--color-text-muted);
+  overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+
+/* Row actions (visible on hover) */
+.fuf-actions {
+  display: flex; gap: 1px; flex-shrink: 0;
+  opacity: 0; pointer-events: none; transition: opacity 0.1s;
+  margin-top: 1px;
+}
+.fuf-row:hover .fuf-actions { opacity: 1; pointer-events: all; }
+.fuf-row.selected .fuf-actions { opacity: 1; pointer-events: all; }
+
+.fuf-act {
+  font-size: 10px; padding: 2px 4px; line-height: 1;
+  color: var(--color-text-muted);
+  border: none; background: transparent; cursor: pointer;
+  border-radius: 2px; transition: background 0.1s, color 0.1s;
+}
+.fuf-act:hover   { background: var(--color-bg); color: var(--color-text); }
+.fuf-del:hover   { background: var(--color-error-bg); color: var(--color-error); }
+.fuf-edit:hover  { background: var(--color-primary-bg); color: var(--color-primary); }
+
+/* Empty / hint */
+.fuf-empty { padding: 20px 14px; font-size: var(--text-sm); color: var(--color-text-muted); text-align: center; }
+.fuf-hint  { color: var(--color-text-subtle); font-style: italic; }
+
+/* Inline edit form */
+.fuf-edit-form {
+  display: flex; flex-direction: column; gap: 6px;
+  width: 100%; padding-right: 4px;
+}
+.fuf-input {
+  padding: 5px 8px; border: 1.5px solid var(--color-primary);
+  border-radius: var(--radius); font-size: var(--text-sm);
+  color: var(--color-text); background: var(--color-surface);
+  width: 100%; outline: none; font-family: var(--font);
+}
+.fuf-input-desc { resize: none; font-size: 12px; }
+.fuf-edit-btns  { display: flex; gap: 6px; }
+
 /* ── Status dot ── */
 .status-dot {
   width: 8px; height: 8px; border-radius: 50%; display: inline-block;
