@@ -1,4 +1,4 @@
-import { sb, genCode } from '../config.js';
+import { sb, buildCode, nextIndex } from '../config.js';
 import { t } from '../i18n/index.js';
 import { navigate } from '../router.js';
 import { showModal, hideModal, confirmDialog } from '../components/modal.js';
@@ -153,9 +153,10 @@ function openNewItemModal(project) {
     const btn = document.getElementById('m-create');
     btn.disabled = true;
 
+    const itmIdx = await nextIndex('items', { project_id: project.id });
     const { data, error } = await sb.from('items').insert({
       project_id: project.id,
-      item_code: genCode('ITM'),
+      item_code: buildCode('ITM', { projectName: project.name, index: itmIdx }),
       name, description: desc,
       num_systems: numSystems,
     }).select().single();

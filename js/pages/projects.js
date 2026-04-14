@@ -1,7 +1,7 @@
 /**
  * Projects list — one item per project, created at project creation time.
  */
-import { sb, genCode } from '../config.js';
+import { sb, buildCode, nameInitials, nextIndex } from '../config.js';
 import { t } from '../i18n/index.js';
 import { navigate } from '../router.js';
 import { showModal, hideModal, confirmDialog } from '../components/modal.js';
@@ -163,17 +163,30 @@ function openNewProjectModal() {
     }
 
     // 2. Create the single item
+    const itmIdx = await nextIndex('items', { project_id: project.id });
     const { data: item, error: iErr } = await sb.from('items').insert({
       project_id: project.id,
-      item_code: genCode('ITM'),
+      item_code: buildCode('ITM', { projectName: name, index: itmIdx }),
       name: itemName,
       num_systems: numSystems,
     }).select().single();
 
+    if (iErr) {
+      btn.disabled = false; btn.textContent = t('projects.create');
+      toast(t('common.error'), 'error'); return;
+    }
+
+    // 3. Auto-create systems when numSystems > 1
+    if (numSystems > 1) {
+      const sysInserts = Array.from({ length: numSystems }, (_, i) => ({
+        item_id: item.id,
+        system_code: buildCode('SYS', { projectName: name, index: i + 1 }),
+        name: `System ${i + 1}`,
+      }));
+      await sb.from('systems').insert(sysInserts);
+    }
+
     btn.disabled = false; btn.textContent = t('projects.create');
-
-    if (iErr) { toast(t('common.error'), 'error'); return; }
-
     hideModal();
     toast(`Project "${name}" created.`, 'success');
 

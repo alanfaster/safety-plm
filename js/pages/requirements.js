@@ -1,4 +1,4 @@
-import { sb, genCode } from '../config.js';
+import { sb, buildCode, nextIndex } from '../config.js';
 import { t } from '../i18n/index.js';
 import { showModal, hideModal, confirmDialog } from '../components/modal.js';
 import { toast } from '../toast.js';
@@ -226,9 +226,16 @@ function openReqModal({ project, parentType, parentId, projectType, existing }) 
     if (isEdit) {
       ({ error } = await sb.from('requirements').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', r.id));
     } else {
+      const reqIdx = await nextIndex('requirements', { parent_id: parentId });
+      const reqCode = buildCode('REQ', {
+        domain: parentType === 'item' ? 'ITEM' : 'SYS',
+        projectName: project.name,
+        systemName: parentType === 'system' ? (project.item_name || '') : undefined,
+        index: reqIdx,
+      });
       ({ error } = await sb.from('requirements').insert({
         ...payload,
-        req_code: genCode('REQ'),
+        req_code: reqCode,
         parent_type: parentType,
         parent_id: parentId,
         project_id: project.id,

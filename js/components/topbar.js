@@ -17,7 +17,6 @@ export function initTopbar(user) {
     btn.classList.toggle('active', btn.dataset.lang === getLang());
     btn.onclick = () => {
       setLang(btn.dataset.lang);
-      // Re-render the whole app on lang change
       window.dispatchEvent(new Event('hashchange'));
       document.querySelectorAll('[data-lang]').forEach(b =>
         b.classList.toggle('active', b.dataset.lang === getLang())
@@ -25,10 +24,65 @@ export function initTopbar(user) {
     };
   });
 
-  // Sidebar toggle
-  document.getElementById('sidebar-toggle').onclick = () => {
-    document.getElementById('sidebar').classList.toggle('collapsed');
-  };
+  // Sidebar toggle (☰ button)
+  const sidebar = document.getElementById('sidebar');
+  document.getElementById('sidebar-toggle').onclick = () => toggleSidebar(sidebar);
+
+  // Restore saved sidebar width
+  const savedWidth = localStorage.getItem('alm_sidebar_width');
+  if (savedWidth) {
+    sidebar.style.width = savedWidth;
+    document.documentElement.style.setProperty('--sidebar-width', savedWidth);
+  }
+
+  // Sidebar resize handle
+  const handle = document.getElementById('sidebar-handle');
+  if (handle) {
+    let isResizing = false;
+    let didDrag    = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+      startX  = e.clientX;
+      didDrag = false;
+      if (!sidebar.classList.contains('collapsed')) {
+        isResizing  = true;
+        startWidth  = sidebar.getBoundingClientRect().width;
+        document.body.style.cursor     = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+      if (Math.abs(e.clientX - startX) > 3) didDrag = true;
+      const newWidth = Math.max(160, Math.min(500, startWidth + (e.clientX - startX)));
+      sidebar.style.width = newWidth + 'px';
+      document.documentElement.style.setProperty('--sidebar-width', newWidth + 'px');
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor     = '';
+        document.body.style.userSelect = '';
+        if (sidebar.style.width) localStorage.setItem('alm_sidebar_width', sidebar.style.width);
+      }
+      // Click (not drag) = toggle sidebar
+      if (!didDrag && e.target === handle) toggleSidebar(sidebar);
+    });
+  }
+}
+
+function toggleSidebar(sidebar) {
+  const isCollapsed = sidebar.classList.toggle('collapsed');
+  if (!isCollapsed) {
+    // Restore saved width when expanding
+    const savedWidth = localStorage.getItem('alm_sidebar_width');
+    if (savedWidth) sidebar.style.width = savedWidth;
+  }
 }
 
 /**

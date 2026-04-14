@@ -2,7 +2,7 @@
  * Safety ALM — Main Application Controller
  * Bootstraps auth, routing, and page rendering.
  */
-import { sb, genCode } from './config.js';
+import { sb, buildCode, nextIndex } from './config.js';
 import { requireAuth } from './auth.js';
 import { route, navigate, init as initRouter } from './router.js';
 import { t } from './i18n/index.js';
@@ -92,9 +92,12 @@ function openAddSystemModal(project, item, onDone) {
     const btn = document.getElementById('m-create');
     btn.disabled = true;
 
+    const sysIdx = await nextIndex('systems', { item_id: item.id });
+    const sysCode = buildCode('SYS', { projectName: project.name, systemName: name, index: sysIdx });
+
     const { data, error } = await sb.from('systems').insert({
       item_id: item.id,
-      system_code: genCode('SYS'),
+      system_code: sysCode,
       name, description: desc,
     }).select().single();
 
@@ -145,9 +148,9 @@ async function loadItemContext(projectId, itemId, systemId, activePage, activeDo
     activePage: sidebarActivePage,
     activePageId,
     systems,
-    onAddSystem: () => openAddSystemModal(project, item, (newSystem) => {
+    onAddSystem: () => openAddSystemModal(project, item, () => {
       delete state.itemCache[item.id];
-      navigate(`/project/${projectId}/item/${itemId}/system/${newSystem.id}/domain/system/vcycle/item_definition`);
+      window.dispatchEvent(new Event('hashchange'));
     }),
     onReload: () => {
       delete state.itemCache[itemId];
