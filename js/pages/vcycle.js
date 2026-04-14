@@ -8,10 +8,16 @@ import { t } from '../i18n/index.js';
 import { toast } from '../toast.js';
 import { renderRequirements }   from './requirements.js';
 import { renderItemDefinition } from './item-definition.js';
+import { renderArchitecture }   from './architecture.js';
 
 export async function renderVcycle(container, { project, item, system, phase, domain = 'default', pageId = null }) {
   if (phase === 'item_definition') {
     await renderItemDefinition(container, { project, item, system, domain, pageId });
+    return;
+  }
+
+  if (phase === 'architecture' && (domain === 'system' || domain === 'default')) {
+    await renderArchitecture(container, { project, item, system, domain, pageId });
     return;
   }
 
