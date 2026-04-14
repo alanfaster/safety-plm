@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Safety ALM</title>
+  <link rel="stylesheet" href="css/main.css"/>
+</head>
+<body>
+
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <div class="topbar-left">
+      <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">☰</button>
+      <span class="app-title">Safety ALM</span>
+      <nav class="breadcrumb" id="breadcrumb"></nav>
+    </div>
+    <div class="topbar-right">
+      <div class="lang-switcher" id="lang-switcher">
+        <button class="topbar-btn active" data-lang="en">EN</button>
+        <button class="topbar-btn" data-lang="es">ES</button>
+      </div>
+      <div class="user-info" id="user-info">
+        <span class="user-avatar" id="user-avatar">U</span>
+        <span class="user-email" id="user-email"></span>
+      </div>
+      <button class="topbar-btn icon-btn" id="btn-settings" title="Settings">⚙</button>
+      <button class="topbar-btn" id="btn-logout">Sign out</button>
+    </div>
+  </header>
+
+  <!-- LAYOUT -->
+  <div id="layout">
+
+    <!-- SIDEBAR -->
+    <nav id="sidebar">
+      <div id="sidebar-content"></div>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main id="content">
+      <div class="content-loading" id="content-loading">
+        <div class="spinner"></div>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- MODAL OVERLAY -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <h3 id="modal-title"></h3>
+        <button class="modal-close" id="modal-close">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-footer" id="modal-footer"></div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
