@@ -1240,3 +1240,186 @@ input, select, textarea { font-family: var(--font); }
   width: 100%;
   margin-bottom: 4px;
 }
+
+/* ============================================================
+   Function type badge (item-definition + FHA)
+   ============================================================ */
+
+.fun-type-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #6554C020;
+  color: #6554C0;
+  vertical-align: middle;
+}
+
+.fuf-input-type {
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* ============================================================
+   Project Settings — Function Types tab
+   ============================================================ */
+
+.funtype-row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: var(--color-surface);
+}
+
+.funtype-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.funtype-fcs {
+  padding-left: 4px;
+}
+
+.fc-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.fc-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  min-height: 24px;
+}
+
+.fc-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 2px 8px 2px 10px;
+  font-size: var(--text-sm);
+}
+
+.fc-item .btn-del-fc {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.fc-item .btn-del-fc:hover { color: var(--color-danger); }
+
+.fc-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+/* ============================================================
+   FHA page — Function section
+   ============================================================ */
+
+.fha-fun-wrap {
+  border-left: 2px solid var(--color-border);
+  margin-left: 24px;
+  margin-bottom: 2px;
+}
+
+.fha-fun-hdr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 4px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+}
+
+.fha-fun-indent {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+  white-space: pre;
+}
+
+.fha-fun-icon {
+  font-size: 13px;
+  color: var(--color-primary);
+}
+
+.fha-fun-code {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.fha-fun-name {
+  font-size: var(--text-sm);
+  flex: 1;
+}
+
+/* ============================================================
+   HAZOP panel
+   ============================================================ */
+
+.hazop-panel {
+  margin: 0 8px 8px 40px;
+  padding: 12px 16px;
+  border: 1px solid #6554C040;
+  border-radius: var(--radius-md);
+  background: #6554C008;
+}
+
+.hazop-panel-hdr {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.hazop-panel-title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: #6554C0;
+}
+
+.hazop-panel-hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.hazop-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.hazop-check-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.hazop-panel-actions {
+  display: flex;
+  gap: 8px;
+}

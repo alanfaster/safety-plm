@@ -82,3 +82,33 @@ export function effectivePHAFields(projectConfig) {
   const overrides = projectConfig?.config?.pha_fields || {};
   return DEFAULT_PHA_FIELDS.map(f => ({ ...f, ...(overrides[f.key] || {}) }));
 }
+
+/**
+ * Default FHA fields per ARP4761.
+ * Stored in hazards.data JSONB, analysis_type='FHA'.
+ */
+export const DEFAULT_FHA_FIELDS = [
+  { key: 'failure_condition', label: 'Failure Condition',    type: 'text',         required: true,  visible: true  },
+  { key: 'phase_of_op',       label: 'Phase of Operation',   type: 'select',       required: false, visible: true,
+    options: ['—','Ground','Taxi','Takeoff','Initial Climb','En Route / Cruise','Descent','Approach','Landing','All Phases'] },
+  { key: 'effect_local',      label: 'Local Effect',         type: 'text',         required: false, visible: true  },
+  { key: 'effect_system',     label: 'System Effect',        type: 'text',         required: false, visible: true  },
+  { key: 'effect_aircraft',   label: 'Aircraft Effect',      type: 'text',         required: false, visible: false },
+  { key: 'classification',    label: 'Classification',       type: 'badge_select', required: true,  visible: true,
+    options: ['—','Catastrophic','Hazardous','Major','Minor','No Safety Effect'],
+    colors:  { Catastrophic: '#BF2600', Hazardous: '#FF8B00', Major: '#FFAB00', Minor: '#0065FF', 'No Safety Effect': '#00875A' } },
+  { key: 'probability',       label: 'Probability',          type: 'select',       required: false, visible: true,
+    options: ['—','Probable (> 10⁻⁵)','Remote (10⁻⁵ – 10⁻⁷)','Extremely Remote (10⁻⁷ – 10⁻⁹)','Extremely Improbable (< 10⁻⁹)'] },
+  { key: 'dal',               label: 'DAL',                  type: 'badge_select', required: false, visible: true,
+    options: ['—','DAL-A','DAL-B','DAL-C','DAL-D','DAL-E'],
+    colors:  { 'DAL-A':'#BF2600','DAL-B':'#FF8B00','DAL-C':'#FFAB00','DAL-D':'#0065FF','DAL-E':'#00875A' } },
+  { key: 'mitigation_avoid',  label: 'Mitigation/Avoidance', type: 'textarea',     required: false, visible: true  },
+  { key: 'safety_measures',   label: 'Safety Measures',      type: 'textarea',     required: false, visible: true  },
+  { key: 'requirements',      label: 'Requirements',         type: 'text',         required: false, visible: true  },
+  { key: 'remarks',           label: 'Remarks',              type: 'textarea',     required: false, visible: false },
+];
+
+export function effectiveFHAFields(projectConfig) {
+  const overrides = projectConfig?.config?.fha_fields || {};
+  return DEFAULT_FHA_FIELDS.map(f => ({ ...f, ...(overrides[f.key] || {}) }));
+}

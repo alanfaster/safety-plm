@@ -263,12 +263,12 @@ function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId,
       domain: domain.key, icon: domain.icon,
       phases: domain.phases,
       getPath: (ph) => `${base}/domain/${domain.key}/vcycle/${ph}`,
-      activePage, activePageId, activeDomainPrefix: `domain:${domain.key}:`,
+      activePage, activePageId, activeDomainPrefix: `sys:${s.id}:domain:${domain.key}:`,
       phaseName, phaseHidden, subPages,
       parentType: 'system', parentId: s.id,
     });
   }
-  body += buildSafetyGroup({ groupKey: `sys-${s.id}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
+  body += buildSafetyGroup({ groupKey: `sys-${s.id}-safety`, safetyItems, activePage, routePrefix: `${base}/safety`, sysId: s.id });
 
   return `
     <div class="sb-sys-block ${open ? 'open' : 'closed'}" data-sys-block="${blockKey}">
@@ -359,8 +359,9 @@ function buildDomainGroup({ groupKey, domain, icon, phases, getPath, activePage,
     </div>`;
 }
 
-function buildSafetyGroup({ groupKey, safetyItems, activePage, routePrefix }) {
-  const anyActive = safetyItems.some(k => activePage === k);
+function buildSafetyGroup({ groupKey, safetyItems, activePage, routePrefix, sysId = null }) {
+  const pfx = sysId ? `sys:${sysId}:` : '';
+  const anyActive = safetyItems.some(k => activePage === `${pfx}${k}`);
   const open = anyActive ? true : isOpen(groupKey, false);
   return `
     <div class="sb-group ${open ? 'open' : 'closed'}" data-group="${groupKey}">
@@ -374,7 +375,7 @@ function buildSafetyGroup({ groupKey, safetyItems, activePage, routePrefix }) {
       <div class="sb-group-body">
         ${safetyItems.map(key => `
           <div class="sb-phase-row">
-            <button class="sb-item ${activePage === key ? 'active' : ''}" data-nav="${routePrefix}/${key}">
+            <button class="sb-item ${activePage === `${pfx}${key}` ? 'active' : ''}" data-nav="${routePrefix}/${key}">
               <span class="sb-item-icon">△</span>
               <span class="sb-item-label">${t(`safety.${key}`)}</span>
             </button>

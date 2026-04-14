@@ -56,6 +56,7 @@ let _state = {
   features: [], useCases: [], functions: [],
   selFeatId: null, selUCId: null,
   doc: null,
+  functionTypes: [],   // [{id, name, failure_conditions:[]}] from project_config
 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -89,8 +90,8 @@ export async function renderItemDefinition(container, { project, item, system, d
     doc: null,
   };
 
-  // Load doc (description) and features in parallel
-  const [docResult, featResult] = await Promise.all([
+  // Load doc, features, and project config in parallel
+  const [docResult, featResult, pcResult] = await Promise.all([
     loadDoc(parentType, parentId, domain, pageId, project.id),
     sb.from('features')
       .select('*')
@@ -99,10 +100,12 @@ export async function renderItemDefinition(container, { project, item, system, d
       .eq('domain', domain)
       .order('sort_order')
       .order('created_at'),
+    sb.from('project_config').select('config').eq('project_id', project.id).maybeSingle(),
   ]);
 
-  _state.doc      = docResult;
-  _state.features = featResult.data || [];
+  _state.doc           = docResult;
+  _state.features      = featResult.data || [];
+  _state.functionTypes = pcResult?.data?.config?.function_types || [];
 
   const status    = _state.doc?.status || 'draft';
   const textContent = _state.doc?.content?.text || '';
@@ -270,13 +273,19 @@ function fufRow(type, item, idx, total, selected) {
   const upBtn   = idx > 0         ? `<button class="fuf-act fuf-up"  data-id="${item.id}" data-type="${type}" title="Move up">▲</button>` : '';
   const dnBtn   = idx < total - 1 ? `<button class="fuf-act fuf-dn"  data-id="${item.id}" data-type="${type}" title="Move down">▼</button>` : '';
 
+  // Function type badge
+  let ftBadge = '';
+  if (type === 'fun' && item.function_type) {
+    ftBadge = `<span class="fun-type-badge">${escHtml(item.function_type)}</span>`;
+  }
+
   return `
     <div class="fuf-row ${selected ? 'selected' : ''}" data-id="${item.id}" data-type="${type}">
       <div class="fuf-row-main">
         <span class="fuf-icon ${type}-icon">${icon}</span>
         <div class="fuf-row-text">
           <span class="fuf-code">${escHtml(code)}</span>
-          <span class="fuf-name">${escHtml(item.name)}</span>
+          <span class="fuf-name">${escHtml(item.name)}</span>${ftBadge}
           ${item.description ? `<span class="fuf-desc">${escHtml(item.description)}</span>` : ''}
         </div>
       </div>
@@ -491,9 +500,24 @@ function openInlineEdit(type, id) {
   if (!item) return;
 
   const mainEl = row.querySelector('.fuf-row-main');
+
+  // Build function type selector (only for functions)
+  let ftSelect = '';
+  if (type === 'fun' && _state.functionTypes.length) {
+    const opts = _state.functionTypes.map(ft =>
+      `<option value="${escHtml(ft.name)}" ${item.function_type === ft.name ? 'selected' : ''}>${escHtml(ft.name)}</option>`
+    ).join('');
+    ftSelect = `
+      <select class="fuf-input fuf-input-type" id="fuf-edit-type">
+        <option value="">— Function Type —</option>
+        ${opts}
+      </select>`;
+  }
+
   mainEl.innerHTML = `
     <div class="fuf-edit-form">
       <input  class="fuf-input fuf-input-name" id="fuf-edit-name" value="${escHtml(item.name)}" placeholder="Name *" autocomplete="off"/>
+      ${ftSelect}
       <textarea class="fuf-input fuf-input-desc" id="fuf-edit-desc" rows="2" placeholder="Description (optional)">${escHtml(item.description || '')}</textarea>
       <div class="fuf-edit-btns">
         <button class="btn btn-primary btn-sm" id="fuf-save">✓ Save</button>
@@ -509,13 +533,18 @@ function openInlineEdit(type, id) {
     const name = nameInput.value.trim();
     if (!name) { nameInput.focus(); return; }
     const description = row.querySelector('#fuf-edit-desc').value.trim();
+    const ftEl = row.querySelector('#fuf-edit-type');
+    const function_type = ftEl ? ftEl.value || null : undefined;
 
     const table = type === 'feat' ? 'features' : type === 'uc' ? 'use_cases' : 'functions';
-    const { error } = await sb.from(table).update({ name, description, updated_at: new Date().toISOString() }).eq('id', id);
+    const patch = { name, description, updated_at: new Date().toISOString() };
+    if (function_type !== undefined) patch.function_type = function_type;
+
+    const { error } = await sb.from(table).update(patch).eq('id', id);
     if (error) { toast(t('common.error'), 'error'); return; }
 
     // Update local state
-    Object.assign(item, { name, description });
+    Object.assign(item, { name, description, ...(function_type !== undefined ? { function_type } : {}) });
     toast('Saved.', 'success');
 
     if (type === 'feat') refreshFeatCol();

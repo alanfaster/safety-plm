@@ -17,6 +17,7 @@ import { renderVcycle }                from './pages/vcycle.js';
 import { renderHara }                  from './pages/safety/hara.js';
 import { renderFmea }                  from './pages/safety/fmea.js';
 import { renderPHA }                   from './pages/safety/pha.js';
+import { renderFHA }                   from './pages/safety/fha.js';
 import { renderSafetyGeneric }         from './pages/safety/generic.js';
 import { renderProjectSettings }       from './pages/project-settings.js';
 
@@ -134,9 +135,16 @@ async function loadItemContext(projectId, itemId, systemId, activePage, activeDo
 
   setBreadcrumb(crumbs);
 
-  // Build the active page key for sidebar highlighting
+  // Build the active page key for sidebar highlighting.
+  // When inside a system, prefix with sys:{id}: so only that system's items highlight.
   let sidebarActivePage = activePage;
-  if (activeDomain) sidebarActivePage = `domain:${activeDomain}:${activePage}`;
+  if (system) {
+    sidebarActivePage = activeDomain
+      ? `sys:${system.id}:domain:${activeDomain}:${activePage}`
+      : `sys:${system.id}:${activePage}`;
+  } else if (activeDomain) {
+    sidebarActivePage = `domain:${activeDomain}:${activePage}`;
+  }
 
   await renderSidebar({
     view: system ? 'system' : 'item',
@@ -280,6 +288,8 @@ async function renderSafetyPage(container, ctx, parentType, parentId, analysisTy
     await renderFmea(container, { ...ctx, parentType, parentId });
   } else if (analysisType === 'PHL_PHA') {
     await renderPHA(container, { ...ctx, parentType, parentId });
+  } else if (analysisType === 'FHA') {
+    await renderFHA(container, { ...ctx, parentType, parentId });
   } else {
     await renderSafetyGeneric(container, { ...ctx, parentType, parentId, analysisType });
   }
