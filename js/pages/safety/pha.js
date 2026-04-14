@@ -1,21 +1,32 @@
 /**
- * PHL / PHA — Preliminary Hazard List / Preliminary Hazard Analysis (ARP4761)
- * Linked to Use Cases; configurable fields per project via project_config.
+ * PHL / PHA — Preliminary Hazard List / Analysis (ARP4761)
+ *
+ * Layout: structured Feature → Use Case breakdown.
+ * Each UC shows its hazards inline; "+ Add" opens an inline form per UC.
+ * Hazards not linked to any UC appear in a separate section at the bottom.
  */
 import { sb, effectivePHAFields, buildCode, nextIndex } from '../../config.js';
 import { getFeaturesTree } from '../item-definition.js';
+import { ICONS } from '../item-definition.js';
 import { t } from '../../i18n/index.js';
 import { confirmDialog } from '../../components/modal.js';
 import { toast } from '../../toast.js';
+import { navigate } from '../../router.js';
+
+// ── Public entry point ────────────────────────────────────────────────────────
 
 export async function renderPHA(container, ctx) {
   const { project, item, system, parentType, parentId } = ctx;
 
   container.innerHTML = '<div class="content-loading"><div class="spinner"></div></div>';
 
-  // Load project config + hazards + features tree in parallel
+  // Determine domain: for item-level, features live under domain='system';
+  // for system-level, they also live under domain='system'.
+  const domain = 'system';
+
+  // Parallel load: project config, hazards, feature/UC tree
   const [
-    { data: pcRows },
+    { data: pcRow },
     { data: hazards },
     tree,
   ] = await Promise.all([
@@ -25,226 +36,336 @@ export async function renderPHA(container, ctx) {
       .eq('parent_type', parentType)
       .eq('parent_id', parentId)
       .order('sort_order'),
-    getFeaturesTree(parentType, parentId, 'system'),
+    getFeaturesTree(parentType, parentId, domain),
   ]);
 
-  const projectConfig = pcRows || null;
-  const fields = effectivePHAFields(projectConfig);
-  const visibleFields = fields.filter(f => f.key !== 'use_case_id' && f.visible);
-
-  // Build UC options list for selector
-  const ucOptions = buildUCOptions(tree);
-
+  const fields       = effectivePHAFields(pcRow || null);
+  const allHazards   = hazards || [];
   const settingsPath = `/project/${project.id}/settings`;
+
+  // Scope for inline re-renders
+  const scope = { container, project, item, system, parentType, parentId, fields, tree, allHazards };
+
+  renderPage(scope, settingsPath);
+}
+
+// ── Full page render ──────────────────────────────────────────────────────────
+
+function renderPage(scope, settingsPath) {
+  const { container, project, fields, tree, allHazards } = scope;
+
+  // Index hazards by use_case_id
+  const hazsByUC  = {};
+  const hazOrphan = [];
+  allHazards.forEach(h => {
+    if (h.use_case_id) {
+      (hazsByUC[h.use_case_id] = hazsByUC[h.use_case_id] || []).push(h);
+    } else {
+      hazOrphan.push(h);
+    }
+  });
+
+  const totalHaz = allHazards.length;
+  const defTitle = scope.system ? scope.system.name : (scope.item?.name || 'Item');
 
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-top">
         <div>
           <h1>PHL / PHA</h1>
-          <p class="page-subtitle">Preliminary Hazard List &amp; Analysis · ARP4761</p>
+          <p class="page-subtitle">Preliminary Hazard Analysis · ARP4761 · ${escHtml(defTitle)}</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn btn-secondary btn-sm" id="btn-pha-settings" title="Configure visible fields">⚙ Configure</button>
-          <button class="btn btn-primary" id="btn-add-hazard">＋ Add Hazard</button>
+          <button class="btn btn-secondary btn-sm" id="btn-pha-settings" title="Configure PHA fields">⚙ Configure</button>
+          <button class="btn btn-primary" id="btn-add-orphan-haz">＋ Add Hazard</button>
         </div>
       </div>
+      ${totalHaz > 0 ? renderSummaryBar(allHazards, fields) : ''}
     </div>
-    <div class="page-body">
-      <div id="pha-table-wrap">
-        ${renderHazardTable(hazards || [], visibleFields, ucOptions)}
+    <div class="page-body pha-body" id="pha-body">
+      ${tree.length === 0
+        ? renderNoFeaturesHint(project, scope)
+        : tree.map(feat => renderFeatureSection(feat, hazsByUC, fields, scope)).join('')
+      }
+      ${renderOrphanSection(hazOrphan, fields, scope)}
+    </div>
+  `;
+
+  document.getElementById('btn-pha-settings').onclick = () => navigate(`#${settingsPath}`);
+  document.getElementById('btn-add-orphan-haz').onclick = () => {
+    const orphanWrap = container.querySelector('#pha-orphan-form');
+    if (orphanWrap) toggleInlineForm(orphanWrap, null, null, scope);
+  };
+
+  wireSection(container, scope);
+}
+
+// ── Summary bar ───────────────────────────────────────────────────────────────
+
+function renderSummaryBar(hazards, fields) {
+  const sevField = fields.find(f => f.key === 'severity');
+  if (!sevField?.colors) return '';
+  const counts = {};
+  hazards.forEach(h => {
+    const sev = h.data?.severity;
+    if (sev && sev !== '—') counts[sev] = (counts[sev] || 0) + 1;
+  });
+  const pills = Object.entries(counts).map(([sev, n]) => {
+    const c = sevField.colors[sev] || '#6B778C';
+    return `<span class="pha-summary-pill" style="background:${c}20;color:${c}">${escHtml(sev)} <strong>${n}</strong></span>`;
+  }).join('');
+  return pills ? `<div class="pha-summary-bar">${pills}</div>` : '';
+}
+
+// ── Feature section ───────────────────────────────────────────────────────────
+
+function renderFeatureSection(feat, hazsByUC, fields, scope) {
+  const ucRows  = feat.use_cases || [];
+  const featHazCount = ucRows.reduce((s, uc) => s + (hazsByUC[uc.id]?.length || 0), 0);
+
+  return `
+    <div class="pha-feat-section" data-feat-id="${feat.id}">
+      <div class="pha-feat-header">
+        <span class="pha-feat-icon">${ICONS.feat}</span>
+        <span class="pha-feat-code">${escHtml(feat.feat_code)}</span>
+        <span class="pha-feat-name">${escHtml(feat.name)}</span>
+        ${featHazCount > 0
+          ? `<span class="pha-haz-count" title="${featHazCount} hazard(s)">${featHazCount} △</span>`
+          : ''}
       </div>
-      <div id="pha-form-wrap" style="display:none"></div>
+      <div class="pha-feat-body">
+        ${ucRows.length === 0
+          ? `<div class="pha-no-uc">No use cases defined for this feature yet.</div>`
+          : ucRows.map(uc => renderUCRow(uc, hazsByUC[uc.id] || [], fields, scope)).join('')
+        }
+      </div>
     </div>
   `;
-
-  // Wire settings button
-  document.getElementById('btn-pha-settings').onclick = () => {
-    window.location.hash = `#${settingsPath}`;
-  };
-
-  // Wire add hazard button
-  document.getElementById('btn-add-hazard').onclick = () => {
-    showHazardForm(container, null, { project, item, system, parentType, parentId, fields, ucOptions }, () => reload());
-  };
-
-  // Wire edit / delete on table rows
-  wireTable(container, hazards || [], { project, item, system, parentType, parentId, fields, ucOptions }, () => reload());
-
-  async function reload() {
-    const { data: updated } = await sb.from('hazards')
-      .select('*')
-      .eq('parent_type', parentType)
-      .eq('parent_id', parentId)
-      .order('sort_order');
-    document.getElementById('pha-table-wrap').innerHTML = renderHazardTable(updated || [], visibleFields, ucOptions);
-    document.getElementById('pha-form-wrap').style.display = 'none';
-    document.getElementById('pha-form-wrap').innerHTML = '';
-    wireTable(container, updated || [], { project, item, system, parentType, parentId, fields, ucOptions }, () => reload());
-  }
 }
 
-// ── Table ─────────────────────────────────────────────────────────────────────
+// ── UC row ────────────────────────────────────────────────────────────────────
 
-function renderHazardTable(hazards, visibleFields, ucOptions) {
-  if (!hazards.length) {
-    return `<div class="empty-state" style="padding:40px 0">
-      <div class="empty-state-icon">△</div>
-      <h3>No hazards yet</h3>
-      <p>Click "＋ Add Hazard" to record the first hazard or failure condition.</p>
-    </div>`;
-  }
-
-  const ucMap = buildUCMap(ucOptions);
-
+function renderUCRow(uc, ucHazards, fields, scope) {
   return `
-    <div class="pha-table-container">
-      <table class="pha-table">
-        <thead>
-          <tr>
-            <th>Code</th>
-            <th>Use Case</th>
-            ${visibleFields.map(f => `<th>${escHtml(f.label)}</th>`).join('')}
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${hazards.map(h => renderHazardRow(h, visibleFields, ucMap)).join('')}
-        </tbody>
-      </table>
+    <div class="pha-uc-row" data-uc-id="${uc.id}">
+      <div class="pha-uc-header">
+        <span class="pha-uc-icon">${ICONS.uc}</span>
+        <span class="pha-uc-code">${escHtml(uc.uc_code)}</span>
+        <span class="pha-uc-name">${escHtml(uc.name)}</span>
+        <span class="pha-uc-spacer"></span>
+        ${ucHazards.map(h => renderMiniSeverityBadge(h, fields)).join('')}
+        <button class="btn btn-ghost btn-sm btn-add-uc-haz" data-uc-id="${uc.id}" data-uc-label="${escHtml(uc.uc_code + ' · ' + uc.name)}">
+          ＋ Add Hazard
+        </button>
+      </div>
+      ${ucHazards.map(h => renderHazardRow(h, fields, scope)).join('')}
+      <div class="pha-inline-form" id="pha-form-uc-${uc.id}" style="display:none"></div>
     </div>
   `;
 }
 
-function renderHazardRow(h, visibleFields, ucMap) {
+function renderMiniSeverityBadge(haz, fields) {
+  const sevField = fields.find(f => f.key === 'severity');
+  const sev = haz.data?.severity;
+  if (!sev || sev === '—' || !sevField?.colors) return '';
+  const c = sevField.colors[sev] || '#6B778C';
+  return `<span class="pha-mini-badge" style="background:${c}20;color:${c}" title="${escHtml(haz.haz_code + ': ' + sev)}">${escHtml(sev.split(' ')[0])}</span>`;
+}
+
+// ── Hazard row ────────────────────────────────────────────────────────────────
+
+function renderHazardRow(h, fields, scope) {
   const d = h.data || {};
-  const statusColors = { open: '#FF8B00', in_progress: '#0065FF', closed: '#00875A', 'n/a': '#6B778C' };
-  const sc = statusColors[h.status] || '#6B778C';
-  const ucLabel = h.use_case_id ? (ucMap[h.use_case_id] || h.use_case_id) : '—';
+  const sevField = fields.find(f => f.key === 'severity');
+  const sev = d.severity && d.severity !== '—' ? d.severity : null;
+  const sevColor = sev && sevField?.colors ? (sevField.colors[sev] || '#6B778C') : '#6B778C';
+
+  const hazDesc = d.hazard_desc || '—';
+  const phase   = d.phase_of_op && d.phase_of_op !== '—' ? d.phase_of_op : null;
+  const mit     = d.mitigation || null;
+
+  const statusColors = { open: '#FF8B00', in_progress: '#0065FF', closed: '#00875A', 'n/a': '#97A0AF' };
+  const sc = statusColors[h.status] || '#97A0AF';
 
   return `
-    <tr data-haz-id="${h.id}">
-      <td><span class="pha-code">${escHtml(h.haz_code)}</span></td>
-      <td class="pha-uc-cell">${escHtml(ucLabel)}</td>
-      ${visibleFields.map(f => `<td>${renderFieldValue(f, d[f.key])}</td>`).join('')}
-      <td><span class="pha-status-badge" style="background:${sc}20;color:${sc}">${escHtml(h.status)}</span></td>
-      <td class="pha-actions-cell">
+    <div class="pha-haz-row" data-haz-id="${h.id}">
+      <div class="pha-haz-main">
+        <span class="pha-code">${escHtml(h.haz_code)}</span>
+        ${sev ? `<span class="pha-badge" style="background:${sevColor}20;color:${sevColor}">${escHtml(sev)}</span>` : ''}
+        <span class="pha-haz-desc">${escHtml(hazDesc)}</span>
+        ${phase ? `<span class="pha-haz-meta">${escHtml(phase)}</span>` : ''}
+      </div>
+      ${mit ? `<div class="pha-haz-mit">↳ ${escHtml(mit)}</div>` : ''}
+      <div class="pha-haz-actions">
+        <span class="pha-status-badge" style="background:${sc}20;color:${sc}">${escHtml(h.status)}</span>
         <button class="btn-icon btn-edit-haz" data-id="${h.id}" title="Edit">✎</button>
         <button class="btn-icon btn-del-haz"  data-id="${h.id}" title="Delete">✕</button>
-      </td>
-    </tr>
+      </div>
+      <div class="pha-inline-form" id="pha-edit-${h.id}" style="display:none"></div>
+    </div>
   `;
 }
 
-function renderFieldValue(field, val) {
-  if (!val || val === '—') return '<span style="color:var(--color-text-muted)">—</span>';
-  if (field.type === 'badge_select' && field.colors && field.colors[val]) {
-    const c = field.colors[val];
-    return `<span class="pha-badge" style="background:${c}20;color:${c}">${escHtml(val)}</span>`;
-  }
-  return escHtml(String(val));
+// ── Orphan section (hazards without UC) ───────────────────────────────────────
+
+function renderOrphanSection(orphans, fields, scope) {
+  return `
+    <div class="pha-feat-section pha-orphan-section" id="pha-orphan-section">
+      <div class="pha-feat-header">
+        <span class="pha-feat-icon">△</span>
+        <span class="pha-feat-name">Hazards (no Use Case)</span>
+        ${orphans.length > 0 ? `<span class="pha-haz-count">${orphans.length} △</span>` : ''}
+      </div>
+      <div class="pha-feat-body" id="pha-orphan-rows">
+        ${orphans.length === 0
+          ? `<div class="pha-no-uc">No standalone hazards. Use "＋ Add Hazard" to add one not linked to a UC.</div>`
+          : orphans.map(h => renderHazardRow(h, fields, scope)).join('')}
+        <div class="pha-inline-form" id="pha-orphan-form" style="display:none"></div>
+      </div>
+    </div>
+  `;
 }
 
-function wireTable(container, hazards, ctx, onReload) {
-  const wrap = container.querySelector('#pha-table-wrap');
-  if (!wrap) return;
+// ── No features hint ──────────────────────────────────────────────────────────
 
-  wrap.querySelectorAll('.btn-edit-haz').forEach(btn => {
+function renderNoFeaturesHint(project, scope) {
+  const { item, system, parentType, parentId } = scope;
+  // Build link back to item definition
+  const defPath = system
+    ? `/project/${project.id}/item/${item.id}/system/${system.id}/domain/system/vcycle/item_definition`
+    : `/project/${project.id}/item/${item.id}/domain/system/vcycle/item_definition`;
+
+  return `
+    <div class="pha-no-features">
+      <div class="pha-no-features-icon">⊙</div>
+      <h3>No Features or Use Cases defined yet</h3>
+      <p>
+        PHL/PHA links hazards to Use Cases. Start by defining Features and Use Cases
+        in the <strong>System Definition</strong> page, then come back here to record hazards.
+      </p>
+      <a class="btn btn-primary" href="#${defPath}">Go to System Definition →</a>
+    </div>
+  `;
+}
+
+// ── Wire events ───────────────────────────────────────────────────────────────
+
+function wireSection(container, scope) {
+  // "+ Add Hazard" buttons on UC rows
+  container.querySelectorAll('.btn-add-uc-haz').forEach(btn => {
     btn.onclick = () => {
-      const h = hazards.find(x => x.id === btn.dataset.id);
-      if (h) showHazardForm(container, h, ctx, onReload);
+      const ucId    = btn.dataset.ucId;
+      const ucLabel = btn.dataset.ucLabel;
+      const formDiv = container.querySelector(`#pha-form-uc-${ucId}`);
+      if (formDiv) toggleInlineForm(formDiv, ucId, ucLabel, scope);
     };
   });
 
-  wrap.querySelectorAll('.btn-del-haz').forEach(btn => {
+  // Edit hazard buttons
+  container.querySelectorAll('.btn-edit-haz').forEach(btn => {
     btn.onclick = () => {
-      confirmDialog('Delete this hazard?', async () => {
+      const haz = scope.allHazards.find(h => h.id === btn.dataset.id);
+      if (!haz) return;
+      const formDiv = container.querySelector(`#pha-edit-${haz.id}`);
+      if (formDiv) toggleInlineForm(formDiv, haz.use_case_id || null, null, scope, haz);
+    };
+  });
+
+  // Delete hazard buttons
+  container.querySelectorAll('.btn-del-haz').forEach(btn => {
+    btn.onclick = () => {
+      const haz = scope.allHazards.find(h => h.id === btn.dataset.id);
+      const label = haz?.haz_code || 'this hazard';
+      confirmDialog(`Delete ${label}?`, async () => {
         const { error } = await sb.from('hazards').delete().eq('id', btn.dataset.id);
         if (error) { toast(t('common.error'), 'error'); return; }
         toast('Hazard deleted.', 'success');
-        onReload();
+        await reloadPHA(scope);
       });
     };
   });
 }
 
-// ── Add / Edit form ───────────────────────────────────────────────────────────
+// ── Inline form ───────────────────────────────────────────────────────────────
 
-function showHazardForm(container, existing, ctx, onReload) {
-  const { project, parentType, parentId, fields, ucOptions } = ctx;
+function toggleInlineForm(formDiv, ucId, ucLabel, scope, existing) {
+  // If already open, close it
+  if (formDiv.style.display !== 'none') {
+    formDiv.style.display = 'none';
+    formDiv.innerHTML = '';
+    return;
+  }
+
+  // Close any other open form
+  scope.container.querySelectorAll('.pha-inline-form').forEach(el => {
+    el.style.display = 'none';
+    el.innerHTML = '';
+  });
+
+  const { fields } = scope;
   const d = existing?.data || {};
+  const visFields = fields.filter(f => f.key !== 'use_case_id' && f.visible);
 
-  const formWrap = container.querySelector('#pha-form-wrap');
-  formWrap.style.display = 'block';
-  formWrap.innerHTML = `
-    <div class="pha-form-panel">
-      <div class="pha-form-header">
-        <h3>${existing ? 'Edit Hazard' : 'New Hazard'}</h3>
-        <button class="btn-icon" id="btn-close-pha-form">✕</button>
-      </div>
-      <div class="pha-form-body">
-        <div class="form-group">
-          <label class="form-label">Use Case</label>
-          <select class="form-input form-select" id="hf-uc">
-            <option value="">— None —</option>
-            ${ucOptions.map(g => `
-              <optgroup label="${escHtml(g.featLabel)}">
-                ${g.ucs.map(u => `<option value="${u.id}" ${existing?.use_case_id === u.id ? 'selected' : ''}>${escHtml(u.label)}</option>`).join('')}
-              </optgroup>`).join('')}
-          </select>
-        </div>
-        ${fields.filter(f => f.key !== 'use_case_id' && f.visible).map(f => renderFormField(f, d[f.key])).join('')}
+  formDiv.style.display = 'block';
+  formDiv.innerHTML = `
+    <div class="pha-inline-form-inner">
+      ${ucLabel ? `<div class="pha-form-uc-label">${ICONS.uc} ${escHtml(ucLabel)}</div>` : ''}
+      <div class="pha-form-grid">
+        ${visFields.map(f => renderFormField(f, d[f.key])).join('')}
         <div class="form-group">
           <label class="form-label">Status</label>
           <select class="form-input form-select" id="hf-status">
-            ${['open','in_progress','closed','n/a'].map(s => `<option value="${s}" ${(existing?.status||'open')===s?'selected':''}>${s}</option>`).join('')}
+            ${['open','in_progress','closed','n/a'].map(s =>
+              `<option value="${s}" ${(existing?.status||'open')===s?'selected':''}>${s}</option>`
+            ).join('')}
           </select>
         </div>
       </div>
       <div class="pha-form-footer">
-        <button class="btn btn-secondary" id="btn-cancel-pha">Cancel</button>
-        <button class="btn btn-primary"   id="btn-save-pha">${existing ? 'Save' : 'Add Hazard'}</button>
+        <button class="btn btn-secondary btn-sm" id="hf-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm"   id="hf-save">${existing ? 'Save changes' : '+ Add Hazard'}</button>
       </div>
     </div>
   `;
 
-  formWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Focus first visible field
+  const firstInput = formDiv.querySelector('input, textarea, select');
+  if (firstInput) firstInput.focus();
 
-  document.getElementById('btn-close-pha-form').onclick = () => {
-    formWrap.style.display = 'none';
-    formWrap.innerHTML = '';
-  };
-  document.getElementById('btn-cancel-pha').onclick = () => {
-    formWrap.style.display = 'none';
-    formWrap.innerHTML = '';
+  formDiv.querySelector('#hf-cancel').onclick = () => {
+    formDiv.style.display = 'none';
+    formDiv.innerHTML = '';
   };
 
-  document.getElementById('btn-save-pha').onclick = async () => {
-    const btn = document.getElementById('btn-save-pha');
+  formDiv.querySelector('#hf-save').onclick = async () => {
+    const btn = formDiv.querySelector('#hf-save');
     btn.disabled = true;
 
-    const ucId = document.getElementById('hf-uc').value || null;
-    const status = document.getElementById('hf-status').value;
-    const data = {};
+    const status = formDiv.querySelector('#hf-status').value;
+    const data   = {};
     for (const f of fields) {
       if (f.key === 'use_case_id') continue;
-      const el = document.getElementById(`hf-${f.key}`);
+      const el = formDiv.querySelector(`#hf-${f.key}`);
       if (el) data[f.key] = el.value || null;
     }
 
     let error;
     if (existing) {
       ({ error } = await sb.from('hazards').update({
-        use_case_id: ucId, status, data, updated_at: new Date().toISOString(),
+        use_case_id: ucId || null,
+        status, data,
+        updated_at: new Date().toISOString(),
       }).eq('id', existing.id));
     } else {
-      const idx = await nextIndex('hazards', { parent_id: parentId });
-      const haz_code = buildCode('HAZ', { projectName: project.name, index: idx });
+      const idx      = await nextIndex('hazards', { parent_id: scope.parentId });
+      const haz_code = buildCode('HAZ', { projectName: scope.project.name, index: idx });
       ({ error } = await sb.from('hazards').insert({
-        haz_code, project_id: project.id,
-        parent_type: parentType, parent_id: parentId,
-        use_case_id: ucId, status, data,
+        haz_code,
+        project_id:  scope.project.id,
+        parent_type: scope.parentType,
+        parent_id:   scope.parentId,
+        use_case_id: ucId || null,
+        status, data,
         sort_order: idx,
       }));
     }
@@ -252,49 +373,52 @@ function showHazardForm(container, existing, ctx, onReload) {
     btn.disabled = false;
     if (error) { toast(t('common.error'), 'error'); return; }
     toast(existing ? 'Hazard updated.' : 'Hazard added.', 'success');
-    onReload();
+    await reloadPHA(scope);
   };
 }
 
+// ── Form field renderer ───────────────────────────────────────────────────────
+
 function renderFormField(field, currentVal) {
-  const id = `hf-${field.key}`;
+  const id  = `hf-${field.key}`;
   const val = currentVal || '';
   let input = '';
 
   if (field.type === 'textarea') {
-    input = `<textarea class="form-input form-textarea" id="${id}" rows="2">${escHtml(val)}</textarea>`;
+    input = `<textarea class="form-input form-textarea" id="${id}" rows="2" placeholder="${escHtml(field.label)}">${escHtml(val)}</textarea>`;
   } else if (field.type === 'select' || field.type === 'badge_select') {
     const opts = (field.options || []).map(o =>
       `<option value="${escHtml(o)}" ${val === o ? 'selected' : ''}>${escHtml(o)}</option>`
     ).join('');
     input = `<select class="form-input form-select" id="${id}">${opts}</select>`;
   } else {
-    input = `<input class="form-input" id="${id}" value="${escHtml(val)}"/>`;
+    input = `<input class="form-input" id="${id}" value="${escHtml(val)}" placeholder="${escHtml(field.label)}"/>`;
   }
 
   return `<div class="form-group">
-    <label class="form-label">${escHtml(field.label)}${field.required ? ' *' : ''}</label>
+    <label class="form-label">${escHtml(field.label)}${field.required ? ' <span style="color:var(--color-error)">*</span>' : ''}</label>
     ${input}
   </div>`;
 }
 
-// ── UC helpers ────────────────────────────────────────────────────────────────
+// ── Reload ────────────────────────────────────────────────────────────────────
 
-function buildUCOptions(tree) {
-  return (tree || []).map(feat => ({
-    featLabel: `${feat.feat_code} · ${feat.name}`,
-    ucs: (feat.use_cases || []).map(uc => ({
-      id: uc.id,
-      label: `${uc.uc_code} · ${uc.name}`,
-    })),
-  })).filter(g => g.ucs.length > 0);
+async function reloadPHA(scope) {
+  const [{ data: hazards }, tree] = await Promise.all([
+    sb.from('hazards')
+      .select('*')
+      .eq('parent_type', scope.parentType)
+      .eq('parent_id', scope.parentId)
+      .order('sort_order'),
+    getFeaturesTree(scope.parentType, scope.parentId, 'system'),
+  ]);
+  scope.allHazards = hazards || [];
+  scope.tree = tree;
+  const settingsPath = `/project/${scope.project.id}/settings`;
+  renderPage(scope, settingsPath);
 }
 
-function buildUCMap(ucOptions) {
-  const map = {};
-  ucOptions.forEach(g => g.ucs.forEach(u => { map[u.id] = u.label; }));
-  return map;
-}
+// ── Util ──────────────────────────────────────────────────────────────────────
 
 function escHtml(str) {
   return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
