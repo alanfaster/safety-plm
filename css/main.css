@@ -82,6 +82,14 @@ input, select, textarea { font-family: var(--font); }
   font-size: var(--text-lg); font-weight: 700;
   color: #fff; letter-spacing: -0.3px; white-space: nowrap;
 }
+.app-version {
+  font-size: 10px; font-weight: 500;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 0.04em;
+  margin-left: -6px;
+  align-self: flex-end;
+  padding-bottom: 3px;
+}
 
 .sidebar-toggle {
   background: transparent; border: none; color: rgba(255,255,255,0.7);

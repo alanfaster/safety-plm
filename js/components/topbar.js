@@ -1,8 +1,13 @@
 import { t, getLang, setLang } from '../i18n/index.js';
 import { signOut } from '../auth.js';
 import { navigate } from '../router.js';
+import { VERSION } from '../version.js';
 
 export function initTopbar(user) {
+  // Version
+  const verEl = document.getElementById('app-version');
+  if (verEl) verEl.textContent = VERSION;
+
   // User info
   const email = user?.email || '';
   document.getElementById('user-email').textContent = email;
