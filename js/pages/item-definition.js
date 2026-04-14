@@ -114,18 +114,26 @@ export async function renderItemDefinition(container, { project, item, system, d
       </div>
 
       <!-- Features / Use Cases / Functions panel -->
-      <div class="card mt-4">
+      <div class="card mt-4" id="fuf-card">
         <div class="card-header">
           <h3>Features · Use Cases · Functions</h3>
-          <span class="text-muted" style="font-size:var(--text-xs)">
-            Select a Feature to see its Use Cases · Select a Use Case to see its Functions
-          </span>
+          <div class="flex items-center gap-2">
+            <span class="text-muted" style="font-size:var(--text-xs)" id="fuf-hint">
+              Select a Feature to see its Use Cases · Select a Use Case to see its Functions
+            </span>
+            <div class="fuf-view-toggle">
+              <button class="fuf-toggle-btn active" id="btn-view-cols" title="Column view">⊞ Columns</button>
+              <button class="fuf-toggle-btn"        id="btn-view-graph" title="Graph view">⬡ Graph</button>
+            </div>
+          </div>
         </div>
-        <div class="idef-fuf-wrap">
-          <div class="idef-fuf-cols" id="fuf-cols">
-            ${buildFeatCol(_state.features, _state.selFeatId)}
-            ${buildUCCol([], _state.selFeatId, _state.selUCId)}
-            ${buildFunCol([], _state.selUCId)}
+        <div id="fuf-panel">
+          <div class="idef-fuf-wrap">
+            <div class="idef-fuf-cols" id="fuf-cols">
+              ${buildFeatCol(_state.features, _state.selFeatId)}
+              ${buildUCCol([], _state.selFeatId, _state.selUCId)}
+              ${buildFunCol([], _state.selUCId)}
+            </div>
           </div>
         </div>
       </div>
@@ -135,6 +143,10 @@ export async function renderItemDefinition(container, { project, item, system, d
 
   // Save description
   document.getElementById('btn-save-doc').onclick = () => saveDoc(project, parentType, parentId, domain, pageId);
+
+  // View toggle
+  document.getElementById('btn-view-cols').onclick  = () => switchView('cols');
+  document.getElementById('btn-view-graph').onclick = () => switchView('graph');
 
   // Wire FUF panel
   wireFUF();
@@ -266,6 +278,7 @@ function wireFUF() {
       _state.useCases  = [];
       _state.functions = [];
       refreshFeatCol();
+      refreshFunCol();          // clear Functions column immediately
       await loadAndRenderUCs(id);
     } else if (type === 'uc') {
       if (_state.selUCId === id) return;
@@ -530,6 +543,90 @@ async function saveDoc(project, parentType, parentId, domain, pageId) {
     _state.doc = data;
   }
 }
+
+// ── View toggle (columns ↔ graph) ─────────────────────────────────────────────
+
+async function switchView(mode) {
+  document.getElementById('btn-view-cols').classList.toggle('active',  mode === 'cols');
+  document.getElementById('btn-view-graph').classList.toggle('active', mode === 'graph');
+
+  const panel = document.getElementById('fuf-panel');
+  const hint  = document.getElementById('fuf-hint');
+
+  if (mode === 'cols') {
+    hint.style.display = '';
+    panel.innerHTML = `
+      <div class="idef-fuf-wrap">
+        <div class="idef-fuf-cols" id="fuf-cols">
+          ${buildFeatCol(_state.features, _state.selFeatId)}
+          ${buildUCCol(_state.useCases, _state.selFeatId, _state.selUCId)}
+          ${buildFunCol(_state.functions, _state.selUCId)}
+        </div>
+      </div>`;
+    wireFUF();
+  } else {
+    hint.style.display = 'none';
+    panel.innerHTML = `<div class="fuf-graph-loading"><div class="spinner"></div></div>`;
+    const tree = await getFeaturesTree(_state.parentType, _state.parentId, _state.domain);
+    panel.innerHTML = buildGraphView(tree);
+  }
+}
+
+function buildGraphView(tree) {
+  if (!tree.length) {
+    return `<div class="fuf-empty" style="padding:40px">No features defined yet. Switch to Column view to add some.</div>`;
+  }
+
+  const rows = tree.map(feat => {
+    const ucNodes = feat.use_cases.map(uc => {
+      const funNodes = uc.functions.map(fn => `
+        <div class="fuf-graph-node fun-node">
+          <div class="fuf-graph-node-inner">
+            <span class="fuf-graph-icon fun-icon">${ICONS.fun}</span>
+            <div class="fuf-graph-node-text">
+              <span class="fuf-graph-code">${escHtml(fn.func_code)}</span>
+              <span class="fuf-graph-name">${escHtml(fn.name)}</span>
+              ${fn.description ? `<span class="fuf-graph-desc">${escHtml(fn.description)}</span>` : ''}
+            </div>
+          </div>
+        </div>`).join('');
+
+      return `
+        <div class="fuf-graph-branch">
+          <div class="fuf-graph-node uc-node">
+            <div class="fuf-graph-node-inner">
+              <span class="fuf-graph-icon uc-icon">${ICONS.uc}</span>
+              <div class="fuf-graph-node-text">
+                <span class="fuf-graph-code">${escHtml(uc.uc_code)}</span>
+                <span class="fuf-graph-name">${escHtml(uc.name)}</span>
+                ${uc.description ? `<span class="fuf-graph-desc">${escHtml(uc.description)}</span>` : ''}
+              </div>
+            </div>
+          </div>
+          ${funNodes ? `<div class="fuf-graph-children fuf-graph-fun-children">${funNodes}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="fuf-graph-feat-block">
+        <div class="fuf-graph-node feat-node">
+          <div class="fuf-graph-node-inner">
+            <span class="fuf-graph-icon feat-icon">${ICONS.feat}</span>
+            <div class="fuf-graph-node-text">
+              <span class="fuf-graph-code">${escHtml(feat.feat_code)}</span>
+              <span class="fuf-graph-name">${escHtml(feat.name)}</span>
+              ${feat.description ? `<span class="fuf-graph-desc">${escHtml(feat.description)}</span>` : ''}
+            </div>
+          </div>
+        </div>
+        ${ucNodes ? `<div class="fuf-graph-children fuf-graph-uc-children">${ucNodes}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  return `<div class="fuf-graph-wrap">${rows}</div>`;
+}
+
+// ── Doc (description) helpers ────────────────────────────────────────────────
 
 function escHtml(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');

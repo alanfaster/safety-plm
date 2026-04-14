@@ -799,6 +799,95 @@ input, select, textarea { font-family: var(--font); }
 .fuf-input-desc { resize: none; font-size: 12px; }
 .fuf-edit-btns  { display: flex; gap: 6px; }
 
+/* View toggle buttons (Columns / Graph) */
+.fuf-view-toggle { display: flex; gap: 2px; flex-shrink: 0; }
+.fuf-toggle-btn {
+  padding: 4px 10px; font-size: var(--text-xs); font-weight: 500;
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+  background: var(--color-surface); color: var(--color-text-muted);
+  cursor: pointer; transition: all 0.12s;
+}
+.fuf-toggle-btn:hover  { background: var(--color-bg); color: var(--color-text); }
+.fuf-toggle-btn.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+
+/* Graph view */
+.fuf-graph-loading { display: flex; justify-content: center; padding: 40px; }
+
+.fuf-graph-wrap {
+  padding: 24px 20px;
+  display: flex; flex-direction: column; gap: 24px;
+  overflow-x: auto;
+}
+
+.fuf-graph-feat-block {
+  display: flex; flex-direction: row; align-items: flex-start; gap: 0;
+}
+
+/* Connector lines via pseudo-elements */
+.fuf-graph-children {
+  display: flex; flex-direction: column; gap: 10px;
+  padding-left: 20px;
+  border-left: 2px solid var(--color-border);
+  margin-left: 12px;
+  position: relative;
+}
+.fuf-graph-children::before {
+  content: '';
+  position: absolute; left: -1px; top: 0;
+  width: 2px; height: 100%;
+}
+
+.fuf-graph-branch {
+  display: flex; flex-direction: row; align-items: flex-start; gap: 0;
+  position: relative;
+}
+.fuf-graph-branch::before {
+  content: '';
+  position: absolute; left: -20px; top: 18px;
+  width: 20px; height: 2px;
+  background: var(--color-border);
+}
+
+.fuf-graph-fun-children {
+  border-left-color: #b3d4f5;
+}
+.fuf-graph-fun-children .fuf-graph-branch::before {
+  background: #b3d4f5;
+}
+.fuf-graph-uc-children {
+  border-left-color: #fde68a;
+}
+.fuf-graph-uc-children .fuf-graph-branch::before {
+  background: #fde68a;
+}
+
+/* Node card */
+.fuf-graph-node {
+  flex-shrink: 0;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  min-width: 180px; max-width: 240px;
+  transition: box-shadow 0.12s;
+}
+.fuf-graph-node:hover { box-shadow: var(--shadow); }
+
+.fuf-graph-node-inner {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 12px;
+}
+
+.feat-node { border-top: 3px solid #f5a623; }
+.uc-node   { border-top: 3px solid var(--color-primary); }
+.fun-node  { border-top: 3px solid var(--color-success); }
+
+.fuf-graph-icon  { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+.fuf-graph-node-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fuf-graph-code  { font-family: var(--font-mono); font-size: 9px; color: var(--color-text-muted); }
+.fuf-graph-name  { font-size: var(--text-sm); font-weight: 600; color: var(--color-text); word-break: break-word; }
+.fuf-graph-desc  { font-size: 11px; color: var(--color-text-muted); word-break: break-word; }
+
 /* ── Status dot ── */
 .status-dot {
   width: 8px; height: 8px; border-radius: 50%; display: inline-block;
