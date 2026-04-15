@@ -1870,37 +1870,126 @@ async function addComp(type) {
 
 async function deleteComp(id) {
   const c = compById(id); if (!c) return;
-  captureUndo();
 
+  // Collect all component IDs affected (self + children for groups)
+  const affectedIds = new Set([id]);
   if (c.comp_type === 'Group') {
-    const linkedSys = c.data?.system_id ? _s.projectSystems.find(s=>s.id===c.data.system_id) : null;
-    const sysWarning = linkedSys
-      ? `\n\nLinked system "${linkedSys.system_code} — ${linkedSys.name}" will be unlinked but NOT deleted — it remains accessible in the Systems section.`
-      : '';
-    const childCount = _s.components.filter(b => b.data?.group_id === id).length;
-    const childNote  = childCount ? `\n${childCount} block(s) inside will be unlinked from this group.` : '';
-    confirmDialog(`Delete group "${c.name}"?${childNote}${sysWarning}`, () => {
-      confirmDialog(`⚠ Confirm deletion of "${c.name}". This cannot be undone.`, async () => {
-        // Unlink child blocks
-        _s.components.filter(b => b.data?.group_id===id).forEach(b => {
-          b.data = {...(b.data||{})}; delete b.data.group_id;
-          sb.from('arch_components').update({ data:b.data }).eq('id', b.id);
-        });
-        await sb.from('arch_components').delete().eq('id', id);
-        _s.components  = _s.components.filter(x=>x.id!==id);
-        _s.connections = _s.connections.filter(cn=>cn.source_id!==id&&cn.target_id!==id);
-        document.getElementById(`comp-${id}`)?.remove();
-        selectComp(null); renderConnections(); renderGroups(); toast('Group deleted.','success');
+    _s.components.filter(b => b.data?.group_id === id).forEach(b => affectedIds.add(b.id));
+  }
+
+  // Connections that touch any affected component
+  const affectedConns = _s.connections.filter(cn =>
+    affectedIds.has(cn.source_id) || affectedIds.has(cn.target_id));
+
+  // Interface requirements linked to those connections
+  const linkedReqCodes = [...new Set(affectedConns.map(cn => cn.requirement).filter(Boolean))];
+  let linkedReqs = [];
+  if (linkedReqCodes.length) {
+    const { data: rdata } = await sb.from('requirements')
+      .select('req_code, title')
+      .in('req_code', linkedReqCodes)
+      .eq('parent_type', _s.parentType).eq('parent_id', _s.parentId);
+    linkedReqs = rdata || [];
+  }
+
+  // Build first dialog content
+  const isGroup = c.comp_type === 'Group';
+  const linkedSys = isGroup && c.data?.system_id
+    ? _s.projectSystems.find(s => s.id === c.data.system_id) : null;
+  const childCount = isGroup ? _s.components.filter(b => b.data?.group_id === id).length : 0;
+
+  const connList = affectedConns.length ? `
+    <div class="del-comp-section">
+      <div class="del-comp-section-title">Connections that will be removed (${affectedConns.length})</div>
+      <ul class="del-comp-list">
+        ${affectedConns.map(cn => {
+          const s = compById(cn.source_id), t2 = compById(cn.target_id);
+          const sn = s ? escH(s.name) : '?', tn = t2 ? escH(t2.name) : '?';
+          return `<li>${sn} ↔ ${tn}${cn.requirement ? ` <span class="del-comp-req-code">${escH(cn.requirement)}</span>` : ''}</li>`;
+        }).join('')}
+      </ul>
+    </div>` : '';
+
+  const reqList = linkedReqs.length ? `
+    <div class="del-comp-section">
+      <div class="del-comp-section-title">Interface requirements that will be deleted (${linkedReqs.length})</div>
+      <ul class="del-comp-list">
+        ${linkedReqs.map(r => `<li><span class="del-comp-req-code">${escH(r.req_code)}</span> ${escH(r.title)}</li>`).join('')}
+      </ul>
+    </div>` : '';
+
+  const sysNote = linkedSys
+    ? `<p style="margin-top:8px;font-size:12px;color:var(--color-text-muted)">Linked system <strong>${escH(linkedSys.system_code)}</strong> will be unlinked but NOT deleted.</p>` : '';
+  const childNote = childCount
+    ? `<p style="margin-top:4px;font-size:12px;color:var(--color-text-muted)">${childCount} block(s) inside will be unlinked from this group.</p>` : '';
+
+  const warnBox = (affectedConns.length || linkedReqs.length) ? `
+    <div class="modal-warn-box" style="margin-top:12px">
+      ⚠ Deleting this component will permanently remove ${affectedConns.length} connection(s) and ${linkedReqs.length} interface requirement(s). This may create inconsistencies between the Architecture canvas and Requirements, Traceability, and other documents.
+    </div>` : '';
+
+  const execDelete = async () => {
+    captureUndo();
+    // Delete linked requirements
+    if (linkedReqCodes.length) {
+      await sb.from('requirements').delete().in('req_code', linkedReqCodes)
+        .eq('parent_type', _s.parentType).eq('parent_id', _s.parentId);
+      _ifreqs = _ifreqs.filter(r => !linkedReqCodes.includes(r.req_code));
+      renderIfaceReqs();
+    }
+    // Delete connections
+    if (affectedConns.length) {
+      await sb.from('arch_connections').delete().in('id', affectedConns.map(cn => cn.id));
+    }
+    // Unlink group children
+    if (isGroup) {
+      _s.components.filter(b => b.data?.group_id === id).forEach(b => {
+        b.data = { ...(b.data || {}) }; delete b.data.group_id;
+        sb.from('arch_components').update({ data: b.data }).eq('id', b.id);
       });
+    }
+    await sb.from('arch_components').delete().eq('id', id);
+    _s.components  = _s.components.filter(x => x.id !== id);
+    _s.connections = _s.connections.filter(cn => !affectedIds.has(cn.source_id) && !affectedIds.has(cn.target_id));
+    document.getElementById(`comp-${id}`)?.remove();
+    selectComp(null);
+    renderConnections();
+    if (isGroup) renderGroups();
+    toast(`"${c.name}" deleted.`, 'success');
+  };
+
+  const showSecondConfirm = () => {
+    showModal({
+      title: '⚠ Final Confirmation',
+      body: `<p>This action <strong>cannot be undone</strong>.</p>
+             <p style="margin-top:8px">Are you sure you want to permanently delete <strong>"${escH(c.name)}"</strong>${linkedReqs.length ? ` along with ${linkedReqs.length} interface requirement(s)` : ''}?</p>`,
+      footer: `
+        <button class="btn btn-secondary" id="dc2-cancel">Cancel</button>
+        <button class="btn btn-danger"    id="dc2-confirm">Yes, delete everything</button>
+      `,
     });
+    document.getElementById('dc2-cancel').onclick  = () => hideModal();
+    document.getElementById('dc2-confirm').onclick = () => { hideModal(); execDelete(); };
+  };
+
+  if (!affectedConns.length && !linkedReqs.length) {
+    // No connections — simple single confirm
+    confirmDialog(`Delete "${c.name}"?${childCount ? ` (${childCount} block(s) will be unlinked)` : ''}`, execDelete);
     return;
   }
 
-  await sb.from('arch_components').delete().eq('id',id);
-  _s.components  = _s.components.filter(x=>x.id!==id);
-  _s.connections = _s.connections.filter(cn=>cn.source_id!==id&&cn.target_id!==id);
-  document.getElementById(`comp-${id}`)?.remove();
-  selectComp(null); renderConnections(); toast('Deleted.','success');
+  showModal({
+    title: `Delete "${escH(c.name)}"`,
+    body: `
+      <p style="margin-bottom:10px">Deleting this ${isGroup ? 'system group' : 'component'} will also remove the following:</p>
+      ${connList}${reqList}${sysNote}${childNote}${warnBox}`,
+    footer: `
+      <button class="btn btn-secondary" id="dc1-cancel">Cancel</button>
+      <button class="btn btn-danger"    id="dc1-confirm">Continue →</button>
+    `,
+  });
+  document.getElementById('dc1-cancel').onclick  = () => hideModal();
+  document.getElementById('dc1-confirm').onclick = () => { hideModal(); showSecondConfirm(); };
 }
 
 async function deleteConn(connId) {
