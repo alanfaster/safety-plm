@@ -16,7 +16,8 @@
 import { sb } from '../config.js';
 import { toast } from '../toast.js';
 import { confirmDialog } from '../components/modal.js';
-import { getFeaturesTree } from './item-definition.js';
+import { getFeaturesTree, ICONS as IDEF_ICONS } from './item-definition.js';
+import { nextIndex, nameInitials } from '../config.js';
 
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
@@ -103,7 +104,9 @@ async function undoLast() {
 }
 
 // ── Item Definition panel state ───────────────────────────────────────────────
-let _idef = { tab: 'functions', tree: [], loaded: false };
+let _idef = { loaded: false, parentType: 'item', parentId: null,
+              features: [], useCases: [], functions: [],
+              selFeatId: null, selUCId: null };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -183,6 +186,7 @@ function buildShell(container, title) {
           <button class="arch-tb-btn" id="btn-zoom-fit">⊞ Fit</button>
           <div class="arch-sep"></div>
           <button class="arch-tb-btn" id="btn-arch-frame" title="Architecture Frame tree">🗂 Frame</button>
+          <button class="arch-tb-btn" id="btn-arch-idef" title="Item Definition panel">★ Item Def</button>
           <div class="arch-sep"></div>
           <button class="btn btn-primary btn-sm" id="btn-arch-save">💾 Save</button>
         </div>
@@ -277,20 +281,13 @@ function buildShell(container, title) {
 
       <!-- Item Definition panel (bottom) -->
       <div class="arch-idef-panel" id="arch-idef-panel">
+        <div class="arch-idef-resize-bar" id="arch-idef-resize-bar" title="Drag to resize"></div>
         <div class="arch-idef-hdr">
-          <div class="arch-idef-tabs" id="arch-idef-tabs">
-            <button class="arch-idef-tab arch-idef-tab--active" data-tab="functions">λ Functions</button>
-            <button class="arch-idef-tab" data-tab="usecases">◈ Use Cases</button>
-            <button class="arch-idef-tab" data-tab="features">⬡ Features</button>
-          </div>
-          <div class="arch-idef-hdr-right">
-            <span class="arch-idef-hint">Drag onto a component to assign</span>
-            <button class="arch-tb-btn arch-idef-add-btn" id="arch-idef-add" title="Create new item">＋ New</button>
-            <button class="arch-idef-resize-btn" id="arch-idef-resize" title="Resize panel">⇕</button>
-          </div>
+          <span class="arch-idef-title">★ Item Definition <span class="arch-idef-hint">— drag a function onto a component to assign it</span></span>
+          <button class="arch-tb-btn" id="arch-idef-close" title="Close">✕</button>
         </div>
         <div class="arch-idef-body" id="arch-idef-body">
-          <div class="arch-idef-loading">Loading item definition…</div>
+          <div class="arch-idef-loading">Loading…</div>
         </div>
       </div>
     </div>`;
@@ -695,32 +692,32 @@ function wireCanvas() {
     if (panel) panel.style.display = 'none';
   });
 
-  // Item Definition panel tabs
-  document.getElementById('arch-idef-tabs')?.addEventListener('click', e => {
-    const btn = e.target.closest('.arch-idef-tab'); if (!btn) return;
-    document.querySelectorAll('.arch-idef-tab').forEach(t => t.classList.remove('arch-idef-tab--active'));
-    btn.classList.add('arch-idef-tab--active');
-    _idef.tab = btn.dataset.tab;
-    renderIdefPanel();
+  // Item Definition panel toggle
+  document.getElementById('btn-arch-idef')?.addEventListener('click', () => {
+    const panel = document.getElementById('arch-idef-panel');
+    if (panel) panel.style.display = panel.style.display === 'none' ? '' : 'none';
   });
-  document.getElementById('arch-idef-add')?.addEventListener('click', () => idefCreateNew());
+  document.getElementById('arch-idef-close')?.addEventListener('click', () => {
+    const panel = document.getElementById('arch-idef-panel');
+    if (panel) panel.style.display = 'none';
+  });
 
-  // Idef panel vertical resize
+  // Idef panel vertical resize via top drag bar
   const idefPanel = document.getElementById('arch-idef-panel');
-  const idefResizeBtn = document.getElementById('arch-idef-resize');
-  if (idefPanel && idefResizeBtn) {
+  const idefResizeBar = document.getElementById('arch-idef-resize-bar');
+  if (idefPanel && idefResizeBar) {
     let idefDrag = null;
-    idefResizeBtn.addEventListener('pointerdown', e => {
+    idefResizeBar.addEventListener('pointerdown', e => {
       e.preventDefault();
       idefDrag = { startY: e.clientY, origH: idefPanel.offsetHeight };
-      idefResizeBtn.setPointerCapture(e.pointerId);
+      idefResizeBar.setPointerCapture(e.pointerId);
     });
-    idefResizeBtn.addEventListener('pointermove', e => {
+    idefResizeBar.addEventListener('pointermove', e => {
       if (!idefDrag) return;
-      const h = Math.max(80, Math.min(500, idefDrag.origH - (e.clientY - idefDrag.startY)));
+      const h = Math.max(100, Math.min(600, idefDrag.origH - (e.clientY - idefDrag.startY)));
       idefPanel.style.height = h + 'px';
     });
-    idefResizeBtn.addEventListener('pointerup', () => { idefDrag = null; });
+    idefResizeBar.addEventListener('pointerup', () => { idefDrag = null; });
   }
 
   // Load idef data
@@ -1905,95 +1902,299 @@ function escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;
 
 async function loadIdefData() {
   if (!_s) return;
-  const parentType = _s.parentType, parentId = _s.parentId;
-  // Determine domain scope: use item-level always (features are item-scoped)
-  const itemId = _s.item?.id || parentId;
+  const itemId = _s.item?.id || _s.parentId;
+  _idef.parentType = 'item';
+  _idef.parentId   = itemId;
   try {
-    _idef.tree = await getFeaturesTree('item', itemId, 'system');
-    // Also try hw/sw/mech domains and merge
-    const [hw, sw, mech] = await Promise.all([
-      getFeaturesTree('item', itemId, 'hw'),
-      getFeaturesTree('item', itemId, 'sw'),
-      getFeaturesTree('item', itemId, 'mech'),
-    ]);
-    _idef.tree = [..._idef.tree, ...hw, ...sw, ...mech];
-  } catch(_) {
-    _idef.tree = [];
-  }
+    const { data: feats } = await sb.from('features')
+      .select('*').eq('parent_type','item').eq('parent_id', itemId)
+      .order('sort_order').order('created_at');
+    _idef.features = feats || [];
+  } catch(_) { _idef.features = []; }
   _idef.loaded = true;
-  renderIdefPanel();
+  renderIdefCols();
 }
 
-function renderIdefPanel() {
+// ─── Idef column builders (mirrors item-definition.js style) ──────────────────
+
+function idefFeatColHTML() {
+  const feats = _idef.features;
+  const rows = feats.length
+    ? feats.map((f,i) => idefRow('feat', f, i, feats.length)).join('')
+    : `<div class="fuf-empty">No features yet</div>`;
+  return `<div class="fuf-col idef-col" id="idef-col-feat">
+    <div class="fuf-col-header">
+      <span class="fuf-col-icon feat-icon">${IDEF_ICONS.feat}</span>
+      <span class="fuf-col-title">Features</span>
+      <button class="fuf-add-btn" id="idef-add-feat">＋</button>
+    </div>
+    <div class="fuf-col-body" id="idef-list-feat">${rows}</div>
+  </div>`;
+}
+
+function idefUCColHTML() {
+  const ucs = _idef.useCases || [];
+  const empty = !_idef.selFeatId
+    ? `<div class="fuf-empty fuf-hint">← Select a Feature</div>`
+    : `<div class="fuf-empty">No use cases yet</div>`;
+  const rows = ucs.length ? ucs.map((u,i) => idefRow('uc', u, i, ucs.length)).join('') : empty;
+  return `<div class="fuf-col idef-col" id="idef-col-uc">
+    <div class="fuf-col-header">
+      <span class="fuf-col-icon uc-icon">${IDEF_ICONS.uc}</span>
+      <span class="fuf-col-title">Use Cases</span>
+      ${_idef.selFeatId ? `<button class="fuf-add-btn" id="idef-add-uc">＋</button>` : ''}
+    </div>
+    <div class="fuf-col-body" id="idef-list-uc">${rows}</div>
+  </div>`;
+}
+
+function idefFunColHTML() {
+  const fns = _idef.functions || [];
+  const empty = !_idef.selUCId
+    ? `<div class="fuf-empty fuf-hint">← Select a Use Case</div>`
+    : `<div class="fuf-empty">No functions yet</div>`;
+  const rows = fns.length ? fns.map((fn,i) => idefFunRow(fn, i, fns.length)).join('') : empty;
+  return `<div class="fuf-col idef-col" id="idef-col-fun">
+    <div class="fuf-col-header">
+      <span class="fuf-col-icon fun-icon">${IDEF_ICONS.fun}</span>
+      <span class="fuf-col-title">Functions</span>
+      ${_idef.selUCId ? `<button class="fuf-add-btn" id="idef-add-fun">＋</button>` : ''}
+    </div>
+    <div class="fuf-col-body" id="idef-list-fun">${rows}</div>
+  </div>`;
+}
+
+function idefRow(type, item, idx, total) {
+  const code = item.feat_code || item.uc_code || '';
+  const icon = IDEF_ICONS[type === 'feat' ? 'feat' : 'uc'];
+  const sel  = (type==='feat' && _idef.selFeatId===item.id) || (type==='uc' && _idef.selUCId===item.id);
+  return `<div class="fuf-row ${sel?'selected':''}" data-id="${item.id}" data-idef-type="${type}">
+    <div class="fuf-row-main">
+      <span class="fuf-icon ${type}-icon">${icon}</span>
+      <div class="fuf-row-text">
+        <span class="fuf-code">${escH(code)}</span>
+        <span class="fuf-name">${escH(item.name)}</span>
+        ${item.description ? `<span class="fuf-desc">${escH(item.description)}</span>` : ''}
+      </div>
+    </div>
+    <div class="fuf-actions">
+      ${idx>0 ? `<button class="fuf-act fuf-up" data-id="${item.id}" data-idef-type="${type}">▲</button>` : ''}
+      ${idx<total-1 ? `<button class="fuf-act fuf-dn" data-id="${item.id}" data-idef-type="${type}">▼</button>` : ''}
+      <button class="fuf-act fuf-edit" data-id="${item.id}" data-idef-type="${type}">✎</button>
+      <button class="fuf-act fuf-del"  data-id="${item.id}" data-idef-type="${type}" data-name="${escH(item.name)}">✕</button>
+    </div>
+  </div>`;
+}
+
+function idefFunRow(fn, idx, total) {
+  const assigned = _s?.components.some(c => (c.functions||[]).some(af => af.function_ref_id === fn.id));
+  return `<div class="fuf-row idef-fn-row ${assigned?'idef-fn--assigned':''}"
+      draggable="true" data-id="${fn.id}" data-idef-type="fun"
+      data-fn-name="${escH(fn.name)}" data-uc-id="${fn.use_case_id}"
+      title="Drag onto a component to assign">
+    <div class="fuf-row-main">
+      <span class="fuf-icon fun-icon">${IDEF_ICONS.fun}</span>
+      <div class="fuf-row-text">
+        <span class="fuf-code">${escH(fn.func_code||'')}</span>
+        <span class="fuf-name">${escH(fn.name)}</span>
+        ${assigned ? '<span class="idef-fn-assigned-badge">✓ assigned</span>' : ''}
+      </div>
+    </div>
+    <div class="fuf-actions">
+      ${idx>0 ? `<button class="fuf-act fuf-up" data-id="${fn.id}" data-idef-type="fun">▲</button>` : ''}
+      ${idx<total-1 ? `<button class="fuf-act fuf-dn" data-id="${fn.id}" data-idef-type="fun">▼</button>` : ''}
+      <button class="fuf-act fuf-edit" data-id="${fn.id}" data-idef-type="fun">✎</button>
+      <button class="fuf-act fuf-del"  data-id="${fn.id}" data-idef-type="fun" data-name="${escH(fn.name)}">✕</button>
+    </div>
+  </div>`;
+}
+
+function renderIdefCols() {
   const body = document.getElementById('arch-idef-body'); if (!body) return;
   if (!_idef.loaded) { body.innerHTML = '<div class="arch-idef-loading">Loading…</div>'; return; }
+  body.innerHTML = `<div class="arch-idef-cols" id="arch-idef-cols">
+    ${idefFeatColHTML()}${idefUCColHTML()}${idefFunColHTML()}
+  </div>`;
+  wireIdefCols();
+}
 
-  // Flatten all functions from tree
-  const allFuncs = [], allUCs = [], allFeats = [];
-  for (const feat of _idef.tree) {
-    allFeats.push(feat);
-    for (const uc of feat.use_cases || []) {
-      allUCs.push({ ...uc, feat_name: feat.name });
-      for (const fn of uc.functions || []) {
-        allFuncs.push({ ...fn, uc_name: uc.name, feat_name: feat.name });
-      }
+function wireIdefCols() {
+  const cols = document.getElementById('arch-idef-cols'); if (!cols) return;
+
+  // Row selection (feat / uc)
+  cols.addEventListener('click', async e => {
+    const row = e.target.closest('.fuf-row[data-idef-type]');
+    if (!row || e.target.closest('.fuf-actions')) return;
+    const { id, idefType } = row.dataset;
+    if (idefType === 'feat') {
+      if (_idef.selFeatId === id) return;
+      _idef.selFeatId = id; _idef.selUCId = null;
+      _idef.useCases = []; _idef.functions = [];
+      document.getElementById('idef-col-feat').outerHTML = idefFeatColHTML();
+      document.getElementById('idef-col-uc').outerHTML   = idefUCColHTML();
+      document.getElementById('idef-col-fun').outerHTML  = idefFunColHTML();
+      wireIdefCols();
+      const { data } = await sb.from('use_cases').select('*')
+        .eq('feature_id', id).order('sort_order').order('created_at');
+      _idef.useCases = data || [];
+      document.getElementById('idef-col-uc').outerHTML = idefUCColHTML();
+      wireIdefCols();
+    } else if (idefType === 'uc') {
+      if (_idef.selUCId === id) return;
+      _idef.selUCId = id; _idef.functions = [];
+      document.getElementById('idef-col-uc').outerHTML  = idefUCColHTML();
+      document.getElementById('idef-col-fun').outerHTML = idefFunColHTML();
+      wireIdefCols();
+      const { data } = await sb.from('functions').select('*')
+        .eq('use_case_id', id).order('sort_order').order('created_at');
+      _idef.functions = data || [];
+      document.getElementById('idef-col-fun').outerHTML = idefFunColHTML();
+      wireIdefCols();
     }
-  }
+  });
 
-  if (_idef.tab === 'functions') {
-    if (!allFuncs.length) {
-      body.innerHTML = `<div class="arch-idef-empty">No functions defined yet. Click <b>+ New</b> to create one.</div>`;
-      return;
-    }
-    body.innerHTML = allFuncs.map(fn => {
-      // Check if already assigned to any arch component
-      const assigned = _s.components.some(c =>
-        (c.functions||[]).some(af => af.function_ref_id === fn.id));
-      return `<div class="arch-idef-chip arch-idef-chip--fn ${assigned?'arch-idef-chip--assigned':''}"
-        draggable="true" data-fn-id="${fn.id}" data-fn-name="${escH(fn.name)}"
-        data-uc-id="${fn.use_case_id}" title="${escH(fn.feat_name)} › ${escH(fn.uc_name)}">
-        <span class="arch-idef-chip-icon">λ</span>
-        <span class="arch-idef-chip-name">${escH(fn.name)}</span>
-        <span class="arch-idef-chip-path">${escH(fn.func_code||'')}</span>
-        ${assigned ? '<span class="arch-idef-chip-assigned" title="Already assigned">✓</span>' : ''}
-      </div>`;
-    }).join('');
-  } else if (_idef.tab === 'usecases') {
-    if (!allUCs.length) { body.innerHTML = '<div class="arch-idef-empty">No use cases defined.</div>'; return; }
-    body.innerHTML = allUCs.map(uc => `
-      <div class="arch-idef-chip arch-idef-chip--uc"
-           title="${escH(uc.feat_name)}">
-        <span class="arch-idef-chip-icon">◈</span>
-        <span class="arch-idef-chip-name">${escH(uc.name)}</span>
-        <span class="arch-idef-chip-path">${escH(uc.uc_code||'')}</span>
-        <span class="arch-idef-chip-count">${(uc.functions||[]).length} fn</span>
-      </div>`).join('');
-  } else {
-    if (!allFeats.length) { body.innerHTML = '<div class="arch-idef-empty">No features defined.</div>'; return; }
-    body.innerHTML = allFeats.map(f => `
-      <div class="arch-idef-chip arch-idef-chip--feat">
-        <span class="arch-idef-chip-icon">⬡</span>
-        <span class="arch-idef-chip-name">${escH(f.name)}</span>
-        <span class="arch-idef-chip-path">${escH(f.feat_code||'')}</span>
-        <span class="arch-idef-chip-count">${(f.use_cases||[]).reduce((a,u)=>a+(u.functions?.length||0),0)} fn</span>
-      </div>`).join('');
-  }
+  // Add buttons
+  cols.addEventListener('click', async e => {
+    const btn = e.target.closest('#idef-add-feat,#idef-add-uc,#idef-add-fun');
+    if (!btn) return; e.stopPropagation();
+    await idefAddItem(btn.id.replace('idef-add-',''));
+  });
 
-  // Wire drag events for function chips
-  body.querySelectorAll('.arch-idef-chip--fn[draggable]').forEach(chip => {
-    chip.addEventListener('dragstart', e => {
+  // Reorder
+  cols.addEventListener('click', async e => {
+    const btn = e.target.closest('.fuf-up,.fuf-dn');
+    if (!btn || !btn.dataset.idefType) return; e.stopPropagation();
+    await idefReorder(btn.dataset.idefType, btn.dataset.id, btn.classList.contains('fuf-up') ? -1 : 1);
+  });
+
+  // Edit
+  cols.addEventListener('click', e => {
+    const btn = e.target.closest('.fuf-edit[data-idef-type]');
+    if (!btn) return; e.stopPropagation();
+    idefInlineEdit(btn.dataset.idefType, btn.dataset.id);
+  });
+
+  // Delete
+  cols.addEventListener('click', async e => {
+    const btn = e.target.closest('.fuf-del[data-idef-type]');
+    if (!btn) return; e.stopPropagation();
+    const label = {feat:'Feature',uc:'Use Case',fun:'Function'}[btn.dataset.idefType] || 'Item';
+    confirmDialog(`Delete ${label} "${btn.dataset.name}"?`, async () => {
+      await idefDeleteItem(btn.dataset.idefType, btn.dataset.id);
+    });
+  });
+
+  // Drag (functions only)
+  cols.querySelectorAll('.idef-fn-row[draggable]').forEach(row => {
+    row.addEventListener('dragstart', e => {
       e.dataTransfer.setData('text/plain', JSON.stringify({
-        type: 'idef-fn', fnId: chip.dataset.fnId, fnName: chip.dataset.fnName,
-        ucId: chip.dataset.ucId,
+        type:'idef-fn', fnId:row.dataset.id, fnName:row.dataset.fnName, ucId:row.dataset.ucId,
       }));
       e.dataTransfer.effectAllowed = 'copy';
     });
   });
 }
 
+async function idefAddItem(type) {
+  const projName = _s?.project?.name || '';
+  if (type === 'feat') {
+    const idx  = await nextIndex('features', { parent_id: _idef.parentId });
+    const code = `FEAT-${nameInitials(projName)}-${String(idx).padStart(3,'0')}`;
+    const { data, error } = await sb.from('features').insert({
+      feat_code: code, parent_type: _idef.parentType, parent_id: _idef.parentId,
+      domain: 'system', project_id: _s.project.id,
+      name: `Feature ${idx}`, sort_order: _idef.features.length,
+    }).select().single();
+    if (error) { toast('Error: '+error.message,'error'); return; }
+    _idef.features.push(data);
+    document.getElementById('idef-col-feat').outerHTML = idefFeatColHTML(); wireIdefCols();
+  } else if (type === 'uc') {
+    const feat = _idef.features.find(f=>f.id===_idef.selFeatId); if (!feat) return;
+    const idx  = await nextIndex('use_cases', { feature_id: _idef.selFeatId });
+    const code = `UC-${nameInitials(projName)}-F${feat.feat_code?.split('-').pop()}-${String(idx).padStart(3,'0')}`;
+    const { data, error } = await sb.from('use_cases').insert({
+      uc_code: code, feature_id: _idef.selFeatId,
+      name: `Use Case ${idx}`, sort_order: _idef.useCases.length,
+    }).select().single();
+    if (error) { toast('Error: '+error.message,'error'); return; }
+    _idef.useCases.push(data);
+    document.getElementById('idef-col-uc').outerHTML = idefUCColHTML(); wireIdefCols();
+  } else if (type === 'fun') {
+    const uc = (_idef.useCases||[]).find(u=>u.id===_idef.selUCId); if (!uc) return;
+    const feat = _idef.features.find(f=>f.id===_idef.selFeatId);
+    const idx  = await nextIndex('functions', { use_case_id: _idef.selUCId });
+    const fp = feat?.feat_code?.split('-').pop()||'001', up = uc.uc_code?.split('-').pop()||'001';
+    const code = `FUN-${nameInitials(projName)}-F${fp}-U${up}-${String(idx).padStart(3,'0')}`;
+    const { data, error } = await sb.from('functions').insert({
+      func_code: code, use_case_id: _idef.selUCId,
+      name: `Function ${idx}`, sort_order: (_idef.functions||[]).length,
+    }).select().single();
+    if (error) { toast('Error: '+error.message,'error'); return; }
+    if (!_idef.functions) _idef.functions = [];
+    _idef.functions.push(data);
+    document.getElementById('idef-col-fun').outerHTML = idefFunColHTML(); wireIdefCols();
+  }
+}
+
+async function idefReorder(type, id, dir) {
+  const list = type==='feat'?_idef.features : type==='uc'?_idef.useCases : _idef.functions;
+  const idx = list.findIndex(x=>x.id===id), swapIdx = idx+dir;
+  if (swapIdx<0||swapIdx>=list.length) return;
+  [list[idx], list[swapIdx]] = [list[swapIdx], list[idx]];
+  const table = type==='feat'?'features':type==='uc'?'use_cases':'functions';
+  await Promise.all([
+    sb.from(table).update({sort_order:swapIdx}).eq('id',list[idx].id),
+    sb.from(table).update({sort_order:idx}).eq('id',list[swapIdx].id),
+  ]);
+  const col = type==='feat'?idefFeatColHTML():type==='uc'?idefUCColHTML():idefFunColHTML();
+  const colId = type==='feat'?'idef-col-feat':type==='uc'?'idef-col-uc':'idef-col-fun';
+  document.getElementById(colId).outerHTML = col; wireIdefCols();
+}
+
+function idefInlineEdit(type, id) {
+  const row = document.querySelector(`.fuf-row[data-id="${id}"][data-idef-type="${type}"]`); if (!row) return;
+  const list = type==='feat'?_idef.features:type==='uc'?_idef.useCases:_idef.functions;
+  const item = list.find(x=>x.id===id); if (!item) return;
+  const main = row.querySelector('.fuf-row-main');
+  main.innerHTML = `<div class="fuf-edit-form">
+    <input class="fuf-input fuf-input-name" id="idef-edit-name" value="${escH(item.name)}" placeholder="Name" autocomplete="off"/>
+    <textarea class="fuf-input fuf-input-desc" id="idef-edit-desc" rows="2" placeholder="Description">${escH(item.description||'')}</textarea>
+    <div class="fuf-edit-btns">
+      <button class="btn btn-primary btn-sm" id="idef-edit-save">✓</button>
+      <button class="btn btn-secondary btn-sm" id="idef-edit-cancel">✗</button>
+    </div>
+  </div>`;
+  const inp = row.querySelector('#idef-edit-name'); inp.focus(); inp.select();
+  const save = async () => {
+    const name = inp.value.trim(); if (!name) return;
+    const desc = row.querySelector('#idef-edit-desc').value.trim();
+    const table = type==='feat'?'features':type==='uc'?'use_cases':'functions';
+    await sb.from(table).update({name, description:desc, updated_at:new Date().toISOString()}).eq('id',id);
+    item.name = name; item.description = desc;
+    const col = type==='feat'?idefFeatColHTML():type==='uc'?idefUCColHTML():idefFunColHTML();
+    const colId = type==='feat'?'idef-col-feat':type==='uc'?'idef-col-uc':'idef-col-fun';
+    document.getElementById(colId).outerHTML = col; wireIdefCols();
+  };
+  row.querySelector('#idef-edit-save').onclick = save;
+  row.querySelector('#idef-edit-cancel').onclick = () => {
+    const col = type==='feat'?idefFeatColHTML():type==='uc'?idefUCColHTML():idefFunColHTML();
+    const colId = type==='feat'?'idef-col-feat':type==='uc'?'idef-col-uc':'idef-col-fun';
+    document.getElementById(colId).outerHTML = col; wireIdefCols();
+  };
+  inp.addEventListener('keydown', e => { if(e.key==='Enter') save(); if(e.key==='Escape') row.querySelector('#idef-edit-cancel').click(); });
+}
+
+async function idefDeleteItem(type, id) {
+  const table = type==='feat'?'features':type==='uc'?'use_cases':'functions';
+  await sb.from(table).delete().eq('id',id);
+  if (type==='feat') { _idef.features=_idef.features.filter(x=>x.id!==id); if(_idef.selFeatId===id){_idef.selFeatId=null;_idef.useCases=[];_idef.selUCId=null;_idef.functions=[];} }
+  else if (type==='uc') { _idef.useCases=_idef.useCases.filter(x=>x.id!==id); if(_idef.selUCId===id){_idef.selUCId=null;_idef.functions=[];} }
+  else { _idef.functions=_idef.functions.filter(x=>x.id!==id); }
+  renderIdefCols();
+}
+
 async function idefAssignFn(fnId, fnName, ucId, compId) {
   const c = compById(compId); if (!c) return;
-  // Check not already assigned
   if ((c.functions||[]).some(af => af.function_ref_id === fnId)) {
     toast('Already assigned to this component.', 'info'); return;
   }
@@ -2006,38 +2207,6 @@ async function idefAssignFn(fnId, fnName, ucId, compId) {
   if (!c.functions) c.functions = [];
   c.functions.push(data);
   refreshComp(compId);
-  renderIdefPanel(); // refresh assigned state
-  toast(`"${fnName}" assigned to ${c.name}`, 'success');
-}
-
-async function idefCreateNew() {
-  // Create a new function in the item definition — requires a use case context
-  // Find first available use case, or prompt
-  const allFuncs = [], allUCs = [];
-  for (const feat of _idef.tree) {
-    for (const uc of feat.use_cases || []) {
-      allUCs.push(uc);
-      for (const fn of uc.functions || []) allFuncs.push(fn);
-    }
-  }
-  if (!allUCs.length) {
-    toast('No use cases found. Create features and use cases in Item Definition first.', 'info');
-    return;
-  }
-  if (_idef.tab !== 'functions') {
-    toast('Switch to the Functions tab to create a function.', 'info'); return;
-  }
-  const ucId = allUCs[0].id;
-  const name = `Function ${allFuncs.length + 1}`;
-  const { data, error } = await sb.from('functions').insert({
-    use_case_id: ucId, name,
-    sort_order: allUCs[0].functions?.length || 0,
-  }).select().single();
-  if (error) { toast('Error: ' + error.message, 'error'); return; }
-  // Add to local tree
-  const uc = allUCs[0];
-  if (!uc.functions) uc.functions = [];
-  uc.functions.push(data);
-  toast(`Created "${name}"`, 'success');
-  renderIdefPanel();
+  renderIdefCols();
+  toast(`"${fnName}" → ${c.name}`, 'success');
 }
