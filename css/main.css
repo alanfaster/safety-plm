@@ -1461,7 +1461,7 @@ input, select, textarea { font-family: var(--font); }
 /* ── System Group box ── */
 .arch-group{position:absolute;border:2px dashed #9AA0A6;border-radius:10px;background:rgba(248,249,250,0.7);backdrop-filter:blur(2px);min-width:240px;min-height:160px;user-select:none}
 .arch-group--sel{border-color:var(--color-primary);box-shadow:0 0 0 3px rgba(26,115,232,0.35)}
-.arch-group--conn-target{border-color:#1E8E3E!important;border-style:solid!important;box-shadow:0 0 0 4px rgba(30,142,62,0.35),inset 0 0 20px rgba(30,142,62,0.10)!important;background:rgba(230,244,234,0.6)!important}
+.arch-group--conn-target{border-color:var(--color-primary)!important;border-style:solid!important;box-shadow:0 0 0 4px rgba(26,115,232,0.35),inset 0 0 20px rgba(26,115,232,0.10)!important;background:rgba(232,240,254,0.7)!important}
 .arch-group-hdr{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:move;border-radius:8px 8px 0 0}
 .arch-group-stereo{font-size:10px;font-style:italic;color:#9AA0A6;letter-spacing:0.02em}
 .arch-group-name{flex:1;font-size:var(--text-sm);font-weight:700;color:#3C4043;cursor:text}
@@ -1472,7 +1472,7 @@ input, select, textarea { font-family: var(--font); }
 .arch-block{position:absolute;border:2px solid #ccc;border-radius:6px;display:flex;flex-direction:column;box-shadow:0 1px 6px rgba(0,0,0,0.12),0 0 0 0 transparent;min-width:140px;min-height:90px;user-select:none;background:#fff;transition:box-shadow 0.15s}
 .arch-block:hover{box-shadow:0 4px 14px rgba(0,0,0,0.16)}
 .arch-block--sel{box-shadow:0 0 0 4px var(--color-primary),0 4px 18px rgba(0,0,0,0.28)!important}
-.arch-block--conn-target{box-shadow:0 0 0 4px #1E8E3E,0 4px 20px rgba(30,142,62,0.4)!important;border-color:#1E8E3E!important}
+.arch-block--conn-target{box-shadow:0 0 0 4px var(--color-primary),0 4px 20px rgba(26,115,232,0.4)!important;border-color:var(--color-primary)!important}
 .arch-block--safe{border-style:dashed!important}
 
 /* Header compartment */
@@ -1517,7 +1517,8 @@ input, select, textarea { font-family: var(--font); }
 
 /* ── SVG connection ── */
 .arch-conn-g{cursor:pointer;pointer-events:all}
-.arch-conn-g:hover path[stroke]:last-of-type{filter:brightness(1.2)}
+.arch-conn-g:hover path[stroke]:last-of-type{filter:brightness(1.15)}
+.arch-conn-g--sel path:nth-child(2){filter:drop-shadow(0 0 4px rgba(26,115,232,0.7))!important;stroke-width:3!important}
 .arr-poly{fill:currentColor}
 .arch-conn-icon{font-size:11px;pointer-events:none}
 .arch-conn-label{font-size:10px;font-weight:700;paint-order:stroke;stroke:#ECEFF1;stroke-width:3;pointer-events:none;letter-spacing:0.02em}
@@ -1533,9 +1534,38 @@ input, select, textarea { font-family: var(--font); }
 .arch-popover-arr{color:var(--color-text-muted);font-size:18px}
 .arch-popover-footer{display:flex;gap:8px;justify-content:flex-end;padding:10px 16px;border-top:1px solid var(--color-border)}
 .arch-form-lbl{font-size:10px;font-weight:700;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-top:10px;display:block}
+/* Props panel form layout: horizontal padding for form elements */
+#arch-props-body .form-input,#arch-props-body .arch-form-lbl,#arch-props-body .arch-props-fun-hdr,#arch-props-body .arch-props-fun-row,#arch-props-body [style*="display:flex"]{margin-left:0;margin-right:0}
+#arch-props-body{padding:4px 12px 12px}
 
 /* ── Right palette ── */
-.arch-palette{width:230px;flex-shrink:0;border-left:1px solid var(--color-border);background:var(--color-surface);display:flex;flex-direction:column;overflow-y:auto;gap:0}
+/* ── Palette shell ── */
+.arch-palette{width:240px;flex-shrink:0;border-left:1px solid var(--color-border);background:var(--color-surface);display:flex;flex-direction:column;overflow:hidden;gap:0}
+
+/* ── Collapsible palette section ── */
+.arch-pal-sec{border-bottom:1px solid var(--color-border);display:flex;flex-direction:column;min-height:0}
+.arch-pal-sec--props{flex:1;min-height:0;display:flex;flex-direction:column}
+.arch-pal-sec-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--color-text-muted);background:none;border:none;cursor:pointer;width:100%;text-align:left;transition:background 0.1s}
+.arch-pal-sec-hdr:hover{background:var(--color-hover)}
+.arch-pal-arrow{font-size:10px;transition:transform 0.15s}
+.arch-pal-sec-body{overflow-y:auto}
+.arch-pal-sec-body--props{flex:1;min-height:0;overflow-y:auto}
+
+/* ── Properties panel content ── */
+.arch-props-hdr{font-size:11px;font-weight:700;color:var(--color-text);padding:8px 12px 6px;border-bottom:1px solid var(--color-border);margin-bottom:8px}
+.arch-props-empty{padding:20px 12px;font-size:var(--text-sm);color:var(--color-text-muted);font-style:italic}
+.arch-props-note{font-size:10px;color:var(--color-text-muted);background:var(--color-hover);border-radius:4px;padding:4px 8px;margin-bottom:8px}
+.arch-props-chips{display:flex;align-items:center;gap:6px;padding:0 12px 8px;flex-wrap:wrap}
+
+/* ── Floating interface legend ── */
+.arch-iface-widget{position:absolute;bottom:16px;left:16px;z-index:20;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);box-shadow:0 2px 12px rgba(0,0,0,0.14);min-width:160px;max-width:200px}
+.arch-iface-widget-hdr{display:flex;align-items:center;gap:6px;padding:5px 8px;border-bottom:1px solid var(--color-border)}
+.arch-iface-widget-toggle{background:var(--color-primary);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:700;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.arch-iface-widget-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--color-text-muted)}
+.arch-iface-widget-body{padding:6px 8px;display:flex;flex-direction:column;gap:1px}
+.arch-iface-widget--collapsed .arch-iface-widget-body{display:none}
+
+/* legacy palette kept for item buttons */
 .arch-palette-section{padding:12px;border-bottom:1px solid var(--color-border)}
 .arch-palette-hdr{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--color-text-muted);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
 .arch-palette-items{display:flex;flex-direction:column;gap:5px}

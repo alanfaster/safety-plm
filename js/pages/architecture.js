@@ -108,6 +108,16 @@ export async function renderArchitecture(container, { project, item, system }) {
 // ── Shell ─────────────────────────────────────────────────────────────────────
 
 function buildShell(container, title) {
+  const ifaceLegendRows = Object.entries(IFACE).map(([k,v]) => `
+    <div class="arch-iface-legend-row">
+      <svg width="28" height="10" style="flex-shrink:0">
+        <line x1="0" y1="5" x2="28" y2="5" stroke="${v.stroke}"
+              stroke-width="${v.weight}" stroke-dasharray="${v.dash}"/>
+      </svg>
+      <span class="arch-iface-legend-icon">${v.icon}</span>
+      <span class="arch-iface-legend-label">${k}</span>
+    </div>`).join('');
+
   container.innerHTML = `
     <div class="arch-shell">
       <div class="arch-topbar">
@@ -140,56 +150,64 @@ function buildShell(container, title) {
             </svg>
             <div class="arch-comp-layer" id="arch-comp-layer"></div>
           </div>
+
+          <!-- Floating interface legend -->
+          <div class="arch-iface-widget" id="arch-iface-widget">
+            <div class="arch-iface-widget-hdr">
+              <button class="arch-iface-widget-toggle" id="arch-iface-toggle" title="Toggle interface legend">?</button>
+              <span class="arch-iface-widget-title">Interfaces</span>
+            </div>
+            <div class="arch-iface-widget-body" id="arch-iface-body">${ifaceLegendRows}</div>
+          </div>
         </div>
 
         <!-- Right palette -->
         <div class="arch-palette" id="arch-palette">
-          <div class="arch-palette-section">
-            <div class="arch-palette-hdr">Add Block</div>
-            <div class="arch-palette-items">
-              <button class="arch-pal-item" data-type="HW">
-                <span class="arch-pal-icon" style="background:#1A73E8">HW</span>HW Block
-              </button>
-              <button class="arch-pal-item" data-type="SW">
-                <span class="arch-pal-icon" style="background:#1E8E3E">SW</span>SW Block
-              </button>
-              <button class="arch-pal-item" data-type="Mechanical">
-                <span class="arch-pal-icon" style="background:#E37400">ME</span>Mech Block
-              </button>
-              <button class="arch-pal-item pal-item-group" data-type="Group">
-                <span class="arch-pal-icon arch-pal-icon-group">⬜</span>System Group
-              </button>
-              <button class="arch-pal-item pal-item-port" data-type="Port" title="UML port — external interface point">
-                <span class="arch-pal-icon arch-pal-icon-port">■</span>Port
-              </button>
+
+          <!-- ── Add Block section ── -->
+          <div class="arch-pal-sec">
+            <button class="arch-pal-sec-hdr" data-target="pal-body-add" data-arrow="pal-arrow-add">
+              <span>Add Block</span>
+              <span class="arch-pal-arrow" id="pal-arrow-add">▾</span>
+            </button>
+            <div class="arch-pal-sec-body" id="pal-body-add">
+              <div class="arch-palette-items" style="padding:8px">
+                <button class="arch-pal-item" data-type="HW">
+                  <span class="arch-pal-icon" style="background:#1A73E8">HW</span>HW Block
+                </button>
+                <button class="arch-pal-item" data-type="SW">
+                  <span class="arch-pal-icon" style="background:#1E8E3E">SW</span>SW Block
+                </button>
+                <button class="arch-pal-item" data-type="Mechanical">
+                  <span class="arch-pal-icon" style="background:#E37400">ME</span>Mech Block
+                </button>
+                <button class="arch-pal-item pal-item-group" data-type="Group">
+                  <span class="arch-pal-icon arch-pal-icon-group">⬜</span>System Group
+                </button>
+                <button class="arch-pal-item pal-item-port" data-type="Port" title="UML port — external interface point">
+                  <span class="arch-pal-icon arch-pal-icon-port">■</span>Port
+                </button>
+              </div>
             </div>
           </div>
 
-          <div class="arch-palette-section">
-            <div class="arch-palette-hdr">Interface Types</div>
-            ${Object.entries(IFACE).map(([k,v]) => `
-              <div class="arch-iface-legend-row">
-                <svg width="28" height="10" style="flex-shrink:0">
-                  <line x1="0" y1="5" x2="28" y2="5" stroke="${v.stroke}"
-                        stroke-width="${v.weight}" stroke-dasharray="${v.dash}"/>
-                </svg>
-                <span class="arch-iface-legend-icon">${v.icon}</span>
-                <span class="arch-iface-legend-label">${k}</span>
-              </div>`).join('')}
+          <!-- ── Properties section ── -->
+          <div class="arch-pal-sec arch-pal-sec--props">
+            <button class="arch-pal-sec-hdr" data-target="pal-body-props" data-arrow="pal-arrow-props">
+              <span>Properties</span>
+              <span class="arch-pal-arrow" id="pal-arrow-props">▾</span>
+            </button>
+            <div class="arch-pal-sec-body arch-pal-sec-body--props" id="pal-body-props">
+              <div id="arch-props-body">
+                <div class="arch-props-empty">↖ Select an element</div>
+              </div>
+            </div>
           </div>
 
-          <div class="arch-palette-section arch-props-section" id="arch-props-section" style="display:none">
-            <div class="arch-palette-hdr">
-              Properties
-              <button class="arch-props-close" id="props-close">✕</button>
-            </div>
-            <div id="arch-props-body"></div>
-          </div>
         </div>
       </div>
 
-      <div class="arch-conn-popover" id="arch-conn-pop" style="display:none"></div>
-      <div class="arch-conn-popover" id="arch-sys-pop"  style="display:none"></div>
+      <div class="arch-conn-popover" id="arch-sys-pop" style="display:none"></div>
     </div>`;
 }
 
@@ -225,8 +243,12 @@ function renderConnections() {
   g.innerHTML = _s.connections.map(cn => connSVG(cn)).join('');
   _s.connections.forEach(cn => {
     document.getElementById(`conn-${cn.id}`)
-      ?.addEventListener('click', e => { e.stopPropagation(); openConnEditor(cn.id); });
+      ?.addEventListener('click', e => { e.stopPropagation(); selectConn(cn.id); });
   });
+  // Re-apply selection highlight
+  if (_selectedConnId) {
+    document.getElementById(`conn-${_selectedConnId}`)?.classList.add('arch-conn-g--sel');
+  }
 }
 
 // ── Group HTML ────────────────────────────────────────────────────────────────
@@ -410,6 +432,49 @@ function canvasPos(e) {
   return { x:(e.clientX-r.left-_s.panX)/_s.zoom, y:(e.clientY-r.top-_s.panY)/_s.zoom };
 }
 
+// ── Properties panel helpers ──────────────────────────────────────────────────
+
+function showPropsPanel(html) {
+  const body = document.getElementById('arch-props-body');
+  if (!body) return;
+  body.innerHTML = html;
+  // Auto-expand props section
+  const wrap = document.getElementById('pal-body-props');
+  if (wrap && wrap.style.display === 'none') {
+    wrap.style.display = '';
+    const arrow = document.getElementById('pal-arrow-props');
+    if (arrow) arrow.textContent = '▾';
+  }
+}
+
+function showPropsEmpty() {
+  const body = document.getElementById('arch-props-body');
+  if (body) body.innerHTML = `<div class="arch-props-empty">↖ Select an element</div>`;
+}
+
+// ── Auto port creation ────────────────────────────────────────────────────────
+
+async function createAttachedPort(blockId, portSide, dir) {
+  const blk = compById(blockId); if (!blk) return null;
+  const [px, py] = portAbs(blk, portSide);
+  const { data, error } = await sb.from('arch_components').insert({
+    parent_type: _s.parentType, parent_id: _s.parentId, project_id: _s.project.id,
+    name: `${blk.name.substring(0,4)}.${portSide[0].toUpperCase()}`,
+    comp_type: 'Port',
+    x: Math.round(px - PORT_SIZE / 2),
+    y: Math.round(py - PORT_SIZE / 2),
+    width: PORT_SIZE, height: PORT_SIZE,
+    sort_order: _s.components.length,
+    data: { parent_block_id: blockId, attached_side: portSide, port_dir: dir },
+  }).select().single();
+  if (error || !data) return null;
+  data.functions = [];
+  _s.components.push(data);
+  const layer = document.getElementById('arch-comp-layer');
+  if (layer) { layer.insertAdjacentHTML('beforeend', portHTML(data)); wireBlock(data.id); }
+  return data;
+}
+
 function applyViewport() {
   const vp = document.getElementById('arch-vp');
   if (vp) vp.style.transform = `translate(${_s.panX}px,${_s.panY}px) scale(${_s.zoom})`;
@@ -463,6 +528,30 @@ function wireCanvas() {
 
   document.querySelectorAll('.arch-pal-item').forEach(btn => {
     btn.addEventListener('click', () => addComp(btn.dataset.type));
+  });
+
+  // Collapsible palette sections
+  document.querySelectorAll('.arch-pal-sec-hdr').forEach(hdr => {
+    hdr.addEventListener('click', () => {
+      const bodyId  = hdr.dataset.target;
+      const arrowId = hdr.dataset.arrow;
+      const body  = document.getElementById(bodyId);
+      const arrow = document.getElementById(arrowId);
+      if (!body) return;
+      const open = body.style.display !== 'none';
+      body.style.display  = open ? 'none' : '';
+      if (arrow) arrow.textContent = open ? '▸' : '▾';
+    });
+  });
+
+  // Floating legend toggle
+  document.getElementById('arch-iface-toggle')?.addEventListener('click', () => {
+    const body = document.getElementById('arch-iface-body');
+    const widget = document.getElementById('arch-iface-widget');
+    if (!body) return;
+    const open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : '';
+    widget?.classList.toggle('arch-iface-widget--collapsed', open);
   });
 }
 
@@ -629,6 +718,19 @@ function handleDragMove(e) {
       if (cel) { cel.style.left=cc.x+'px'; cel.style.top=cc.y+'px'; }
     });
   }
+  // Move any ports attached to this block
+  if (!isGroup) {
+    _s.components
+      .filter(p => p.comp_type==='Port' && p.data?.parent_block_id===id)
+      .forEach(p => {
+        const side = p.data?.attached_side || 'right';
+        const [px, py] = portAbs(c, side);
+        p.x = Math.round(px - PORT_SIZE/2);
+        p.y = Math.round(py - PORT_SIZE/2);
+        const pel = document.getElementById(`comp-${p.id}`);
+        if (pel) { pel.style.left=p.x+'px'; pel.style.top=p.y+'px'; }
+      });
+  }
   renderConnections();
 }
 
@@ -688,11 +790,16 @@ function handleConnectEnd(e) {
 
   if (!targetId) return;
 
+  const src = compById(sourceId), tgt = compById(targetId);
   const dup = _s.connections.find(cn =>
     (cn.source_id===sourceId&&cn.target_id===targetId)||(cn.source_id===targetId&&cn.target_id===sourceId));
-  if (dup) { openConnEditor(dup.id); return; }
+  if (dup) { selectConn(dup.id); return; }
 
-  showConnPopover(sourceId, sourcePort, targetId, targetPort||'left');
+  // Auto-create attached ports when connecting two regular blocks
+  const needSrcPort = src && src.comp_type !== 'Port' && src.comp_type !== 'Group';
+  const needTgtPort = tgt && tgt.comp_type !== 'Port' && tgt.comp_type !== 'Group';
+
+  showConnPanel(sourceId, sourcePort||'right', targetId, targetPort||'left', needSrcPort, needTgtPort);
 }
 
 function cancelConnect() {
@@ -729,128 +836,168 @@ function nearestPort(compId, cx, cy) {
   return best;
 }
 
-// ── Connection popover ────────────────────────────────────────────────────────
+// ── Connection panel ──────────────────────────────────────────────────────────
 
-function showConnPopover(srcId, srcPort, tgtId, tgtPort) {
+let _selectedConnId = null;
+
+function selectConn(connId) {
+  _selectedConnId = connId;
+  // Deselect any component
+  selectComp(null, true);
+  // Highlight the SVG connection
+  document.querySelectorAll('.arch-conn-g').forEach(g =>
+    g.classList.toggle('arch-conn-g--sel', g.id === `conn-${connId}`));
+  const cn = _s.connections.find(c => c.id === connId); if (!cn) return;
+  const src = compById(cn.source_id), tgt = compById(cn.target_id); if (!src||!tgt) return;
+  showPropsPanel(connPropsHTML(src.name, tgt.name, cn));
+  wireConnProps(cn);
+}
+
+function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTgtPort) {
   const src=compById(srcId), tgt=compById(tgtId);
   if (!src||!tgt) return;
   const srcGrp = src.data?.group_id||''; const tgtGrp = tgt.data?.group_id||'';
   const isExt  = !!(srcGrp && tgtGrp && srcGrp!==tgtGrp) ||
                   src.comp_type==='Port' || tgt.comp_type==='Port' ||
                   src.comp_type==='Group' || tgt.comp_type==='Group';
-
-  // Auto-detect direction when block connects to its parent group border
   let autoDir = null;
-  if (tgt.comp_type==='Group' && src.data?.group_id===tgt.id) autoDir = 'A_to_B'; // block→group = outgoing
-  else if (src.comp_type==='Group' && tgt.data?.group_id===src.id) autoDir = 'B_to_A'; // group→block = incoming
+  if (tgt.comp_type==='Group' && src.data?.group_id===tgt.id) autoDir = 'A_to_B';
+  else if (src.comp_type==='Group' && tgt.data?.group_id===src.id) autoDir = 'B_to_A';
 
-  const pop = document.getElementById('arch-conn-pop');
-  pop.style.display='';
-  pop.innerHTML = connPopHTML(src.name, tgt.name, null, isExt, autoDir);
-  wireConnPop(pop, null, { srcId, srcPort, tgtId, tgtPort, isExt, srcName:src.name, tgtName:tgt.name });
+  showPropsPanel(connCreateHTML(src.name, tgt.name, isExt, autoDir, needSrcPort, needTgtPort));
+  wireConnCreate({ srcId, srcPort, tgtId, tgtPort, isExt, srcName:src.name, tgtName:tgt.name, needSrcPort, needTgtPort });
 }
 
-function openConnEditor(connId) {
-  const cn=_s.connections.find(c=>c.id===connId); if (!cn) return;
-  const src=compById(cn.source_id), tgt=compById(cn.target_id); if (!src||!tgt) return;
-  const pop = document.getElementById('arch-conn-pop');
-  pop.style.display='';
-  pop.innerHTML = connPopHTML(src.name, tgt.name, cn, cn.is_external);
-  wireConnPop(pop, cn, { srcId:cn.source_id, tgtId:cn.target_id, srcName:src.name, tgtName:tgt.name });
+function _ifaceOpts(sel) {
+  return Object.keys(IFACE).map(k=>`<option value="${k}" ${sel===k?'selected':''}>${k}</option>`).join('');
+}
+function _dirOpts(srcN, tgtN, sel) {
+  return [['A_to_B',`${srcN} → ${tgtN}`],['B_to_A',`${tgtN} → ${srcN}`],['bidirectional','Bidirectional ↔']]
+    .map(([v,l])=>`<option value="${v}" ${sel===v?'selected':''}>${escH(l)}</option>`).join('');
 }
 
-function connPopHTML(srcName, tgtName, cn, isExt, autoDir=null) {
-  const ifOpts = Object.keys(IFACE).map(k=>
-    `<option value="${k}" ${cn?.interface_type===k?'selected':''}>${k}</option>`).join('');
-  const defaultDir = cn?.direction || autoDir || 'bidirectional';
-  const dirOpts = [
-    ['A_to_B',`${srcName} → ${tgtName}`],
-    ['B_to_A',`${tgtName} → ${srcName}`],
-    ['bidirectional','Bidirectional ↔'],
-  ].map(([v,l])=>`<option value="${v}" ${defaultDir===v?'selected':''}>${escH(l)}</option>`).join('');
-  const defReq = cn ? (cn.requirement||'') : `${srcName} shall interface with ${tgtName} via [Data] interface.`;
-
+function connCreateHTML(srcName, tgtName, isExt, autoDir, needSrcPort, needTgtPort) {
+  const portNote = (needSrcPort || needTgtPort)
+    ? `<div class="arch-props-note">⬡ Ports will be auto-created at the connection points</div>` : '';
   return `
-    <div class="arch-popover-hdr">
-      <strong>${cn?'Edit':'New'} Interface</strong>
-      <button class="arch-popover-close" id="pop-x">✕</button>
+    <div class="arch-props-hdr">New Interface</div>
+    <div class="arch-props-chips">
+      <span class="arch-popover-chip">${escH(srcName)}</span>
+      <span style="color:var(--color-text-muted)">⇄</span>
+      <span class="arch-popover-chip">${escH(tgtName)}</span>
     </div>
-    <div class="arch-popover-body">
-      <div class="arch-popover-row">
-        <span class="arch-popover-chip">${escH(srcName)}</span>
-        <span class="arch-popover-arr">⇄</span>
-        <span class="arch-popover-chip">${escH(tgtName)}</span>
-      </div>
-      <label class="arch-form-lbl">Interface Type</label>
-      <select class="form-input" id="pop-itype">${ifOpts}</select>
-      <label class="arch-form-lbl">Direction</label>
-      <select class="form-input" id="pop-dir">${dirOpts}</select>
-      <label class="arch-form-lbl">Name (optional)</label>
-      <input class="form-input" id="pop-name" value="${escH(cn?.name||'')}" placeholder="e.g. CAN Bus"/>
-      <label class="arch-form-lbl">Interface Requirement</label>
-      <textarea class="form-input form-textarea" id="pop-req" rows="3">${escH(defReq)}</textarea>
-      <label class="arch-form-lbl" style="display:flex;align-items:center;gap:6px;margin-top:8px">
-        <input type="checkbox" id="pop-ext" ${isExt?'checked':''}/> External interface
-      </label>
-    </div>
-    <div class="arch-popover-footer">
-      ${cn?'<button class="btn btn-danger btn-sm" id="pop-del">Delete</button>':''}
+    ${portNote}
+    <label class="arch-form-lbl">Interface Type</label>
+    <select class="form-input" id="pop-itype">${_ifaceOpts('Data')}</select>
+    <label class="arch-form-lbl">Direction</label>
+    <select class="form-input" id="pop-dir">${_dirOpts(srcName,tgtName,autoDir||'bidirectional')}</select>
+    <label class="arch-form-lbl">Name (optional)</label>
+    <input class="form-input" id="pop-name" value="" placeholder="e.g. CAN Bus"/>
+    <label class="arch-form-lbl">Interface Requirement</label>
+    <textarea class="form-input form-textarea" id="pop-req" rows="3">${escH(`${srcName} shall interface with ${tgtName} via Data interface.`)}</textarea>
+    <label class="arch-form-lbl" style="display:flex;align-items:center;gap:6px;margin-top:8px">
+      <input type="checkbox" id="pop-ext" ${isExt?'checked':''}/> External interface
+    </label>
+    <div style="display:flex;gap:6px;margin-top:12px">
       <button class="btn btn-secondary btn-sm" id="pop-cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="pop-ok">${cn?'Save':'Create'}</button>
+      <button class="btn btn-primary btn-sm" id="pop-ok">Create</button>
     </div>`;
 }
 
-function wireConnPop(pop, existingCn, ctx) {
-  pop.querySelector('#pop-itype')?.addEventListener('change', () => {
-    if (!existingCn) {
-      const t = pop.querySelector('#pop-itype').value;
-      pop.querySelector('#pop-req').value = `${ctx.srcName} shall interface with ${ctx.tgtName} via ${t} interface.`;
-    }
+function connPropsHTML(srcName, tgtName, cn) {
+  return `
+    <div class="arch-props-hdr">Interface</div>
+    <div class="arch-props-chips">
+      <span class="arch-popover-chip">${escH(srcName)}</span>
+      <span style="color:var(--color-text-muted)">⇄</span>
+      <span class="arch-popover-chip">${escH(tgtName)}</span>
+    </div>
+    <label class="arch-form-lbl">Interface Type</label>
+    <select class="form-input" id="pop-itype">${_ifaceOpts(cn.interface_type)}</select>
+    <label class="arch-form-lbl">Direction</label>
+    <select class="form-input" id="pop-dir">${_dirOpts(srcName,tgtName,cn.direction||'bidirectional')}</select>
+    <label class="arch-form-lbl">Name</label>
+    <input class="form-input" id="pop-name" value="${escH(cn.name||'')}"/>
+    <label class="arch-form-lbl">Requirement</label>
+    <textarea class="form-input form-textarea" id="pop-req" rows="3">${escH(cn.requirement||'')}</textarea>
+    <label class="arch-form-lbl" style="display:flex;align-items:center;gap:6px;margin-top:8px">
+      <input type="checkbox" id="pop-ext" ${cn.is_external?'checked':''}/> External interface
+    </label>
+    <div style="display:flex;gap:6px;margin-top:12px">
+      <button class="btn btn-danger btn-sm" id="pop-del">Delete</button>
+      <button class="btn btn-primary btn-sm" id="pop-ok">Save</button>
+    </div>`;
+}
+
+function wireConnCreate(ctx) {
+  const body = document.getElementById('arch-props-body'); if (!body) return;
+  body.querySelector('#pop-itype')?.addEventListener('change', () => {
+    const t = body.querySelector('#pop-itype').value;
+    body.querySelector('#pop-req').value = `${ctx.srcName} shall interface with ${ctx.tgtName} via ${t} interface.`;
   });
+  body.querySelector('#pop-cancel').onclick = () => showPropsEmpty();
+  body.querySelector('#pop-ok').onclick = async () => {
+    const btn = body.querySelector('#pop-ok'); btn.disabled = true;
+    const itype = body.querySelector('#pop-itype').value;
+    const dir   = body.querySelector('#pop-dir').value;
+    const name  = body.querySelector('#pop-name').value.trim()||null;
+    const req   = body.querySelector('#pop-req').value.trim()||null;
+    const ext   = body.querySelector('#pop-ext').checked;
 
-  const close = () => { pop.style.display='none'; };
-  pop.querySelector('#pop-x').onclick      = close;
-  pop.querySelector('#pop-cancel').onclick = close;
+    let finalSrcId = ctx.srcId, finalSrcPort = ctx.srcPort;
+    let finalTgtId = ctx.tgtId, finalTgtPort = ctx.tgtPort;
 
-  pop.querySelector('#pop-del')?.addEventListener('click', async () => {
-    const { error } = await sb.from('arch_connections').delete().eq('id', existingCn.id);
-    if (error) { toast('Error: '+error.message, 'error'); return; }
-    _s.connections = _s.connections.filter(c=>c.id!==existingCn.id);
-    close(); renderConnections(); toast('Deleted.','success');
-  });
-
-  pop.querySelector('#pop-ok').onclick = async () => {
-    const btn = pop.querySelector('#pop-ok');
-    btn.disabled = true;
-    const itype = pop.querySelector('#pop-itype').value;
-    const dir   = pop.querySelector('#pop-dir').value;
-    const name  = pop.querySelector('#pop-name').value.trim()||null;
-    const req   = pop.querySelector('#pop-req').value.trim()||null;
-    const ext   = pop.querySelector('#pop-ext').checked;
-
-    let error;
-    if (existingCn) {
-      const patch = { interface_type:itype, direction:dir, name, requirement:req, is_external:ext, updated_at:new Date().toISOString() };
-      ({ error } = await sb.from('arch_connections').update(patch).eq('id', existingCn.id));
-      if (!error) Object.assign(existingCn, patch);
-    } else {
-      const { data, error:e } = await sb.from('arch_connections').insert({
-        parent_type:_s.parentType, parent_id:_s.parentId, project_id:_s.project.id,
-        source_id:ctx.srcId, target_id:ctx.tgtId,
-        source_port:ctx.srcPort||'right', target_port:ctx.tgtPort||'left',
-        interface_type:itype, direction:dir, name, requirement:req, is_external:ext,
-      }).select().single();
-      error = e;
-      if (!error && data) _s.connections.push(data);
+    // Auto-create attached ports if needed
+    if (ctx.needSrcPort) {
+      const srcDir = dir === 'B_to_A' ? 'in' : 'out';
+      const p = await createAttachedPort(ctx.srcId, ctx.srcPort, srcDir);
+      if (p) { finalSrcId = p.id; finalSrcPort = 'right'; }
     }
+    if (ctx.needTgtPort) {
+      const tgtDir = dir === 'A_to_B' ? 'in' : 'out';
+      const p = await createAttachedPort(ctx.tgtId, ctx.tgtPort, tgtDir);
+      if (p) { finalTgtId = p.id; finalTgtPort = 'left'; }
+    }
+
+    const { data, error } = await sb.from('arch_connections').insert({
+      parent_type:_s.parentType, parent_id:_s.parentId, project_id:_s.project.id,
+      source_id:finalSrcId, target_id:finalTgtId,
+      source_port:finalSrcPort, target_port:finalTgtPort,
+      interface_type:itype, direction:dir, name, requirement:req, is_external:ext,
+    }).select().single();
     btn.disabled = false;
     if (error) {
       const msg = error.message?.includes('does not exist')
         ? 'Table not found — run migration_005_architecture.sql in Supabase.'
         : 'Error: '+error.message;
-      toast(msg, 'error'); return;
+      toast(msg,'error'); return;
     }
-    close(); renderConnections(); toast(existingCn?'Updated.':'Interface created.','success');
+    _s.connections.push(data);
+    renderConnections(); selectConn(data.id); toast('Interface created.','success');
+  };
+}
+
+function wireConnProps(cn) {
+  const body = document.getElementById('arch-props-body'); if (!body) return;
+  body.querySelector('#pop-del')?.addEventListener('click', async () => {
+    const { error } = await sb.from('arch_connections').delete().eq('id', cn.id);
+    if (error) { toast('Error: '+error.message,'error'); return; }
+    _s.connections = _s.connections.filter(c=>c.id!==cn.id);
+    renderConnections(); showPropsEmpty(); toast('Deleted.','success');
+  });
+  body.querySelector('#pop-ok').onclick = async () => {
+    const btn = body.querySelector('#pop-ok'); btn.disabled = true;
+    const itype = body.querySelector('#pop-itype').value;
+    const dir   = body.querySelector('#pop-dir').value;
+    const name  = body.querySelector('#pop-name').value.trim()||null;
+    const req   = body.querySelector('#pop-req').value.trim()||null;
+    const ext   = body.querySelector('#pop-ext').checked;
+    const patch = { interface_type:itype, direction:dir, name, requirement:req, is_external:ext, updated_at:new Date().toISOString() };
+    const { error } = await sb.from('arch_connections').update(patch).eq('id', cn.id);
+    btn.disabled = false;
+    if (error) { toast('Error: '+error.message,'error'); return; }
+    Object.assign(cn, patch);
+    renderConnections(); selectConn(cn.id); toast('Updated.','success');
   };
 }
 
@@ -964,14 +1111,13 @@ async function createGroup(name, systemId) {
 
 function openProps(id) {
   const c = compById(id); if (!c) return;
-  const section = document.getElementById('arch-props-section');
-  const body    = document.getElementById('arch-props-body');
-  if (!section) return;
-  section.style.display='';
 
-  // ── Port properties ───────────────────────────────────────────────────────
+  // ── Port ─────────────────────────────────────────────────────────────────
   if (c.comp_type === 'Port') {
-    body.innerHTML = `
+    const parentBlk = c.data?.parent_block_id ? compById(c.data.parent_block_id) : null;
+    showPropsPanel(`
+      <div class="arch-props-hdr">Port · ${escH(c.name)}</div>
+      ${parentBlk ? `<div class="arch-props-note">⬡ Attached to: ${escH(parentBlk.name)}</div>` : ''}
       <label class="arch-form-lbl">Port Name</label>
       <input class="form-input" id="props-name" value="${escH(c.name)}" style="margin-bottom:6px"/>
       <label class="arch-form-lbl">Direction</label>
@@ -983,29 +1129,27 @@ function openProps(id) {
       <div style="display:flex;gap:6px">
         <button class="btn btn-primary btn-sm" id="props-apply">Apply</button>
         <button class="btn btn-danger  btn-sm" id="props-del">Delete</button>
-      </div>`;
-
-    document.getElementById('props-close').onclick = () => { section.style.display='none'; };
+      </div>`);
     document.getElementById('props-apply').onclick = async () => {
       const name = document.getElementById('props-name').value.trim()||c.name;
       const dir  = document.getElementById('props-port-dir').value;
       c.name = name; c.data = {...(c.data||{}), port_dir:dir};
       await sb.from('arch_components').update({ name, data:c.data, updated_at:new Date().toISOString() }).eq('id',id);
-      refreshComp(id); section.style.display='none'; toast('Updated.','success');
+      refreshComp(id); renderConnections(); toast('Updated.','success');
     };
     document.getElementById('props-del').onclick = () => {
-      confirmDialog(`Delete port "${c.name}"?`, async () => { await deleteComp(id); section.style.display='none'; });
+      confirmDialog(`Delete port "${c.name}"?`, async () => { await deleteComp(id); });
     };
     return;
   }
 
-  // ── Group properties ──────────────────────────────────────────────────────
+  // ── Group ─────────────────────────────────────────────────────────────────
   if (c.comp_type === 'Group') {
     const linkedSys = c.data?.system_id ? _s.projectSystems.find(s=>s.id===c.data.system_id) : null;
     const sysOpts = _s.projectSystems.map(s =>
       `<option value="${s.id}" ${c.data?.system_id===s.id?'selected':''}>${escH(s.system_code)} — ${escH(s.name)}</option>`).join('');
-
-    body.innerHTML = `
+    showPropsPanel(`
+      <div class="arch-props-hdr">System Group · ${escH(c.name)}</div>
       <label class="arch-form-lbl">Name</label>
       <input class="form-input" id="props-name" value="${escH(c.name)}" style="margin-bottom:6px"/>
       <label class="arch-form-lbl">Linked System</label>
@@ -1013,29 +1157,29 @@ function openProps(id) {
         <option value="">— None —</option>
         ${sysOpts}
       </select>
-      ${linkedSys ? `<div class="arch-props-sys-info">🔗 ${escH(linkedSys.system_code)} · ${escH(linkedSys.name)}</div>` : ''}
+      ${linkedSys ? `<div class="arch-props-note">🔗 ${escH(linkedSys.system_code)} · ${escH(linkedSys.name)}</div>` : ''}
       <div style="display:flex;gap:6px">
         <button class="btn btn-primary btn-sm" id="props-apply">Apply</button>
         <button class="btn btn-danger  btn-sm" id="props-del">Delete</button>
-      </div>`;
-
-    document.getElementById('props-close').onclick = () => { section.style.display='none'; };
+      </div>`);
     document.getElementById('props-apply').onclick = async () => {
       const name  = document.getElementById('props-name').value.trim()||c.name;
       const sysId = document.getElementById('props-sys-link').value||null;
       c.name = name; c.data = {...(c.data||{}), system_id:sysId||undefined};
       if (!sysId) delete c.data.system_id;
       await sb.from('arch_components').update({ name, data:c.data, updated_at:new Date().toISOString() }).eq('id',id);
-      refreshComp(id); section.style.display='none'; toast('Updated.','success');
+      refreshComp(id); toast('Updated.','success');
     };
     document.getElementById('props-del').onclick = () => {
-      confirmDialog(`Delete group "${c.name}"?`, async () => { await deleteComp(id); section.style.display='none'; });
+      confirmDialog(`Delete group "${c.name}"?`, async () => { await deleteComp(id); });
     };
     return;
   }
 
-  // ── Block properties ──────────────────────────────────────────────────────
-  body.innerHTML = `
+  // ── Block ─────────────────────────────────────────────────────────────────
+  const st = STYLES[c.comp_type] || STYLES.HW;
+  showPropsPanel(`
+    <div class="arch-props-hdr" style="border-left:3px solid ${st.border};padding-left:8px">${escH(c.comp_type)} Block · ${escH(c.name)}</div>
     <label class="arch-form-lbl">Name</label>
     <input class="form-input" id="props-name" value="${escH(c.name)}" style="margin-bottom:6px"/>
     <label class="arch-form-lbl">Type</label>
@@ -1070,9 +1214,7 @@ function openProps(id) {
     <div style="display:flex;gap:6px;margin-top:14px">
       <button class="btn btn-primary btn-sm" id="props-apply">Apply</button>
       <button class="btn btn-danger  btn-sm" id="props-del">Delete</button>
-    </div>`;
-
-  document.getElementById('props-close').onclick = () => { section.style.display='none'; };
+    </div>`);
 
   document.getElementById('props-apply').onclick = async () => {
     const name = document.getElementById('props-name').value.trim()||c.name;
@@ -1080,13 +1222,12 @@ function openProps(id) {
     const safe = document.getElementById('props-safe').checked;
     await sb.from('arch_components').update({ name, comp_type:type, is_safety_critical:safe, updated_at:new Date().toISOString() }).eq('id',id);
     Object.assign(c, { name, comp_type:type, is_safety_critical:safe });
-    refreshComp(id); section.style.display='none'; toast('Updated.','success');
+    refreshComp(id); toast('Updated.','success');
   };
   document.getElementById('props-del').onclick = () => {
-    confirmDialog(`Delete "${c.name}"?`, async () => { await deleteComp(id); section.style.display='none'; });
+    confirmDialog(`Delete "${c.name}"?`, async () => { await deleteComp(id); });
   };
 
-  // Functions
   document.getElementById('props-add-fun').onclick = () => {
     const r = document.getElementById('props-addfun-row');
     r.style.display='flex'; document.getElementById('props-new-fun').focus();
@@ -1102,7 +1243,9 @@ function openProps(id) {
   document.getElementById('props-new-fun')?.addEventListener('keydown', e => {
     if (e.key==='Enter') document.getElementById('props-new-fun-ok').click();
   });
-  body.querySelectorAll('.pf-safe').forEach(chk => {
+
+  const body = document.getElementById('arch-props-body');
+  body?.querySelectorAll('.pf-safe').forEach(chk => {
     chk.onchange = async () => {
       const f=c.functions.find(fn=>fn.id===chk.dataset.fid); if(!f) return;
       f.is_safety_related=chk.checked;
@@ -1115,7 +1258,7 @@ function openProps(id) {
       refreshComp(id);
     };
   });
-  body.querySelectorAll('.pf-ren').forEach(btn => {
+  body?.querySelectorAll('.pf-ren').forEach(btn => {
     btn.onclick = () => {
       const f=c.functions.find(fn=>fn.id===btn.dataset.fid); if(!f) return;
       const span=document.getElementById(`pfn-${f.id}`); if(!span) return;
@@ -1126,7 +1269,7 @@ function openProps(id) {
       inp.onblur=save; inp.onkeydown=e=>{if(e.key==='Enter')save();};
     };
   });
-  body.querySelectorAll('.pf-del').forEach(btn => {
+  body?.querySelectorAll('.pf-del').forEach(btn => {
     btn.onclick = async () => { await deleteFun(btn.dataset.fid, id); openProps(id); };
   });
 }
@@ -1191,14 +1334,23 @@ async function savePositions() {
 
 // ── Selection / refresh ───────────────────────────────────────────────────────
 
-function selectComp(id) {
-  _s.selected=id;
+function selectComp(id, skipProps=false) {
+  _s.selected = id;
+  // Clear connection selection
+  if (id) {
+    _selectedConnId = null;
+    document.querySelectorAll('.arch-conn-g--sel').forEach(el => el.classList.remove('arch-conn-g--sel'));
+  }
   document.querySelectorAll('.arch-block,.arch-group,.arch-port-block').forEach(el=>{
     const cls = el.classList.contains('arch-block') ? 'arch-block--sel'
               : el.classList.contains('arch-group')  ? 'arch-group--sel'
               : 'arch-port-block--sel';
     el.classList.toggle(cls, el.dataset.id===id);
   });
+  if (!skipProps) {
+    if (id) openProps(id);
+    else showPropsEmpty();
+  }
 }
 
 function refreshComp(id) {
