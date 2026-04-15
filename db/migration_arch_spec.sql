@@ -17,6 +17,10 @@ CREATE TABLE IF NOT EXISTS public.arch_spec_items (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Add sort_order if the table was created before this column was introduced
+ALTER TABLE public.arch_spec_items
+  ADD COLUMN IF NOT EXISTS sort_order INT NOT NULL DEFAULT 0;
+
 -- Index for fast lookups by parent
 CREATE INDEX IF NOT EXISTS arch_spec_items_parent
   ON public.arch_spec_items (parent_type, parent_id);
