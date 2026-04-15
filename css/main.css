@@ -635,6 +635,7 @@ input, select, textarea { font-family: var(--font); }
 .toast.success { background: var(--color-success); color: #fff; }
 .toast.error   { background: var(--color-error); color: #fff; }
 .toast.info    { background: var(--color-primary); color: #fff; }
+.toast.idef-hint { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
 @keyframes slide-in { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ── Empty State ── */

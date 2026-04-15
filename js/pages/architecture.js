@@ -1039,16 +1039,8 @@ function wireGroup(id) {
   el.querySelectorAll('.arch-fun-del').forEach(btn => {
     btn.addEventListener('click', async e => { e.stopPropagation(); await deleteFun(btn.dataset.funId, btn.dataset.compId); });
   });
-  el.querySelector('.arch-addfun-btn')?.addEventListener('click', async e => {
-    e.stopPropagation();
-    const name = `Function ${(compById(id)?.functions?.length ?? 0) + 1}`;
-    const { data, error } = await sb.from('arch_functions').insert({
-      component_id: id, name, is_safety_related: false,
-      sort_order: compById(id)?.functions?.length ?? 0,
-    }).select().single();
-    if (error) { toast('Error: '+error.message, 'error'); return; }
-    const g = compById(id); if (g) { if (!g.functions) g.functions = []; g.functions.push(data); }
-    refreshComp(id); selectComp(id); openProps(id);
+  el.querySelector('.arch-addfun-btn')?.addEventListener('click', e => {
+    e.stopPropagation(); openIdefPanel();
   });
   wireResizeHandle(el, id);
 }
@@ -1090,17 +1082,8 @@ function wireBlock(id) {
   el.querySelector('.arch-del-badge')?.addEventListener('click', e => {
     e.stopPropagation(); deleteComp(id);
   });
-  el.querySelector('.arch-addfun-btn')?.addEventListener('click', async e => {
-    e.stopPropagation();
-    const name = `Function ${(compById(id)?.functions?.length ?? 0) + 1}`;
-    const { data, error } = await sb.from('arch_functions').insert({
-      component_id: id, name, is_safety_related: false,
-      sort_order: compById(id)?.functions?.length ?? 0,
-    }).select().single();
-    if (error) { toast('Error: '+error.message, 'error'); return; }
-    const c2 = compById(id); if (c2) c2.functions.push(data);
-    refreshComp(id);
-    selectComp(id); openProps(id);
+  el.querySelector('.arch-addfun-btn')?.addEventListener('click', e => {
+    e.stopPropagation(); openIdefPanel();
   });
   el.querySelectorAll('.arch-fun-del').forEach(btn => {
     btn.addEventListener('click', async e => { e.stopPropagation(); await deleteFun(btn.dataset.funId, btn.dataset.compId); });
@@ -1690,6 +1673,28 @@ async function createGroup(name, systemId) {
 
 // ── Properties panel ──────────────────────────────────────────────────────────
 
+function propseFunSection(c) {
+  return `
+    <div style="margin-top:10px">
+      <div class="arch-props-fun-hdr">
+        <span>λ Functions</span>
+        <button class="arch-tb-btn" id="props-add-fun" title="Open Item Definition to assign a function">＋</button>
+      </div>
+      <div id="props-fun-list">
+        ${(c.functions||[]).map(f=>`
+          <div class="arch-props-fun-row">
+            <label style="display:flex;align-items:center;gap:3px;cursor:pointer">
+              <input type="checkbox" class="pf-safe" data-fid="${f.id}" ${f.is_safety_related?'checked':''}/>
+              <span style="font-size:11px;color:#C5221F">⚠</span>
+            </label>
+            <span class="arch-props-fun-name" id="pfn-${f.id}">${escH(f.name)}</span>
+            <button class="btn-icon pf-ren" data-fid="${f.id}">✎</button>
+            <button class="btn-icon pf-del" data-fid="${f.id}">✕</button>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
 function openProps(id) {
   const c = compById(id); if (!c) return;
 
@@ -1740,7 +1745,8 @@ function openProps(id) {
         <option value="">— None —</option>
         ${sysOpts}
       </select>
-      ${linkedSys ? `<div class="arch-props-note" style="margin-top:6px">🔗 ${escH(linkedSys.system_code)} · ${escH(linkedSys.name)}</div>` : ''}`);
+      ${linkedSys ? `<div class="arch-props-note" style="margin-top:6px">🔗 ${escH(linkedSys.system_code)} · ${escH(linkedSys.name)}</div>` : ''}
+      ${propseFunSection(c)}`);
     document.getElementById('props-name').addEventListener('input', debName);
     document.getElementById('props-sys-link').addEventListener('change', async () => {
       const sysId = document.getElementById('props-sys-link').value||null;
@@ -1749,6 +1755,8 @@ function openProps(id) {
       await sb.from('arch_components').update({ data:c.data, updated_at:new Date().toISOString() }).eq('id',id);
       refreshComp(id);
     });
+    document.getElementById('props-add-fun').onclick = () => openIdefPanel();
+    wirePropsF(c, id);
     return;
   }
 
@@ -1765,28 +1773,8 @@ function openProps(id) {
     <label class="arch-form-lbl" style="display:flex;align-items:center;gap:6px;margin-top:6px">
       <input type="checkbox" id="props-safe" ${c.is_safety_critical?'checked':''}/> Safety Critical
     </label>
-    <div style="margin-top:10px">
-      <div class="arch-props-fun-hdr">
-        <span>λ Functions</span>
-        <button class="arch-tb-btn" id="props-add-fun">＋</button>
-      </div>
-      <div id="props-fun-list">
-        ${(c.functions||[]).map(f=>`
-          <div class="arch-props-fun-row">
-            <label style="display:flex;align-items:center;gap:3px;cursor:pointer">
-              <input type="checkbox" class="pf-safe" data-fid="${f.id}" ${f.is_safety_related?'checked':''}/>
-              <span style="font-size:11px;color:#C5221F">⚠</span>
-            </label>
-            <span class="arch-props-fun-name" id="pfn-${f.id}">${escH(f.name)}</span>
-            <button class="btn-icon pf-ren" data-fid="${f.id}">✎</button>
-            <button class="btn-icon pf-del" data-fid="${f.id}">✕</button>
-          </div>`).join('')}
-      </div>
-      <div id="props-addfun-row" style="display:none;gap:6px;margin-top:6px">
-        <input class="form-input" id="props-new-fun" placeholder="Function name…" style="flex:1"/>
-        <button class="btn btn-primary btn-sm" id="props-new-fun-ok">Add</button>
-      </div>
-    </div>`);
+    ${propseFunSection(c)}`);
+
 
   document.getElementById('props-name').addEventListener('input', debName);
   document.getElementById('props-type').addEventListener('change', async () => {
@@ -1798,22 +1786,11 @@ function openProps(id) {
     await saveComp({is_safety_critical:safe}); refreshComp(id);
   });
 
-  document.getElementById('props-add-fun').onclick = () => {
-    const r = document.getElementById('props-addfun-row');
-    r.style.display='flex'; document.getElementById('props-new-fun').focus();
-  };
-  document.getElementById('props-new-fun-ok').onclick = async () => {
-    const name=document.getElementById('props-new-fun').value.trim(); if(!name) return;
-    const { data, error } = await sb.from('arch_functions').insert({
-      component_id:id, name, is_safety_related:false, sort_order:c.functions.length,
-    }).select().single();
-    if (error) { toast('Error: '+error.message,'error'); return; }
-    c.functions.push(data); refreshComp(id); openProps(id);
-  };
-  document.getElementById('props-new-fun')?.addEventListener('keydown', e => {
-    if (e.key==='Enter') document.getElementById('props-new-fun-ok').click();
-  });
+  document.getElementById('props-add-fun').onclick = () => openIdefPanel();
+  wirePropsF(c, id);
+}
 
+function wirePropsF(c, id) {
   const body = document.getElementById('arch-props-body');
   body?.querySelectorAll('.pf-safe').forEach(chk => {
     chk.onchange = async () => {
@@ -2209,6 +2186,12 @@ function funTooltipAttrs(f) {
 }
 
 // ── Item Definition panel ─────────────────────────────────────────────────────
+
+function openIdefPanel() {
+  const panel = document.getElementById('arch-idef-panel');
+  if (panel && panel.style.display === 'none') panel.style.display = '';
+  toast('📎 Select a function from the list', 'idef-hint');
+}
 
 async function loadIdefData() {
   if (!_s) return;
