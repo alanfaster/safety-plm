@@ -48,6 +48,7 @@ const GRID = 20;
 const MIN_W = 140, MIN_H = 90;
 const GROUP_MIN_W = 240, GROUP_MIN_H = 160;
 const PORT_SIZE = 20;
+const CONN_EP_SIZE = 18; // port square size at connection endpoints
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -442,47 +443,37 @@ function connSVG(cn) {
     <text x="${mx}" y="${labelY}" text-anchor="middle" class="arch-conn-label"
           style="fill:${iv.stroke}">${labelTxt}</text>`;
 
-  // Port icon at group border when one endpoint is a Group
-  let portIcon = '';
-  const srcIsGroup = src.comp_type === 'Group';
-  const tgtIsGroup = tgt.comp_type === 'Group';
-  if (srcIsGroup || tgtIsGroup) {
-    const grp     = srcIsGroup ? src : tgt;
-    const blk     = srcIsGroup ? tgt : src;
-    const [gpx, gpy] = srcIsGroup ? [sx, sy] : [tx, ty];
-    // Determine port flow direction from the group boundary's perspective
-    const blkInsideGrp = blk.data?.group_id === grp.id;
-    let portDir;
-    if (cn.direction === 'bidirectional') {
-      portDir = 'inout';
-    } else {
-      // A_to_B: flow goes src→tgt.
-      // If blk is inside grp and blk is the src (A_to_B, !srcIsGroup) → exits grp → out
-      // If blk is inside grp and blk is the tgt (B_to_A, !srcIsGroup) → enters grp → in
-      const blkIsSrc = !srcIsGroup; // blk = src means !srcIsGroup
-      const flowsOut = blkInsideGrp
-        ? (blkIsSrc ? cn.direction === 'A_to_B' : cn.direction === 'B_to_A')
-        : (blkIsSrc ? cn.direction === 'B_to_A' : cn.direction === 'A_to_B');
-      portDir = flowsOut ? 'out' : 'in';
-    }
-    const dirArrow = { in:'▶', out:'◀', inout:'◆' }[portDir];
-    const ps = 14;
-    portIcon = `
-      <rect x="${gpx - ps/2}" y="${gpy - ps/2}" width="${ps}" height="${ps}" rx="2"
-            fill="#212121" stroke="#fff" stroke-width="1.5"/>
-      <text x="${gpx}" y="${gpy + 4}" text-anchor="middle" font-size="8" fill="#fff"
-            style="pointer-events:none;font-family:system-ui;font-weight:bold">${dirArrow}</text>`;
+  // Port squares at BOTH endpoints, always visible
+  // Direction arrow: src side shows outflow direction, tgt side shows inflow direction
+  const ps = CONN_EP_SIZE;
+  const fs = 10; // font size for arrow
+  function epArrow(isSrcSide) {
+    // From the source component's point of view: what exits it?
+    // A_to_B → flows from src to tgt → src=out, tgt=in
+    // B_to_A → flows from tgt to src → src=in,  tgt=out
+    // bidirectional → both sides = inout
+    if (cn.direction === 'bidirectional') return '◆';
+    const srcSends = cn.direction === 'A_to_B';
+    return (isSrcSide ? srcSends : !srcSends) ? '◀' : '▶';
   }
+  function portSquare(px, py, arrowChar) {
+    return `
+      <rect x="${px - ps/2}" y="${py - ps/2}" width="${ps}" height="${ps}" rx="3"
+            fill="#212121" stroke="#fff" stroke-width="1.5" style="pointer-events:none"/>
+      <text x="${px}" y="${py + fs*0.38}" text-anchor="middle" font-size="${fs}" fill="#fff"
+            font-family="system-ui" font-weight="bold" style="pointer-events:none">${arrowChar}</text>`;
+  }
+  const portIcon = portSquare(sx, sy, epArrow(true)) + portSquare(tx, ty, epArrow(false));
 
   const isSel = _selectedConnId === cn.id;
-  // Draggable endpoint handles (visible only when selected)
-  const epR = 6;
-  const epSrc = `<circle class="arch-conn-ep" cx="${sx}" cy="${sy}" r="${epR}"
-    fill="#1A73E8" stroke="#fff" stroke-width="1.5"
-    data-conn-id="${cn.id}" data-endpoint="source" style="pointer-events:all"/>`;
-  const epTgt = `<circle class="arch-conn-ep" cx="${tx}" cy="${ty}" r="${epR}"
-    fill="#1A73E8" stroke="#fff" stroke-width="1.5"
-    data-conn-id="${cn.id}" data-endpoint="target" style="pointer-events:all"/>`;
+  // Draggable endpoint handles (visible only when selected, overlay on port squares)
+  const epHalf = ps / 2;
+  const epSrc = `<rect class="arch-conn-ep" x="${sx-epHalf}" y="${sy-epHalf}"
+    width="${ps}" height="${ps}" rx="3" fill="rgba(26,115,232,0.35)" stroke="#1A73E8" stroke-width="2"
+    data-conn-id="${cn.id}" data-endpoint="source" style="pointer-events:all;cursor:grab"/>`;
+  const epTgt = `<rect class="arch-conn-ep" x="${tx-epHalf}" y="${ty-epHalf}"
+    width="${ps}" height="${ps}" rx="3" fill="rgba(26,115,232,0.35)" stroke="#1A73E8" stroke-width="2"
+    data-conn-id="${cn.id}" data-endpoint="target" style="pointer-events:all;cursor:grab"/>`;
   return `
     <g id="conn-${cn.id}" class="arch-conn-g${isSel?' arch-conn-g--sel':''}">
       <path d="${d}" fill="none" stroke="transparent" stroke-width="14"/>
@@ -1002,7 +993,8 @@ function handleEndpointMove(e) {
     const d = bezier(sx,sy,cn.source_port,tx,ty,cn.target_port);
     grpEl.querySelectorAll('path').forEach(p => { if (p.getAttribute('d')) p.setAttribute('d', d); });
     const ep = grpEl.querySelector(`.arch-conn-ep[data-endpoint="${endpoint}"]`);
-    if (ep) { ep.setAttribute('cx', endpoint==='source'?sx:tx); ep.setAttribute('cy', endpoint==='source'?sy:ty); }
+    const epx = endpoint==='source'?sx:tx, epy = endpoint==='source'?sy:ty;
+    if (ep) { ep.setAttribute('x', epx-CONN_EP_SIZE/2); ep.setAttribute('y', epy-CONN_EP_SIZE/2); }
   }
 }
 
