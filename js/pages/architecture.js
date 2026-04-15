@@ -17,7 +17,7 @@ import { sb } from '../config.js';
 import { toast } from '../toast.js';
 import { confirmDialog } from '../components/modal.js';
 import { getFeaturesTree, ICONS as IDEF_ICONS } from './item-definition.js';
-import { nextIndex, nameInitials } from '../config.js';
+import { nextIndex, buildCode, nameInitials } from '../config.js';
 
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
@@ -1415,8 +1415,38 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTg
       : 'Error: '+error.message;
     toast(msg,'error'); return;
   }
+
+  // Auto-create an Interface requirement linked to this connection
+  const reqIdx = await nextIndex('requirements', { parent_id: _s.parentId });
+  const reqCode = buildCode('REQ', {
+    domain: _s.parentType === 'item' ? 'ITEM' : 'SYS',
+    projectName: _s.project.name,
+    systemName: _s.parentType === 'system' ? (_s.item?.name || '') : undefined,
+    index: reqIdx,
+  });
+  const srcName = (src.comp_type==='Port'&&src.data?.parent_block_id)
+    ? (compById(src.data.parent_block_id)?.name ?? src.name) : src.name;
+  const tgtName = (tgt.comp_type==='Port'&&tgt.data?.parent_block_id)
+    ? (compById(tgt.data.parent_block_id)?.name ?? tgt.name) : tgt.name;
+  const { data: reqData } = await sb.from('requirements').insert({
+    req_code: reqCode,
+    parent_type: _s.parentType,
+    parent_id: _s.parentId,
+    project_id: _s.project.id,
+    title: `Interface: ${srcName} ↔ ${tgtName}`,
+    type: 'interface',
+    status: 'draft',
+    priority: 'medium',
+  }).select('id').single();
+
+  // Link the requirement back to the connection
+  if (reqData?.id) {
+    await sb.from('arch_connections').update({ requirement: reqCode }).eq('id', data.id);
+    data.requirement = reqCode;
+  }
+
   _s.connections.push(data);
-  renderConnections(); selectConn(data.id); toast('Interface created.','success');
+  renderConnections(); selectConn(data.id); toast('Interface created + requirement ' + reqCode + '.', 'success');
 }
 
 function _ifaceOpts(sel) {
