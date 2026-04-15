@@ -352,6 +352,18 @@ function groupHTML(g) {
     ? _s.projectSystems.find(s => s.id === g.data.system_id) : null;
   const sysLabel = linkedSys
     ? `<span class="arch-group-sysref" title="Linked system">${escH(linkedSys.system_code)}</span>` : '';
+  const funs = g.functions || [];
+  const funStrip = funs.length ? `
+    <div class="arch-group-funs" id="funlist-${g.id}">
+      ${funs.map(f => `
+        <div class="arch-fun-box arch-fun-box--group ${f.is_safety_related ? 'arch-fun-box--safe' : ''}"
+             data-fun-id="${f.id}" data-comp-id="${g.id}">
+          <span class="arch-fun-box-label">f</span>
+          <span class="arch-fun-box-name">${escH(f.name)}</span>
+          ${f.is_safety_related ? '<span class="arch-fun-box-warn">⚠</span>' : ''}
+          <button class="arch-fun-del" data-fun-id="${f.id}" data-comp-id="${g.id}" title="Remove">✕</button>
+        </div>`).join('')}
+    </div>` : '';
 
   return `
     <div class="arch-group ${_s.selected === g.id ? 'arch-group--sel' : ''}"
@@ -363,6 +375,7 @@ function groupHTML(g) {
         ${sysLabel}
         <button class="arch-group-info-btn" data-comp-id="${g.id}">≡</button>
       </div>
+      ${funStrip}
       <button class="arch-del-badge" data-del-id="${g.id}" title="Delete (Del)">✕</button>
       <div class="arch-resize-handle arch-resize-handle--se" data-corner="se" data-comp-id="${g.id}"></div>
       <div class="arch-resize-handle arch-resize-handle--sw" data-corner="sw" data-comp-id="${g.id}"></div>
@@ -408,11 +421,12 @@ function blockHTML(c) {
 
   const funItems = funs.length
     ? funs.map(f => `
-        <div class="arch-fun-chip ${f.is_safety_related ? 'arch-fun-safe' : ''}"
+        <div class="arch-fun-box ${f.is_safety_related ? 'arch-fun-box--safe' : ''}"
              data-fun-id="${f.id}" data-comp-id="${c.id}">
-          ${f.is_safety_related ? '<span class="arch-fun-warn">⚠</span>' : '<span class="arch-fun-dot">⬥</span>'}
-          <span class="arch-fun-name">${escH(f.name)}</span>
-          <button class="arch-fun-del" data-fun-id="${f.id}" data-comp-id="${c.id}">✕</button>
+          <span class="arch-fun-box-label">f</span>
+          <span class="arch-fun-box-name">${escH(f.name)}</span>
+          ${f.is_safety_related ? '<span class="arch-fun-box-warn">⚠</span>' : ''}
+          <button class="arch-fun-del" data-fun-id="${f.id}" data-comp-id="${c.id}" title="Remove">✕</button>
         </div>`).join('')
     : `<button class="arch-addfun-btn" data-comp-id="${c.id}">+ Add function</button>`;
 
@@ -430,7 +444,6 @@ function blockHTML(c) {
       <div class="arch-block-type-row" style="background:${st.bg}">
         <span class="arch-block-type-badge" style="color:${st.border}">${c.comp_type}</span>
       </div>
-      <div class="arch-block-funs-hdr">λ functions</div>
       <div class="arch-block-funs" id="funlist-${c.id}">${funItems}</div>
       <div class="arch-port arch-port--top"    data-comp-id="${c.id}" data-port="top"></div>
       <div class="arch-port arch-port--right"  data-comp-id="${c.id}" data-port="right"></div>
@@ -726,15 +739,29 @@ function wireCanvas() {
   // Drop target: assign idef function to component by dragging from bottom panel
   const canvasOuter = document.getElementById('arch-outer');
   if (canvasOuter) {
+    let _dragHoverEl = null;
+    const clearDragHover = () => {
+      if (_dragHoverEl) { _dragHoverEl.classList.remove('arch-fn-drop-hover'); _dragHoverEl = null; }
+    };
     canvasOuter.addEventListener('dragover', e => {
-      if (e.dataTransfer.types.includes('text/plain')) {
-        e.preventDefault();
-        canvasOuter.classList.add('arch-drop-target');
+      if (!e.dataTransfer.types.includes('text/plain')) return;
+      e.preventDefault();
+      // Find the specific component under cursor
+      const under = document.elementsFromPoint(e.clientX, e.clientY);
+      const tComp = under.find(el =>
+        (el.classList?.contains('arch-block') || el.classList?.contains('arch-group') ||
+         el.classList?.contains('arch-port-block')) && el.dataset.id);
+      if (tComp !== _dragHoverEl) {
+        clearDragHover();
+        if (tComp) { tComp.classList.add('arch-fn-drop-hover'); _dragHoverEl = tComp; }
       }
     });
-    canvasOuter.addEventListener('dragleave', () => canvasOuter.classList.remove('arch-drop-target'));
+    canvasOuter.addEventListener('dragleave', e => {
+      // Only clear if leaving the canvas entirely
+      if (!canvasOuter.contains(e.relatedTarget)) clearDragHover();
+    });
     canvasOuter.addEventListener('drop', e => {
-      canvasOuter.classList.remove('arch-drop-target');
+      clearDragHover();
       e.preventDefault();
       let payload;
       try { payload = JSON.parse(e.dataTransfer.getData('text/plain')); } catch(_) { return; }
@@ -902,7 +929,7 @@ function wireGlobal() {
 function wireGroup(id) {
   const el = document.getElementById(`comp-${id}`); if (!el) return;
   el.addEventListener('pointerdown', e => {
-    if (e.target.closest('.arch-resize-handle,.arch-group-info-btn,.arch-port')) return;
+    if (e.target.closest('.arch-resize-handle,.arch-group-info-btn,.arch-port,.arch-fun-del')) return;
     selectComp(id);
   });
   el.querySelector('[data-drag-id]')?.addEventListener('pointerdown', e => {
@@ -937,6 +964,9 @@ function wireGroup(id) {
       const tp = document.getElementById('arch-temp');
       if (tp) tp.style.display = '';
     });
+  });
+  el.querySelectorAll('.arch-fun-del').forEach(btn => {
+    btn.addEventListener('click', async e => { e.stopPropagation(); await deleteFun(btn.dataset.funId, btn.dataset.compId); });
   });
   wireResizeHandle(el, id);
 }

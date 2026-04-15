@@ -1500,6 +1500,18 @@ input, select, textarea { font-family: var(--font); }
 .arch-addfun-btn:hover{background:rgba(26,115,232,0.06);border-color:var(--color-primary);color:var(--color-primary)}
 .arch-fun-del{background:none;border:none;color:#9AA0A6;cursor:pointer;font-size:9px;padding:0 2px;line-height:1;flex-shrink:0}
 .arch-fun-del:hover{color:#C5221F}
+/* Medini-style function boxes inside blocks/groups */
+.arch-fun-box{display:flex;align-items:center;gap:4px;padding:2px 5px;border:1px solid #B0BEC5;border-radius:3px;font-size:10px;background:#F8F9FA;margin:2px 0;cursor:default}
+.arch-fun-box--safe{border-color:#C5221F;background:#FFF0F0}
+.arch-fun-box--group{background:#EEF2FF;border-color:#9FA8DA}
+.arch-fun-box-label{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#5C6BC0;color:#fff;font-size:8px;font-weight:700;flex-shrink:0;font-style:italic}
+.arch-fun-box--safe .arch-fun-box-label{background:#C5221F}
+.arch-fun-box-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#3C4043}
+.arch-fun-box-warn{font-size:10px;color:#C5221F;flex-shrink:0}
+/* Group function strip at top */
+.arch-group-funs{display:flex;flex-wrap:wrap;gap:3px;padding:4px 6px;border-bottom:1px dashed rgba(0,0,0,0.12);background:rgba(255,255,255,0.5)}
+/* Per-component drag hover highlight */
+.arch-block.arch-fn-drop-hover,.arch-group.arch-fn-drop-hover,.arch-port-block.arch-fn-drop-hover{outline:2px solid var(--color-primary);outline-offset:-2px;background:rgba(26,115,232,0.08) !important}
 
 /* Ports — full-edge transparent strips, highlight on hover */
 .arch-port{position:absolute;z-index:12;cursor:crosshair;pointer-events:all;opacity:0;transition:opacity 0.12s;background:transparent}
