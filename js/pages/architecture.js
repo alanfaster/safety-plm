@@ -2027,6 +2027,7 @@ function idefFunRow(fn, idx, total) {
       <div class="fuf-row-text">
         <span class="fuf-code">${escH(fn.func_code||'')}</span>
         <span class="fuf-name">${escH(fn.name)}</span>
+        ${fn.description ? `<span class="fuf-desc">${escH(fn.description)}</span>` : ''}
         ${assigned ? '<span class="idef-fn-assigned-badge">✓ assigned</span>' : ''}
       </div>
     </div>
