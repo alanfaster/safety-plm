@@ -1904,12 +1904,44 @@ async function deleteComp(id) {
 }
 
 async function deleteConn(connId) {
-  captureUndo();
-  const { error } = await sb.from('arch_connections').delete().eq('id', connId);
-  if (error) { toast('Error: '+error.message,'error'); return; }
-  _s.connections = _s.connections.filter(c=>c.id!==connId);
-  _selectedConnId = null;
-  renderConnections(); showPropsEmpty(); toast('Interface deleted.','success');
+  const cn = _s.connections.find(c => c.id === connId);
+  const reqCode = cn?.requirement;
+
+  const doDelete = async (alsoReq) => {
+    captureUndo();
+    const { error } = await sb.from('arch_connections').delete().eq('id', connId);
+    if (error) { toast('Error: '+error.message,'error'); return; }
+    if (alsoReq && reqCode) {
+      await sb.from('requirements').delete().eq('req_code', reqCode)
+        .eq('parent_type', _s.parentType).eq('parent_id', _s.parentId);
+      _ifreqs = _ifreqs.filter(r => r.req_code !== reqCode);
+      renderIfaceReqs();
+    }
+    _s.connections = _s.connections.filter(c => c.id !== connId);
+    _selectedConnId = null;
+    renderConnections(); showPropsEmpty();
+    toast(alsoReq ? 'Connection and requirement deleted.' : 'Connection deleted.', 'success');
+  };
+
+  if (!reqCode) { await doDelete(false); return; }
+
+  showModal({
+    title: 'Delete Connection',
+    body: `
+      <p style="margin-bottom:8px">This connection is linked to requirement <strong>${escH(reqCode)}</strong>.</p>
+      <p style="margin-bottom:12px">What would you like to do?</p>
+      <div class="modal-warn-box">
+        ⚠ Deleting the connection without removing the requirement may create inconsistencies between the Architecture and other documents (Requirements, Traceability).
+      </div>`,
+    footer: `
+      <button class="btn btn-secondary" id="dc-cancel">Cancel</button>
+      <button class="btn btn-secondary" id="dc-conn-only">Delete connection only</button>
+      <button class="btn btn-danger"    id="dc-both">Delete connection + requirement</button>
+    `,
+  });
+  document.getElementById('dc-cancel').onclick    = () => hideModal();
+  document.getElementById('dc-conn-only').onclick = () => { hideModal(); doDelete(false); };
+  document.getElementById('dc-both').onclick      = () => { hideModal(); doDelete(true); };
 }
 
 async function deleteFun(funId, compId) {

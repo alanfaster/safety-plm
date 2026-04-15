@@ -614,6 +614,7 @@ input, select, textarea { font-family: var(--font); }
 }
 .modal-close:hover { background: var(--color-bg); color: var(--color-text); }
 .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+.modal-warn-box{background:#FEF7E0;border:1px solid #F9AB00;border-radius:6px;padding:10px 12px;font-size:12px;color:#B06000;line-height:1.5}
 .modal-footer {
   padding: 16px 24px; border-top: 1px solid var(--color-border);
   display: flex; justify-content: flex-end; gap: 8px;

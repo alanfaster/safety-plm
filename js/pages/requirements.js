@@ -121,14 +121,47 @@ async function loadRequirements(project, parentType, parentId, typeFilter = null
   });
 
   body.querySelectorAll('.btn-del-req').forEach(btn => {
-    btn.onclick = () => confirmDialog(
-      `${t('common.confirm_delete')} "${btn.dataset.title}"?`,
-      async () => {
-        await sb.from('requirements').delete().eq('id', btn.dataset.id);
-        await loadRequirements(project, parentType, parentId);
-        toast('Requirement deleted.', 'success');
+    btn.onclick = async () => {
+      const req = data.find(r => r.id === btn.dataset.id);
+      if (!req) return;
+
+      // Check if there's a linked arch_connection
+      let linkedConn = null;
+      if (req.type === 'interface' && req.req_code) {
+        const { data: conns } = await sb.from('arch_connections')
+          .select('id').eq('requirement', req.req_code).maybeSingle();
+        linkedConn = conns;
       }
-    );
+
+      const doDelete = async (alsoConn) => {
+        await sb.from('requirements').delete().eq('id', req.id);
+        if (alsoConn && linkedConn) {
+          await sb.from('arch_connections').delete().eq('id', linkedConn.id);
+        }
+        await loadRequirements(project, parentType, parentId, typeFilter);
+        toast(alsoConn ? 'Requirement and connection deleted.' : 'Requirement deleted.', 'success');
+      };
+
+      if (!linkedConn) { await doDelete(false); return; }
+
+      showModal({
+        title: 'Delete Requirement',
+        body: `
+          <p style="margin-bottom:8px">Requirement <strong>${escHtml(req.req_code)}</strong> is linked to a connection in the Architecture canvas.</p>
+          <p style="margin-bottom:12px">What would you like to do?</p>
+          <div class="modal-warn-box">
+            ⚠ Deleting the requirement without removing the connection may create inconsistencies between the Architecture and other documents (Requirements, Traceability).
+          </div>`,
+        footer: `
+          <button class="btn btn-secondary" id="dr-cancel">Cancel</button>
+          <button class="btn btn-secondary" id="dr-req-only">Delete requirement only</button>
+          <button class="btn btn-danger"    id="dr-both">Delete requirement + connection</button>
+        `,
+      });
+      document.getElementById('dr-cancel').onclick   = () => hideModal();
+      document.getElementById('dr-req-only').onclick = () => { hideModal(); doDelete(false); };
+      document.getElementById('dr-both').onclick     = () => { hideModal(); doDelete(true); };
+    };
   });
 }
 
