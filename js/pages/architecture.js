@@ -448,13 +448,13 @@ function connSVG(cn) {
   const ps = CONN_EP_SIZE;
   const fs = 10; // font size for arrow
   function epArrow(isSrcSide) {
-    // From the source component's point of view: what exits it?
-    // A_to_B → flows from src to tgt → src=out, tgt=in
-    // B_to_A → flows from tgt to src → src=in,  tgt=out
-    // bidirectional → both sides = inout
+    // Arrow shows the flow direction from this endpoint's perspective:
+    // src of A_to_B → sends → ▶ (outward)   tgt of A_to_B → receives → ◀ (inward)
+    // src of B_to_A → receives → ◀            tgt of B_to_A → sends → ▶
     if (cn.direction === 'bidirectional') return '◆';
     const srcSends = cn.direction === 'A_to_B';
-    return (isSrcSide ? srcSends : !srcSends) ? '◀' : '▶';
+    const thisSends = isSrcSide ? srcSends : !srcSends;
+    return thisSends ? '▶' : '◀';
   }
   function portSquare(px, py, arrowChar) {
     return `
@@ -1123,7 +1123,12 @@ function selectConn(connId) {
     g.classList.toggle('arch-conn-g--sel', g.id === `conn-${connId}`));
   const cn = _s.connections.find(c => c.id === connId); if (!cn) return;
   const src = compById(cn.source_id), tgt = compById(cn.target_id); if (!src||!tgt) return;
-  showPropsPanel(connPropsHTML(src.name, tgt.name, cn));
+  // If endpoint is an auto-attached Port, use the parent block's name for display
+  const srcName = (src.comp_type==='Port' && src.data?.parent_block_id)
+    ? (compById(src.data.parent_block_id)?.name ?? src.name) : src.name;
+  const tgtName = (tgt.comp_type==='Port' && tgt.data?.parent_block_id)
+    ? (compById(tgt.data.parent_block_id)?.name ?? tgt.name) : tgt.name;
+  showPropsPanel(connPropsHTML(srcName, tgtName, cn));
   wireConnProps(cn);
 }
 
