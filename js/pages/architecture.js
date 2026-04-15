@@ -110,11 +110,84 @@ let _idef = { loaded: false, parentType: 'item', parentId: null,
               features: [], useCases: [], functions: [],
               selFeatId: null, selUCId: null };
 
+// ── Architecture Landing ──────────────────────────────────────────────────────
+
+function renderArchLanding(container, { item, system, pages = [] }) {
+  const parentName = system?.name || item?.name;
+  const getHref = name => {
+    const pg = pages.find(p => p.name === name);
+    return pg ? `${window.location.hash.replace(/#/, '').replace(/\/page\/[^/]+$/, '')}/page/${pg.id}` : '#';
+  };
+  const conceptHref = getHref('Architecture Concept');
+  const specHref    = getHref('Architecture Specification');
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div class="page-header-top">
+        <div>
+          <h1>Architecture</h1>
+          <p class="text-muted">${parentName}</p>
+        </div>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="arch-landing">
+        <a class="arch-landing-card" href="#${conceptHref}">
+          <div class="arch-landing-icon">◈</div>
+          <div class="arch-landing-title">Architecture Concept</div>
+          <div class="arch-landing-desc">Visual block diagram canvas with drag-and-drop components, system groups, connections and interface allocation.</div>
+          <div class="arch-landing-arrow">Open →</div>
+        </a>
+        <a class="arch-landing-card" href="#${specHref}">
+          <div class="arch-landing-icon">📐</div>
+          <div class="arch-landing-title">Architecture Specification</div>
+          <div class="arch-landing-desc">Formal specification items with natural language descriptions and lightweight UML diagrams (component, state, use case, class).</div>
+          <div class="arch-landing-arrow">Open →</div>
+        </a>
+      </div>
+    </div>
+  `;
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-export async function renderArchitecture(container, { project, item, system }) {
+export async function renderArchitecture(container, { project, item, system, domain = 'default', pageId = null }) {
   const parentType = system ? 'system' : 'item';
   const parentId   = system ? system.id : item.id;
+
+  // ── No sub-page selected → show landing + auto-create sub-pages ─────────────
+  if (!pageId) {
+    container.innerHTML = '<div class="content-loading"><div class="spinner"></div></div>';
+    const navDomain = parentType === 'item' ? 'item' : 'system';
+
+    // Ensure both sub-pages exist
+    const { data: existing } = await sb.from('nav_pages').select('id,name')
+      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .eq('domain', navDomain).eq('phase', 'architecture');
+
+    const names   = (existing || []).map(p => p.name);
+    const inserts = [];
+    if (!names.includes('Architecture Concept'))       inserts.push({ name: 'Architecture Concept',       sort_order: 0 });
+    if (!names.includes('Architecture Specification')) inserts.push({ name: 'Architecture Specification', sort_order: 1 });
+
+    if (inserts.length) {
+      await sb.from('nav_pages').insert(inserts.map((p, i) => ({
+        parent_type: parentType, parent_id: parentId,
+        domain: navDomain, phase: 'architecture',
+        name: p.name, sort_order: p.sort_order,
+      })));
+      window.dispatchEvent(new Event('hashchange'));
+    }
+
+    // Fetch final page list for link building
+    const { data: pages } = await sb.from('nav_pages').select('id,name')
+      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .eq('domain', navDomain).eq('phase', 'architecture')
+      .order('sort_order');
+
+    renderArchLanding(container, { item, system, pages });
+    return;
+  }
 
   container.innerHTML = '<div class="content-loading"><div class="spinner"></div></div>';
 

@@ -9,6 +9,7 @@ import { toast } from '../toast.js';
 import { renderRequirements }   from './requirements.js';
 import { renderItemDefinition } from './item-definition.js';
 import { renderArchitecture }   from './architecture.js';
+import { renderArchSpec }       from './arch-spec.js';
 
 export async function renderVcycle(container, { project, item, system, phase, domain = 'default', pageId = null }) {
   if (phase === 'item_definition') {
@@ -17,6 +18,15 @@ export async function renderVcycle(container, { project, item, system, phase, do
   }
 
   if (phase === 'architecture' && (domain === 'system' || domain === 'default')) {
+    if (pageId) {
+      const { data: pg } = await sb.from('nav_pages').select('name').eq('id', pageId).maybeSingle();
+      if (pg?.name?.toLowerCase().includes('specification')) {
+        const parentType = system ? 'system' : 'item';
+        const parentId   = system ? system.id : item.id;
+        await renderArchSpec(container, { project, item, system, parentType, parentId, pageId });
+        return;
+      }
+    }
     await renderArchitecture(container, { project, item, system, domain, pageId });
     return;
   }
