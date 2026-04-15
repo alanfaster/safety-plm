@@ -1496,6 +1496,8 @@ input, select, textarea { font-family: var(--font); }
 .arch-fun-dot{font-size:8px;flex-shrink:0;color:#9AA0A6}
 .arch-fun-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#3C4043}
 .arch-fun-empty{font-size:10px;color:#9AA0A6;padding:2px 6px;font-style:italic}
+.arch-addfun-btn{display:block;width:100%;text-align:left;background:none;border:1px dashed #B0BEC5;border-radius:4px;padding:3px 8px;font-size:10px;color:#5F6368;cursor:pointer;margin:2px 0}
+.arch-addfun-btn:hover{background:rgba(26,115,232,0.06);border-color:var(--color-primary);color:var(--color-primary)}
 .arch-fun-del{background:none;border:none;color:#9AA0A6;cursor:pointer;font-size:9px;padding:0 2px;line-height:1;flex-shrink:0}
 .arch-fun-del:hover{color:#C5221F}
 
@@ -1512,9 +1514,20 @@ input, select, textarea { font-family: var(--font); }
 .arch-conn-g--sel .arch-conn-ep{opacity:1}
 .arch-conn-ep:hover{opacity:1!important}
 
-/* Resize handle */
-.arch-resize-handle{position:absolute;right:0;bottom:0;width:13px;height:13px;cursor:nwse-resize;z-index:10}
-.arch-resize-handle::after{content:'';position:absolute;right:2px;bottom:2px;width:7px;height:7px;border-right:2px solid rgba(0,0,0,0.25);border-bottom:2px solid rgba(0,0,0,0.25);border-radius:1px}
+/* Resize handles — 4 corners */
+.arch-resize-handle{position:absolute;width:13px;height:13px;z-index:10;opacity:0;transition:opacity 0.15s}
+.arch-block:hover .arch-resize-handle,.arch-group:hover .arch-resize-handle{opacity:1}
+.arch-resize-handle--se{right:0;bottom:0;cursor:nwse-resize}
+.arch-resize-handle--sw{left:0;bottom:0;cursor:nesw-resize}
+.arch-resize-handle--ne{right:0;top:0;cursor:nesw-resize}
+.arch-resize-handle--nw{left:0;top:0;cursor:nwse-resize}
+.arch-resize-handle::after{content:'';position:absolute;width:7px;height:7px;border-radius:1px}
+.arch-resize-handle--se::after{right:2px;bottom:2px;border-right:2px solid rgba(0,0,0,0.3);border-bottom:2px solid rgba(0,0,0,0.3)}
+.arch-resize-handle--sw::after{left:2px;bottom:2px;border-left:2px solid rgba(0,0,0,0.3);border-bottom:2px solid rgba(0,0,0,0.3)}
+.arch-resize-handle--ne::after{right:2px;top:2px;border-right:2px solid rgba(0,0,0,0.3);border-top:2px solid rgba(0,0,0,0.3)}
+.arch-resize-handle--nw::after{left:2px;top:2px;border-left:2px solid rgba(0,0,0,0.3);border-top:2px solid rgba(0,0,0,0.3)}
+/* Group expand hint during child resize */
+.arch-group--expand-hint{border-color:var(--color-primary)!important;border-style:dashed!important;box-shadow:0 0 0 3px rgba(26,115,232,0.25)!important}
 
 /* Inline rename input */
 .arch-rename-input{flex:1;background:rgba(255,255,255,0.15);border:none;border-bottom:1.5px solid rgba(255,255,255,0.6);outline:none;color:#fff;font-weight:800;font-size:var(--text-sm);min-width:60px;padding:0 2px}

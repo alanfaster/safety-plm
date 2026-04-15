@@ -344,7 +344,10 @@ function groupHTML(g) {
         <button class="arch-group-info-btn" data-comp-id="${g.id}">≡</button>
       </div>
       <button class="arch-del-badge" data-del-id="${g.id}" title="Delete (Del)">✕</button>
-      <div class="arch-resize-handle" data-comp-id="${g.id}"></div>
+      <div class="arch-resize-handle arch-resize-handle--se" data-corner="se" data-comp-id="${g.id}"></div>
+      <div class="arch-resize-handle arch-resize-handle--sw" data-corner="sw" data-comp-id="${g.id}"></div>
+      <div class="arch-resize-handle arch-resize-handle--ne" data-corner="ne" data-comp-id="${g.id}"></div>
+      <div class="arch-resize-handle arch-resize-handle--nw" data-corner="nw" data-comp-id="${g.id}"></div>
       <div class="arch-port arch-port--top"    data-comp-id="${g.id}" data-port="top"></div>
       <div class="arch-port arch-port--right"  data-comp-id="${g.id}" data-port="right"></div>
       <div class="arch-port arch-port--bottom" data-comp-id="${g.id}" data-port="bottom"></div>
@@ -391,7 +394,7 @@ function blockHTML(c) {
           <span class="arch-fun-name">${escH(f.name)}</span>
           <button class="arch-fun-del" data-fun-id="${f.id}" data-comp-id="${c.id}">✕</button>
         </div>`).join('')
-    : `<div class="arch-fun-empty">no functions</div>`;
+    : `<button class="arch-addfun-btn" data-comp-id="${c.id}">+ Add function</button>`;
 
   return `
     <div class="arch-block ${sel ? 'arch-block--sel' : ''} ${safe ? 'arch-block--safe' : ''}"
@@ -402,7 +405,6 @@ function blockHTML(c) {
         <span class="arch-block-stereo">«${st.stereotype}»</span>
         <span class="arch-block-name" id="cname-${c.id}">${escH(c.name)}</span>
         ${safe ? '<span class="arch-block-safe-ico">⚠</span>' : ''}
-        <button class="arch-block-info-btn" data-comp-id="${c.id}">≡</button>
       </div>
       <button class="arch-del-badge" data-del-id="${c.id}" title="Delete (Del)">✕</button>
       <div class="arch-block-type-row" style="background:${st.bg}">
@@ -414,7 +416,10 @@ function blockHTML(c) {
       <div class="arch-port arch-port--right"  data-comp-id="${c.id}" data-port="right"></div>
       <div class="arch-port arch-port--bottom" data-comp-id="${c.id}" data-port="bottom"></div>
       <div class="arch-port arch-port--left"   data-comp-id="${c.id}" data-port="left"></div>
-      <div class="arch-resize-handle" data-comp-id="${c.id}"></div>
+      <div class="arch-resize-handle arch-resize-handle--se" data-corner="se" data-comp-id="${c.id}"></div>
+      <div class="arch-resize-handle arch-resize-handle--sw" data-corner="sw" data-comp-id="${c.id}"></div>
+      <div class="arch-resize-handle arch-resize-handle--ne" data-corner="ne" data-comp-id="${c.id}"></div>
+      <div class="arch-resize-handle arch-resize-handle--nw" data-corner="nw" data-comp-id="${c.id}"></div>
     </div>`;
 }
 
@@ -459,25 +464,38 @@ function connSVG(cn) {
     const thisSends = isSrcSide ? srcSends : !srcSends;
     return (thisSends ? ARROW_OUT : ARROW_IN)[side] || (thisSends ? '→' : '←');
   }
-  function portSquare(px, py, arrowChar) {
+  // Offset square outward from component edge so it sits ON the border, not inside
+  function squareOffset(portStr) {
+    const side = portSide(portStr);
+    const h = ps / 2;
+    if (side === 'top')    return [0, -h];
+    if (side === 'bottom') return [0,  h];
+    if (side === 'left')   return [-h, 0];
+    return [h, 0]; // right
+  }
+  function portSquare(px, py, portStr, arrowChar) {
+    const [ox, oy] = squareOffset(portStr);
+    const cx = px + ox, cy = py + oy;
     return `
-      <rect x="${px - ps/2}" y="${py - ps/2}" width="${ps}" height="${ps}" rx="3"
+      <rect x="${cx - ps/2}" y="${cy - ps/2}" width="${ps}" height="${ps}" rx="3"
             fill="#212121" stroke="#fff" stroke-width="1.5" style="pointer-events:none"/>
-      <text x="${px}" y="${py + fs*0.38}" text-anchor="middle" font-size="${fs}" fill="#fff"
+      <text x="${cx}" y="${cy + fs*0.38}" text-anchor="middle" font-size="${fs}" fill="#fff"
             font-family="system-ui" font-weight="bold" style="pointer-events:none">${arrowChar}</text>`;
   }
-  const portIcon = portSquare(sx, sy, epArrow(true, cn.source_port))
-                 + portSquare(tx, ty, epArrow(false, cn.target_port));
+  const portIcon = portSquare(sx, sy, cn.source_port, epArrow(true, cn.source_port))
+                 + portSquare(tx, ty, cn.target_port, epArrow(false, cn.target_port));
 
   const isSel = _selectedConnId === cn.id;
   // Draggable endpoint handles (visible only when selected, overlay on port squares)
-  const epHalf = ps / 2;
-  const epSrc = `<rect class="arch-conn-ep" x="${sx-epHalf}" y="${sy-epHalf}"
-    width="${ps}" height="${ps}" rx="3" fill="rgba(26,115,232,0.35)" stroke="#1A73E8" stroke-width="2"
-    data-conn-id="${cn.id}" data-endpoint="source" style="pointer-events:all;cursor:grab"/>`;
-  const epTgt = `<rect class="arch-conn-ep" x="${tx-epHalf}" y="${ty-epHalf}"
-    width="${ps}" height="${ps}" rx="3" fill="rgba(26,115,232,0.35)" stroke="#1A73E8" stroke-width="2"
-    data-conn-id="${cn.id}" data-endpoint="target" style="pointer-events:all;cursor:grab"/>`;
+  function epRect(px, py, portStr, epEndpoint) {
+    const [ox, oy] = squareOffset(portStr);
+    const cx = px + ox, cy = py + oy;
+    return `<rect class="arch-conn-ep" x="${cx-ps/2}" y="${cy-ps/2}"
+      width="${ps}" height="${ps}" rx="3" fill="rgba(26,115,232,0.35)" stroke="#1A73E8" stroke-width="2"
+      data-conn-id="${cn.id}" data-endpoint="${epEndpoint}" style="pointer-events:all;cursor:grab"/>`;
+  }
+  const epSrc = epRect(sx, sy, cn.source_port, 'source');
+  const epTgt = epRect(tx, ty, cn.target_port, 'target');
   return `
     <g id="conn-${cn.id}" class="arch-conn-g${isSel?' arch-conn-g--sel':''}">
       <path d="${d}" fill="none" stroke="transparent" stroke-width="14"/>
@@ -767,7 +785,14 @@ function wireGlobal() {
       const { id } = _s.resizing;
       _s.resizing = null;
       const c = compById(id);
-      if (c) sb.from('arch_components').update({ width:c.width, height:c.height, updated_at:new Date().toISOString() }).eq('id', id);
+      const now = new Date().toISOString();
+      if (c) sb.from('arch_components').update({ x:c.x, y:c.y, width:c.width, height:c.height, updated_at:now }).eq('id', id);
+      // Also save group if it was auto-expanded
+      if (c && !c.comp_type?.includes('Group') && c.data?.group_id) {
+        const grp = compById(c.data.group_id);
+        if (grp) sb.from('arch_components').update({ x:grp.x, y:grp.y, width:grp.width, height:grp.height, updated_at:now }).eq('id', grp.id);
+      }
+      document.querySelectorAll('.arch-group--expand-hint').forEach(el => el.classList.remove('arch-group--expand-hint'));
     }
     if (_s?.draggingEndpoint) handleEndpointEnd(e);
     if (_s?.connecting)       handleConnectEnd(e);
@@ -846,12 +871,12 @@ function wireBlock(id) {
   const c  = compById(id);
 
   el.addEventListener('pointerdown', e => {
-    if (e.target.closest('.arch-port,.arch-resize-handle,.arch-block-info-btn,.arch-fun-del')) return;
+    if (e.target.closest('.arch-port,.arch-resize-handle,.arch-fun-del,.arch-addfun-btn')) return;
     selectComp(id);
   });
 
   el.querySelector('[data-drag-id]')?.addEventListener('pointerdown', e => {
-    if (e.target.closest('.arch-block-info-btn')) return;
+    if (e.target.closest('.arch-addfun-btn')) return;
     e.stopPropagation(); e.preventDefault();
     captureUndo();
     selectComp(id);
@@ -873,11 +898,20 @@ function wireBlock(id) {
   el.querySelector('.arch-block-name')?.addEventListener('dblclick', e => {
     e.stopPropagation(); startRename(id);
   });
-  el.querySelector('.arch-block-info-btn')?.addEventListener('click', e => {
-    e.stopPropagation(); selectComp(id); openProps(id);
-  });
   el.querySelector('.arch-del-badge')?.addEventListener('click', e => {
     e.stopPropagation(); deleteComp(id);
+  });
+  el.querySelector('.arch-addfun-btn')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    const name = `Function ${(compById(id)?.functions?.length ?? 0) + 1}`;
+    const { data, error } = await sb.from('arch_functions').insert({
+      component_id: id, name, is_safety_related: false,
+      sort_order: compById(id)?.functions?.length ?? 0,
+    }).select().single();
+    if (error) { toast('Error: '+error.message, 'error'); return; }
+    const c2 = compById(id); if (c2) c2.functions.push(data);
+    refreshComp(id);
+    selectComp(id); openProps(id);
   });
   el.querySelectorAll('.arch-fun-del').forEach(btn => {
     btn.addEventListener('click', async e => { e.stopPropagation(); await deleteFun(btn.dataset.funId, btn.dataset.compId); });
@@ -897,12 +931,16 @@ function wireBlock(id) {
 }
 
 function wireResizeHandle(el, id) {
-  el.querySelector('.arch-resize-handle')?.addEventListener('pointerdown', e => {
-    e.stopPropagation(); e.preventDefault();
-    const c = compById(id); if (!c) return;
-    captureUndo();
-    const pos = canvasPos(e);
-    _s.resizing = { id, startX:pos.x, startY:pos.y, origW:c.width, origH:c.height };
+  el.querySelectorAll('.arch-resize-handle').forEach(handle => {
+    handle.addEventListener('pointerdown', e => {
+      e.stopPropagation(); e.preventDefault();
+      const c = compById(id); if (!c) return;
+      captureUndo();
+      const pos = canvasPos(e);
+      const corner = handle.dataset.corner || 'se';
+      _s.resizing = { id, corner, startX:pos.x, startY:pos.y,
+        origX:c.x, origY:c.y, origW:c.width, origH:c.height };
+    });
   });
 }
 
@@ -998,7 +1036,12 @@ function handleEndpointMove(e) {
     grpEl.querySelectorAll('path').forEach(p => { if (p.getAttribute('d')) p.setAttribute('d', d); });
     const ep = grpEl.querySelector(`.arch-conn-ep[data-endpoint="${endpoint}"]`);
     const epx = endpoint==='source'?sx:tx, epy = endpoint==='source'?sy:ty;
-    if (ep) { ep.setAttribute('x', epx-CONN_EP_SIZE/2); ep.setAttribute('y', epy-CONN_EP_SIZE/2); }
+    const epPort = endpoint==='source'?cn.source_port:cn.target_port;
+    const epSide = epPort?.split(':')[0] || 'right';
+    const half = CONN_EP_SIZE/2;
+    const offMap = {top:[0,-half],bottom:[0,half],left:[-half,0],right:[half,0]};
+    const [eox,eoy] = offMap[epSide]||[half,0];
+    if (ep) { ep.setAttribute('x', epx+eox-half); ep.setAttribute('y', epy+eoy-half); }
   }
 }
 
@@ -1021,14 +1064,78 @@ async function handleEndpointEnd(e) {
 // ── Resize ────────────────────────────────────────────────────────────────────
 
 function handleResizeMove(e) {
-  const { id, startX, startY, origW, origH } = _s.resizing;
+  const { id, corner, startX, startY, origX, origY, origW, origH } = _s.resizing;
   const c = compById(id); if (!c) return;
   const pos = canvasPos(e);
   const isGrp = c.comp_type==='Group';
-  c.width  = Math.max(isGrp?GROUP_MIN_W:MIN_W, snap(origW+pos.x-startX));
-  c.height = Math.max(isGrp?GROUP_MIN_H:MIN_H, snap(origH+pos.y-startY));
+  const minW = isGrp ? GROUP_MIN_W : MIN_W;
+  const minH = isGrp ? GROUP_MIN_H : MIN_H;
+  const dx = pos.x - startX, dy = pos.y - startY;
+
+  // SE: grow right+down (default)
+  // SW: grow left+down (x moves, width shrinks from right)
+  // NE: grow right+up
+  // NW: grow left+up
+  if (corner === 'se' || corner === 'ne') {
+    c.width = Math.max(minW, snap(origW + dx));
+  } else {
+    const newW = Math.max(minW, snap(origW - dx));
+    c.x = snap(origX + origW - newW);
+    c.width = newW;
+  }
+  if (corner === 'se' || corner === 'sw') {
+    c.height = Math.max(minH, snap(origH + dy));
+  } else {
+    const newH = Math.max(minH, snap(origH - dy));
+    c.y = snap(origY + origH - newH);
+    c.height = newH;
+  }
+
   const el = document.getElementById(`comp-${id}`);
-  if (el) { el.style.width=c.width+'px'; el.style.height=c.height+'px'; }
+  if (el) {
+    el.style.left=c.x+'px'; el.style.top=c.y+'px';
+    el.style.width=c.width+'px'; el.style.height=c.height+'px';
+  }
+
+  // Auto-expand parent group if child block overflows
+  if (!isGrp) {
+    const PAD = 20;
+    const grp = _s.components.find(g => g.comp_type==='Group' && g.id===c.data?.group_id);
+    if (grp) {
+      let changed = false;
+      // right edge
+      if (c.x + c.width + PAD > grp.x + grp.width) {
+        grp.width = snap(c.x + c.width + PAD - grp.x);
+        changed = true;
+      }
+      // bottom edge
+      if (c.y + c.height + PAD > grp.y + grp.height) {
+        grp.height = snap(c.y + c.height + PAD - grp.y);
+        changed = true;
+      }
+      // left edge
+      if (c.x - PAD < grp.x) {
+        const delta = snap(grp.x - (c.x - PAD));
+        grp.x -= delta; grp.width += delta;
+        changed = true;
+      }
+      // top edge
+      if (c.y - PAD < grp.y) {
+        const delta = snap(grp.y - (c.y - PAD));
+        grp.y -= delta; grp.height += delta;
+        changed = true;
+      }
+      if (changed) {
+        const gel = document.getElementById(`comp-${grp.id}`);
+        if (gel) {
+          gel.style.left=grp.x+'px'; gel.style.top=grp.y+'px';
+          gel.style.width=grp.width+'px'; gel.style.height=grp.height+'px';
+          gel.classList.add('arch-group--expand-hint');
+        }
+      }
+    }
+  }
+
   renderConnections();
 }
 
