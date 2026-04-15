@@ -428,8 +428,7 @@ function connSVG(cn) {
   const d = bezier(sx,sy,cn.source_port,tx,ty,cn.target_port);
   const iv = IFACE[cn.interface_type] || IFACE.Data;
   const [mx,my] = [(sx+tx)/2,(sy+ty)/2];
-  const ms = cn.direction === 'B_to_A' ? `marker-start="url(#arr-s)"` : '';
-  const me = cn.direction !== 'B_to_A' ? `marker-end="url(#arr-e)"` : '';
+  // No arrowheads on lines — direction is shown by the port squares
   const ext = cn.is_external
     ? `<text x="${mx}" y="${my-24}" text-anchor="middle" class="arch-conn-ext">EXT</text>` : '';
 
@@ -444,17 +443,21 @@ function connSVG(cn) {
           style="fill:${iv.stroke}">${labelTxt}</text>`;
 
   // Port squares at BOTH endpoints, always visible
-  // Direction arrow: src side shows outflow direction, tgt side shows inflow direction
+  // Arrow direction depends on SIDE of the component and whether this endpoint sends or receives.
+  // Input  → arrow tip points INTO the component: top=↓  bottom=↑  left=→  right=←
+  // Output → arrow tip points OUT OF component:   top=↑  bottom=↓  left=←  right=→
+  // Bidirectional: top/bottom=↕  left/right=↔
   const ps = CONN_EP_SIZE;
-  const fs = 10; // font size for arrow
-  function epArrow(isSrcSide) {
-    // Arrow shows the flow direction from this endpoint's perspective:
-    // src of A_to_B → sends → ▶ (outward)   tgt of A_to_B → receives → ◀ (inward)
-    // src of B_to_A → receives → ◀            tgt of B_to_A → sends → ▶
-    if (cn.direction === 'bidirectional') return '◆';
+  const fs = 11;
+  const ARROW_IN  = { top:'↓', bottom:'↑', left:'→', right:'←' };
+  const ARROW_OUT = { top:'↑', bottom:'↓', left:'←', right:'→' };
+  const ARROW_BI  = { top:'↕', bottom:'↕', left:'↔', right:'↔' };
+  function epArrow(isSrcSide, portStr) {
+    const side = portSide(portStr) || 'right';
+    if (cn.direction === 'bidirectional') return ARROW_BI[side] || '↔';
     const srcSends = cn.direction === 'A_to_B';
     const thisSends = isSrcSide ? srcSends : !srcSends;
-    return thisSends ? '▶' : '◀';
+    return (thisSends ? ARROW_OUT : ARROW_IN)[side] || (thisSends ? '→' : '←');
   }
   function portSquare(px, py, arrowChar) {
     return `
@@ -463,7 +466,8 @@ function connSVG(cn) {
       <text x="${px}" y="${py + fs*0.38}" text-anchor="middle" font-size="${fs}" fill="#fff"
             font-family="system-ui" font-weight="bold" style="pointer-events:none">${arrowChar}</text>`;
   }
-  const portIcon = portSquare(sx, sy, epArrow(true)) + portSquare(tx, ty, epArrow(false));
+  const portIcon = portSquare(sx, sy, epArrow(true, cn.source_port))
+                 + portSquare(tx, ty, epArrow(false, cn.target_port));
 
   const isSel = _selectedConnId === cn.id;
   // Draggable endpoint handles (visible only when selected, overlay on port squares)
@@ -478,7 +482,7 @@ function connSVG(cn) {
     <g id="conn-${cn.id}" class="arch-conn-g${isSel?' arch-conn-g--sel':''}">
       <path d="${d}" fill="none" stroke="transparent" stroke-width="14"/>
       <path d="${d}" fill="none" stroke="${iv.stroke}" stroke-width="${iv.weight}"
-            stroke-dasharray="${iv.dash}" ${ms} ${me}/>
+            stroke-dasharray="${iv.dash}"/>
       <circle cx="${mx}" cy="${my}" r="9" fill="${iv.stroke}" opacity="0.18"/>
       <text x="${mx}" y="${my+4}" text-anchor="middle" class="arch-conn-icon">${iv.icon}</text>
       ${label}
