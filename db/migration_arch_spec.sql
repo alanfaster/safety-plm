@@ -4,13 +4,13 @@
 CREATE TABLE IF NOT EXISTS arch_spec_items (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   spec_code   TEXT        NOT NULL,
-  title       TEXT        NOT NULL,
-  description TEXT,
+  title       TEXT        NOT NULL DEFAULT '',   -- displayed as "Description" in the UI
   type        TEXT        NOT NULL DEFAULT 'overview',
-  uml_type    TEXT,                         -- component | state | usecase | class | null
-  uml_data    JSONB,                        -- { nodes:[...], edges:[...] }
+  uml_type    TEXT,                              -- component | state | usecase | class | null
+  uml_data    JSONB,                             -- { nodes:[...], edges:[...] }
   status      TEXT        NOT NULL DEFAULT 'draft',
-  parent_type TEXT        NOT NULL,         -- 'item' | 'system'
+  sort_order  INT         NOT NULL DEFAULT 0,
+  parent_type TEXT        NOT NULL,              -- 'item' | 'system'
   parent_id   UUID        NOT NULL,
   project_id  UUID,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
