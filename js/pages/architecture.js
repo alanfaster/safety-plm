@@ -334,6 +334,10 @@ function groupHTML(g) {
       </div>
       <button class="arch-del-badge" data-del-id="${g.id}" title="Delete (Del)">✕</button>
       <div class="arch-resize-handle" data-comp-id="${g.id}"></div>
+      <div class="arch-port arch-port--top"    data-comp-id="${g.id}" data-port="top"></div>
+      <div class="arch-port arch-port--right"  data-comp-id="${g.id}" data-port="right"></div>
+      <div class="arch-port arch-port--bottom" data-comp-id="${g.id}" data-port="bottom"></div>
+      <div class="arch-port arch-port--left"   data-comp-id="${g.id}" data-port="left"></div>
     </div>`;
 }
 
@@ -755,7 +759,7 @@ function wireGlobal() {
 function wireGroup(id) {
   const el = document.getElementById(`comp-${id}`); if (!el) return;
   el.addEventListener('pointerdown', e => {
-    if (e.target.closest('.arch-resize-handle,.arch-group-info-btn')) return;
+    if (e.target.closest('.arch-resize-handle,.arch-group-info-btn,.arch-port')) return;
     selectComp(id);
   });
   el.querySelector('[data-drag-id]')?.addEventListener('pointerdown', e => {
@@ -779,6 +783,15 @@ function wireGroup(id) {
   });
   el.querySelector('.arch-group-name')?.addEventListener('dblclick', e => {
     e.stopPropagation(); startRename(id);
+  });
+  el.querySelectorAll('.arch-port').forEach(port => {
+    port.addEventListener('pointerdown', e => {
+      e.stopPropagation(); e.preventDefault();
+      const pos = canvasPos(e);
+      _s.connecting = { sourceId:id, sourcePort:port.dataset.port, curX:pos.x, curY:pos.y };
+      const tp = document.getElementById('arch-temp');
+      if (tp) tp.style.display = '';
+    });
   });
   wireResizeHandle(el, id);
 }
@@ -1024,19 +1037,47 @@ function selectConn(connId) {
   wireConnProps(cn);
 }
 
-function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTgtPort) {
+async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTgtPort) {
   const src=compById(srcId), tgt=compById(tgtId);
   if (!src||!tgt) return;
   const srcGrp = src.data?.group_id||''; const tgtGrp = tgt.data?.group_id||'';
   const isExt  = !!(srcGrp && tgtGrp && srcGrp!==tgtGrp) ||
                   src.comp_type==='Port' || tgt.comp_type==='Port' ||
                   src.comp_type==='Group' || tgt.comp_type==='Group';
-  let autoDir = null;
+  let autoDir = 'bidirectional';
   if (tgt.comp_type==='Group' && src.data?.group_id===tgt.id) autoDir = 'A_to_B';
   else if (src.comp_type==='Group' && tgt.data?.group_id===src.id) autoDir = 'B_to_A';
 
-  showPropsPanel(connCreateHTML(src.name, tgt.name, isExt, autoDir, needSrcPort, needTgtPort));
-  wireConnCreate({ srcId, srcPort, tgtId, tgtPort, isExt, srcName:src.name, tgtName:tgt.name, needSrcPort, needTgtPort });
+  captureUndo();
+
+  let finalSrcId = srcId, finalSrcPort = srcPort;
+  let finalTgtId = tgtId, finalTgtPort = tgtPort;
+
+  // Auto-create attached ports when connecting two regular blocks
+  if (needSrcPort) {
+    const p = await createAttachedPort(srcId, srcPort, autoDir === 'B_to_A' ? 'in' : 'out');
+    if (p) { finalSrcId = p.id; finalSrcPort = 'right'; }
+  }
+  if (needTgtPort) {
+    const p = await createAttachedPort(tgtId, tgtPort, autoDir === 'A_to_B' ? 'in' : 'out');
+    if (p) { finalTgtId = p.id; finalTgtPort = 'left'; }
+  }
+
+  const { data, error } = await sb.from('arch_connections').insert({
+    parent_type:_s.parentType, parent_id:_s.parentId, project_id:_s.project.id,
+    source_id:finalSrcId, target_id:finalTgtId,
+    source_port:finalSrcPort, target_port:finalTgtPort,
+    interface_type:'Data', direction:autoDir, name:null, requirement:null, is_external:isExt,
+  }).select().single();
+
+  if (error) {
+    const msg = error.message?.includes('does not exist')
+      ? 'Table not found — run migration_005_architecture.sql in Supabase.'
+      : 'Error: '+error.message;
+    toast(msg,'error'); return;
+  }
+  _s.connections.push(data);
+  renderConnections(); selectConn(data.id); toast('Interface created.','success');
 }
 
 function _ifaceOpts(sel) {
@@ -1047,33 +1088,6 @@ function _dirOpts(srcN, tgtN, sel) {
     .map(([v,l])=>`<option value="${v}" ${sel===v?'selected':''}>${escH(l)}</option>`).join('');
 }
 
-function connCreateHTML(srcName, tgtName, isExt, autoDir, needSrcPort, needTgtPort) {
-  const portNote = (needSrcPort || needTgtPort)
-    ? `<div class="arch-props-note">⬡ Ports will be auto-created at the connection points</div>` : '';
-  return `
-    <div class="arch-props-hdr">New Interface</div>
-    <div class="arch-props-chips">
-      <span class="arch-popover-chip">${escH(srcName)}</span>
-      <span style="color:var(--color-text-muted)">⇄</span>
-      <span class="arch-popover-chip">${escH(tgtName)}</span>
-    </div>
-    ${portNote}
-    <label class="arch-form-lbl">Interface Type</label>
-    <select class="form-input" id="pop-itype">${_ifaceOpts('Data')}</select>
-    <label class="arch-form-lbl">Direction</label>
-    <select class="form-input" id="pop-dir">${_dirOpts(srcName,tgtName,autoDir||'bidirectional')}</select>
-    <label class="arch-form-lbl">Name (optional)</label>
-    <input class="form-input" id="pop-name" value="" placeholder="e.g. CAN Bus"/>
-    <label class="arch-form-lbl">Interface Requirement</label>
-    <textarea class="form-input form-textarea" id="pop-req" rows="3">${escH(`${srcName} shall interface with ${tgtName} via Data interface.`)}</textarea>
-    <label class="arch-form-lbl" style="display:flex;align-items:center;gap:6px;margin-top:8px">
-      <input type="checkbox" id="pop-ext" ${isExt?'checked':''}/> External interface
-    </label>
-    <div style="display:flex;gap:6px;margin-top:12px">
-      <button class="btn btn-secondary btn-sm" id="pop-cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="pop-ok">Create</button>
-    </div>`;
-}
 
 function connPropsHTML(srcName, tgtName, cn) {
   return `
@@ -1096,54 +1110,6 @@ function connPropsHTML(srcName, tgtName, cn) {
     </label>`;
 }
 
-function wireConnCreate(ctx) {
-  const body = document.getElementById('arch-props-body'); if (!body) return;
-  body.querySelector('#pop-itype')?.addEventListener('change', () => {
-    const t = body.querySelector('#pop-itype').value;
-    body.querySelector('#pop-req').value = `${ctx.srcName} shall interface with ${ctx.tgtName} via ${t} interface.`;
-  });
-  body.querySelector('#pop-cancel').onclick = () => showPropsEmpty();
-  body.querySelector('#pop-ok').onclick = async () => {
-    captureUndo();
-    const btn = body.querySelector('#pop-ok'); btn.disabled = true;
-    const itype = body.querySelector('#pop-itype').value;
-    const dir   = body.querySelector('#pop-dir').value;
-    const name  = body.querySelector('#pop-name').value.trim()||null;
-    const req   = body.querySelector('#pop-req').value.trim()||null;
-    const ext   = body.querySelector('#pop-ext').checked;
-
-    let finalSrcId = ctx.srcId, finalSrcPort = ctx.srcPort;
-    let finalTgtId = ctx.tgtId, finalTgtPort = ctx.tgtPort;
-
-    // Auto-create attached ports if needed
-    if (ctx.needSrcPort) {
-      const srcDir = dir === 'B_to_A' ? 'in' : 'out';
-      const p = await createAttachedPort(ctx.srcId, ctx.srcPort, srcDir);
-      if (p) { finalSrcId = p.id; finalSrcPort = 'right'; }
-    }
-    if (ctx.needTgtPort) {
-      const tgtDir = dir === 'A_to_B' ? 'in' : 'out';
-      const p = await createAttachedPort(ctx.tgtId, ctx.tgtPort, tgtDir);
-      if (p) { finalTgtId = p.id; finalTgtPort = 'left'; }
-    }
-
-    const { data, error } = await sb.from('arch_connections').insert({
-      parent_type:_s.parentType, parent_id:_s.parentId, project_id:_s.project.id,
-      source_id:finalSrcId, target_id:finalTgtId,
-      source_port:finalSrcPort, target_port:finalTgtPort,
-      interface_type:itype, direction:dir, name, requirement:req, is_external:ext,
-    }).select().single();
-    btn.disabled = false;
-    if (error) {
-      const msg = error.message?.includes('does not exist')
-        ? 'Table not found — run migration_005_architecture.sql in Supabase.'
-        : 'Error: '+error.message;
-      toast(msg,'error'); return;
-    }
-    _s.connections.push(data);
-    renderConnections(); selectConn(data.id); toast('Interface created.','success');
-  };
-}
 
 function wireConnProps(cn) {
   const body = document.getElementById('arch-props-body'); if (!body) return;
