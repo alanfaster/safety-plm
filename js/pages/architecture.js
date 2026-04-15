@@ -328,18 +328,60 @@ function connSVG(cn) {
   const ms = cn.direction === 'B_to_A' ? `marker-start="url(#arr-s)"` : '';
   const me = cn.direction !== 'B_to_A' ? `marker-end="url(#arr-e)"` : '';
   const ext = cn.is_external
-    ? `<text x="${mx}" y="${my-14}" text-anchor="middle" class="arch-conn-ext">EXT</text>` : '';
+    ? `<text x="${mx}" y="${my-24}" text-anchor="middle" class="arch-conn-ext">EXT</text>` : '';
+
+  // Label just above the midpoint badge, with background
+  const labelTxt = escH(cn.name || cn.interface_type);
+  const labelW   = Math.max(44, labelTxt.length * 6 + 12);
+  const labelY   = my - 14;
+  const label = `
+    <rect x="${mx - labelW/2}" y="${labelY - 11}" width="${labelW}" height="13" rx="3"
+          fill="rgba(255,255,255,0.92)" stroke="${iv.stroke}" stroke-width="0.8"/>
+    <text x="${mx}" y="${labelY}" text-anchor="middle" class="arch-conn-label"
+          style="fill:${iv.stroke}">${labelTxt}</text>`;
+
+  // Port icon at group border when one endpoint is a Group
+  let portIcon = '';
+  const srcIsGroup = src.comp_type === 'Group';
+  const tgtIsGroup = tgt.comp_type === 'Group';
+  if (srcIsGroup || tgtIsGroup) {
+    const grp     = srcIsGroup ? src : tgt;
+    const blk     = srcIsGroup ? tgt : src;
+    const [gpx, gpy] = srcIsGroup ? [sx, sy] : [tx, ty];
+    // Determine port flow direction from the group boundary's perspective
+    const blkInsideGrp = blk.data?.group_id === grp.id;
+    let portDir;
+    if (cn.direction === 'bidirectional') {
+      portDir = 'inout';
+    } else {
+      // A_to_B: flow goes src→tgt.
+      // If blk is inside grp and blk is the src (A_to_B, !srcIsGroup) → exits grp → out
+      // If blk is inside grp and blk is the tgt (B_to_A, !srcIsGroup) → enters grp → in
+      const blkIsSrc = !srcIsGroup; // blk = src means !srcIsGroup
+      const flowsOut = blkInsideGrp
+        ? (blkIsSrc ? cn.direction === 'A_to_B' : cn.direction === 'B_to_A')
+        : (blkIsSrc ? cn.direction === 'B_to_A' : cn.direction === 'A_to_B');
+      portDir = flowsOut ? 'out' : 'in';
+    }
+    const dirArrow = { in:'▶', out:'◀', inout:'◆' }[portDir];
+    const ps = 14;
+    portIcon = `
+      <rect x="${gpx - ps/2}" y="${gpy - ps/2}" width="${ps}" height="${ps}" rx="2"
+            fill="#212121" stroke="#fff" stroke-width="1.5"/>
+      <text x="${gpx}" y="${gpy + 4}" text-anchor="middle" font-size="8" fill="#fff"
+            style="pointer-events:none;font-family:system-ui;font-weight:bold">${dirArrow}</text>`;
+  }
 
   return `
     <g id="conn-${cn.id}" class="arch-conn-g">
       <path d="${d}" fill="none" stroke="transparent" stroke-width="14"/>
       <path d="${d}" fill="none" stroke="${iv.stroke}" stroke-width="${iv.weight}"
             stroke-dasharray="${iv.dash}" ${ms} ${me}/>
-      <circle cx="${mx}" cy="${my}" r="9" fill="${iv.stroke}" opacity="0.15"/>
+      <circle cx="${mx}" cy="${my}" r="9" fill="${iv.stroke}" opacity="0.18"/>
       <text x="${mx}" y="${my+4}" text-anchor="middle" class="arch-conn-icon">${iv.icon}</text>
-      <text x="${mx}" y="${my+17}" text-anchor="middle" class="arch-conn-label"
-            style="fill:${iv.stroke}">${escH(cn.name || cn.interface_type)}</text>
+      ${label}
       ${ext}
+      ${portIcon}
     </g>`;
 }
 
@@ -431,6 +473,25 @@ function updateTempPath(e) {
   const [sx,sy] = portAbs(src, _s.connecting.sourcePort);
   const tp = document.getElementById('arch-temp');
   if (tp) tp.setAttribute('d', bezier(sx,sy,_s.connecting.sourcePort,pos.x,pos.y,'left'));
+
+  // Highlight potential connection targets
+  document.querySelectorAll('.arch-group--conn-target,.arch-block--conn-target').forEach(el =>
+    el.classList.remove('arch-group--conn-target','arch-block--conn-target'));
+
+  // Group hover: check canvas coords against group bounds
+  const hovGroup = _s.components.find(g =>
+    g.comp_type==='Group' && g.id!==_s.connecting.sourceId &&
+    pos.x>=g.x && pos.x<=g.x+g.width && pos.y>=g.y && pos.y<=g.y+g.height);
+  if (hovGroup) {
+    document.getElementById(`comp-${hovGroup.id}`)?.classList.add('arch-group--conn-target');
+  } else {
+    // Block hover via DOM hit test
+    const under = document.elementsFromPoint(e.clientX, e.clientY);
+    const hovBlock = under.find(el =>
+      (el.classList?.contains('arch-block')||el.classList?.contains('arch-port-block')) &&
+      el.dataset.id !== _s.connecting.sourceId);
+    if (hovBlock) hovBlock.classList.add('arch-block--conn-target');
+  }
 }
 
 // ── Global events ─────────────────────────────────────────────────────────────
@@ -606,12 +667,16 @@ function handleResizeMove(e) {
 function handleConnectEnd(e) {
   const tp = document.getElementById('arch-temp');
   if (tp) tp.style.display='none';
+  document.querySelectorAll('.arch-group--conn-target,.arch-block--conn-target').forEach(el =>
+    el.classList.remove('arch-group--conn-target','arch-block--conn-target'));
 
   const under = document.elementsFromPoint(e.clientX, e.clientY);
   const tPort = under.find(el => el.classList?.contains('arch-port'));
   const tComp = under.find(el =>
     (el.classList?.contains('arch-block')||el.classList?.contains('arch-port-block')) &&
     el.dataset.id !== _s.connecting.sourceId);
+  const tGroup = under.find(el =>
+    el.classList?.contains('arch-group') && el.dataset.id !== _s.connecting.sourceId);
 
   const { sourceId, sourcePort, curX, curY } = _s.connecting;
   _s.connecting = null;
@@ -619,6 +684,7 @@ function handleConnectEnd(e) {
   let targetId=null, targetPort=null;
   if (tPort && tPort.dataset.compId!==sourceId) { targetId=tPort.dataset.compId; targetPort=tPort.dataset.port; }
   else if (tComp) { targetId=tComp.dataset.id; targetPort=nearestPort(tComp.dataset.id,curX,curY); }
+  else if (tGroup) { targetId=tGroup.dataset.id; targetPort=nearestGroupBorderPort(tGroup.dataset.id,curX,curY); }
 
   if (!targetId) return;
 
@@ -633,6 +699,21 @@ function cancelConnect() {
   _s.connecting=null;
   const tp = document.getElementById('arch-temp');
   if (tp) tp.style.display='none';
+  document.querySelectorAll('.arch-group--conn-target,.arch-block--conn-target').forEach(el =>
+    el.classList.remove('arch-group--conn-target','arch-block--conn-target'));
+}
+
+function nearestGroupBorderPort(groupId, cx, cy) {
+  const g = compById(groupId); if (!g) return 'right';
+  const dTop    = Math.abs(cy - g.y);
+  const dBottom = Math.abs(cy - (g.y + g.height));
+  const dLeft   = Math.abs(cx - g.x);
+  const dRight  = Math.abs(cx - (g.x + g.width));
+  const mn = Math.min(dTop, dBottom, dLeft, dRight);
+  if (mn === dTop)    return 'top';
+  if (mn === dBottom) return 'bottom';
+  if (mn === dLeft)   return 'left';
+  return 'right';
 }
 
 function nearestPort(compId, cx, cy) {
@@ -655,10 +736,17 @@ function showConnPopover(srcId, srcPort, tgtId, tgtPort) {
   if (!src||!tgt) return;
   const srcGrp = src.data?.group_id||''; const tgtGrp = tgt.data?.group_id||'';
   const isExt  = !!(srcGrp && tgtGrp && srcGrp!==tgtGrp) ||
-                  src.comp_type==='Port' || tgt.comp_type==='Port';
+                  src.comp_type==='Port' || tgt.comp_type==='Port' ||
+                  src.comp_type==='Group' || tgt.comp_type==='Group';
+
+  // Auto-detect direction when block connects to its parent group border
+  let autoDir = null;
+  if (tgt.comp_type==='Group' && src.data?.group_id===tgt.id) autoDir = 'A_to_B'; // block→group = outgoing
+  else if (src.comp_type==='Group' && tgt.data?.group_id===src.id) autoDir = 'B_to_A'; // group→block = incoming
+
   const pop = document.getElementById('arch-conn-pop');
   pop.style.display='';
-  pop.innerHTML = connPopHTML(src.name, tgt.name, null, isExt);
+  pop.innerHTML = connPopHTML(src.name, tgt.name, null, isExt, autoDir);
   wireConnPop(pop, null, { srcId, srcPort, tgtId, tgtPort, isExt, srcName:src.name, tgtName:tgt.name });
 }
 
@@ -671,14 +759,15 @@ function openConnEditor(connId) {
   wireConnPop(pop, cn, { srcId:cn.source_id, tgtId:cn.target_id, srcName:src.name, tgtName:tgt.name });
 }
 
-function connPopHTML(srcName, tgtName, cn, isExt) {
+function connPopHTML(srcName, tgtName, cn, isExt, autoDir=null) {
   const ifOpts = Object.keys(IFACE).map(k=>
     `<option value="${k}" ${cn?.interface_type===k?'selected':''}>${k}</option>`).join('');
+  const defaultDir = cn?.direction || autoDir || 'bidirectional';
   const dirOpts = [
     ['A_to_B',`${srcName} → ${tgtName}`],
     ['B_to_A',`${tgtName} → ${srcName}`],
     ['bidirectional','Bidirectional ↔'],
-  ].map(([v,l])=>`<option value="${v}" ${(cn?.direction||'bidirectional')===v?'selected':''}>${escH(l)}</option>`).join('');
+  ].map(([v,l])=>`<option value="${v}" ${defaultDir===v?'selected':''}>${escH(l)}</option>`).join('');
   const defReq = cn ? (cn.requirement||'') : `${srcName} shall interface with ${tgtName} via [Data] interface.`;
 
   return `

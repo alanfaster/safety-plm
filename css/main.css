@@ -1460,7 +1460,8 @@ input, select, textarea { font-family: var(--font); }
 
 /* ── System Group box ── */
 .arch-group{position:absolute;border:2px dashed #9AA0A6;border-radius:10px;background:rgba(248,249,250,0.7);backdrop-filter:blur(2px);min-width:240px;min-height:160px;user-select:none}
-.arch-group--sel{border-color:var(--color-primary);box-shadow:0 0 0 2px var(--color-primary)40}
+.arch-group--sel{border-color:var(--color-primary);box-shadow:0 0 0 3px rgba(26,115,232,0.35)}
+.arch-group--conn-target{border-color:#1E8E3E!important;border-style:solid!important;box-shadow:0 0 0 4px rgba(30,142,62,0.35),inset 0 0 20px rgba(30,142,62,0.10)!important;background:rgba(230,244,234,0.6)!important}
 .arch-group-hdr{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:move;border-radius:8px 8px 0 0}
 .arch-group-stereo{font-size:10px;font-style:italic;color:#9AA0A6;letter-spacing:0.02em}
 .arch-group-name{flex:1;font-size:var(--text-sm);font-weight:700;color:#3C4043;cursor:text}
@@ -1470,7 +1471,8 @@ input, select, textarea { font-family: var(--font); }
 /* ── SysML Block ── */
 .arch-block{position:absolute;border:2px solid #ccc;border-radius:6px;display:flex;flex-direction:column;box-shadow:0 1px 6px rgba(0,0,0,0.12),0 0 0 0 transparent;min-width:140px;min-height:90px;user-select:none;background:#fff;transition:box-shadow 0.15s}
 .arch-block:hover{box-shadow:0 4px 14px rgba(0,0,0,0.16)}
-.arch-block--sel{box-shadow:0 0 0 3px var(--color-primary),0 4px 14px rgba(0,0,0,0.18)!important}
+.arch-block--sel{box-shadow:0 0 0 4px var(--color-primary),0 4px 18px rgba(0,0,0,0.28)!important}
+.arch-block--conn-target{box-shadow:0 0 0 4px #1E8E3E,0 4px 20px rgba(30,142,62,0.4)!important;border-color:#1E8E3E!important}
 .arch-block--safe{border-style:dashed!important}
 
 /* Header compartment */
