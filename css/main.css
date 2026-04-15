@@ -1499,14 +1499,18 @@ input, select, textarea { font-family: var(--font); }
 .arch-fun-del{background:none;border:none;color:#9AA0A6;cursor:pointer;font-size:9px;padding:0 2px;line-height:1;flex-shrink:0}
 .arch-fun-del:hover{color:#C5221F}
 
-/* Ports */
-.arch-port{position:absolute;width:11px;height:11px;background:#1A73E8;border:2px solid #fff;border-radius:50%;opacity:0;transition:opacity 0.12s,transform 0.12s;cursor:crosshair;z-index:10;pointer-events:all}
-.arch-block:hover .arch-port{opacity:0.9}
-.arch-port:hover{opacity:1!important;transform:scale(1.5) translate(var(--ptx,0),var(--pty,0))!important}
-.arch-port--top   {top:0;left:50%;transform:translate(-50%,-50%)}
-.arch-port--right {top:50%;right:-6px;transform:translateY(-50%);--ptx:20%}
-.arch-port--bottom{bottom:0;left:50%;transform:translate(-50%,50%)}
-.arch-port--left  {top:50%;left:-1px;transform:translate(-50%,-50%);--ptx:-20%}
+/* Ports — full-edge transparent strips, highlight on hover */
+.arch-port{position:absolute;z-index:12;cursor:crosshair;pointer-events:all;opacity:0;transition:opacity 0.12s;background:transparent}
+.arch-block:hover .arch-port,.arch-group:hover .arch-port,.arch-port-block:hover .arch-port{opacity:1}
+.arch-port--top   {top:-4px;left:4px;right:4px;height:10px}
+.arch-port--bottom{bottom:-4px;left:4px;right:4px;height:10px}
+.arch-port--left  {left:-4px;top:4px;bottom:4px;width:10px}
+.arch-port--right {right:-4px;top:4px;bottom:4px;width:10px}
+.arch-port:hover{background:rgba(26,115,232,0.18);border-radius:3px}
+/* Draggable SVG endpoint handle */
+.arch-conn-ep{cursor:grab;opacity:0;transition:opacity 0.12s}
+.arch-conn-g--sel .arch-conn-ep{opacity:1}
+.arch-conn-ep:hover{opacity:1!important}
 
 /* Resize handle */
 .arch-resize-handle{position:absolute;right:0;bottom:0;width:13px;height:13px;cursor:nwse-resize;z-index:10}

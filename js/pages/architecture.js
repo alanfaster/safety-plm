@@ -143,7 +143,7 @@ export async function renderArchitecture(container, { project, item, system }) {
     connections: connRes.data || [],
     projectSystems: sysRes.data || [],
     panX: 20, panY: 20, zoom: 1,
-    dragging: null, resizing: null, connecting: null,
+    dragging: null, resizing: null, connecting: null, draggingEndpoint: null,
     selected: null,
   };
 
@@ -308,6 +308,16 @@ function renderConnections() {
     document.getElementById(`conn-del-${cn.id}`)
       ?.addEventListener('click', async e => { e.stopPropagation(); await deleteConn(cn.id); });
   });
+  // Wire endpoint drag handles
+  g.querySelectorAll('.arch-conn-ep').forEach(ep => {
+    ep.addEventListener('pointerdown', e => {
+      e.stopPropagation(); e.preventDefault();
+      const cn = _s.connections.find(c => c.id === ep.dataset.connId); if (!cn) return;
+      const compId = ep.dataset.endpoint === 'source' ? cn.source_id : cn.target_id;
+      captureUndo();
+      _s.draggingEndpoint = { connId: cn.id, endpoint: ep.dataset.endpoint, compId };
+    });
+  });
   // Re-apply selection highlight
   if (_selectedConnId) {
     document.getElementById(`conn-${_selectedConnId}`)?.classList.add('arch-conn-g--sel');
@@ -465,6 +475,14 @@ function connSVG(cn) {
   }
 
   const isSel = _selectedConnId === cn.id;
+  // Draggable endpoint handles (visible only when selected)
+  const epR = 6;
+  const epSrc = `<circle class="arch-conn-ep" cx="${sx}" cy="${sy}" r="${epR}"
+    fill="#1A73E8" stroke="#fff" stroke-width="1.5"
+    data-conn-id="${cn.id}" data-endpoint="source" style="pointer-events:all"/>`;
+  const epTgt = `<circle class="arch-conn-ep" cx="${tx}" cy="${ty}" r="${epR}"
+    fill="#1A73E8" stroke="#fff" stroke-width="1.5"
+    data-conn-id="${cn.id}" data-endpoint="target" style="pointer-events:all"/>`;
   return `
     <g id="conn-${cn.id}" class="arch-conn-g${isSel?' arch-conn-g--sel':''}">
       <path d="${d}" fill="none" stroke="transparent" stroke-width="14"/>
@@ -475,6 +493,7 @@ function connSVG(cn) {
       ${label}
       ${ext}
       ${portIcon}
+      ${epSrc}${epTgt}
       <g class="arch-conn-del-btn" id="conn-del-${cn.id}">
         <circle cx="${mx+18}" cy="${my-18}" r="8" fill="#C5221F" stroke="#fff" stroke-width="1.5"/>
         <text x="${mx+18}" y="${my-14}" text-anchor="middle" font-size="11" fill="#fff"
@@ -485,23 +504,48 @@ function connSVG(cn) {
 
 // ── Math ──────────────────────────────────────────────────────────────────────
 
-function portAbs(comp, port) {
+// port string: "side" (legacy) or "side:fraction" (0.0–1.0 along that edge)
+function portAbs(comp, portStr) {
   const sz = comp.comp_type === 'Port' ? PORT_SIZE : null;
   const w = sz || comp.width, h = sz || comp.height;
-  const fn = PORTS[port] || PORTS.right;
-  const [dx,dy] = fn(w,h);
-  return [comp.x+dx, comp.y+dy];
+  const [side, fracStr] = portStr?.includes(':') ? portStr.split(':') : [portStr, '0.5'];
+  const f = Math.max(0, Math.min(1, parseFloat(fracStr ?? 0.5) || 0.5));
+  switch (side) {
+    case 'top':    return [comp.x + w * f, comp.y];
+    case 'bottom': return [comp.x + w * f, comp.y + h];
+    case 'left':   return [comp.x,          comp.y + h * f];
+    case 'right':  return [comp.x + w,      comp.y + h * f];
+    default:       return [comp.x + w,      comp.y + h * 0.5];
+  }
 }
 
+function portSide(portStr) { return portStr?.split(':')[0] || 'right'; }
+
 function bezier(x1,y1,p1,x2,y2,p2) {
+  const s1 = portSide(p1), s2 = portSide(p2);
   const len = Math.max(50, Math.hypot(x2-x1,y2-y1)*0.4);
   const off = {top:[0,-len],right:[len,0],bottom:[0,len],left:[-len,0]};
-  const [cx1,cy1] = [x1+(off[p1]?.[0]??len), y1+(off[p1]?.[1]??0)];
-  const [cx2,cy2] = [x2+(off[p2]?.[0]??-len), y2+(off[p2]?.[1]??0)];
+  const [cx1,cy1] = [x1+(off[s1]?.[0]??len), y1+(off[s1]?.[1]??0)];
+  const [cx2,cy2] = [x2+(off[s2]?.[0]??-len), y2+(off[s2]?.[1]??0)];
   return `M${x1} ${y1} C${cx1} ${cy1},${cx2} ${cy2},${x2} ${y2}`;
 }
 
 function snap(v) { return Math.round(v/GRID)*GRID; }
+
+// Returns "side:fraction" for the perimeter point closest to (cx,cy) in canvas coords
+function nearestPerimeterPoint(comp, cx, cy) {
+  const w = comp.comp_type==='Port' ? PORT_SIZE : comp.width;
+  const h = comp.comp_type==='Port' ? PORT_SIZE : comp.height;
+  const rx = cx - comp.x, ry = cy - comp.y;
+  const c01 = v => Math.max(0.001, Math.min(0.999, v));
+  const dTop = Math.abs(ry), dBottom = Math.abs(ry - h);
+  const dLeft = Math.abs(rx), dRight = Math.abs(rx - w);
+  const mn = Math.min(dTop, dBottom, dLeft, dRight);
+  if (mn === dTop)    return `top:${c01(rx/w).toFixed(3)}`;
+  if (mn === dBottom) return `bottom:${c01(rx/w).toFixed(3)}`;
+  if (mn === dLeft)   return `left:${c01(ry/h).toFixed(3)}`;
+  return `right:${c01(ry/h).toFixed(3)}`;
+}
 
 function canvasPos(e) {
   const r = document.getElementById('arch-outer').getBoundingClientRect();
@@ -718,8 +762,9 @@ function updateTempPath(e) {
 
 function wireGlobal() {
   const onMove = e => {
-    if (_s?.dragging)  handleDragMove(e);
-    if (_s?.resizing)  handleResizeMove(e);
+    if (_s?.dragging)         handleDragMove(e);
+    if (_s?.resizing)         handleResizeMove(e);
+    if (_s?.draggingEndpoint) handleEndpointMove(e);
   };
   const onUp = e => {
     if (_s?.dragging)   handleDragEnd(e);
@@ -729,7 +774,8 @@ function wireGlobal() {
       const c = compById(id);
       if (c) sb.from('arch_components').update({ width:c.width, height:c.height, updated_at:new Date().toISOString() }).eq('id', id);
     }
-    if (_s?.connecting) handleConnectEnd(e);
+    if (_s?.draggingEndpoint) handleEndpointEnd(e);
+    if (_s?.connecting)       handleConnectEnd(e);
   };
   const onKey = e => {
     if (!_s) return;
@@ -788,7 +834,9 @@ function wireGroup(id) {
     port.addEventListener('pointerdown', e => {
       e.stopPropagation(); e.preventDefault();
       const pos = canvasPos(e);
-      _s.connecting = { sourceId:id, sourcePort:port.dataset.port, curX:pos.x, curY:pos.y };
+      const c = compById(id);
+      const portStr = c ? nearestPerimeterPoint(c, pos.x, pos.y) : (port.dataset.port + ':0.5');
+      _s.connecting = { sourceId:id, sourcePort:portStr, curX:pos.x, curY:pos.y };
       const tp = document.getElementById('arch-temp');
       if (tp) tp.style.display = '';
     });
@@ -843,7 +891,9 @@ function wireBlock(id) {
     port.addEventListener('pointerdown', e => {
       e.stopPropagation(); e.preventDefault();
       const pos = canvasPos(e);
-      _s.connecting = { sourceId:id, sourcePort:port.dataset.port, curX:pos.x, curY:pos.y };
+      const c = compById(id);
+      const portStr = c ? nearestPerimeterPoint(c, pos.x, pos.y) : (port.dataset.port + ':0.5');
+      _s.connecting = { sourceId:id, sourcePort:portStr, curX:pos.x, curY:pos.y };
       const tp = document.getElementById('arch-temp');
       if (tp) tp.style.display = '';
     });
@@ -934,6 +984,44 @@ function handleDragEnd() {
     });
 }
 
+// ── Connection endpoint drag ──────────────────────────────────────────────────
+
+function handleEndpointMove(e) {
+  const { connId, endpoint, compId } = _s.draggingEndpoint;
+  const cn = _s.connections.find(c => c.id === connId); if (!cn) return;
+  const comp = compById(compId); if (!comp) return;
+  const pos = canvasPos(e);
+  const portStr = nearestPerimeterPoint(comp, pos.x, pos.y);
+  if (endpoint === 'source') cn.source_port = portStr;
+  else cn.target_port = portStr;
+  // Live re-render only the path (update SVG in place)
+  const grpEl = document.getElementById(`conn-${connId}`);
+  if (grpEl) {
+    const [sx,sy] = portAbs(compById(cn.source_id), cn.source_port);
+    const [tx,ty] = portAbs(compById(cn.target_id), cn.target_port);
+    const d = bezier(sx,sy,cn.source_port,tx,ty,cn.target_port);
+    grpEl.querySelectorAll('path').forEach(p => { if (p.getAttribute('d')) p.setAttribute('d', d); });
+    const ep = grpEl.querySelector(`.arch-conn-ep[data-endpoint="${endpoint}"]`);
+    if (ep) { ep.setAttribute('cx', endpoint==='source'?sx:tx); ep.setAttribute('cy', endpoint==='source'?sy:ty); }
+  }
+}
+
+async function handleEndpointEnd(e) {
+  const { connId, endpoint, compId } = _s.draggingEndpoint;
+  _s.draggingEndpoint = null;
+  const cn = _s.connections.find(c => c.id === connId); if (!cn) return;
+  const pos = canvasPos(e);
+  const comp = compById(compId); if (!comp) return;
+  const portStr = nearestPerimeterPoint(comp, pos.x, pos.y);
+  if (endpoint === 'source') cn.source_port = portStr;
+  else cn.target_port = portStr;
+  await sb.from('arch_connections').update({
+    source_port: cn.source_port, target_port: cn.target_port,
+    updated_at: new Date().toISOString(),
+  }).eq('id', connId);
+  renderConnections();
+}
+
 // ── Resize ────────────────────────────────────────────────────────────────────
 
 function handleResizeMove(e) {
@@ -968,9 +1056,19 @@ function handleConnectEnd(e) {
   _s.connecting = null;
 
   let targetId=null, targetPort=null;
-  if (tPort && tPort.dataset.compId!==sourceId) { targetId=tPort.dataset.compId; targetPort=tPort.dataset.port; }
-  else if (tComp) { targetId=tComp.dataset.id; targetPort=nearestPort(tComp.dataset.id,curX,curY); }
-  else if (tGroup) { targetId=tGroup.dataset.id; targetPort=nearestGroupBorderPort(tGroup.dataset.id,curX,curY); }
+  if (tPort && tPort.dataset.compId!==sourceId) {
+    targetId=tPort.dataset.compId;
+    const tc=compById(targetId);
+    targetPort = tc ? nearestPerimeterPoint(tc, curX, curY) : 'left:0.5';
+  } else if (tComp) {
+    targetId=tComp.dataset.id;
+    const tc=compById(targetId);
+    targetPort = tc ? nearestPerimeterPoint(tc, curX, curY) : 'left:0.5';
+  } else if (tGroup) {
+    targetId=tGroup.dataset.id;
+    const tc=compById(targetId);
+    targetPort = tc ? nearestPerimeterPoint(tc, curX, curY) : 'right:0.5';
+  }
 
   if (!targetId) return;
 
@@ -983,7 +1081,7 @@ function handleConnectEnd(e) {
   const needSrcPort = src && src.comp_type !== 'Port' && src.comp_type !== 'Group';
   const needTgtPort = tgt && tgt.comp_type !== 'Port' && tgt.comp_type !== 'Group';
 
-  showConnPanel(sourceId, sourcePort||'right', targetId, targetPort||'left', needSrcPort, needTgtPort);
+  showConnPanel(sourceId, sourcePort||'right:0.5', targetId, targetPort||'left:0.5', needSrcPort, needTgtPort);
 }
 
 function cancelConnect() {
