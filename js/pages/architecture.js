@@ -151,11 +151,11 @@ function buildShell(container, title) {
             <div class="arch-comp-layer" id="arch-comp-layer"></div>
           </div>
 
-          <!-- Floating interface legend -->
+          <!-- Floating legend widget -->
           <div class="arch-iface-widget" id="arch-iface-widget">
-            <div class="arch-iface-widget-hdr">
-              <button class="arch-iface-widget-toggle" id="arch-iface-toggle" title="Toggle interface legend">?</button>
-              <span class="arch-iface-widget-title">Interfaces</span>
+            <div class="arch-iface-widget-hdr" id="arch-iface-drag-hdr" style="cursor:move">
+              <button class="arch-iface-widget-toggle" id="arch-iface-toggle" title="Toggle legend">?</button>
+              <span class="arch-iface-widget-title">Legend</span>
             </div>
             <div class="arch-iface-widget-body" id="arch-iface-body">${ifaceLegendRows}</div>
           </div>
@@ -553,6 +553,30 @@ function wireCanvas() {
     body.style.display = open ? 'none' : '';
     widget?.classList.toggle('arch-iface-widget--collapsed', open);
   });
+
+  // Legend widget drag
+  const legendWidget = document.getElementById('arch-iface-widget');
+  const legendHdr    = document.getElementById('arch-iface-drag-hdr');
+  if (legendWidget && legendHdr) {
+    let ldrag = null;
+    legendHdr.addEventListener('pointerdown', e => {
+      if (e.target.id === 'arch-iface-toggle') return;
+      e.preventDefault(); e.stopPropagation();
+      const r = legendWidget.getBoundingClientRect();
+      const outerR = document.getElementById('arch-outer').getBoundingClientRect();
+      ldrag = { startX: e.clientX, startY: e.clientY,
+                origLeft: r.left - outerR.left, origTop: r.top - outerR.top };
+      legendHdr.setPointerCapture(e.pointerId);
+    });
+    legendHdr.addEventListener('pointermove', e => {
+      if (!ldrag) return;
+      const dx = e.clientX - ldrag.startX, dy = e.clientY - ldrag.startY;
+      legendWidget.style.left   = Math.max(4, ldrag.origLeft + dx) + 'px';
+      legendWidget.style.top    = Math.max(4, ldrag.origTop  + dy) + 'px';
+      legendWidget.style.bottom = 'auto';
+    });
+    legendHdr.addEventListener('pointerup', () => { ldrag = null; });
+  }
 }
 
 function updateTempPath(e) {
