@@ -16,6 +16,7 @@
 import { sb } from '../config.js';
 import { toast } from '../toast.js';
 import { confirmDialog } from '../components/modal.js';
+import { getFeaturesTree } from './item-definition.js';
 
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
@@ -100,6 +101,9 @@ async function undoLast() {
   showPropsEmpty();
   toast('Undo.', 'info');
 }
+
+// ── Item Definition panel state ───────────────────────────────────────────────
+let _idef = { tab: 'functions', tree: [], loaded: false };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -269,6 +273,25 @@ function buildShell(container, title) {
           <button class="arch-tb-btn" id="arch-frame-close">✕</button>
         </div>
         <div class="arch-frame-body" id="arch-frame-body"></div>
+      </div>
+
+      <!-- Item Definition panel (bottom) -->
+      <div class="arch-idef-panel" id="arch-idef-panel">
+        <div class="arch-idef-hdr">
+          <div class="arch-idef-tabs" id="arch-idef-tabs">
+            <button class="arch-idef-tab arch-idef-tab--active" data-tab="functions">λ Functions</button>
+            <button class="arch-idef-tab" data-tab="usecases">◈ Use Cases</button>
+            <button class="arch-idef-tab" data-tab="features">⬡ Features</button>
+          </div>
+          <div class="arch-idef-hdr-right">
+            <span class="arch-idef-hint">Drag onto a component to assign</span>
+            <button class="arch-tb-btn arch-idef-add-btn" id="arch-idef-add" title="Create new item">＋ New</button>
+            <button class="arch-idef-resize-btn" id="arch-idef-resize" title="Resize panel">⇕</button>
+          </div>
+        </div>
+        <div class="arch-idef-body" id="arch-idef-body">
+          <div class="arch-idef-loading">Loading item definition…</div>
+        </div>
       </div>
     </div>`;
 }
@@ -671,6 +694,63 @@ function wireCanvas() {
     const panel = document.getElementById('arch-frame-panel');
     if (panel) panel.style.display = 'none';
   });
+
+  // Item Definition panel tabs
+  document.getElementById('arch-idef-tabs')?.addEventListener('click', e => {
+    const btn = e.target.closest('.arch-idef-tab'); if (!btn) return;
+    document.querySelectorAll('.arch-idef-tab').forEach(t => t.classList.remove('arch-idef-tab--active'));
+    btn.classList.add('arch-idef-tab--active');
+    _idef.tab = btn.dataset.tab;
+    renderIdefPanel();
+  });
+  document.getElementById('arch-idef-add')?.addEventListener('click', () => idefCreateNew());
+
+  // Idef panel vertical resize
+  const idefPanel = document.getElementById('arch-idef-panel');
+  const idefResizeBtn = document.getElementById('arch-idef-resize');
+  if (idefPanel && idefResizeBtn) {
+    let idefDrag = null;
+    idefResizeBtn.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      idefDrag = { startY: e.clientY, origH: idefPanel.offsetHeight };
+      idefResizeBtn.setPointerCapture(e.pointerId);
+    });
+    idefResizeBtn.addEventListener('pointermove', e => {
+      if (!idefDrag) return;
+      const h = Math.max(80, Math.min(500, idefDrag.origH - (e.clientY - idefDrag.startY)));
+      idefPanel.style.height = h + 'px';
+    });
+    idefResizeBtn.addEventListener('pointerup', () => { idefDrag = null; });
+  }
+
+  // Load idef data
+  loadIdefData();
+
+  // Drop target: assign idef function to component by dragging from bottom panel
+  const canvasOuter = document.getElementById('arch-outer');
+  if (canvasOuter) {
+    canvasOuter.addEventListener('dragover', e => {
+      if (e.dataTransfer.types.includes('text/plain')) {
+        e.preventDefault();
+        canvasOuter.classList.add('arch-drop-target');
+      }
+    });
+    canvasOuter.addEventListener('dragleave', () => canvasOuter.classList.remove('arch-drop-target'));
+    canvasOuter.addEventListener('drop', e => {
+      canvasOuter.classList.remove('arch-drop-target');
+      e.preventDefault();
+      let payload;
+      try { payload = JSON.parse(e.dataTransfer.getData('text/plain')); } catch(_) { return; }
+      if (payload.type !== 'idef-fn') return;
+      // Find component under drop point
+      const under = document.elementsFromPoint(e.clientX, e.clientY);
+      const tComp = under.find(el =>
+        (el.classList?.contains('arch-block') || el.classList?.contains('arch-group') ||
+         el.classList?.contains('arch-port-block')) && el.dataset.id);
+      if (!tComp) { toast('Drop onto a component or system block.', 'info'); return; }
+      idefAssignFn(payload.fnId, payload.fnName, payload.ucId, tComp.dataset.id);
+    });
+  }
 
   // Palette resize handle
   const pal = document.getElementById('arch-palette');
@@ -1820,3 +1900,144 @@ function renderFrameTree() {
 
 function compById(id) { return _s.components.find(c=>c.id===id); }
 function escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Item Definition panel ─────────────────────────────────────────────────────
+
+async function loadIdefData() {
+  if (!_s) return;
+  const parentType = _s.parentType, parentId = _s.parentId;
+  // Determine domain scope: use item-level always (features are item-scoped)
+  const itemId = _s.item?.id || parentId;
+  try {
+    _idef.tree = await getFeaturesTree('item', itemId, 'system');
+    // Also try hw/sw/mech domains and merge
+    const [hw, sw, mech] = await Promise.all([
+      getFeaturesTree('item', itemId, 'hw'),
+      getFeaturesTree('item', itemId, 'sw'),
+      getFeaturesTree('item', itemId, 'mech'),
+    ]);
+    _idef.tree = [..._idef.tree, ...hw, ...sw, ...mech];
+  } catch(_) {
+    _idef.tree = [];
+  }
+  _idef.loaded = true;
+  renderIdefPanel();
+}
+
+function renderIdefPanel() {
+  const body = document.getElementById('arch-idef-body'); if (!body) return;
+  if (!_idef.loaded) { body.innerHTML = '<div class="arch-idef-loading">Loading…</div>'; return; }
+
+  // Flatten all functions from tree
+  const allFuncs = [], allUCs = [], allFeats = [];
+  for (const feat of _idef.tree) {
+    allFeats.push(feat);
+    for (const uc of feat.use_cases || []) {
+      allUCs.push({ ...uc, feat_name: feat.name });
+      for (const fn of uc.functions || []) {
+        allFuncs.push({ ...fn, uc_name: uc.name, feat_name: feat.name });
+      }
+    }
+  }
+
+  if (_idef.tab === 'functions') {
+    if (!allFuncs.length) {
+      body.innerHTML = `<div class="arch-idef-empty">No functions defined yet. Click <b>+ New</b> to create one.</div>`;
+      return;
+    }
+    body.innerHTML = allFuncs.map(fn => {
+      // Check if already assigned to any arch component
+      const assigned = _s.components.some(c =>
+        (c.functions||[]).some(af => af.function_ref_id === fn.id));
+      return `<div class="arch-idef-chip arch-idef-chip--fn ${assigned?'arch-idef-chip--assigned':''}"
+        draggable="true" data-fn-id="${fn.id}" data-fn-name="${escH(fn.name)}"
+        data-uc-id="${fn.use_case_id}" title="${escH(fn.feat_name)} › ${escH(fn.uc_name)}">
+        <span class="arch-idef-chip-icon">λ</span>
+        <span class="arch-idef-chip-name">${escH(fn.name)}</span>
+        <span class="arch-idef-chip-path">${escH(fn.func_code||'')}</span>
+        ${assigned ? '<span class="arch-idef-chip-assigned" title="Already assigned">✓</span>' : ''}
+      </div>`;
+    }).join('');
+  } else if (_idef.tab === 'usecases') {
+    if (!allUCs.length) { body.innerHTML = '<div class="arch-idef-empty">No use cases defined.</div>'; return; }
+    body.innerHTML = allUCs.map(uc => `
+      <div class="arch-idef-chip arch-idef-chip--uc"
+           title="${escH(uc.feat_name)}">
+        <span class="arch-idef-chip-icon">◈</span>
+        <span class="arch-idef-chip-name">${escH(uc.name)}</span>
+        <span class="arch-idef-chip-path">${escH(uc.uc_code||'')}</span>
+        <span class="arch-idef-chip-count">${(uc.functions||[]).length} fn</span>
+      </div>`).join('');
+  } else {
+    if (!allFeats.length) { body.innerHTML = '<div class="arch-idef-empty">No features defined.</div>'; return; }
+    body.innerHTML = allFeats.map(f => `
+      <div class="arch-idef-chip arch-idef-chip--feat">
+        <span class="arch-idef-chip-icon">⬡</span>
+        <span class="arch-idef-chip-name">${escH(f.name)}</span>
+        <span class="arch-idef-chip-path">${escH(f.feat_code||'')}</span>
+        <span class="arch-idef-chip-count">${(f.use_cases||[]).reduce((a,u)=>a+(u.functions?.length||0),0)} fn</span>
+      </div>`).join('');
+  }
+
+  // Wire drag events for function chips
+  body.querySelectorAll('.arch-idef-chip--fn[draggable]').forEach(chip => {
+    chip.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', JSON.stringify({
+        type: 'idef-fn', fnId: chip.dataset.fnId, fnName: chip.dataset.fnName,
+        ucId: chip.dataset.ucId,
+      }));
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+  });
+}
+
+async function idefAssignFn(fnId, fnName, ucId, compId) {
+  const c = compById(compId); if (!c) return;
+  // Check not already assigned
+  if ((c.functions||[]).some(af => af.function_ref_id === fnId)) {
+    toast('Already assigned to this component.', 'info'); return;
+  }
+  captureUndo();
+  const { data, error } = await sb.from('arch_functions').insert({
+    component_id: compId, name: fnName, is_safety_related: false,
+    sort_order: c.functions?.length || 0, function_ref_id: fnId,
+  }).select().single();
+  if (error) { toast('Error: ' + error.message, 'error'); return; }
+  if (!c.functions) c.functions = [];
+  c.functions.push(data);
+  refreshComp(compId);
+  renderIdefPanel(); // refresh assigned state
+  toast(`"${fnName}" assigned to ${c.name}`, 'success');
+}
+
+async function idefCreateNew() {
+  // Create a new function in the item definition — requires a use case context
+  // Find first available use case, or prompt
+  const allFuncs = [], allUCs = [];
+  for (const feat of _idef.tree) {
+    for (const uc of feat.use_cases || []) {
+      allUCs.push(uc);
+      for (const fn of uc.functions || []) allFuncs.push(fn);
+    }
+  }
+  if (!allUCs.length) {
+    toast('No use cases found. Create features and use cases in Item Definition first.', 'info');
+    return;
+  }
+  if (_idef.tab !== 'functions') {
+    toast('Switch to the Functions tab to create a function.', 'info'); return;
+  }
+  const ucId = allUCs[0].id;
+  const name = `Function ${allFuncs.length + 1}`;
+  const { data, error } = await sb.from('functions').insert({
+    use_case_id: ucId, name,
+    sort_order: allUCs[0].functions?.length || 0,
+  }).select().single();
+  if (error) { toast('Error: ' + error.message, 'error'); return; }
+  // Add to local tree
+  const uc = allUCs[0];
+  if (!uc.functions) uc.functions = [];
+  uc.functions.push(data);
+  toast(`Created "${name}"`, 'success');
+  renderIdefPanel();
+}
