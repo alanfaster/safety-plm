@@ -14,7 +14,7 @@
  */
 
 import { sb } from '../config.js';
-import { toast } from '../toast.js';
+import { toast, toastPersist, toastDismiss } from '../toast.js';
 import { showModal, hideModal, confirmDialog } from '../components/modal.js';
 import { getFeaturesTree, ICONS as IDEF_ICONS } from './item-definition.js';
 import { nextIndex, buildCode, nameInitials } from '../config.js';
@@ -71,7 +71,7 @@ function captureUndo() {
 
 async function undoLast() {
   if (!_undoStack.length) { toast('Nothing to undo.','info'); return; }
-  toast('Undoing…', 'info');
+  toastPersist('Undoing…', 'info');
   const snap = _undoStack.pop();
 
   const snapCompIds = new Set(snap.components.map(c => c.id));
@@ -101,7 +101,8 @@ async function undoLast() {
   _selectedConnId = null;
   renderAll();
   showPropsEmpty();
-  toast('Undo.', 'info');
+  toastDismiss();
+  toast('Undo complete.', 'success');
 }
 
 // ── Item Definition panel state ───────────────────────────────────────────────
@@ -1872,11 +1873,14 @@ async function addComp(type) {
 async function deleteComp(id) {
   const c = compById(id); if (!c) return;
 
-  // Collect all component IDs affected (self + children for groups)
+  // Collect all component IDs affected (self + group children + attached ports)
   const affectedIds = new Set([id]);
   if (c.comp_type === 'Group') {
     _s.components.filter(b => b.data?.group_id === id).forEach(b => affectedIds.add(b.id));
   }
+  // Include auto-attached Port components (their connections belong to this block)
+  _s.components.filter(b => b.comp_type === 'Port' && b.data?.parent_block_id === id)
+    .forEach(b => affectedIds.add(b.id));
 
   // Connections that touch any affected component
   const affectedConns = _s.connections.filter(cn =>
