@@ -65,13 +65,15 @@ async function loadSpec() {
   if (!body) return;
 
   if (error) {
-    const isNoTable = error.code === '42P01' || error.message?.includes('does not exist');
     body.innerHTML = `
       <div class="card"><div class="card-body">
         <p style="color:var(--color-danger)">
-          ${isNoTable
-            ? '<strong>Table not found.</strong><br>Please run <code>db/migration_arch_spec.sql</code> in Supabase SQL Editor.'
-            : `<strong>Error loading data:</strong><br><code>${esc(error.message || JSON.stringify(error))}</code>`}
+          <strong>Error loading arch_spec_items:</strong><br>
+          <code>${esc(error.message || JSON.stringify(error))}</code><br>
+          <span style="font-size:11px;color:var(--color-text-muted)">code: ${esc(error.code || '—')}</span>
+        </p>
+        <p style="margin-top:8px;font-size:13px">
+          If the table does not exist, run <code>db/migration_arch_spec.sql</code> in Supabase SQL Editor.
         </p>
       </div></div>`;
     console.error('arch_spec_items load error:', error);

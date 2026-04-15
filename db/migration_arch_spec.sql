@@ -1,7 +1,7 @@
 -- Migration: Architecture Specification Items
--- Run this in your Supabase SQL Editor
+-- Run this in your Supabase SQL Editor (Dashboard → SQL Editor → New query)
 
-CREATE TABLE IF NOT EXISTS arch_spec_items (
+CREATE TABLE IF NOT EXISTS public.arch_spec_items (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   spec_code   TEXT        NOT NULL,
   title       TEXT        NOT NULL DEFAULT '',   -- displayed as "Description" in the UI
@@ -17,6 +17,16 @@ CREATE TABLE IF NOT EXISTS arch_spec_items (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Optional: index for fast lookups by parent
+-- Index for fast lookups by parent
 CREATE INDEX IF NOT EXISTS arch_spec_items_parent
-  ON arch_spec_items (parent_type, parent_id);
+  ON public.arch_spec_items (parent_type, parent_id);
+
+-- Enable RLS (required in Supabase)
+ALTER TABLE public.arch_spec_items ENABLE ROW LEVEL SECURITY;
+
+-- Allow full access (same pattern as other tables in this project)
+DROP POLICY IF EXISTS "allow_all_arch_spec_items" ON public.arch_spec_items;
+CREATE POLICY "allow_all_arch_spec_items"
+  ON public.arch_spec_items FOR ALL
+  USING (true)
+  WITH CHECK (true);
