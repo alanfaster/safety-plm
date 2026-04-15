@@ -9,23 +9,36 @@ const REQ_PRIORITIES= ['critical','high','medium','low'];
 const ASIL_LEVELS   = ['QM','ASIL-A','ASIL-B','ASIL-C','ASIL-D'];
 const DAL_LEVELS    = ['DAL-E','DAL-D','DAL-C','DAL-B','DAL-A'];
 
-export async function renderRequirements(container, { project, item, system, parentType, parentId }) {
-  const title = t('vcycle.requirements');
+export async function renderRequirements(container, { project, item, system, parentType, parentId, pageId = null }) {
+  // Resolve sub-page filter
+  let typeFilter = null;
+  let subPageName = null;
+  if (pageId) {
+    const { data: pg } = await sb.from('nav_pages').select('name').eq('id', pageId).maybeSingle();
+    if (pg) {
+      subPageName = pg.name;
+      if (pg.name.toLowerCase().includes('interface')) typeFilter = 'interface';
+    }
+  }
+
+  const baseTitle = t('vcycle.requirements');
+  const pageTitle = subPageName ? subPageName : baseTitle;
   const parentName = system?.name || item?.name;
 
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-top">
         <div>
-          <h1>${title}</h1>
+          <h1>${pageTitle}</h1>
           <p class="text-muted">${parentName}</p>
         </div>
         <button class="btn btn-primary" id="btn-new-req">＋ ${t('req.new')}</button>
       </div>
+      ${!typeFilter ? `
       <div class="page-tabs">
         <button class="page-tab active" data-tab="list">All Requirements</button>
         <button class="page-tab" data-tab="matrix">Traceability</button>
-      </div>
+      </div>` : ''}
     </div>
     <div class="page-body" id="req-body">
       <div class="content-loading"><div class="spinner"></div></div>
@@ -33,27 +46,31 @@ export async function renderRequirements(container, { project, item, system, par
   `;
 
   document.getElementById('btn-new-req').onclick = () =>
-    openReqModal({ project, parentType, parentId, projectType: project.type });
+    openReqModal({ project, parentType, parentId, projectType: project.type,
+      defaultType: typeFilter || undefined });
 
-  // Tab switching
-  container.querySelectorAll('.page-tab').forEach(tab => {
-    tab.onclick = () => {
-      container.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      if (tab.dataset.tab === 'matrix') renderTraceability(project, parentType, parentId);
-      else loadRequirements(project, parentType, parentId);
-    };
-  });
+  if (!typeFilter) {
+    container.querySelectorAll('.page-tab').forEach(tab => {
+      tab.onclick = () => {
+        container.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        if (tab.dataset.tab === 'matrix') renderTraceability(project, parentType, parentId);
+        else loadRequirements(project, parentType, parentId, null);
+      };
+    });
+  }
 
-  await loadRequirements(project, parentType, parentId);
+  await loadRequirements(project, parentType, parentId, typeFilter);
 }
 
-async function loadRequirements(project, parentType, parentId) {
-  const { data, error } = await sb.from('requirements')
+async function loadRequirements(project, parentType, parentId, typeFilter = null) {
+  let q = sb.from('requirements')
     .select('*')
     .eq('parent_type', parentType)
     .eq('parent_id', parentId)
     .order('created_at', { ascending: true });
+  if (typeFilter) q = q.eq('type', typeFilter);
+  const { data, error } = await q;
 
   const body = document.getElementById('req-body');
   if (error) { body.innerHTML = `<p class="text-muted">${t('common.error')}</p>`; return; }
@@ -138,9 +155,10 @@ function reqRow(r, projectType, showAsil, showDal) {
   `;
 }
 
-function openReqModal({ project, parentType, parentId, projectType, existing }) {
+function openReqModal({ project, parentType, parentId, projectType, existing, defaultType }) {
   const isEdit = !!existing;
   const r = existing || {};
+  if (!isEdit && defaultType) r.type = defaultType;
   const showAsil = projectType === 'automotive';
   const showDal  = projectType === 'aerospace' || projectType === 'military';
 

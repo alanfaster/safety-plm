@@ -1428,7 +1428,25 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTg
     ? (compById(src.data.parent_block_id)?.name ?? src.name) : src.name;
   const tgtName = (tgt.comp_type==='Port'&&tgt.data?.parent_block_id)
     ? (compById(tgt.data.parent_block_id)?.name ?? tgt.name) : tgt.name;
-  const { data: reqData } = await sb.from('requirements').insert({
+
+  // Ensure the "Interface Requirements" nav sub-page exists under the requirements phase
+  const domain = _s.parentType === 'item' ? 'item' : 'system';
+  const { data: existingPage } = await sb.from('nav_pages')
+    .select('id').eq('parent_type', _s.parentType).eq('parent_id', _s.parentId)
+    .eq('domain', domain).eq('phase', 'requirements').eq('name', 'Interface Requirements')
+    .maybeSingle();
+  if (!existingPage) {
+    const { count } = await sb.from('nav_pages')
+      .select('id', { count: 'exact', head: true })
+      .eq('parent_type', _s.parentType).eq('parent_id', _s.parentId)
+      .eq('domain', domain).eq('phase', 'requirements');
+    await sb.from('nav_pages').insert({
+      parent_type: _s.parentType, parent_id: _s.parentId,
+      domain, phase: 'requirements', name: 'Interface Requirements', sort_order: count || 0,
+    });
+  }
+
+  await sb.from('requirements').insert({
     req_code: reqCode,
     parent_type: _s.parentType,
     parent_id: _s.parentId,
@@ -1437,13 +1455,11 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTg
     type: 'interface',
     status: 'draft',
     priority: 'medium',
-  }).select('id').single();
+  });
 
-  // Link the requirement back to the connection
-  if (reqData?.id) {
-    await sb.from('arch_connections').update({ requirement: reqCode }).eq('id', data.id);
-    data.requirement = reqCode;
-  }
+  // Link the requirement code back to the connection
+  await sb.from('arch_connections').update({ requirement: reqCode }).eq('id', data.id);
+  data.requirement = reqCode;
 
   _s.connections.push(data);
   renderConnections(); selectConn(data.id); toast('Interface created + requirement ' + reqCode + '.', 'success');
