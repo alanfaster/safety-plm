@@ -1876,26 +1876,15 @@ async function deleteComp(id) {
   // Collect all component IDs affected (self + group children + attached ports)
   const affectedIds = new Set([id]);
   if (c.comp_type === 'Group') {
-    _s.components.filter(b => b.data?.group_id === id).forEach(b => {
-      affectedIds.add(b.id);
-      // Ports attached to group children
-      _s.components.filter(p => p.comp_type === 'Port' && p.data?.parent_block_id === b.id)
-        .forEach(p => affectedIds.add(p.id));
-    });
+    _s.components.filter(b => b.data?.group_id === id).forEach(b => affectedIds.add(b.id));
   }
-  // Auto-attached Port components (their connections belong to this block)
+  // Include auto-attached Port components (their connections belong to this block)
   _s.components.filter(b => b.comp_type === 'Port' && b.data?.parent_block_id === id)
     .forEach(b => affectedIds.add(b.id));
 
-  // Query DB directly for connections — do not rely solely on in-memory state
-  const affectedIdArr = [...affectedIds];
-  const [{ data: srcConns }, { data: tgtConns }] = await Promise.all([
-    sb.from('arch_connections').select('*').in('source_id', affectedIdArr),
-    sb.from('arch_connections').select('*').in('target_id', affectedIdArr),
-  ]);
-  const connMap = new Map();
-  [...(srcConns||[]), ...(tgtConns||[])].forEach(cn => connMap.set(cn.id, cn));
-  const affectedConns = [...connMap.values()];
+  // Connections that touch any affected component
+  const affectedConns = _s.connections.filter(cn =>
+    affectedIds.has(cn.source_id) || affectedIds.has(cn.target_id));
 
   // Interface requirements linked to those connections
   const linkedReqCodes = [...new Set(affectedConns.map(cn => cn.requirement).filter(Boolean))];
@@ -1919,14 +1908,8 @@ async function deleteComp(id) {
       <div class="del-comp-section-title">Connections that will be removed (${affectedConns.length})</div>
       <ul class="del-comp-list">
         ${affectedConns.map(cn => {
-          const resolveN = cid => {
-            const comp = compById(cid);
-            if (!comp) return '?';
-            if (comp.comp_type === 'Port' && comp.data?.parent_block_id)
-              return compById(comp.data.parent_block_id)?.name ?? comp.name;
-            return comp.name;
-          };
-          const sn = escH(resolveN(cn.source_id)), tn = escH(resolveN(cn.target_id));
+          const s = compById(cn.source_id), t2 = compById(cn.target_id);
+          const sn = s ? escH(s.name) : '?', tn = t2 ? escH(t2.name) : '?';
           return `<li>${sn} ↔ ${tn}${cn.requirement ? ` <span class="del-comp-req-code">${escH(cn.requirement)}</span>` : ''}</li>`;
         }).join('')}
       </ul>
@@ -1959,24 +1942,21 @@ async function deleteComp(id) {
       _ifreqs = _ifreqs.filter(r => !linkedReqCodes.includes(r.req_code));
       renderIfaceReqs();
     }
-    // Delete all affected connections from DB (use DB-fetched list, always)
+    // Delete connections
     if (affectedConns.length) {
       await sb.from('arch_connections').delete().in('id', affectedConns.map(cn => cn.id));
     }
-    // Delete all affected component IDs (includes auto-ports, group children)
-    await sb.from('arch_components').delete().in('id', affectedIdArr);
-    // Unlink group children that survive (shouldn't be any after above, but keep memory clean)
+    // Unlink group children
     if (isGroup) {
       _s.components.filter(b => b.data?.group_id === id).forEach(b => {
         b.data = { ...(b.data || {}) }; delete b.data.group_id;
+        sb.from('arch_components').update({ data: b.data }).eq('id', b.id);
       });
     }
-    const affectedConnIds = new Set(affectedConns.map(cn => cn.id));
-    _s.components  = _s.components.filter(x => !affectedIds.has(x.id));
-    _s.connections = _s.connections.filter(cn => !affectedConnIds.has(cn.id));
+    await sb.from('arch_components').delete().eq('id', id);
+    _s.components  = _s.components.filter(x => x.id !== id);
+    _s.connections = _s.connections.filter(cn => !affectedIds.has(cn.source_id) && !affectedIds.has(cn.target_id));
     document.getElementById(`comp-${id}`)?.remove();
-    // Remove port DOM elements too
-    affectedIdArr.forEach(pid => document.getElementById(`comp-${pid}`)?.remove());
     selectComp(null);
     renderConnections();
     if (isGroup) renderGroups();
