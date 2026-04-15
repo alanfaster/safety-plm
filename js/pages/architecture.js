@@ -53,6 +53,53 @@ const PORT_SIZE = 20;
 
 let _s = null;
 
+// ── Undo stack ────────────────────────────────────────────────────────────────
+const _undoStack = [];
+const MAX_UNDO   = 10;
+
+function captureUndo() {
+  if (!_s) return;
+  _undoStack.push({
+    components:  _s.components.map(c => ({ ...c, functions: [...(c.functions||[])] })),
+    connections: _s.connections.map(cn => ({ ...cn })),
+  });
+  if (_undoStack.length > MAX_UNDO) _undoStack.shift();
+}
+
+async function undoLast() {
+  if (!_undoStack.length) { toast('Nothing to undo.','info'); return; }
+  const snap = _undoStack.pop();
+
+  const snapCompIds = new Set(snap.components.map(c => c.id));
+  const currCompIds = new Set(_s.components.map(c => c.id));
+  const snapConnIds = new Set(snap.connections.map(c => c.id));
+  const currConnIds = new Set(_s.connections.map(c => c.id));
+
+  // Delete items that didn't exist in the snapshot
+  const delComps = [...currCompIds].filter(id => !snapCompIds.has(id));
+  const delConns = [...currConnIds].filter(id => !snapConnIds.has(id));
+  if (delComps.length) await sb.from('arch_components').delete().in('id', delComps);
+  if (delConns.length) await sb.from('arch_connections').delete().in('id', delConns);
+
+  // Upsert all snapshot components (restores position, name, data, type, etc.)
+  for (const c of snap.components) {
+    const { functions: _f, ...row } = c;
+    await sb.from('arch_components').upsert({ ...row, updated_at: new Date().toISOString() });
+  }
+  // Upsert all snapshot connections
+  for (const cn of snap.connections) {
+    await sb.from('arch_connections').upsert({ ...cn, updated_at: new Date().toISOString() });
+  }
+
+  _s.components  = snap.components;
+  _s.connections = snap.connections;
+  selectComp(null, true);
+  _selectedConnId = null;
+  renderAll();
+  showPropsEmpty();
+  toast('Undo.', 'info');
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 export async function renderArchitecture(container, { project, item, system }) {
@@ -672,7 +719,12 @@ function wireGlobal() {
   };
   const onUp = e => {
     if (_s?.dragging)   handleDragEnd(e);
-    if (_s?.resizing)   { _s.resizing=null; }
+    if (_s?.resizing) {
+      const { id } = _s.resizing;
+      _s.resizing = null;
+      const c = compById(id);
+      if (c) sb.from('arch_components').update({ width:c.width, height:c.height, updated_at:new Date().toISOString() }).eq('id', id);
+    }
     if (_s?.connecting) handleConnectEnd(e);
   };
   const onKey = e => {
@@ -685,6 +737,7 @@ function wireGlobal() {
       else if (_s.selected) deleteComp(_s.selected);
     }
     if (e.key==='Escape') { cancelConnect(); selectComp(null); showPropsEmpty(); }
+    if ((e.ctrlKey||e.metaKey) && (e.key==='z'||e.key==='Z')) { e.preventDefault(); undoLast(); }
   };
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup',   onUp);
@@ -709,6 +762,7 @@ function wireGroup(id) {
     if (e.target.closest('.arch-group-info-btn')) return;
     e.stopPropagation(); e.preventDefault();
     const g = compById(id); if (!g) return;
+    captureUndo();
     selectComp(id);
     const pos = canvasPos(e);
     _s.dragging = { id, startX:pos.x, startY:pos.y, origX:g.x, origY:g.y, isGroup:true,
@@ -743,6 +797,7 @@ function wireBlock(id) {
   el.querySelector('[data-drag-id]')?.addEventListener('pointerdown', e => {
     if (e.target.closest('.arch-block-info-btn')) return;
     e.stopPropagation(); e.preventDefault();
+    captureUndo();
     selectComp(id);
     const pos = canvasPos(e);
     _s.dragging = { id, startX:pos.x, startY:pos.y, origX:c.x, origY:c.y };
@@ -787,6 +842,7 @@ function wireResizeHandle(el, id) {
   el.querySelector('.arch-resize-handle')?.addEventListener('pointerdown', e => {
     e.stopPropagation(); e.preventDefault();
     const c = compById(id); if (!c) return;
+    captureUndo();
     const pos = canvasPos(e);
     _s.resizing = { id, startX:pos.x, startY:pos.y, origW:c.width, origH:c.height };
   });
@@ -826,19 +882,43 @@ function handleDragMove(e) {
 }
 
 function handleDragEnd() {
-  const { id } = _s.dragging;
+  const { id, isGroup, childOffsets } = _s.dragging;
   _s.dragging = null;
-  const c = compById(id); if (!c || c.comp_type==='Group') return;
+  const c = compById(id); if (!c) return;
+  const now = new Date().toISOString();
+
+  if (c.comp_type === 'Group') {
+    // Save group position
+    sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id);
+    // Save all child positions
+    if (childOffsets) {
+      childOffsets.forEach(({ id:cid }) => {
+        const cc = compById(cid); if (!cc) return;
+        sb.from('arch_components').update({ x:cc.x, y:cc.y, updated_at:now }).eq('id', cid);
+      });
+    }
+    return;
+  }
+
   // Auto-assign to group
   const grp = _s.components.find(g =>
     g.comp_type==='Group' &&
     c.x+c.width/2>g.x && c.x+c.width/2<g.x+g.width &&
     c.y+c.height/2>g.y && c.y+c.height/2<g.y+g.height);
   const gid = grp?.id||null;
-  if ((c.data?.group_id||null)!==gid) {
+  const dataChanged = (c.data?.group_id||null)!==gid;
+  if (dataChanged) {
     c.data = {...(c.data||{}), group_id:gid};
-    sb.from('arch_components').update({ data:c.data }).eq('id', id);
+    sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id);
+  } else {
+    sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id);
   }
+  // Also save any attached ports that moved with this block
+  _s.components
+    .filter(p => p.comp_type==='Port' && p.data?.parent_block_id===id)
+    .forEach(p => {
+      sb.from('arch_components').update({ x:p.x, y:p.y, updated_at:now }).eq('id', p.id);
+    });
 }
 
 // ── Resize ────────────────────────────────────────────────────────────────────
@@ -1024,6 +1104,7 @@ function wireConnCreate(ctx) {
   });
   body.querySelector('#pop-cancel').onclick = () => showPropsEmpty();
   body.querySelector('#pop-ok').onclick = async () => {
+    captureUndo();
     const btn = body.querySelector('#pop-ok'); btn.disabled = true;
     const itype = body.querySelector('#pop-itype').value;
     const dir   = body.querySelector('#pop-dir').value;
@@ -1359,6 +1440,7 @@ async function addComp(type) {
   const x = snap(60+(count%5)*210);
   const y = snap(60+Math.floor(count/5)*180);
 
+  captureUndo();
   const { data, error } = await sb.from('arch_components').insert({
     parent_type:_s.parentType, parent_id:_s.parentId, project_id:_s.project.id,
     name: isPort ? `P-${String(_s.components.filter(x=>x.comp_type==='Port').length+1).padStart(3,'0')}`
@@ -1386,6 +1468,7 @@ async function addComp(type) {
 
 async function deleteComp(id) {
   const c = compById(id); if (!c) return;
+  captureUndo();
 
   if (c.comp_type === 'Group') {
     const linkedSys = c.data?.system_id ? _s.projectSystems.find(s=>s.id===c.data.system_id) : null;
@@ -1419,6 +1502,7 @@ async function deleteComp(id) {
 }
 
 async function deleteConn(connId) {
+  captureUndo();
   const { error } = await sb.from('arch_connections').delete().eq('id', connId);
   if (error) { toast('Error: '+error.message,'error'); return; }
   _s.connections = _s.connections.filter(c=>c.id!==connId);
