@@ -15,7 +15,7 @@
 
 import { sb } from '../config.js';
 import { toast } from '../toast.js';
-import { confirmDialog } from '../components/modal.js';
+import { showModal, hideModal, confirmDialog } from '../components/modal.js';
 import { getFeaturesTree, ICONS as IDEF_ICONS } from './item-definition.js';
 import { nextIndex, buildCode, nameInitials } from '../config.js';
 
