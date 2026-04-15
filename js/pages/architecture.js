@@ -71,6 +71,7 @@ function captureUndo() {
 
 async function undoLast() {
   if (!_undoStack.length) { toast('Nothing to undo.','info'); return; }
+  toast('Undoing…', 'info');
   const snap = _undoStack.pop();
 
   const snapCompIds = new Set(snap.components.map(c => c.id));
