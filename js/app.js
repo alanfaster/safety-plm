@@ -202,6 +202,14 @@ route('/project/:projectId', async ({ projectId }) => {
   }
 });
 
+// Item-level V-cycle sub-page (multi-system items)
+route('/project/:projectId/item/:itemId/vcycle/:phase/page/:pageId', async ({ projectId, itemId, phase, pageId }) => {
+  setLoading();
+  const ctx = await loadItemContext(projectId, itemId, null, phase, null, pageId);
+  if (!ctx) { navigate('/projects'); return; }
+  await renderVcycle(getContent(), { ...ctx, phase, domain: 'default', pageId });
+});
+
 // Item-level V-cycle (multi-system items)
 route('/project/:projectId/item/:itemId/vcycle/:phase', async ({ projectId, itemId, phase }) => {
   setLoading();
