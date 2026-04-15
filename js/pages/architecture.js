@@ -1435,6 +1435,7 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTg
     .select('id').eq('parent_type', _s.parentType).eq('parent_id', _s.parentId)
     .eq('domain', domain).eq('phase', 'requirements').eq('name', 'Interface Requirements')
     .maybeSingle();
+  let sidebarNeedsRefresh = false;
   if (!existingPage) {
     const { count } = await sb.from('nav_pages')
       .select('id', { count: 'exact', head: true })
@@ -1444,6 +1445,7 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTg
       parent_type: _s.parentType, parent_id: _s.parentId,
       domain, phase: 'requirements', name: 'Interface Requirements', sort_order: count || 0,
     });
+    sidebarNeedsRefresh = true;
   }
 
   await sb.from('requirements').insert({
@@ -1463,6 +1465,7 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTg
 
   _s.connections.push(data);
   renderConnections(); selectConn(data.id); toast('Interface created + requirement ' + reqCode + '.', 'success');
+  if (sidebarNeedsRefresh) window.dispatchEvent(new Event('hashchange'));
 }
 
 function _ifaceOpts(sel) {
