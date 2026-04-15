@@ -269,6 +269,7 @@ function buildShell(container, title) {
       </div>
 
       <div class="arch-conn-popover" id="arch-sys-pop" style="display:none"></div>
+      <div class="arch-fun-tooltip" id="arch-fun-tooltip" style="display:none"></div>
 
       <!-- Frame tree panel -->
       <div class="arch-frame-panel" id="arch-frame-panel" style="display:none">
@@ -357,7 +358,7 @@ function groupHTML(g) {
     <div class="arch-group-funs" id="funlist-${g.id}">
       ${funs.map(f => `
         <div class="arch-fun-box arch-fun-box--group ${f.is_safety_related ? 'arch-fun-box--safe' : ''}"
-             data-fun-id="${f.id}" data-comp-id="${g.id}">
+             data-fun-id="${f.id}" data-comp-id="${g.id}"${funTooltipAttrs(f)}>
           <span class="arch-fun-box-label">f</span>
           <span class="arch-fun-box-name">${escH(f.name)}</span>
           ${f.is_safety_related ? '<span class="arch-fun-box-warn">⚠</span>' : ''}
@@ -422,7 +423,7 @@ function blockHTML(c) {
   const funItems = funs.length
     ? funs.map(f => `
         <div class="arch-fun-box ${f.is_safety_related ? 'arch-fun-box--safe' : ''}"
-             data-fun-id="${f.id}" data-comp-id="${c.id}">
+             data-fun-id="${f.id}" data-comp-id="${c.id}"${funTooltipAttrs(f)}>
           <span class="arch-fun-box-label">f</span>
           <span class="arch-fun-box-name">${escH(f.name)}</span>
           ${f.is_safety_related ? '<span class="arch-fun-box-warn">⚠</span>' : ''}
@@ -774,6 +775,31 @@ function wireCanvas() {
       if (!tComp) { toast('Drop onto a component or system block.', 'info'); return; }
       idefAssignFn(payload.fnId, payload.fnName, payload.ucId, tComp.dataset.id);
     });
+
+    // Fun-box tooltip (event delegation on canvas)
+    const funTip = document.getElementById('arch-fun-tooltip');
+    if (funTip) {
+      canvasOuter.addEventListener('mouseover', e => {
+        const box = e.target.closest('.arch-fun-box');
+        if (!box || !box.dataset.funtip) { funTip.style.display = 'none'; return; }
+        let tip; try { tip = JSON.parse(box.dataset.funtip); } catch(_) { return; }
+        const rows = [
+          tip.feat ? `<div class="arch-funtip-row"><span class="arch-funtip-lbl">Feature</span><span class="arch-funtip-val">${escH(tip.feat)}</span></div>` : '',
+          tip.uc   ? `<div class="arch-funtip-row"><span class="arch-funtip-lbl">Use Case</span><span class="arch-funtip-val">${escH(tip.uc)}</span></div>` : '',
+          tip.desc ? `<div class="arch-funtip-row arch-funtip-desc"><span class="arch-funtip-lbl">Description</span><span class="arch-funtip-val">${escH(tip.desc)}</span></div>` : '',
+        ].filter(Boolean).join('');
+        if (!rows) return;
+        funTip.innerHTML = rows;
+        const r = box.getBoundingClientRect();
+        const cr = canvasOuter.getBoundingClientRect();
+        funTip.style.display = 'block';
+        funTip.style.left = (r.left - cr.left) + 'px';
+        funTip.style.top  = (r.bottom - cr.top + 6) + 'px';
+      });
+      canvasOuter.addEventListener('mouseout', e => {
+        if (!e.relatedTarget?.closest('.arch-fun-box')) funTip.style.display = 'none';
+      });
+    }
   }
 
   // Palette resize handle
@@ -1927,6 +1953,25 @@ function renderFrameTree() {
 
 function compById(id) { return _s.components.find(c=>c.id===id); }
 function escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Returns tooltip data for an arch_function record (looks up Feature/UC/Description from _idef)
+function funTooltipAttrs(f) {
+  let feat = '', uc = '', desc = f.description || '';
+  if (f.function_ref_id && _idef.loaded) {
+    const fn = _idef.functions.find(x => x.id === f.function_ref_id);
+    if (fn) {
+      desc = fn.description || desc;
+      const ucObj = _idef.useCases.find(x => x.id === fn.use_case_id);
+      if (ucObj) {
+        uc = ucObj.name || '';
+        const featObj = _idef.features.find(x => x.id === ucObj.feature_id);
+        if (featObj) feat = featObj.name || '';
+      }
+    }
+  }
+  if (!feat && !uc && !desc) return '';
+  return ` data-funtip="${escH(JSON.stringify({feat, uc, desc}))}"`;
+}
 
 // ── Item Definition panel ─────────────────────────────────────────────────────
 

@@ -1512,6 +1512,13 @@ input, select, textarea { font-family: var(--font); }
 .arch-group-funs{display:flex;flex-wrap:wrap;gap:3px;padding:4px 6px;border-bottom:1px dashed rgba(0,0,0,0.12);background:rgba(255,255,255,0.5)}
 /* Per-component drag hover highlight */
 .arch-block.arch-fn-drop-hover,.arch-group.arch-fn-drop-hover,.arch-port-block.arch-fn-drop-hover{outline:2px solid var(--color-primary);outline-offset:-2px;background:rgba(26,115,232,0.08) !important}
+/* Function box hover tooltip */
+.arch-fun-tooltip{position:absolute;z-index:9999;background:#fff;border:1px solid #DADCE0;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.15);padding:8px 10px;min-width:180px;max-width:280px;pointer-events:none}
+.arch-funtip-row{display:flex;flex-direction:column;gap:1px;margin-bottom:6px}
+.arch-funtip-row:last-child{margin-bottom:0}
+.arch-funtip-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#9AA0A6}
+.arch-funtip-val{font-size:11px;color:#3C4043;line-height:1.4}
+.arch-funtip-desc .arch-funtip-val{color:#5F6368;font-style:italic}
 
 /* Ports — full-edge transparent strips, highlight on hover */
 .arch-port{position:absolute;z-index:12;cursor:crosshair;pointer-events:all;opacity:0;transition:opacity 0.12s;background:transparent}
