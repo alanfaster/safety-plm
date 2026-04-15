@@ -1693,3 +1693,25 @@ input, select, textarea { font-family: var(--font); }
 .arch-idef-loading{font-size:11px;color:var(--color-text-muted);font-style:italic;padding:12px;align-self:center}
 /* Drop highlight when dragging over canvas */
 .arch-canvas-outer.arch-drop-target{outline:3px dashed var(--color-primary);outline-offset:-3px}
+
+/* ── Interface Requirements bottom panel ── */
+.arch-ifreqs-panel{}
+.arch-ifreqs-table-wrap{flex:1;overflow:auto;padding:4px 0}
+.arch-ifreqs-table{width:100%;border-collapse:collapse;font-size:12px}
+.arch-ifreqs-table thead th{position:sticky;top:0;background:var(--color-bg);padding:4px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-text-muted);border-bottom:1px solid var(--color-border)}
+.arch-ifreqs-row{cursor:pointer;transition:background 0.1s}
+.arch-ifreqs-row:hover{background:rgba(26,115,232,0.05)}
+.arch-ifreqs-row--sel{background:rgba(26,115,232,0.12) !important}
+.arch-ifreqs-row--sel .arch-ifreqs-code{color:var(--color-primary);font-weight:700}
+.arch-ifreqs-row td{padding:5px 10px;border-bottom:1px solid var(--color-border)}
+.arch-ifreqs-code{font-family:var(--font-mono);font-size:11px;white-space:nowrap;color:var(--color-text-muted)}
+.arch-ifreqs-title{max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arch-ifreqs-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;text-transform:capitalize}
+.arch-ifreqs-badge--draft{background:#F1F3F4;color:#5F6368}
+.arch-ifreqs-badge--review{background:#E8F0FE;color:#1967D2}
+.arch-ifreqs-badge--approved{background:#E6F4EA;color:#1E8E3E}
+.arch-ifreqs-badge--deprecated{background:#FCE8E6;color:#C5221F}
+.arch-ifreqs-badge--critical{background:#FCE8E6;color:#C5221F}
+.arch-ifreqs-badge--high{background:#FEF7E0;color:#B06000}
+.arch-ifreqs-badge--medium{background:#F1F3F4;color:#5F6368}
+.arch-ifreqs-badge--low{background:#E6F4EA;color:#1E8E3E}

@@ -187,6 +187,7 @@ function buildShell(container, title) {
           <div class="arch-sep"></div>
           <button class="arch-tb-btn" id="btn-arch-frame" title="Architecture Frame tree">🗂 Frame</button>
           <button class="arch-tb-btn" id="btn-arch-idef" title="Item Definition panel">★ Item Def</button>
+          <button class="arch-tb-btn" id="btn-arch-ifreqs" title="Interface Requirements panel">⇄ Interfaces</button>
           <div class="arch-sep"></div>
           <button class="btn btn-primary btn-sm" id="btn-arch-save">💾 Save</button>
         </div>
@@ -278,6 +279,18 @@ function buildShell(container, title) {
           <button class="arch-tb-btn" id="arch-frame-close">✕</button>
         </div>
         <div class="arch-frame-body" id="arch-frame-body"></div>
+      </div>
+
+      <!-- Interface Requirements panel (bottom) -->
+      <div class="arch-idef-panel arch-ifreqs-panel" id="arch-ifreqs-panel" style="display:none">
+        <div class="arch-idef-resize-bar" id="arch-ifreqs-resize-bar" title="Drag to resize"></div>
+        <div class="arch-idef-hdr">
+          <span class="arch-idef-title">⇄ Interface Requirements</span>
+          <button class="arch-tb-btn" id="arch-ifreqs-close" title="Close">✕</button>
+        </div>
+        <div class="arch-idef-body" id="arch-ifreqs-body">
+          <div class="arch-idef-loading">Loading…</div>
+        </div>
       </div>
 
       <!-- Item Definition panel (bottom) -->
@@ -705,6 +718,35 @@ function wireCanvas() {
     const panel = document.getElementById('arch-frame-panel');
     if (panel) panel.style.display = 'none';
   });
+
+  // Interface Requirements panel toggle + resize
+  document.getElementById('btn-arch-ifreqs')?.addEventListener('click', () => {
+    const panel = document.getElementById('arch-ifreqs-panel');
+    if (!panel) return;
+    const opening = panel.style.display === 'none';
+    panel.style.display = opening ? '' : 'none';
+    if (opening) loadIfaceReqs();
+  });
+  document.getElementById('arch-ifreqs-close')?.addEventListener('click', () => {
+    const panel = document.getElementById('arch-ifreqs-panel');
+    if (panel) panel.style.display = 'none';
+  });
+  const ifreqsPanel = document.getElementById('arch-ifreqs-panel');
+  const ifreqsResizeBar = document.getElementById('arch-ifreqs-resize-bar');
+  if (ifreqsPanel && ifreqsResizeBar) {
+    let drag = null;
+    ifreqsResizeBar.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      drag = { startY: e.clientY, origH: ifreqsPanel.offsetHeight };
+      ifreqsResizeBar.setPointerCapture(e.pointerId);
+    });
+    ifreqsResizeBar.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const h = Math.max(100, Math.min(600, drag.origH - (e.clientY - drag.startY)));
+      ifreqsPanel.style.height = h + 'px';
+    });
+    ifreqsResizeBar.addEventListener('pointerup', () => { drag = null; });
+  }
 
   // Item Definition panel toggle
   document.getElementById('btn-arch-idef')?.addEventListener('click', () => {
@@ -1374,6 +1416,11 @@ function selectConn(connId) {
     ? (compById(tgt.data.parent_block_id)?.name ?? tgt.name) : tgt.name;
   showPropsPanel(connPropsHTML(srcName, tgtName, cn));
   wireConnProps(cn);
+  // Sync Interface Requirements panel if open
+  const ifreqsPanel = document.getElementById('arch-ifreqs-panel');
+  if (ifreqsPanel && ifreqsPanel.style.display !== 'none' && cn.requirement) {
+    highlightIfaceReqRow(cn.requirement);
+  }
 }
 
 async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTgtPort) {
@@ -1465,6 +1512,7 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTg
 
   _s.connections.push(data);
   renderConnections(); selectConn(data.id); toast('Interface created + requirement ' + reqCode + '.', 'success');
+  openIfaceReqsPanel(reqCode);
   if (sidebarNeedsRefresh) window.dispatchEvent(new Event('hashchange'));
 }
 
@@ -2334,4 +2382,74 @@ async function idefAssignFn(fnId, fnName, ucId, compId) {
   refreshComp(compId);
   renderIdefCols();
   toast(`"${fnName}" → ${c.name}`, 'success');
+}
+
+// ── Interface Requirements panel ───────────────────────────────────────────────
+
+let _ifreqs = [];
+
+async function loadIfaceReqs() {
+  const body = document.getElementById('arch-ifreqs-body');
+  if (!body || !_s) return;
+  body.innerHTML = '<div class="arch-idef-loading">Loading…</div>';
+  const { data, error } = await sb.from('requirements')
+    .select('*')
+    .eq('parent_type', _s.parentType)
+    .eq('parent_id', _s.parentId)
+    .eq('type', 'interface')
+    .order('created_at', { ascending: true });
+  _ifreqs = data || [];
+  renderIfaceReqs();
+}
+
+function renderIfaceReqs() {
+  const body = document.getElementById('arch-ifreqs-body');
+  if (!body) return;
+  if (!_ifreqs.length) {
+    body.innerHTML = '<div class="arch-idef-loading" style="font-style:italic">No interface requirements yet — create a connection to generate one.</div>';
+    return;
+  }
+  body.innerHTML = `
+    <div class="arch-ifreqs-table-wrap">
+      <table class="arch-ifreqs-table">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Title</th>
+            <th>Status</th>
+            <th>Priority</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${_ifreqs.map(r => `
+            <tr class="arch-ifreqs-row" data-req-code="${escH(r.req_code)}" id="ifreq-row-${escH(r.req_code)}">
+              <td class="arch-ifreqs-code">${escH(r.req_code)}</td>
+              <td class="arch-ifreqs-title">${escH(r.title)}</td>
+              <td><span class="arch-ifreqs-badge arch-ifreqs-badge--${r.status}">${r.status}</span></td>
+              <td><span class="arch-ifreqs-badge arch-ifreqs-badge--${r.priority}">${r.priority}</span></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function openIfaceReqsPanel(highlightCode) {
+  const panel = document.getElementById('arch-ifreqs-panel');
+  if (!panel) return;
+  panel.style.display = '';
+  loadIfaceReqs().then(() => {
+    if (highlightCode) highlightIfaceReqRow(highlightCode);
+  });
+}
+
+function highlightIfaceReqRow(reqCode) {
+  const body = document.getElementById('arch-ifreqs-body');
+  if (!body) return;
+  body.querySelectorAll('.arch-ifreqs-row').forEach(r => r.classList.remove('arch-ifreqs-row--sel'));
+  if (!reqCode) return;
+  const row = document.getElementById(`ifreq-row-${CSS.escape(reqCode)}`);
+  if (row) {
+    row.classList.add('arch-ifreqs-row--sel');
+    row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 }
