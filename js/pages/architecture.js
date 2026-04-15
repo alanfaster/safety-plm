@@ -17,6 +17,8 @@ import { sb } from '../config.js';
 import { toast } from '../toast.js';
 import { confirmDialog } from '../components/modal.js';
 
+const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+
 // ── Visual constants ──────────────────────────────────────────────────────────
 
 const STYLES = {
@@ -128,6 +130,8 @@ function buildShell(container, title) {
           <button class="arch-tb-btn" id="btn-zoom-in">＋</button>
           <button class="arch-tb-btn" id="btn-zoom-fit">⊞ Fit</button>
           <div class="arch-sep"></div>
+          <button class="arch-tb-btn" id="btn-arch-frame" title="Architecture Frame tree">🗂 Frame</button>
+          <div class="arch-sep"></div>
           <button class="btn btn-primary btn-sm" id="btn-arch-save">💾 Save</button>
         </div>
       </div>
@@ -163,6 +167,7 @@ function buildShell(container, title) {
 
         <!-- Right palette -->
         <div class="arch-palette" id="arch-palette">
+        <div class="arch-palette-resize-handle" id="arch-pal-resize"></div>
 
           <!-- ── Add Block section ── -->
           <div class="arch-pal-sec">
@@ -208,6 +213,15 @@ function buildShell(container, title) {
       </div>
 
       <div class="arch-conn-popover" id="arch-sys-pop" style="display:none"></div>
+
+      <!-- Frame tree panel -->
+      <div class="arch-frame-panel" id="arch-frame-panel" style="display:none">
+        <div class="arch-frame-hdr">
+          <span class="arch-frame-title">🗂 Architecture Frame</span>
+          <button class="arch-tb-btn" id="arch-frame-close">✕</button>
+        </div>
+        <div class="arch-frame-body" id="arch-frame-body"></div>
+      </div>
     </div>`;
 }
 
@@ -244,6 +258,8 @@ function renderConnections() {
   _s.connections.forEach(cn => {
     document.getElementById(`conn-${cn.id}`)
       ?.addEventListener('click', e => { e.stopPropagation(); selectConn(cn.id); });
+    document.getElementById(`conn-del-${cn.id}`)
+      ?.addEventListener('click', async e => { e.stopPropagation(); await deleteConn(cn.id); });
   });
   // Re-apply selection highlight
   if (_selectedConnId) {
@@ -269,6 +285,7 @@ function groupHTML(g) {
         ${sysLabel}
         <button class="arch-group-info-btn" data-comp-id="${g.id}">≡</button>
       </div>
+      <button class="arch-del-badge" data-del-id="${g.id}" title="Delete (Del)">✕</button>
       <div class="arch-resize-handle" data-comp-id="${g.id}"></div>
     </div>`;
 }
@@ -286,6 +303,7 @@ function portHTML(c) {
          title="${escH(c.name)} (${dir})">
       <span class="arch-port-block-dir">${dirIcon}</span>
       <span class="arch-port-block-label">${escH(c.name)}</span>
+      <button class="arch-del-badge arch-del-badge--port" data-del-id="${c.id}" title="Delete (Del)">✕</button>
       <!-- Connection ports -->
       <div class="arch-port arch-port--top"    data-comp-id="${c.id}" data-port="top"></div>
       <div class="arch-port arch-port--right"  data-comp-id="${c.id}" data-port="right"></div>
@@ -324,6 +342,7 @@ function blockHTML(c) {
         ${safe ? '<span class="arch-block-safe-ico">⚠</span>' : ''}
         <button class="arch-block-info-btn" data-comp-id="${c.id}">≡</button>
       </div>
+      <button class="arch-del-badge" data-del-id="${c.id}" title="Delete (Del)">✕</button>
       <div class="arch-block-type-row" style="background:${st.bg}">
         <span class="arch-block-type-badge" style="color:${st.border}">${c.comp_type}</span>
       </div>
@@ -394,8 +413,9 @@ function connSVG(cn) {
             style="pointer-events:none;font-family:system-ui;font-weight:bold">${dirArrow}</text>`;
   }
 
+  const isSel = _selectedConnId === cn.id;
   return `
-    <g id="conn-${cn.id}" class="arch-conn-g">
+    <g id="conn-${cn.id}" class="arch-conn-g${isSel?' arch-conn-g--sel':''}">
       <path d="${d}" fill="none" stroke="transparent" stroke-width="14"/>
       <path d="${d}" fill="none" stroke="${iv.stroke}" stroke-width="${iv.weight}"
             stroke-dasharray="${iv.dash}" ${ms} ${me}/>
@@ -404,6 +424,11 @@ function connSVG(cn) {
       ${label}
       ${ext}
       ${portIcon}
+      <g class="arch-conn-del-btn" id="conn-del-${cn.id}">
+        <circle cx="${mx+18}" cy="${my-18}" r="8" fill="#C5221F" stroke="#fff" stroke-width="1.5"/>
+        <text x="${mx+18}" y="${my-14}" text-anchor="middle" font-size="11" fill="#fff"
+              font-weight="bold" style="pointer-events:none">×</text>
+      </g>
     </g>`;
 }
 
@@ -526,6 +551,37 @@ function wireCanvas() {
   document.getElementById('btn-zoom-fit').onclick = fitView;
   document.getElementById('btn-arch-save').onclick = savePositions;
 
+  // Frame tree toggle
+  document.getElementById('btn-arch-frame')?.addEventListener('click', () => {
+    const panel = document.getElementById('arch-frame-panel');
+    if (!panel) return;
+    const open = panel.style.display !== 'none';
+    panel.style.display = open ? 'none' : '';
+    if (!open) renderFrameTree();
+  });
+  document.getElementById('arch-frame-close')?.addEventListener('click', () => {
+    const panel = document.getElementById('arch-frame-panel');
+    if (panel) panel.style.display = 'none';
+  });
+
+  // Palette resize handle
+  const pal = document.getElementById('arch-palette');
+  const palHandle = document.getElementById('arch-pal-resize');
+  if (pal && palHandle) {
+    let presize = null;
+    palHandle.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      presize = { startX: e.clientX, origW: pal.offsetWidth };
+      palHandle.setPointerCapture(e.pointerId);
+    });
+    palHandle.addEventListener('pointermove', e => {
+      if (!presize) return;
+      const w = Math.max(180, Math.min(420, presize.origW - (e.clientX - presize.startX)));
+      pal.style.width = w + 'px';
+    });
+    palHandle.addEventListener('pointerup', () => { presize = null; });
+  }
+
   document.querySelectorAll('.arch-pal-item').forEach(btn => {
     btn.addEventListener('click', () => addComp(btn.dataset.type));
   });
@@ -621,9 +677,14 @@ function wireGlobal() {
   };
   const onKey = e => {
     if (!_s) return;
-    if ((e.key==='Delete'||e.key==='Backspace') && document.activeElement===document.body && _s.selected)
-      deleteComp(_s.selected);
-    if (e.key==='Escape') { cancelConnect(); selectComp(null); }
+    const active = document.activeElement;
+    const notInput = active === document.body || active?.tagName === 'SVG' ||
+                     active?.closest?.('.arch-canvas-outer');
+    if ((e.key==='Delete'||e.key==='Backspace') && notInput) {
+      if (_selectedConnId) deleteConn(_selectedConnId);
+      else if (_s.selected) deleteComp(_s.selected);
+    }
+    if (e.key==='Escape') { cancelConnect(); selectComp(null); showPropsEmpty(); }
   };
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup',   onUp);
@@ -658,6 +719,9 @@ function wireGroup(id) {
   });
   el.querySelector('.arch-group-info-btn')?.addEventListener('click', e => {
     e.stopPropagation(); selectComp(id); openProps(id);
+  });
+  el.querySelector('.arch-del-badge')?.addEventListener('click', e => {
+    e.stopPropagation(); deleteComp(id);
   });
   el.querySelector('.arch-group-name')?.addEventListener('dblclick', e => {
     e.stopPropagation(); startRename(id);
@@ -700,6 +764,9 @@ function wireBlock(id) {
   });
   el.querySelector('.arch-block-info-btn')?.addEventListener('click', e => {
     e.stopPropagation(); selectComp(id); openProps(id);
+  });
+  el.querySelector('.arch-del-badge')?.addEventListener('click', e => {
+    e.stopPropagation(); deleteComp(id);
   });
   el.querySelectorAll('.arch-fun-del').forEach(btn => {
     btn.addEventListener('click', async e => { e.stopPropagation(); await deleteFun(btn.dataset.funId, btn.dataset.compId); });
@@ -944,13 +1011,9 @@ function connPropsHTML(srcName, tgtName, cn) {
     <input class="form-input" id="pop-name" value="${escH(cn.name||'')}"/>
     <label class="arch-form-lbl">Requirement</label>
     <textarea class="form-input form-textarea" id="pop-req" rows="3">${escH(cn.requirement||'')}</textarea>
-    <label class="arch-form-lbl" style="display:flex;align-items:center;gap:6px;margin-top:8px">
+    <label class="arch-form-lbl" style="display:flex;align-items:center;gap:6px;margin-top:6px">
       <input type="checkbox" id="pop-ext" ${cn.is_external?'checked':''}/> External interface
-    </label>
-    <div style="display:flex;gap:6px;margin-top:12px">
-      <button class="btn btn-danger btn-sm" id="pop-del">Delete</button>
-      <button class="btn btn-primary btn-sm" id="pop-ok">Save</button>
-    </div>`;
+    </label>`;
 }
 
 function wireConnCreate(ctx) {
@@ -1003,26 +1066,23 @@ function wireConnCreate(ctx) {
 
 function wireConnProps(cn) {
   const body = document.getElementById('arch-props-body'); if (!body) return;
-  body.querySelector('#pop-del')?.addEventListener('click', async () => {
-    const { error } = await sb.from('arch_connections').delete().eq('id', cn.id);
-    if (error) { toast('Error: '+error.message,'error'); return; }
-    _s.connections = _s.connections.filter(c=>c.id!==cn.id);
-    renderConnections(); showPropsEmpty(); toast('Deleted.','success');
-  });
-  body.querySelector('#pop-ok').onclick = async () => {
-    const btn = body.querySelector('#pop-ok'); btn.disabled = true;
-    const itype = body.querySelector('#pop-itype').value;
-    const dir   = body.querySelector('#pop-dir').value;
-    const name  = body.querySelector('#pop-name').value.trim()||null;
-    const req   = body.querySelector('#pop-req').value.trim()||null;
-    const ext   = body.querySelector('#pop-ext').checked;
+  const saveConn = debounce(async () => {
+    const itype = body.querySelector('#pop-itype')?.value;
+    const dir   = body.querySelector('#pop-dir')?.value;
+    const name  = body.querySelector('#pop-name')?.value.trim()||null;
+    const req   = body.querySelector('#pop-req')?.value.trim()||null;
+    const ext   = body.querySelector('#pop-ext')?.checked ?? false;
+    if (itype === undefined) return;
     const patch = { interface_type:itype, direction:dir, name, requirement:req, is_external:ext, updated_at:new Date().toISOString() };
     const { error } = await sb.from('arch_connections').update(patch).eq('id', cn.id);
-    btn.disabled = false;
     if (error) { toast('Error: '+error.message,'error'); return; }
-    Object.assign(cn, patch);
-    renderConnections(); selectConn(cn.id); toast('Updated.','success');
-  };
+    Object.assign(cn, patch); renderConnections();
+  }, 600);
+  body.querySelector('#pop-itype')?.addEventListener('change', saveConn);
+  body.querySelector('#pop-dir')?.addEventListener('change', saveConn);
+  body.querySelector('#pop-name')?.addEventListener('input', saveConn);
+  body.querySelector('#pop-req')?.addEventListener('input', saveConn);
+  body.querySelector('#pop-ext')?.addEventListener('change', saveConn);
 }
 
 // ── System Group creation popover ─────────────────────────────────────────────
@@ -1136,6 +1196,15 @@ async function createGroup(name, systemId) {
 function openProps(id) {
   const c = compById(id); if (!c) return;
 
+  const saveComp = async (patch) => {
+    Object.assign(c, patch);
+    await sb.from('arch_components').update({...patch, updated_at:new Date().toISOString()}).eq('id',id);
+  };
+  const debName = debounce(async () => {
+    const v = document.getElementById('props-name')?.value.trim(); if (!v||v===c.name) return;
+    await saveComp({name:v}); refreshComp(id); if (c.comp_type!=='Port') renderConnections();
+  }, 700);
+
   // ── Port ─────────────────────────────────────────────────────────────────
   if (c.comp_type === 'Port') {
     const parentBlk = c.data?.parent_block_id ? compById(c.data.parent_block_id) : null;
@@ -1143,27 +1212,20 @@ function openProps(id) {
       <div class="arch-props-hdr">Port · ${escH(c.name)}</div>
       ${parentBlk ? `<div class="arch-props-note">⬡ Attached to: ${escH(parentBlk.name)}</div>` : ''}
       <label class="arch-form-lbl">Port Name</label>
-      <input class="form-input" id="props-name" value="${escH(c.name)}" style="margin-bottom:6px"/>
+      <input class="form-input" id="props-name" value="${escH(c.name)}"/>
       <label class="arch-form-lbl">Direction</label>
-      <select class="form-input" id="props-port-dir" style="margin-bottom:10px">
+      <select class="form-input" id="props-port-dir">
         <option value="in"    ${c.data?.port_dir==='in'   ?'selected':''}>in  ▶ (input)</option>
         <option value="out"   ${c.data?.port_dir==='out'  ?'selected':''}>out ◀ (output)</option>
         <option value="inout" ${(c.data?.port_dir||'inout')==='inout'?'selected':''}>inout ◆ (bidirectional)</option>
-      </select>
-      <div style="display:flex;gap:6px">
-        <button class="btn btn-primary btn-sm" id="props-apply">Apply</button>
-        <button class="btn btn-danger  btn-sm" id="props-del">Delete</button>
-      </div>`);
-    document.getElementById('props-apply').onclick = async () => {
-      const name = document.getElementById('props-name').value.trim()||c.name;
-      const dir  = document.getElementById('props-port-dir').value;
-      c.name = name; c.data = {...(c.data||{}), port_dir:dir};
-      await sb.from('arch_components').update({ name, data:c.data, updated_at:new Date().toISOString() }).eq('id',id);
-      refreshComp(id); renderConnections(); toast('Updated.','success');
-    };
-    document.getElementById('props-del').onclick = () => {
-      confirmDialog(`Delete port "${c.name}"?`, async () => { await deleteComp(id); });
-    };
+      </select>`);
+    document.getElementById('props-name').addEventListener('input', debName);
+    document.getElementById('props-port-dir').addEventListener('change', async () => {
+      const dir = document.getElementById('props-port-dir').value;
+      c.data = {...(c.data||{}), port_dir:dir};
+      await sb.from('arch_components').update({ data:c.data, updated_at:new Date().toISOString() }).eq('id',id);
+      refreshComp(id); renderConnections();
+    });
     return;
   }
 
@@ -1175,45 +1237,38 @@ function openProps(id) {
     showPropsPanel(`
       <div class="arch-props-hdr">System Group · ${escH(c.name)}</div>
       <label class="arch-form-lbl">Name</label>
-      <input class="form-input" id="props-name" value="${escH(c.name)}" style="margin-bottom:6px"/>
+      <input class="form-input" id="props-name" value="${escH(c.name)}"/>
       <label class="arch-form-lbl">Linked System</label>
-      <select class="form-input" id="props-sys-link" style="margin-bottom:10px">
+      <select class="form-input" id="props-sys-link">
         <option value="">— None —</option>
         ${sysOpts}
       </select>
-      ${linkedSys ? `<div class="arch-props-note">🔗 ${escH(linkedSys.system_code)} · ${escH(linkedSys.name)}</div>` : ''}
-      <div style="display:flex;gap:6px">
-        <button class="btn btn-primary btn-sm" id="props-apply">Apply</button>
-        <button class="btn btn-danger  btn-sm" id="props-del">Delete</button>
-      </div>`);
-    document.getElementById('props-apply').onclick = async () => {
-      const name  = document.getElementById('props-name').value.trim()||c.name;
+      ${linkedSys ? `<div class="arch-props-note" style="margin-top:6px">🔗 ${escH(linkedSys.system_code)} · ${escH(linkedSys.name)}</div>` : ''}`);
+    document.getElementById('props-name').addEventListener('input', debName);
+    document.getElementById('props-sys-link').addEventListener('change', async () => {
       const sysId = document.getElementById('props-sys-link').value||null;
-      c.name = name; c.data = {...(c.data||{}), system_id:sysId||undefined};
+      c.data = {...(c.data||{}), system_id:sysId||undefined};
       if (!sysId) delete c.data.system_id;
-      await sb.from('arch_components').update({ name, data:c.data, updated_at:new Date().toISOString() }).eq('id',id);
-      refreshComp(id); toast('Updated.','success');
-    };
-    document.getElementById('props-del').onclick = () => {
-      confirmDialog(`Delete group "${c.name}"?`, async () => { await deleteComp(id); });
-    };
+      await sb.from('arch_components').update({ data:c.data, updated_at:new Date().toISOString() }).eq('id',id);
+      refreshComp(id);
+    });
     return;
   }
 
   // ── Block ─────────────────────────────────────────────────────────────────
   const st = STYLES[c.comp_type] || STYLES.HW;
   showPropsPanel(`
-    <div class="arch-props-hdr" style="border-left:3px solid ${st.border};padding-left:8px">${escH(c.comp_type)} Block · ${escH(c.name)}</div>
+    <div class="arch-props-hdr" style="border-left:3px solid ${st.border};padding-left:8px">${escH(c.comp_type)} · ${escH(c.name)}</div>
     <label class="arch-form-lbl">Name</label>
-    <input class="form-input" id="props-name" value="${escH(c.name)}" style="margin-bottom:6px"/>
+    <input class="form-input" id="props-name" value="${escH(c.name)}"/>
     <label class="arch-form-lbl">Type</label>
-    <select class="form-input" id="props-type" style="margin-bottom:6px">
+    <select class="form-input" id="props-type">
       ${['HW','SW','Mechanical'].map(t=>`<option value="${t}" ${c.comp_type===t?'selected':''}>${t}</option>`).join('')}
     </select>
-    <label class="arch-form-lbl" style="display:flex;align-items:center;gap:6px;margin-top:4px">
+    <label class="arch-form-lbl" style="display:flex;align-items:center;gap:6px;margin-top:6px">
       <input type="checkbox" id="props-safe" ${c.is_safety_critical?'checked':''}/> Safety Critical
     </label>
-    <div style="margin-top:12px">
+    <div style="margin-top:10px">
       <div class="arch-props-fun-hdr">
         <span>λ Functions</span>
         <button class="arch-tb-btn" id="props-add-fun">＋</button>
@@ -1234,23 +1289,17 @@ function openProps(id) {
         <input class="form-input" id="props-new-fun" placeholder="Function name…" style="flex:1"/>
         <button class="btn btn-primary btn-sm" id="props-new-fun-ok">Add</button>
       </div>
-    </div>
-    <div style="display:flex;gap:6px;margin-top:14px">
-      <button class="btn btn-primary btn-sm" id="props-apply">Apply</button>
-      <button class="btn btn-danger  btn-sm" id="props-del">Delete</button>
     </div>`);
 
-  document.getElementById('props-apply').onclick = async () => {
-    const name = document.getElementById('props-name').value.trim()||c.name;
+  document.getElementById('props-name').addEventListener('input', debName);
+  document.getElementById('props-type').addEventListener('change', async () => {
     const type = document.getElementById('props-type').value;
+    await saveComp({comp_type:type}); refreshComp(id);
+  });
+  document.getElementById('props-safe').addEventListener('change', async () => {
     const safe = document.getElementById('props-safe').checked;
-    await sb.from('arch_components').update({ name, comp_type:type, is_safety_critical:safe, updated_at:new Date().toISOString() }).eq('id',id);
-    Object.assign(c, { name, comp_type:type, is_safety_critical:safe });
-    refreshComp(id); toast('Updated.','success');
-  };
-  document.getElementById('props-del').onclick = () => {
-    confirmDialog(`Delete "${c.name}"?`, async () => { await deleteComp(id); });
-  };
+    await saveComp({is_safety_critical:safe}); refreshComp(id);
+  });
 
   document.getElementById('props-add-fun').onclick = () => {
     const r = document.getElementById('props-addfun-row');
@@ -1312,7 +1361,8 @@ async function addComp(type) {
 
   const { data, error } = await sb.from('arch_components').insert({
     parent_type:_s.parentType, parent_id:_s.parentId, project_id:_s.project.id,
-    name: isPort ? `P${count+1}` : `${type} Block ${count+1}`,
+    name: isPort ? `P-${String(_s.components.filter(x=>x.comp_type==='Port').length+1).padStart(3,'0')}`
+                 : `${type==='Mechanical'?'MECH':type}-${String(_s.components.filter(x=>x.comp_type===type).length+1).padStart(3,'0')}`,
     comp_type:type, x, y, width:w, height:h,
     sort_order:count,
     data: isPort ? { port_dir:'inout' } : {},
@@ -1335,11 +1385,45 @@ async function addComp(type) {
 }
 
 async function deleteComp(id) {
+  const c = compById(id); if (!c) return;
+
+  if (c.comp_type === 'Group') {
+    const linkedSys = c.data?.system_id ? _s.projectSystems.find(s=>s.id===c.data.system_id) : null;
+    const sysWarning = linkedSys
+      ? `\n\nLinked system "${linkedSys.system_code} — ${linkedSys.name}" will be unlinked but NOT deleted — it remains accessible in the Systems section.`
+      : '';
+    const childCount = _s.components.filter(b => b.data?.group_id === id).length;
+    const childNote  = childCount ? `\n${childCount} block(s) inside will be unlinked from this group.` : '';
+    confirmDialog(`Delete group "${c.name}"?${childNote}${sysWarning}`, () => {
+      confirmDialog(`⚠ Confirm deletion of "${c.name}". This cannot be undone.`, async () => {
+        // Unlink child blocks
+        _s.components.filter(b => b.data?.group_id===id).forEach(b => {
+          b.data = {...(b.data||{})}; delete b.data.group_id;
+          sb.from('arch_components').update({ data:b.data }).eq('id', b.id);
+        });
+        await sb.from('arch_components').delete().eq('id', id);
+        _s.components  = _s.components.filter(x=>x.id!==id);
+        _s.connections = _s.connections.filter(cn=>cn.source_id!==id&&cn.target_id!==id);
+        document.getElementById(`comp-${id}`)?.remove();
+        selectComp(null); renderConnections(); renderGroups(); toast('Group deleted.','success');
+      });
+    });
+    return;
+  }
+
   await sb.from('arch_components').delete().eq('id',id);
-  _s.components  = _s.components.filter(c=>c.id!==id);
+  _s.components  = _s.components.filter(x=>x.id!==id);
   _s.connections = _s.connections.filter(cn=>cn.source_id!==id&&cn.target_id!==id);
   document.getElementById(`comp-${id}`)?.remove();
   selectComp(null); renderConnections(); toast('Deleted.','success');
+}
+
+async function deleteConn(connId) {
+  const { error } = await sb.from('arch_connections').delete().eq('id', connId);
+  if (error) { toast('Error: '+error.message,'error'); return; }
+  _s.connections = _s.connections.filter(c=>c.id!==connId);
+  _selectedConnId = null;
+  renderConnections(); showPropsEmpty(); toast('Interface deleted.','success');
 }
 
 async function deleteFun(funId, compId) {
@@ -1405,6 +1489,77 @@ function fitView() {
   _s.zoom=Math.min(2,Math.min((ow-pad*2)/(Math.max(...xe)-Math.min(...xs)||1),(oh-pad*2)/(Math.max(...ye)-Math.min(...ys)||1)));
   _s.panX=pad-Math.min(...xs)*_s.zoom; _s.panY=pad-Math.min(...ys)*_s.zoom;
   applyViewport();
+}
+
+// ── Architecture Frame Tree ───────────────────────────────────────────────────
+
+function renderFrameTree() {
+  const body = document.getElementById('arch-frame-body'); if (!body) return;
+  const groups    = _s.components.filter(c => c.comp_type === 'Group');
+  const allBlocks = _s.components.filter(c => c.comp_type !== 'Group' && c.comp_type !== 'Port');
+  const ports     = _s.components.filter(c => c.comp_type === 'Port');
+  const typeIcon  = { HW:'🔧', SW:'💾', Mechanical:'⚙' };
+
+  function blockTree(blk) {
+    const blkPorts = ports.filter(p => p.data?.parent_block_id === blk.id);
+    const funs = blk.functions || [];
+    const safeTag = blk.is_safety_critical ? `<span class="ft-safe-tag">SC</span>` : '';
+    const portItems = blkPorts.map(p => `
+      <div class="ft-row ft-port">
+        <span class="ft-icon">■</span>
+        <span class="ft-label">${escH(p.name)}</span>
+        <span class="ft-muted">${{in:'▶',out:'◀',inout:'◆'}[p.data?.port_dir||'inout']||'◆'}</span>
+      </div>`).join('');
+    const funItems = funs.map(f => `
+      <div class="ft-row ft-fun ${f.is_safety_related?'ft-fun--safe':''}">
+        <span class="ft-icon">${f.is_safety_related?'⚠':'⬥'}</span>
+        <span class="ft-label">${escH(f.name)}</span>
+      </div>`).join('');
+    const hasChildren = funs.length || blkPorts.length;
+    return `
+      <details class="ft-details" open>
+        <summary class="ft-row ft-block">
+          <span class="ft-icon">${typeIcon[blk.comp_type]||'□'}</span>
+          <span class="ft-label ft-label--block">${escH(blk.name)}</span>
+          <span class="ft-badge ft-badge--${blk.comp_type.toLowerCase()}">${blk.comp_type}</span>
+          ${safeTag}
+        </summary>
+        <div class="ft-children">
+          ${portItems}${funItems}
+          ${!hasChildren?'<div class="ft-row ft-empty">no functions</div>':''}
+        </div>
+      </details>`;
+  }
+
+  const groupSections = groups.map(g => {
+    const linkedSys = g.data?.system_id ? _s.projectSystems.find(s=>s.id===g.data.system_id) : null;
+    const children  = allBlocks.filter(b => b.data?.group_id === g.id);
+    return `
+      <details class="ft-details ft-details--group" open>
+        <summary class="ft-row ft-group">
+          <span class="ft-icon">⬡</span>
+          <span class="ft-label ft-label--group">${escH(g.name)}</span>
+          ${linkedSys ? `<span class="ft-muted">🔗 ${escH(linkedSys.system_code)}</span>` : ''}
+        </summary>
+        <div class="ft-children">
+          ${children.length ? children.map(blockTree).join('') : '<div class="ft-row ft-empty">empty group</div>'}
+        </div>
+      </details>`;
+  }).join('');
+
+  const groupIds = new Set(groups.map(g => g.id));
+  const ungrouped = allBlocks.filter(b => !b.data?.group_id || !groupIds.has(b.data.group_id));
+  const ungroupedSection = ungrouped.length ? `
+    <details class="ft-details ft-details--loose" open>
+      <summary class="ft-row ft-group">
+        <span class="ft-icon">◌</span>
+        <span class="ft-label ft-label--group" style="color:var(--color-text-muted)">Ungrouped</span>
+      </summary>
+      <div class="ft-children">${ungrouped.map(blockTree).join('')}</div>
+    </details>` : '';
+
+  body.innerHTML = (groupSections + ungroupedSection) ||
+    `<div style="padding:12px;color:var(--color-text-muted);font-size:var(--text-sm)">No components yet.</div>`;
 }
 
 function compById(id) { return _s.components.find(c=>c.id===id); }
