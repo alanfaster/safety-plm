@@ -369,7 +369,7 @@ function groupHTML(g) {
   const sysLabel = linkedSys
     ? `<span class="arch-group-sysref" title="Linked system">${escH(linkedSys.system_code)}</span>` : '';
   const funs = g.functions || [];
-  const funStrip = funs.length ? `
+  const funStrip = `
     <div class="arch-group-funs" id="funlist-${g.id}">
       ${funs.map(f => `
         <div class="arch-fun-box arch-fun-box--group ${f.is_safety_related ? 'arch-fun-box--safe' : ''}"
@@ -379,7 +379,8 @@ function groupHTML(g) {
           ${f.is_safety_related ? '<span class="arch-fun-box-warn">⚠</span>' : ''}
           <button class="arch-fun-del" data-fun-id="${f.id}" data-comp-id="${g.id}" title="Remove">✕</button>
         </div>`).join('')}
-    </div>` : '';
+      <button class="arch-addfun-btn" data-comp-id="${g.id}">+ Add function</button>
+    </div>`;
 
   return `
     <div class="arch-group ${_s.selected === g.id ? 'arch-group--sel' : ''}"
@@ -435,16 +436,16 @@ function blockHTML(c) {
   const funs = c.functions || [];
   const sel  = _s.selected === c.id;
 
-  const funItems = funs.length
-    ? funs.map(f => `
+  const funItems = `
+    ${funs.map(f => `
         <div class="arch-fun-box ${f.is_safety_related ? 'arch-fun-box--safe' : ''}"
              data-fun-id="${f.id}" data-comp-id="${c.id}"${funTooltipAttrs(f)}>
           <span class="arch-fun-box-label">f</span>
           <span class="arch-fun-box-name">${escH(f.name)}</span>
           ${f.is_safety_related ? '<span class="arch-fun-box-warn">⚠</span>' : ''}
           <button class="arch-fun-del" data-fun-id="${f.id}" data-comp-id="${c.id}" title="Remove">✕</button>
-        </div>`).join('')
-    : `<button class="arch-addfun-btn" data-comp-id="${c.id}">+ Add function</button>`;
+        </div>`).join('')}
+    <button class="arch-addfun-btn" data-comp-id="${c.id}">+ Add function</button>`;
 
   return `
     <div class="arch-block ${sel ? 'arch-block--sel' : ''} ${safe ? 'arch-block--safe' : ''}"
@@ -999,11 +1000,11 @@ function wireGlobal() {
 function wireGroup(id) {
   const el = document.getElementById(`comp-${id}`); if (!el) return;
   el.addEventListener('pointerdown', e => {
-    if (e.target.closest('.arch-resize-handle,.arch-group-info-btn,.arch-port,.arch-fun-del')) return;
+    if (e.target.closest('.arch-resize-handle,.arch-group-info-btn,.arch-port,.arch-fun-del,.arch-addfun-btn')) return;
     selectComp(id);
   });
   el.querySelector('[data-drag-id]')?.addEventListener('pointerdown', e => {
-    if (e.target.closest('.arch-group-info-btn')) return;
+    if (e.target.closest('.arch-group-info-btn,.arch-addfun-btn')) return;
     e.stopPropagation(); e.preventDefault();
     const g = compById(id); if (!g) return;
     captureUndo();
@@ -1037,6 +1038,17 @@ function wireGroup(id) {
   });
   el.querySelectorAll('.arch-fun-del').forEach(btn => {
     btn.addEventListener('click', async e => { e.stopPropagation(); await deleteFun(btn.dataset.funId, btn.dataset.compId); });
+  });
+  el.querySelector('.arch-addfun-btn')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    const name = `Function ${(compById(id)?.functions?.length ?? 0) + 1}`;
+    const { data, error } = await sb.from('arch_functions').insert({
+      component_id: id, name, is_safety_related: false,
+      sort_order: compById(id)?.functions?.length ?? 0,
+    }).select().single();
+    if (error) { toast('Error: '+error.message, 'error'); return; }
+    const g = compById(id); if (g) { if (!g.functions) g.functions = []; g.functions.push(data); }
+    refreshComp(id); selectComp(id); openProps(id);
   });
   wireResizeHandle(el, id);
 }
