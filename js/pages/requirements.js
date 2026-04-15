@@ -55,21 +55,22 @@ export async function renderRequirements(container, { project, item, system, par
         container.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
         if (tab.dataset.tab === 'matrix') renderTraceability(project, parentType, parentId);
-        else loadRequirements(project, parentType, parentId, null);
+        else loadRequirements(project, parentType, parentId, null, true);
       };
     });
   }
 
-  await loadRequirements(project, parentType, parentId, typeFilter);
+  await loadRequirements(project, parentType, parentId, typeFilter, typeFilter === null);
 }
 
-async function loadRequirements(project, parentType, parentId, typeFilter = null) {
+async function loadRequirements(project, parentType, parentId, typeFilter = null, excludeInterface = false) {
   let q = sb.from('requirements')
     .select('*')
     .eq('parent_type', parentType)
     .eq('parent_id', parentId)
     .order('created_at', { ascending: true });
   if (typeFilter) q = q.eq('type', typeFilter);
+  else if (excludeInterface) q = q.neq('type', 'interface');
   const { data, error } = await q;
 
   const body = document.getElementById('req-body');
