@@ -274,8 +274,9 @@ async function loadChainData() {
 
 /** Load architecture data into _map without touching the DOM. */
 async function loadMapData() {
+  // Fetch x,y,width,height so we can compute geo-based group membership
   const { data: comps } = await sb.from('arch_components')
-    .select('id,name,comp_type,data,sort_order')
+    .select('id,name,comp_type,data,sort_order,x,y,width,height')
     .eq('parent_type', _ctx.parentType)
     .eq('parent_id',   _ctx.parentId)
     .order('sort_order', { ascending: true });
@@ -296,6 +297,21 @@ async function loadMapData() {
           .order('sort_order', { ascending: true })
       : Promise.resolve({ data: [] }),
   ]);
+
+  // Resolve group membership: use data.group_id when set, otherwise fall back
+  // to geometry (same containment rule as the architecture canvas).
+  const groups   = allComps.filter(c => c.comp_type === 'Group');
+  const leafOnly = allComps.filter(c => c.comp_type !== 'Group');
+
+  leafOnly.forEach(c => {
+    if (c.data?.group_id) return; // already assigned
+    const grp = groups.find(g =>
+      g.x != null && g.y != null &&
+      c.x + (c.width  || 0) / 2 > g.x && c.x + (c.width  || 0) / 2 < g.x + (g.width  || 0) &&
+      c.y + (c.height || 0) / 2 > g.y && c.y + (c.height || 0) / 2 < g.y + (g.height || 0)
+    );
+    if (grp) c.data = { ...(c.data || {}), group_id: grp.id };
+  });
 
   _map.components  = allComps;
   _map.connections = conns || [];
@@ -535,6 +551,8 @@ function renderMap() {
       <div class="dmap-tree-branch-children" id="${id}">${children}</div>
     </div>`;
 
+  const groupIds = new Set(groups.map(g => g.id));
+
   const renderGroup = g => {
     const children = leafComps.filter(c => c.data?.group_id === g.id);
     const bid = `dmap-g-${g.id}`;
@@ -548,7 +566,8 @@ function renderMap() {
     </div>`;
   };
 
-  const ungrouped  = leafComps.filter(c => !c.data?.group_id);
+  // Only truly ungrouped: no group_id, or group_id points to a non-existent group
+  const ungrouped = leafComps.filter(c => !c.data?.group_id || !groupIds.has(c.data.group_id));
   const rootId     = 'dmap-root-body';
   const systemsHTML = groups.map(renderGroup).join('') + ungrouped.map(c => buildMapCompHTML(c)).join('');
 
