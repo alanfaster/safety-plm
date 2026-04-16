@@ -1733,53 +1733,59 @@ input, select, textarea { font-family: var(--font); }
 
 /* ── Architecture Specification ───────────────────────────────────────────── */
 .spec-table .spec-row td{vertical-align:top;padding-top:10px;padding-bottom:10px}
-.spec-id-cell{font-family:var(--font-mono);font-size:12px;white-space:nowrap;padding-top:12px!important}
+.spec-id-cell{font-family:var(--font-mono);font-size:12px;white-space:nowrap;padding-top:12px!important;color:var(--color-text-muted)}
 
 /* Description cell */
-.spec-desc-cell{min-width:260px}
-.spec-text-view{font-size:13px;line-height:1.55;color:var(--color-text);padding:2px 4px;border-radius:4px;cursor:default;min-height:22px;word-break:break-word;white-space:pre-wrap;border:1.5px solid transparent;transition:border-color 0.15s}
-.spec-text-view:hover{border-color:var(--color-border)}
-.spec-text-view.editing{border-color:var(--color-primary);background:#fff;cursor:text;outline:none}
-.spec-placeholder{color:var(--color-text-muted);font-style:italic;font-size:12px}
+.spec-desc-cell{min-width:280px;max-width:480px}
+.spec-text-view{font-size:13px;line-height:1.6;color:var(--color-text);padding:3px 6px;border-radius:5px;cursor:default;min-height:24px;word-break:break-word;white-space:pre-wrap;border:1.5px solid transparent;transition:border-color 0.15s,background 0.15s}
+.spec-text-view:hover{border-color:var(--color-border);background:#fafafa}
+.spec-text-view.editing{border-color:var(--color-primary);background:#fff;cursor:text;outline:none;box-shadow:0 0 0 3px rgba(26,115,232,0.1)}
+.spec-placeholder{color:var(--color-text-muted);font-style:italic;font-size:12px;pointer-events:none}
 .spec-placeholder.hidden{display:none}
 
-/* UML inline preview */
-.spec-uml-inline{margin-top:8px;border:1px solid var(--color-border);border-radius:6px;overflow:hidden;background:#FAFAFA}
-.spec-uml-inline-header{display:flex;align-items:center;gap:6px;padding:4px 10px;background:var(--color-bg-subtle,#F1F3F4);border-bottom:1px solid var(--color-border)}
-.spec-uml-badge{font-size:11px;font-weight:600;color:var(--color-primary);flex:1}
-.spec-uml-expand-btn{background:none;border:none;cursor:pointer;font-size:10px;padding:2px 4px;color:var(--color-text-muted)}
-.spec-uml-preview{overflow:hidden;transition:max-height 0.25s ease,padding 0.25s ease;padding:8px}
-.spec-uml-preview.collapsed{max-height:140px}
-.spec-uml-preview:not(.collapsed){max-height:600px}
-.spec-uml-preview:hover{background:rgba(26,115,232,0.03);cursor:zoom-in}
-.uml-prev-svg{width:100%;display:block}
+/* UML area (wraps both preview and editor) */
+.spec-uml-area{margin-top:6px}
 
-.spec-no-uml{padding:4px 0 2px}
-.spec-add-uml-btn{font-size:11px;color:var(--color-text-muted)}
+/* Preview: header + thumbnail */
+.spec-uml-inline{border:1px solid var(--color-border);border-radius:7px;overflow:hidden;background:#fff}
+.spec-uml-inline-header{display:flex;align-items:center;gap:6px;padding:5px 10px;background:var(--color-bg-subtle,#F1F3F4);border-bottom:1px solid var(--color-border)}
+.spec-uml-badge{font-size:11px;font-weight:600;color:var(--color-primary);flex:1}
+.spec-uml-expand-btn{background:none;border:none;cursor:pointer;font-size:10px;padding:2px 6px;color:var(--color-text-muted);border-radius:3px}
+.spec-uml-expand-btn:hover{background:var(--color-border);color:var(--color-text)}
+
+/* Thumbnail: fixed height, SVG scales inside */
+.spec-uml-thumb{overflow:hidden;background:#FAFAFA;cursor:zoom-in;transition:max-height 0.2s ease}
+.spec-uml-thumb.collapsed{max-height:110px}
+.spec-uml-thumb:not(.collapsed){max-height:520px;cursor:default}
+.spec-uml-thumb:hover{background:#F0F4FF}
+.uml-prev-svg{width:100%;height:auto;display:block;max-height:108px;object-fit:contain}
+.spec-uml-thumb:not(.collapsed) .uml-prev-svg{max-height:none}
+
+/* "Add diagram" when no UML */
+.spec-no-uml,.spec-uml-area:empty+.spec-no-uml{padding:4px 0 0}
+.spec-add-uml-btn{font-size:11px;color:var(--color-text-muted);padding:2px 6px}
 .spec-add-uml-btn:hover{color:var(--color-primary)}
 
+/* Inline editor (replaces preview area) */
+.spec-uml-editor-inline{border:1.5px solid var(--color-primary);border-radius:7px;overflow:hidden;background:#fff;box-shadow:0 2px 12px rgba(26,115,232,0.1)}
+.spec-uml-edit-bar{display:flex;align-items:center;gap:6px;padding:6px 10px;background:#EEF4FF;border-bottom:1px solid #C5D8FF;flex-wrap:wrap}
+
 /* Row action buttons */
-.spec-row-actions{white-space:nowrap;padding-top:8px!important}
-.spec-row-actions .btn{font-size:13px;padding:2px 5px;line-height:1}
+.spec-row-actions{white-space:nowrap;padding-top:8px!important;vertical-align:top}
+.spec-row-actions .btn{font-size:13px;padding:2px 5px;line-height:1.2;opacity:0.55;transition:opacity 0.1s}
+.spec-row:hover .spec-row-actions .btn{opacity:1}
 
-/* UML editor row */
-.spec-uml-edit-row>td{background:var(--color-bg-subtle,#F8F9FA);padding:0}
-.spec-uml-edit-wrap{padding:0}
-.spec-uml-edit-toolbar{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--color-border);background:var(--color-bg-card);flex-wrap:wrap}
-
-/* ── UML Editor ──────────────────────────────────────────────────────────── */
-.uml-editor{display:flex;height:380px;border:1px solid var(--color-border);border-top:none;overflow:hidden;background:#fff}
-.uml-palette{width:132px;min-width:132px;border-right:1px solid var(--color-border);background:var(--color-bg-subtle,#F8F9FA);padding:8px 6px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+/* ── UML Editor canvas ───────────────────────────────────────────────────── */
+.uml-editor{display:flex;height:340px;overflow:hidden;background:#fff}
+.uml-palette{width:128px;min-width:128px;border-right:1px solid var(--color-border);background:var(--color-bg-subtle,#F8F9FA);padding:8px 6px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
 .uml-pal-section{font-size:9px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--color-text-muted);padding:4px 4px 2px;margin-top:2px}
 .uml-pal-btn,.uml-pal-edge-btn{display:flex;align-items:center;gap:6px;width:100%;text-align:left;padding:5px 6px;border-radius:5px;border:none;background:none;cursor:pointer;font-size:11px;color:var(--color-text);transition:background 0.1s}
 .uml-pal-btn:hover,.uml-pal-edge-btn:hover{background:rgba(26,115,232,0.08)}
 .uml-pal-icon{flex-shrink:0;display:flex;align-items:center}
 .uml-pal-lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .uml-pal-hint{font-size:10px;color:var(--color-text-muted);line-height:1.55;padding:4px}
-
 .uml-canvas-wrap{flex:1;position:relative;overflow:hidden;background:white;background-image:radial-gradient(circle,#ddd 1px,transparent 1px);background-size:20px 20px}
 .uml-svg{width:100%;height:100%;display:block;cursor:default}
 .uml-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--color-text-muted);font-size:12px;text-align:center;padding:20px;pointer-events:none}
-
 .ue-node{cursor:move}
 .ue-edge{cursor:pointer}

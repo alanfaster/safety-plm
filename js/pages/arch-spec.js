@@ -125,13 +125,6 @@ function appendRowToTbody(tbody, it) {
   const tr = buildRowEl(it);
   tbody.appendChild(tr);
   wireRow(tr, it);
-
-  // UML editor row (hidden by default)
-  const umlTr = document.createElement('tr');
-  umlTr.id        = `spec-uml-row-${it.id}`;
-  umlTr.className = 'spec-uml-edit-row hidden';
-  umlTr.innerHTML = `<td colspan="5" style="padding:0"><div id="spec-uml-slot-${it.id}"></div></td>`;
-  tbody.appendChild(umlTr);
 }
 
 function buildRowEl(it) {
@@ -143,26 +136,15 @@ function buildRowEl(it) {
 }
 
 function rowHTML(it) {
-  const hasUml = !!(it.uml_data?.nodes?.length);
   return `
     <td class="spec-id-cell code-cell">${esc(it.spec_code)}</td>
 
     <td class="spec-desc-cell">
-      <div class="spec-text-view" data-field="title"
-        title="Double-click to edit">${esc(it.title || '')}<span class="spec-placeholder ${it.title ? 'hidden' : ''}">Double-click to add description…</span></div>
-      ${hasUml ? `
-      <div class="spec-uml-inline">
-        <div class="spec-uml-inline-header">
-          <span class="spec-uml-badge">◈ ${umlLabel(it.uml_type)}</span>
-          <button class="spec-uml-expand-btn" title="Expand / collapse diagram">▼</button>
-        </div>
-        <div class="spec-uml-preview collapsed" title="Double-click to edit diagram">
-          ${umlPreviewSVG(it.uml_data, false)}
-        </div>
-      </div>` : `
-      <div class="spec-no-uml">
-        <button class="spec-add-uml-btn btn btn-ghost btn-xs">◈ Add diagram</button>
-      </div>`}
+      <div class="spec-text-view" title="Double-click to edit"
+        >${esc(it.title || '')}<span class="spec-placeholder ${it.title ? 'hidden' : ''}">Double-click to add description…</span></div>
+      <div class="spec-uml-area" id="uml-area-${it.id}">
+        ${umlAreaPreviewHTML(it)}
+      </div>
     </td>
 
     <td>
@@ -177,12 +159,29 @@ function rowHTML(it) {
     </td>
 
     <td class="spec-row-actions">
-      <button class="btn btn-ghost btn-xs spec-move-up"  title="Move up">↑</button>
-      <button class="btn btn-ghost btn-xs spec-move-dn"  title="Move down">↓</button>
+      <button class="btn btn-ghost btn-xs spec-move-up"   title="Move up">↑</button>
+      <button class="btn btn-ghost btn-xs spec-move-dn"   title="Move down">↓</button>
       <button class="btn btn-ghost btn-xs spec-add-below" title="Add row below">+</button>
       <button class="btn btn-ghost btn-xs spec-del-btn"   title="Delete row" style="color:var(--color-danger)">✕</button>
     </td>
   `;
+}
+
+function umlAreaPreviewHTML(it) {
+  const hasUml = !!(it.uml_data?.nodes?.length);
+  if (!hasUml) {
+    return `<button class="spec-add-uml-btn btn btn-ghost btn-xs">◈ Add diagram</button>`;
+  }
+  return `
+    <div class="spec-uml-inline">
+      <div class="spec-uml-inline-header">
+        <span class="spec-uml-badge">◈ ${umlLabel(it.uml_type)}</span>
+        <button class="spec-uml-expand-btn" title="Expand / collapse">▼</button>
+      </div>
+      <div class="spec-uml-thumb collapsed" title="Double-click to edit diagram">
+        ${umlPreviewSVG(it.uml_data)}
+      </div>
+    </div>`;
 }
 
 // ── Row Wiring ────────────────────────────────────────────────────────────────
@@ -236,24 +235,8 @@ function wireRow(tr, it) {
     });
   });
 
-  // ── UML expand/collapse toggle ────────────────────────────────────────────
-  const expandBtn = tr.querySelector('.spec-uml-expand-btn');
-  const preview   = tr.querySelector('.spec-uml-preview');
-  if (expandBtn && preview) {
-    expandBtn.addEventListener('click', () => {
-      preview.classList.toggle('collapsed');
-      expandBtn.textContent = preview.classList.contains('collapsed') ? '▼' : '▲';
-    });
-
-    // Double-click on preview → open UML editor
-    preview.addEventListener('dblclick', () => openUmlEditor(it));
-  }
-
-  // ── Add diagram button (when no UML yet) ─────────────────────────────────
-  const addUmlBtn = tr.querySelector('.spec-add-uml-btn');
-  if (addUmlBtn) {
-    addUmlBtn.addEventListener('click', () => openUmlEditor(it));
-  }
+  // ── UML area ──────────────────────────────────────────────────────────────
+  wireUmlArea(it);
 
   // ── Row actions ───────────────────────────────────────────────────────────
   tr.querySelector('.spec-move-up').addEventListener('click',   () => moveRow(it.id, -1));
@@ -262,90 +245,102 @@ function wireRow(tr, it) {
   tr.querySelector('.spec-del-btn').addEventListener('click',   () => deleteRow(it));
 }
 
-// ── UML Editor ────────────────────────────────────────────────────────────────
+// ── UML Area wiring (preview ↔ editor) ───────────────────────────────────────
+
+function wireUmlArea(it) {
+  const area = document.getElementById(`uml-area-${it.id}`);
+  if (!area) return;
+
+  // Expand / collapse thumb
+  const expandBtn = area.querySelector('.spec-uml-expand-btn');
+  const thumb     = area.querySelector('.spec-uml-thumb');
+  if (expandBtn && thumb) {
+    expandBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      thumb.classList.toggle('collapsed');
+      expandBtn.textContent = thumb.classList.contains('collapsed') ? '▼' : '▲';
+    });
+    // Double-click on thumb → open inline editor
+    thumb.addEventListener('dblclick', () => openUmlEditor(it));
+  }
+
+  // "Add diagram" button when no UML yet
+  const addBtn = area.querySelector('.spec-add-uml-btn');
+  if (addBtn) addBtn.addEventListener('click', () => openUmlEditor(it));
+}
 
 function openUmlEditor(it) {
-  const umlRow  = document.getElementById(`spec-uml-row-${it.id}`);
-  const umlSlot = document.getElementById(`spec-uml-slot-${it.id}`);
-  if (!umlRow || !umlSlot) return;
-
-  // Close any other open editor
-  if (_umlOpenId && _umlOpenId !== it.id) closeUmlEditor(_umlOpenId);
-
-  if (_umlOpenId === it.id) { closeUmlEditor(it.id); return; }
-
+  // Close any other open editor first
+  if (_umlOpenId && _umlOpenId !== it.id) {
+    const other = _items.find(i => i.id === _umlOpenId);
+    if (other) restoreUmlPreview(other);
+  }
   _umlOpenId = it.id;
-  umlRow.classList.remove('hidden');
 
-  umlSlot.innerHTML = `
-    <div class="spec-uml-edit-wrap">
-      <div class="spec-uml-edit-toolbar">
-        <label class="form-label" style="margin:0;font-size:11px;font-weight:700">UML TYPE</label>
-        <select class="form-input form-select" id="uml-type-sel-${it.id}" style="width:160px">
-          ${UML_TYPES.map(u => `<option value="${u}" ${(it.uml_type || 'none') === u ? 'selected' : ''}>${umlLabel(u)}</option>`).join('')}
+  const area = document.getElementById(`uml-area-${it.id}`);
+  if (!area) return;
+
+  // Replace area content with inline editor
+  area.innerHTML = `
+    <div class="spec-uml-editor-inline">
+      <div class="spec-uml-edit-bar">
+        <select class="form-input form-select form-select-sm" id="ue-type-${it.id}" style="width:150px">
+          ${UML_TYPES.map(u => `<option value="${u}" ${(it.uml_type || 'component') === u ? 'selected' : ''}>${umlLabel(u)}</option>`).join('')}
         </select>
-        <button class="btn btn-ghost btn-sm" id="uml-clear-${it.id}">Clear</button>
+        <button class="btn btn-ghost btn-xs" id="ue-clear-${it.id}">Clear</button>
         <div style="flex:1"></div>
-        <button class="btn btn-secondary btn-sm" id="uml-cancel-${it.id}">Cancel</button>
-        <button class="btn btn-primary   btn-sm" id="uml-save-${it.id}">Save diagram</button>
+        <button class="btn btn-ghost btn-xs"    id="ue-cancel-${it.id}">Cancel</button>
+        <button class="btn btn-primary btn-xs"  id="ue-save-${it.id}">Save</button>
       </div>
-      <div id="uml-editor-slot-${it.id}"></div>
+      <div id="ue-canvas-${it.id}"></div>
     </div>
   `;
 
   const editor = new UMLEditor(
-    document.getElementById(`uml-editor-slot-${it.id}`),
+    document.getElementById(`ue-canvas-${it.id}`),
     it.uml_type || 'component',
     it.uml_data || null
   );
 
-  document.getElementById(`uml-type-sel-${it.id}`).onchange = e => editor.setType(e.target.value);
-  document.getElementById(`uml-clear-${it.id}`).onclick     = () => editor.clear();
+  document.getElementById(`ue-type-${it.id}`).onchange   = e => editor.setType(e.target.value);
+  document.getElementById(`ue-clear-${it.id}`).onclick   = () => editor.clear();
 
-  document.getElementById(`uml-cancel-${it.id}`).onclick = () => {
+  document.getElementById(`ue-cancel-${it.id}`).onclick  = () => {
     editor.destroy();
-    closeUmlEditor(it.id);
+    _umlOpenId = null;
+    restoreUmlPreview(it);
   };
 
-  document.getElementById(`uml-save-${it.id}`).onclick = async () => {
-    const umlType = document.getElementById(`uml-type-sel-${it.id}`).value;
+  document.getElementById(`ue-save-${it.id}`).onclick    = async () => {
+    const umlType = document.getElementById(`ue-type-${it.id}`).value;
     const umlData = editor.getData();
     const hasUml  = umlData.nodes.length > 0;
 
-    const saveBtn = document.getElementById(`uml-save-${it.id}`);
-    saveBtn.disabled = true;
+    const btn = document.getElementById(`ue-save-${it.id}`);
+    btn.disabled = true;
     const { error } = await sb.from('arch_spec_items').update({
-      uml_type:    hasUml && umlType !== 'none' ? umlType : null,
-      uml_data:    hasUml ? umlData : null,
-      updated_at:  new Date().toISOString(),
+      uml_type:   hasUml && umlType !== 'none' ? umlType : null,
+      uml_data:   hasUml ? umlData : null,
+      updated_at: new Date().toISOString(),
     }).eq('id', it.id);
-    saveBtn.disabled = false;
+    btn.disabled = false;
 
     if (error) { toast('Error saving diagram.', 'error'); return; }
 
-    it.uml_type = hasUml ? umlType : null;
+    it.uml_type = hasUml && umlType !== 'none' ? umlType : null;
     it.uml_data = hasUml ? umlData : null;
     toast('Diagram saved.', 'success');
     editor.destroy();
-    closeUmlEditor(it.id);
-    refreshRow(it);
+    _umlOpenId = null;
+    restoreUmlPreview(it);
   };
-
-  // Scroll into view
-  umlRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function closeUmlEditor(id) {
-  const umlRow = document.getElementById(`spec-uml-row-${id}`);
-  if (umlRow) umlRow.classList.add('hidden');
-  if (_umlOpenId === id) _umlOpenId = null;
-}
-
-function refreshRow(it) {
-  const tr = document.querySelector(`tr.spec-row[data-id="${it.id}"]`);
-  if (!tr) return;
-  tr.innerHTML = rowHTML(it);
-  wireRow(tr, it);
+function restoreUmlPreview(it) {
+  const area = document.getElementById(`uml-area-${it.id}`);
+  if (!area) return;
+  area.innerHTML = umlAreaPreviewHTML(it);
+  wireUmlArea(it);
 }
 
 // ── Row CRUD & Reorder ────────────────────────────────────────────────────────
@@ -402,26 +397,14 @@ async function addRow(afterId) {
 
   // Otherwise inject row
   const tbody = document.getElementById('spec-tbody');
+  const tr = buildRowEl(newItem);
   if (afterId === null) {
-    const tr = buildRowEl(newItem);
     tbody.appendChild(tr);
-    wireRow(tr, newItem);
-    const umlTr = document.createElement('tr');
-    umlTr.id        = `spec-uml-row-${newItem.id}`;
-    umlTr.className = 'spec-uml-edit-row hidden';
-    umlTr.innerHTML = `<td colspan="5" style="padding:0"><div id="spec-uml-slot-${newItem.id}"></div></td>`;
-    tbody.appendChild(umlTr);
   } else {
-    const refUmlRow = document.getElementById(`spec-uml-row-${afterId}`);
-    const tr = buildRowEl(newItem);
-    refUmlRow?.after(tr);
-    const umlTr = document.createElement('tr');
-    umlTr.id        = `spec-uml-row-${newItem.id}`;
-    umlTr.className = 'spec-uml-edit-row hidden';
-    umlTr.innerHTML = `<td colspan="5" style="padding:0"><div id="spec-uml-slot-${newItem.id}"></div></td>`;
-    tr.after(umlTr);
-    wireRow(tr, newItem);
+    const refRow = document.querySelector(`tr.spec-row[data-id="${afterId}"]`);
+    refRow ? refRow.after(tr) : tbody.appendChild(tr);
   }
+  wireRow(tr, newItem);
 
   // Focus the new row's text field
   const newTr = document.querySelector(`tr.spec-row[data-id="${newItem.id}"]`);
@@ -470,9 +453,8 @@ async function deleteRow(it) {
 
   _items = _items.filter(i => i.id !== it.id);
 
-  // Remove rows from DOM
+  // Remove row from DOM
   document.querySelector(`tr.spec-row[data-id="${it.id}"]`)?.remove();
-  document.getElementById(`spec-uml-row-${it.id}`)?.remove();
 
   // Show empty state if no items left
   if (!_items.length) {
@@ -493,7 +475,7 @@ async function autosave(id, fields) {
 
 // ── UML Preview SVG ───────────────────────────────────────────────────────────
 
-function umlPreviewSVG(umlData, expanded) {
+function umlPreviewSVG(umlData) {
   if (!umlData?.nodes?.length) return '';
 
   const nodes = umlData.nodes;
