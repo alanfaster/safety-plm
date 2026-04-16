@@ -314,7 +314,7 @@ function renderGroup(tbody,g){
     const statusTd=makeTd('dfmea-col-status',fmSpan);
     statusTd.innerHTML=`<select class="dfmea-sel" data-field="status">${ITEM_STATUSES.map(s=>`<option value="${s}"${fm.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
     fmTr.appendChild(statusTd);
-    const delTd=makeTd('dfmea-col-del',fmSpan);
+    const delTd=makeTd('dfmea-col-del',1);
     delTd.innerHTML=`<button class="dfmea-del-row-btn" data-action="del-fm" title="Delete FM">✕</button>`;
     fmTr.appendChild(delTd);
 
@@ -359,7 +359,7 @@ function renderGroup(tbody,g){
       // Effect Higher (rowspan = 1 + causes under this effect)
       const effHTd=makeTd('dfmea-col-eff dfmea-editable',effSpan);
       effHTd.dataset.field='effect_higher';
-      effHTd.innerHTML=`${cellText(eff.effect_higher)}${isLastEff?`<button class="dfmea-inline-add" data-action="add-effect" title="Add Effect">＋</button>`:''}`;
+      effHTd.innerHTML=`${cellText(eff.effect_higher)}<button class="dfmea-del-row-btn dfmea-del-inline" data-action="del-effect" title="Delete Effect">✕</button>${isLastEff?`<button class="dfmea-inline-add" data-action="add-effect" title="Add Effect">＋</button>`:''}`;
       effTr.appendChild(effHTd);
 
       // Effect Local (rowspan)
@@ -386,16 +386,18 @@ function renderGroup(tbody,g){
           wireCauseCells(cTr,c,fm);
         });
       } else {
-        // NA cause columns + "＋ Cause" hint
         appendNaCauseCells(effTr,eff.id,fm);
         tbody.appendChild(effTr);
         wireEffCells(effTr,effHTd,effLTd,sTd,eff,fm);
       }
+      // Wire inline del-effect button (inside effHTd)
+      effHTd.querySelector('[data-action="del-effect"]')?.addEventListener('click',()=>deleteEffect(eff,fm));
     });
 
     // ── Direct causes (parent = FM) ────────────────────────────────────────
+    // Direct causes have no effect row above them → prepend NA cells for Effect Higher/Local/S
     directCauses.forEach((c,ci)=>{
-      const cTr=causeTrShell(c,fm,ci===directCauses.length-1);
+      const cTr=causeTrShell(c,fm,ci===directCauses.length-1,true);
       tbody.appendChild(cTr);
       wireCauseCells(cTr,c,fm);
     });
@@ -420,7 +422,7 @@ function appendCauseCells(tr,cause,fm,isLast){
 
   const fcTd=makeTd('dfmea-col-fc dfmea-editable');
   fcTd.dataset.field='failure_cause';
-  fcTd.innerHTML=`${cellText(cause.failure_cause)}${isLast?`<button class="dfmea-inline-add" data-action="add-cause" title="Add Cause">＋</button>`:''}`;
+  fcTd.innerHTML=`${cellText(cause.failure_cause)}<button class="dfmea-del-row-btn dfmea-del-inline" data-action="del-cause" title="Delete Cause">✕</button>${isLast?`<button class="dfmea-inline-add" data-action="add-cause" title="Add Cause">＋</button>`:''}`;
   tr.appendChild(fcTd);
 
   const prevTd=makeTd('dfmea-col-ctrl dfmea-editable');prevTd.dataset.field='prevention_controls';prevTd.innerHTML=cellText(cause.prevention_controls);tr.appendChild(prevTd);
@@ -449,10 +451,16 @@ function appendNaCauseCells(tr, parentId, fm){
   ['dfmea-col-ctrl','dfmea-col-sod','dfmea-col-ctrl','dfmea-col-sod','dfmea-col-ap','dfmea-col-actions','dfmea-col-resp','dfmea-col-date','dfmea-col-astatus'].forEach(c=>tr.appendChild(naCell(c)));
 }
 
-function causeTrShell(cause,fm,isLast){
+function causeTrShell(cause,fm,isLast,isDirectCause=false){
   const tr=document.createElement('tr');
   tr.className='dfmea-row dfmea-row-cause';
   tr.dataset.id=cause.id; tr.dataset.type='cause'; tr.dataset.fmId=fm.id;
+  // Direct causes (parent = FM) have no effect row providing cols 6-8; add NA cells for them
+  if(isDirectCause){
+    tr.appendChild(naCell('dfmea-col-eff'));  // Effect Higher
+    tr.appendChild(naCell('dfmea-col-eff'));  // Effect Local
+    tr.appendChild(naCell('dfmea-col-sod'));  // S
+  }
   appendCauseCells(tr,cause,fm,isLast);
   return tr;
 }
@@ -703,6 +711,17 @@ async function deleteFm(fm){
   renderChain();
   refreshMapComp(fm.component_id||fm.component_name);
   toast('FM deleted.','success');
+}
+
+async function deleteEffect(eff,fm){
+  const causes=_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===eff.id);
+  if(!confirm(`Delete this effect${causes.length?` and its ${causes.length} cause(s)`:''}?`)) return;
+  const ids=[eff.id,...causes.map(i=>i.id)];
+  await sb.from('dfmea_items').delete().in('id',ids);
+  ids.forEach(id=>{_items=_items.filter(i=>i.id!==id);});
+  renderTable();
+  refreshMaxSCell(fm);
+  refreshMapComp(fm.component_id||fm.component_name);
 }
 
 async function deleteCause(cause,fm){

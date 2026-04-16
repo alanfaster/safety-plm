@@ -1919,6 +1919,8 @@ td:hover .dfmea-inline-add,.dfmea-group-cell:hover .dfmea-inline-add{display:inl
 .dfmea-add-btn:hover{background:#E8F0FE;border-color:var(--color-primary);color:var(--color-primary)}
 .dfmea-del-row-btn{font-size:11px;padding:2px 5px;border:1px solid transparent;border-radius:3px;background:none;cursor:pointer;color:var(--color-text-muted);transition:color 0.1s}
 .dfmea-del-row-btn:hover{color:var(--color-danger);background:#FFEBE6;border-color:#FFEBE6}
+.dfmea-del-inline{display:none;float:right;margin-left:4px}
+td:hover .dfmea-del-inline{display:inline-block}
 
 /* Editable cells */
 .dfmea-editable{cursor:default}
