@@ -1880,3 +1880,49 @@ input, select, textarea { font-family: var(--font); }
 /* AP badge */
 .dfmea-ap-badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap}
 .dfmea-ap-badge.sm{padding:1px 5px;font-size:10px}
+
+/* ── DFMEA Structure Map panel ───────────────────────────────────────────── */
+.dfmea-map-body{flex:1;overflow:hidden;background:#F4F5F7}
+.dmap-canvas-wrap{width:100%;height:100%;overflow:auto}
+.dmap-canvas{position:relative;min-width:100%}
+
+/* SVG net overlay */
+.dmap-net-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
+
+/* Component blocks */
+.dmap-block{position:absolute;background:#fff;border:2px solid #9AA0A6;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);min-width:200px}
+.dmap-block-hdr{display:flex;align-items:center;gap:6px;padding:6px 10px;color:#fff;min-height:30px}
+.dmap-block-type{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;opacity:0.85;background:rgba(0,0,0,0.2);border-radius:3px;padding:1px 5px;flex-shrink:0}
+.dmap-block-name{font-size:12px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dmap-risk-badges{display:flex;gap:3px;flex-shrink:0}
+.dmap-risk-badge{font-size:9px;font-weight:700;border-radius:3px;padding:1px 5px;color:#fff}
+.dmap-risk-badge.H{background:#C5221F}
+.dmap-risk-badge.M{background:#E65100}
+
+/* Collapsible sections inside block */
+.dmap-section{border-top:1px solid rgba(0,0,0,0.07)}
+.dmap-section-toggle{display:flex;align-items:center;gap:5px;width:100%;padding:5px 10px;border:none;background:none;cursor:pointer;font-size:11px;font-weight:600;color:var(--color-text-muted);text-align:left;transition:background 0.1s}
+.dmap-section-toggle:hover{background:rgba(0,0,0,0.04)}
+.dmap-section-icon{font-size:8px;transition:transform 0.15s;display:inline-block}
+.dmap-section-count{margin-left:auto;background:var(--color-bg);border:1px solid var(--color-border);border-radius:10px;padding:0 6px;font-size:10px;color:var(--color-text-muted)}
+.dmap-section-body{padding:0 10px;transition:max-height 0.2s ease,opacity 0.2s ease;overflow:hidden;max-height:400px;opacity:1}
+.dmap-section-body.collapsed{max-height:0;opacity:0;padding-top:0;padding-bottom:0}
+
+/* Function rows */
+.dmap-fn-row{display:flex;align-items:baseline;gap:5px;padding:3px 0;font-size:11px;color:var(--color-text);border-bottom:1px solid rgba(0,0,0,0.04)}
+.dmap-fn-row:last-child{border-bottom:none}
+.dmap-fn-row.safety .dmap-safety-dot{color:#C5221F;font-size:8px}
+.dmap-fn-dot{color:#9AA0A6;font-size:8px}
+.dmap-safety-dot{color:#C5221F;font-size:8px}
+
+/* DFMEA FM rows */
+.dmap-fm-row{display:flex;align-items:center;gap:5px;padding:3px 0;font-size:11px;cursor:pointer;border-bottom:1px dashed rgba(0,0,0,0.06)}
+.dmap-fm-row:last-child{border-bottom:none}
+.dmap-fm-row:hover{background:rgba(26,115,232,0.05);border-radius:3px}
+.dmap-fm-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--color-text)}
+.dmap-sod{font-size:10px;color:var(--color-text-muted);white-space:nowrap;font-family:var(--font-mono)}
+
+.dmap-empty-hint{font-size:10px;color:var(--color-text-subtle);font-style:italic;padding:4px 0 6px}
+
+/* Section padding when open */
+.dmap-section-body:not(.collapsed){padding-top:4px;padding-bottom:6px}

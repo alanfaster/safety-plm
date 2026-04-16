@@ -78,6 +78,7 @@ export async function renderDFMEA(container, { project, item, system, parentType
           <p class="page-subtitle">Design FMEA · VDA 2019 · ${esc(parentName)}</p>
         </div>
         <div class="dfmea-toolbar">
+          <button class="dfmea-tb-btn" id="btn-dfmea-map"   title="Toggle Structure Map">◈ Structure</button>
           <button class="dfmea-tb-btn" id="btn-dfmea-chain" title="Toggle Structure–Function–Failure chain">⬡ Chain</button>
           <div class="arch-sep"></div>
           <button class="btn btn-secondary btn-sm" id="btn-dfmea-sync">⟳ Sync from System</button>
@@ -88,6 +89,20 @@ export async function renderDFMEA(container, { project, item, system, parentType
     <div class="dfmea-layout" id="dfmea-layout">
       <div class="dfmea-table-area" id="dfmea-table-area">
         <div class="content-loading"><div class="spinner"></div></div>
+      </div>
+
+      <!-- Structure Map panel — hidden by default, toggleable -->
+      <div class="dfmea-bottom-panel" id="dfmea-map-panel" style="display:none">
+        <div class="dfmea-panel-resize-bar" id="dfmea-map-resize"></div>
+        <div class="dfmea-panel-hdr">
+          <span class="dfmea-panel-title">◈ Structure Map</span>
+          <span class="dfmea-panel-hint">Components, functions and DFMEA data from Architecture Concept</span>
+          <button class="dfmea-tb-btn dfmea-net-toggle" id="btn-dfmea-net" title="Show/hide connections">⇄ Net</button>
+          <button class="dfmea-tb-btn" id="dfmea-map-close" title="Close">✕</button>
+        </div>
+        <div class="dfmea-map-body" id="dfmea-map-body">
+          <div class="content-loading" style="padding:24px 0"><div class="spinner"></div></div>
+        </div>
       </div>
 
       <!-- Chain panel — hidden by default, toggleable -->
@@ -114,7 +129,29 @@ export async function renderDFMEA(container, { project, item, system, parentType
 
 // ── Panel toggles & resize ────────────────────────────────────────────────────
 
+let _mapLoaded = false;
+let _netVisible = true;
+
 function wirePanelToggles() {
+  // Structure Map panel
+  document.getElementById('btn-dfmea-map')?.addEventListener('click', () => {
+    const wasHidden = document.getElementById('dfmea-map-panel').style.display === 'none';
+    togglePanel('dfmea-map-panel', 'btn-dfmea-map');
+    if (wasHidden && !_mapLoaded) { _mapLoaded = true; loadAndRenderMap(); }
+    else if (wasHidden)           { renderMap(); } // refresh if data changed
+  });
+  document.getElementById('dfmea-map-close')?.addEventListener('click', () => {
+    closePanel('dfmea-map-panel', 'btn-dfmea-map');
+  });
+  document.getElementById('btn-dfmea-net')?.addEventListener('click', () => {
+    _netVisible = !_netVisible;
+    document.getElementById('btn-dfmea-net')?.classList.toggle('active', _netVisible);
+    document.querySelectorAll('.dmap-net-svg').forEach(s => {
+      s.style.display = _netVisible ? '' : 'none';
+    });
+  });
+  wireResizeBar('dfmea-map-resize', 'dfmea-map-panel');
+
   // Chain panel toggle button
   document.getElementById('btn-dfmea-chain')?.addEventListener('click', () => {
     togglePanel('dfmea-chain-panel', 'btn-dfmea-chain');
@@ -122,8 +159,6 @@ function wirePanelToggles() {
   document.getElementById('dfmea-chain-close')?.addEventListener('click', () => {
     closePanel('dfmea-chain-panel', 'btn-dfmea-chain');
   });
-
-  // Resize bar for chain panel
   wireResizeBar('dfmea-chain-resize', 'dfmea-chain-panel');
 }
 
@@ -214,6 +249,210 @@ async function loadChainData() {
   _chain.functions  = (fns || []).filter(f => compIds.has(f.component_id));
 
   renderChain();
+}
+
+// ── Structure Map ─────────────────────────────────────────────────────────────
+
+let _map = { components: [], connections: [], functions: [] };
+
+async function loadAndRenderMap() {
+  const body = document.getElementById('dfmea-map-body');
+  if (!body) return;
+  body.innerHTML = '<div class="content-loading" style="padding:24px 0"><div class="spinner"></div></div>';
+
+  const [{ data: comps }, { data: conns }, { data: fns }] = await Promise.all([
+    sb.from('arch_components')
+      .select('id,name,comp_type,x,y,width,height,data')
+      .eq('parent_type', _ctx.parentType)
+      .eq('parent_id',   _ctx.parentId),
+    sb.from('arch_connections')
+      .select('id,source_id,target_id,interface_type,name,direction')
+      .eq('parent_type', _ctx.parentType)
+      .eq('parent_id',   _ctx.parentId),
+    sb.from('arch_functions')
+      .select('id,component_id,name,is_safety_related')
+      .order('sort_order', { ascending: true }),
+  ]);
+
+  const compIds   = new Set((comps || []).map(c => c.id));
+  _map.components = comps || [];
+  _map.connections = (conns || []).filter(cn =>
+    compIds.has(cn.source_id) && compIds.has(cn.target_id));
+  _map.functions  = (fns || []).filter(f => compIds.has(f.component_id));
+
+  renderMap();
+}
+
+const IFACE_COLORS = {
+  Data:       '#1A73E8',
+  Electrical: '#E37400',
+  Mechanical: '#5D4037',
+  Thermal:    '#C5221F',
+  Power:      '#7B1FA2',
+};
+const COMP_COLORS = {
+  HW:         { bg: '#E8F0FE', border: '#1A73E8', hdr: '#1A73E8' },
+  SW:         { bg: '#E6F4EA', border: '#1E8E3E', hdr: '#1E8E3E' },
+  Mechanical: { bg: '#FEF3E2', border: '#E37400', hdr: '#E37400' },
+  Group:      { bg: '#F8F9FA', border: '#9AA0A6', hdr: '#9AA0A6' },
+  Port:       { bg: '#212121', border: '#212121', hdr: '#212121' },
+};
+
+function renderMap() {
+  const body = document.getElementById('dfmea-map-body');
+  if (!body) return;
+  if (!_map.components.length) {
+    body.innerHTML = '<div class="dfmea-chain-empty" style="padding:32px">No components found in Architecture Concept. Build the architecture first.</div>';
+    return;
+  }
+
+  // Compute layout: use stored x,y scaled to fit, or auto-grid if missing
+  const BLOCK_W = 220, BLOCK_GAP = 32;
+  const comps = _map.components.filter(c => c.comp_type !== 'Port'); // skip ports in this view
+  const hasPos = comps.every(c => c.x != null && c.y != null);
+
+  let positions;
+  if (hasPos) {
+    // Scale from arch canvas coords → map coords
+    const minX = Math.min(...comps.map(c => c.x));
+    const minY = Math.min(...comps.map(c => c.y));
+    const maxX = Math.max(...comps.map(c => c.x + (c.width  || 160)));
+    const maxY = Math.max(...comps.map(c => c.y + (c.height || 100)));
+    const scale = Math.min(1, (body.offsetWidth - 60) / Math.max(maxX - minX, 1));
+    positions = Object.fromEntries(comps.map(c => [c.id, {
+      x: Math.round((c.x - minX) * scale + 20),
+      y: Math.round((c.y - minY) * scale + 20),
+      w: Math.max(BLOCK_W, Math.round((c.width || 160) * scale)),
+    }]));
+  } else {
+    // Auto grid
+    const cols = Math.max(1, Math.floor((body.offsetWidth - 40) / (BLOCK_W + BLOCK_GAP)));
+    positions  = Object.fromEntries(comps.map((c, i) => [c.id, {
+      x: (i % cols) * (BLOCK_W + BLOCK_GAP) + 20,
+      y: Math.floor(i / cols) * 280 + 20,
+      w: BLOCK_W,
+    }]));
+  }
+
+  // Canvas size
+  const canvasW = Math.max(...Object.values(positions).map(p => p.x + p.w + 20));
+  const canvasH = Math.max(...Object.values(positions).map(p => p.y + 260));
+
+  // Build component blocks HTML
+  const blocksHTML = comps.map(c => {
+    const pos   = positions[c.id];
+    const style = COMP_COLORS[c.comp_type] || COMP_COLORS.HW;
+    const fns   = _map.functions.filter(f => f.component_id === c.id);
+    const dItems= _items.filter(it => it.component_id === c.id || it.component_name === c.name);
+    const apH   = dItems.filter(it => calcAP(it.severity,it.occurrence,it.detection)==='H').length;
+    const apM   = dItems.filter(it => calcAP(it.severity,it.occurrence,it.detection)==='M').length;
+
+    const fnsHTML = fns.map(f => `
+      <div class="dmap-fn-row ${f.is_safety_related ? 'safety' : ''}">
+        ${f.is_safety_related ? '<span class="dmap-safety-dot" title="Safety related">●</span>' : '<span class="dmap-fn-dot">○</span>'}
+        <span>${esc(f.name)}</span>
+      </div>`).join('') || '<div class="dmap-empty-hint">No functions assigned</div>';
+
+    const fmHTML = dItems.map(it => {
+      const ap    = calcAP(it.severity, it.occurrence, it.detection);
+      const apClr = AP_COLORS[ap] || '#9AA0A6';
+      return `<div class="dmap-fm-row" data-dfmea-id="${it.id}" title="${esc(it.failure_mode || it.effect_local || '')}">
+        <span class="dmap-fm-name">${esc(it.failure_mode || it.effect_local || '—')}</span>
+        <span class="dmap-sod">S:${it.severity} O:${it.occurrence} D:${it.detection}</span>
+        <span class="dfmea-ap-badge sm" style="background:${apClr}">${ap}</span>
+      </div>`;
+    }).join('') || '<div class="dmap-empty-hint">No DFMEA entries</div>';
+
+    const riskBadges = (apH ? `<span class="dmap-risk-badge H">H:${apH}</span>` : '')
+                     + (apM ? `<span class="dmap-risk-badge M">M:${apM}</span>` : '');
+
+    return `
+      <div class="dmap-block" data-comp-id="${c.id}"
+           style="left:${pos.x}px;top:${pos.y}px;width:${pos.w}px;border-color:${style.border}">
+        <div class="dmap-block-hdr" style="background:${style.hdr}">
+          <span class="dmap-block-type">${esc(c.comp_type || '')}</span>
+          <span class="dmap-block-name">${esc(c.name)}</span>
+          ${riskBadges ? `<span class="dmap-risk-badges">${riskBadges}</span>` : ''}
+        </div>
+
+        <div class="dmap-section">
+          <button class="dmap-section-toggle" data-section="fn-${c.id}">
+            <span class="dmap-section-icon">▶</span>
+            <span>Functions</span>
+            <span class="dmap-section-count">${fns.length}</span>
+          </button>
+          <div class="dmap-section-body collapsed" id="dmap-fn-${c.id}">
+            ${fnsHTML}
+          </div>
+        </div>
+
+        <div class="dmap-section">
+          <button class="dmap-section-toggle" data-section="fm-${c.id}">
+            <span class="dmap-section-icon">▶</span>
+            <span>DFMEA</span>
+            <span class="dmap-section-count">${dItems.length}</span>
+          </button>
+          <div class="dmap-section-body collapsed" id="dmap-fm-${c.id}">
+            ${fmHTML}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Build connection SVG
+  const svgLines = _map.connections.map(cn => {
+    const sp = positions[cn.source_id];
+    const tp = positions[cn.target_id];
+    if (!sp || !tp) return '';
+    const clr  = IFACE_COLORS[cn.interface_type] || '#9AA0A6';
+    const x1 = sp.x + sp.w;      const y1 = sp.y + 28;
+    const x2 = tp.x;              const y2 = tp.y + 28;
+    const mx = (x1 + x2) / 2;
+    const lbl = cn.name || cn.interface_type || '';
+    return `
+      <path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"
+            fill="none" stroke="${clr}" stroke-width="1.5"
+            marker-end="url(#dmap-arr)" opacity="0.8"/>
+      ${lbl ? `<text x="${mx}" y="${(y1+y2)/2-4}" text-anchor="middle"
+               font-size="9" fill="${clr}" font-family="system-ui">${esc(lbl)}</text>` : ''}`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="dmap-canvas-wrap">
+      <div class="dmap-canvas" style="width:${canvasW}px;height:${canvasH}px">
+        <svg class="dmap-net-svg" width="${canvasW}" height="${canvasH}"
+             xmlns="http://www.w3.org/2000/svg" style="display:${_netVisible?'':'none'}">
+          <defs>
+            <marker id="dmap-arr" markerWidth="8" markerHeight="7"
+                    refX="7" refY="3.5" orient="auto">
+              <path d="M0,0 L7,3.5 L0,7" fill="none" stroke="#666" stroke-width="1.2"/>
+            </marker>
+          </defs>
+          ${svgLines}
+        </svg>
+        ${blocksHTML}
+      </div>
+    </div>`;
+
+  // Wire section toggles
+  body.querySelectorAll('.dmap-section-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key     = btn.dataset.section;
+      const sBody   = document.getElementById(`dmap-${key}`);
+      const icon    = btn.querySelector('.dmap-section-icon');
+      const open    = sBody.classList.toggle('collapsed');
+      if (icon) icon.textContent = open ? '▶' : '▼';
+    });
+  });
+
+  // Wire FM rows → select table row
+  body.querySelectorAll('[data-dfmea-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      selectRow(el.dataset.dfmeaId);
+      const tr = document.querySelector(`.dfmea-row[data-id="${el.dataset.dfmeaId}"]`);
+      tr?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  });
 }
 
 // ── Table render ──────────────────────────────────────────────────────────────
