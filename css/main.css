@@ -1971,6 +1971,16 @@ td:hover .dfmea-del-inline{display:inline-block}
 /* Empty hint */
 .fta-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:var(--color-text-muted);font-size:13px;pointer-events:none;line-height:2.2}
 
+/* Add-child "+" button on nodes */
+.fta-add-child{opacity:0;transition:opacity 0.12s;cursor:pointer}
+.fta-node:hover .fta-add-child{opacity:1}
+
+/* Add-child floating menu */
+.fta-add-menu{position:absolute;background:#fff;border:1px solid var(--color-border);border-radius:6px;padding:5px 0;box-shadow:var(--shadow);z-index:400;min-width:155px}
+.fta-add-menu-section{font-size:10px;font-weight:700;color:var(--color-text-muted);padding:6px 12px 2px;text-transform:uppercase;letter-spacing:.05em}
+.fta-add-menu-item{display:block;width:100%;text-align:left;padding:5px 14px;font-size:12px;border:none;background:none;cursor:pointer;color:var(--color-text);border-radius:0}
+.fta-add-menu-item:hover{background:var(--color-bg-hover,#f4f5f7)}
+
 /* Config panel */
 .fta-cfg-panel{position:absolute;top:42px;right:12px;background:#fff;border:1px solid var(--color-border);border-radius:6px;padding:12px 16px;z-index:200;box-shadow:var(--shadow);min-width:210px}
 .fta-cfg-title{font-size:12px;font-weight:700;color:var(--color-text);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em}

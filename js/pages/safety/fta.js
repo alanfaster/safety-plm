@@ -58,6 +58,8 @@ function lighten(hex, pct=0.88) {
 function semiLighten(hex){ return lighten(hex, 0.68); }
 
 const LEVEL_H=150, H_GAP=65;
+const CHILD_Y   = 175;   // vertical distance (centre→centre) from parent to child
+const CHILD_GAP = 225;   // horizontal gap between sibling centres
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export async function renderFTA(container, { project, parentType, parentId }) {
@@ -80,6 +82,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   let _panStart= null;
   let _space   = false;
   let _lastClick = { id:null, t:0 };  // for dblclick detection in mousedown
+  let _activeMenu = null;             // currently open add-child menu
 
   // ── Shell ──────────────────────────────────────────────────────────────────
   container.innerHTML = `
@@ -355,8 +358,10 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       g.appendChild(ind);
     }
 
-    // Output port
-    g.appendChild(buildPort(n.id, 0, hh+(base.indicator?26:0)));
+    // Output port + add-child button
+    const portY = hh+(base.indicator?26:0);
+    g.appendChild(buildPort(n.id, 0, portY));
+    g.appendChild(buildAddBtn(n.id, 0, portY+22));
     return g;
   }
 
@@ -436,7 +441,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       g.appendChild(ptxt);
     }
 
-    g.appendChild(buildPort(n.id, 0, hh + (_cfg.showProbability ? 18 : 0)));
+    const gPortY = hh + (_cfg.showProbability ? 18 : 0);
+    g.appendChild(buildPort(n.id, 0, gPortY));
+    g.appendChild(buildAddBtn(n.id, 0, gPortY+22));
     return g;
   }
 
@@ -449,6 +456,19 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     const hit=svgEl('circle'); hit.setAttribute('r','12'); hit.setAttribute('fill','transparent'); hit.setAttribute('class','fta-port-hit');
     const vis=svgEl('circle'); vis.setAttribute('r','5'); vis.setAttribute('fill','#1E8E3E'); vis.setAttribute('stroke','#fff'); vis.setAttribute('stroke-width','1.5'); vis.setAttribute('pointer-events','none');
     g.appendChild(hit); g.appendChild(vis);
+    return g;
+  }
+
+  // ── Add-child "+" button (SVG) ──────────────────────────────────────────────
+  function buildAddBtn(nodeId, px, py) {
+    const g=svgEl('g');
+    g.setAttribute('class','fta-add-child');
+    g.setAttribute('transform',`translate(${px},${py})`);
+    g.dataset.addFor=nodeId;
+    const hit=svgEl('circle'); hit.setAttribute('r','12'); hit.setAttribute('fill','transparent');
+    const vis=svgEl('circle'); vis.setAttribute('r','9'); vis.setAttribute('fill','#1A73E8'); vis.setAttribute('stroke','#fff'); vis.setAttribute('stroke-width','1.5'); vis.setAttribute('pointer-events','none');
+    const txt=svgEl('text'); txt.setAttribute('x','0'); txt.setAttribute('y','1'); txt.setAttribute('text-anchor','middle'); txt.setAttribute('dominant-baseline','middle'); txt.setAttribute('font-size','14'); txt.setAttribute('font-weight','700'); txt.setAttribute('fill','#fff'); txt.setAttribute('pointer-events','none'); txt.textContent='+';
+    g.appendChild(hit); g.appendChild(vis); g.appendChild(txt);
     return g;
   }
 
@@ -536,6 +556,10 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     svg.addEventListener('mousedown',e=>{
       if (e.button===1){ e.preventDefault(); _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y}; return; }
 
+      // "+" add-child button
+      const addBtn=e.target.closest('.fta-add-child');
+      if (addBtn) { e.stopPropagation(); closeAddMenu(); showAddMenu(addBtn.dataset.addFor, e.clientX, e.clientY); return; }
+
       // Port drag → connection
       const portEl=e.target.closest('.fta-port');
       if (portEl){ e.stopPropagation(); const pt=toSvg(e); _conn={fromId:portEl.dataset.portFor,curX:pt.x,curY:pt.y}; return; }
@@ -567,7 +591,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         render(); return;
       }
 
-      // Empty canvas
+      // Empty canvas — close any open menu
+      closeAddMenu();
       if (_space) {
         _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y};
       } else {
@@ -646,6 +671,104 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     let c=byId(nid); const seen=new Set();
     while(c?.parent_node_id){ if(seen.has(c.id))break; seen.add(c.id); if(c.parent_node_id===ancId)return true; c=byId(c.parent_node_id); }
     return false;
+  }
+
+  // ── Add-child menu ────────────────────────────────────────────────────────────
+  function closeAddMenu() {
+    if (_activeMenu) { _activeMenu.remove(); _activeMenu=null; }
+  }
+
+  function showAddMenu(parentId, clientX, clientY) {
+    closeAddMenu();
+    const wrap = document.getElementById('fta-cw');
+    const rect = wrap.getBoundingClientRect();
+    const left = clientX - rect.left + 10;
+    const top  = clientY - rect.top  + 10;
+
+    const menu = document.createElement('div');
+    menu.className = 'fta-add-menu';
+    menu.style.cssText = `left:${left}px;top:${top}px`;
+
+    const sections = [
+      { title:'Events', items:[
+        {type:'top_event',    label:'⬛ Top Event'},
+        {type:'intermediate', label:'▭ Intermediate'},
+        {type:'basic',        label:'● Basic'},
+        {type:'undeveloped',  label:'◇ Undeveloped'},
+        {type:'transfer',     label:'△ Transfer'},
+      ]},
+      { title:'Gates', items:[
+        {type:'gate_and',    label:'∧ AND'},
+        {type:'gate_or',     label:'∨ OR'},
+        {type:'gate_not',    label:'¬ NOT'},
+        {type:'gate_inhibit',label:'⊘ INHIBIT'},
+      ]},
+    ];
+
+    sections.forEach(sec => {
+      const hdr = document.createElement('div');
+      hdr.className = 'fta-add-menu-section';
+      hdr.textContent = sec.title;
+      menu.appendChild(hdr);
+      sec.items.forEach(({type,label}) => {
+        const btn = document.createElement('button');
+        btn.className = 'fta-add-menu-item';
+        btn.textContent = label;
+        btn.addEventListener('mousedown', async e => {
+          e.stopPropagation();
+          closeAddMenu();
+          await addChildNode(parentId, type);
+        });
+        menu.appendChild(btn);
+      });
+    });
+
+    wrap.appendChild(menu);
+    _activeMenu = menu;
+
+    // Close on outside click (next tick so this mousedown doesn't immediately close it)
+    setTimeout(() => {
+      document.addEventListener('mousedown', closeAddMenu, { once:true, capture:true });
+    }, 0);
+  }
+
+  // ── Add child node (connected + redistributed) ────────────────────────────────
+  async function addChildNode(parentId, type) {
+    const parent = byId(parentId); if (!parent) return;
+    const siblings = _nodes.filter(n => n.parent_node_id === parentId);
+    const cx = parent.x;
+    const cy = parent.y + CHILD_Y;
+    const code = nextCode(type);
+    const { data, error } = await sb.from('fta_nodes').insert({
+      parent_type:parentType, parent_id:parentId, project_id:project.id,
+      type, label:'', component:'', fta_code:code,
+      x:cx, y:cy, sort_order:_nodes.length, color:'',
+      parent_node_id: parentId,
+    }).select().single();
+    if (error) { toast('Error adding node.','error'); return; }
+    _nodes.push(data);
+    await redistributeChildren(parentId);
+    _selSet.clear(); _selSet.add(data.id);
+    render();
+    document.getElementById('fta-hint').style.display='none';
+  }
+
+  // Redistribute all direct children of a node horizontally, centred on parent
+  async function redistributeChildren(parentId) {
+    const parent = byId(parentId); if (!parent) return;
+    const children = _nodes.filter(n => n.parent_node_id === parentId);
+    const n = children.length;
+    if (!n) return;
+    const totalW = (n - 1) * CHILD_GAP;
+    const startX = parent.x - totalW / 2;
+    const childY = parent.y + CHILD_Y;
+    const saves = [];
+    children.forEach((c, i) => {
+      c.x = startX + i * CHILD_GAP;
+      c.y = childY;
+      saves.push(autosave(c.id, { x:c.x, y:c.y }));
+    });
+    await Promise.all(saves);
   }
 
   // ── Add node ─────────────────────────────────────────────────────────────────
