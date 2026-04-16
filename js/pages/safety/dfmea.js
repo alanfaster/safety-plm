@@ -253,50 +253,72 @@ async function loadChainData() {
 
 // ── Structure Map ─────────────────────────────────────────────────────────────
 
-let _map = { components: [], connections: [], functions: [] };
+let _map = { systems: [], components: [], connections: [], functions: [] };
+
+const COMP_COLORS = {
+  HW:         { border: '#1A73E8', hdr: '#1A73E8', badge: '#E8F0FE', badgeText: '#1A73E8' },
+  SW:         { border: '#1E8E3E', hdr: '#1E8E3E', badge: '#E6F4EA', badgeText: '#1E8E3E' },
+  Mechanical: { border: '#E37400', hdr: '#E37400', badge: '#FEF3E2', badgeText: '#E37400' },
+  Group:      { border: '#9AA0A6', hdr: '#9AA0A6', badge: '#F8F9FA', badgeText: '#6B778C' },
+  Port:       { border: '#212121', hdr: '#212121', badge: '#EEE',    badgeText: '#333'    },
+};
 
 async function loadAndRenderMap() {
   const body = document.getElementById('dfmea-map-body');
   if (!body) return;
   body.innerHTML = '<div class="content-loading" style="padding:24px 0"><div class="spinner"></div></div>';
 
-  const [{ data: comps }, { data: conns }, { data: fns }] = await Promise.all([
-    sb.from('arch_components')
-      .select('id,name,comp_type,x,y,width,height,data')
-      .eq('parent_type', _ctx.parentType)
-      .eq('parent_id',   _ctx.parentId),
-    sb.from('arch_connections')
-      .select('id,source_id,target_id,interface_type,name,direction')
-      .eq('parent_type', _ctx.parentType)
-      .eq('parent_id',   _ctx.parentId),
-    sb.from('arch_functions')
-      .select('id,component_id,name,is_safety_related')
-      .order('sort_order', { ascending: true }),
+  // Load all components across systems (if item-level, also fetch child systems)
+  let systemList = [];
+  let allComps   = [];
+
+  if (_ctx.parentType === 'item') {
+    const { data: syss } = await sb.from('systems')
+      .select('id,name').eq('item_id', _ctx.parentId).order('created_at');
+    systemList = syss || [];
+
+    if (systemList.length) {
+      const sysIds = systemList.map(s => s.id);
+      const { data: comps } = await sb.from('arch_components')
+        .select('id,name,comp_type,data,parent_type,parent_id')
+        .eq('parent_type', 'system').in('parent_id', sysIds);
+      allComps = comps || [];
+    }
+    // Also item-direct components
+    const { data: itemComps } = await sb.from('arch_components')
+      .select('id,name,comp_type,data,parent_type,parent_id')
+      .eq('parent_type', 'item').eq('parent_id', _ctx.parentId);
+    allComps = [...allComps, ...(itemComps || [])];
+  } else {
+    const { data: comps } = await sb.from('arch_components')
+      .select('id,name,comp_type,data,parent_type,parent_id')
+      .eq('parent_type', _ctx.parentType).eq('parent_id', _ctx.parentId);
+    allComps = comps || [];
+  }
+
+  // Load connections + functions for all relevant components
+  const compIds = allComps.map(c => c.id);
+  const [{ data: conns }, { data: fns }] = await Promise.all([
+    compIds.length
+      ? sb.from('arch_connections')
+          .select('id,source_id,target_id,interface_type,name')
+          .in('source_id', compIds)
+      : Promise.resolve({ data: [] }),
+    compIds.length
+      ? sb.from('arch_functions')
+          .select('id,component_id,name,is_safety_related')
+          .in('component_id', compIds)
+          .order('sort_order', { ascending: true })
+      : Promise.resolve({ data: [] }),
   ]);
 
-  const compIds   = new Set((comps || []).map(c => c.id));
-  _map.components = comps || [];
-  _map.connections = (conns || []).filter(cn =>
-    compIds.has(cn.source_id) && compIds.has(cn.target_id));
-  _map.functions  = (fns || []).filter(f => compIds.has(f.component_id));
+  _map.systems     = systemList;
+  _map.components  = allComps;
+  _map.connections = conns || [];
+  _map.functions   = fns  || [];
 
   renderMap();
 }
-
-const IFACE_COLORS = {
-  Data:       '#1A73E8',
-  Electrical: '#E37400',
-  Mechanical: '#5D4037',
-  Thermal:    '#C5221F',
-  Power:      '#7B1FA2',
-};
-const COMP_COLORS = {
-  HW:         { bg: '#E8F0FE', border: '#1A73E8', hdr: '#1A73E8' },
-  SW:         { bg: '#E6F4EA', border: '#1E8E3E', hdr: '#1E8E3E' },
-  Mechanical: { bg: '#FEF3E2', border: '#E37400', hdr: '#E37400' },
-  Group:      { bg: '#F8F9FA', border: '#9AA0A6', hdr: '#9AA0A6' },
-  Port:       { bg: '#212121', border: '#212121', hdr: '#212121' },
-};
 
 function renderMap() {
   const body = document.getElementById('dfmea-map-body');
@@ -306,146 +328,201 @@ function renderMap() {
     return;
   }
 
-  // Compute layout: use stored x,y scaled to fit, or auto-grid if missing
-  const BLOCK_W = 220, BLOCK_GAP = 32;
-  const comps = _map.components.filter(c => c.comp_type !== 'Port'); // skip ports in this view
-  const hasPos = comps.every(c => c.x != null && c.y != null);
+  // Build hierarchy:
+  // item-level: systems → [groups →] components
+  // system-level: [groups →] components
 
-  let positions;
-  if (hasPos) {
-    // Scale from arch canvas coords → map coords
-    const minX = Math.min(...comps.map(c => c.x));
-    const minY = Math.min(...comps.map(c => c.y));
-    const maxX = Math.max(...comps.map(c => c.x + (c.width  || 160)));
-    const maxY = Math.max(...comps.map(c => c.y + (c.height || 100)));
-    const scale = Math.min(1, (body.offsetWidth - 60) / Math.max(maxX - minX, 1));
-    positions = Object.fromEntries(comps.map(c => [c.id, {
-      x: Math.round((c.x - minX) * scale + 20),
-      y: Math.round((c.y - minY) * scale + 20),
-      w: Math.max(BLOCK_W, Math.round((c.width || 160) * scale)),
-    }]));
+  const nonPortComps = _map.components.filter(c => c.comp_type !== 'Port');
+  const groups       = nonPortComps.filter(c => c.comp_type === 'Group');
+  const leafComps    = nonPortComps.filter(c => c.comp_type !== 'Group');
+
+  // Get group label for a component
+  const groupOf = c => {
+    const gid = c.data?.group_id;
+    return gid ? groups.find(g => g.id === gid) : null;
+  };
+
+  // Build system → group → component tree
+  const buildSystemNode = (sysId, sysName) => {
+    const sysComps   = sysId
+      ? nonPortComps.filter(c => c.parent_id === sysId)
+      : nonPortComps;
+    const sysGroups  = sysComps.filter(c => c.comp_type === 'Group');
+    const sysLeaves  = sysComps.filter(c => c.comp_type !== 'Group');
+
+    // ungrouped leaves
+    const ungrouped  = sysLeaves.filter(c => !c.data?.group_id);
+    // grouped leaves per group
+    const grouped    = sysGroups.map(g => ({
+      group:    g,
+      children: sysLeaves.filter(c => c.data?.group_id === g.id),
+    }));
+
+    return { sysId, sysName, grouped, ungrouped };
+  };
+
+  let treeNodes;
+  if (_ctx.parentType === 'item' && _map.systems.length) {
+    treeNodes = _map.systems.map(s => buildSystemNode(s.id, s.name));
+    // ungrouped item-direct comps
+    const itemDirect = buildSystemNode(null, null).ungrouped
+      .filter(c => c.parent_type === 'item');
+    if (itemDirect.length) treeNodes.push({ sysId: null, sysName: 'Item-level', grouped: [], ungrouped: itemDirect });
   } else {
-    // Auto grid
-    const cols = Math.max(1, Math.floor((body.offsetWidth - 40) / (BLOCK_W + BLOCK_GAP)));
-    positions  = Object.fromEntries(comps.map((c, i) => [c.id, {
-      x: (i % cols) * (BLOCK_W + BLOCK_GAP) + 20,
-      y: Math.floor(i / cols) * 280 + 20,
-      w: BLOCK_W,
-    }]));
+    treeNodes = [buildSystemNode(_ctx.parentId, null)];
   }
 
-  // Canvas size
-  const canvasW = Math.max(...Object.values(positions).map(p => p.x + p.w + 20));
-  const canvasH = Math.max(...Object.values(positions).map(p => p.y + 260));
+  // Render tree
+  const connSet = new Set(_map.connections.map(cn => `${cn.source_id}→${cn.target_id}`));
 
-  // Build component blocks HTML
-  const blocksHTML = comps.map(c => {
-    const pos   = positions[c.id];
-    const style = COMP_COLORS[c.comp_type] || COMP_COLORS.HW;
-    const fns   = _map.functions.filter(f => f.component_id === c.id);
-    const dItems= _items.filter(it => it.component_id === c.id || it.component_name === c.name);
-    const apH   = dItems.filter(it => calcAP(it.severity,it.occurrence,it.detection)==='H').length;
-    const apM   = dItems.filter(it => calcAP(it.severity,it.occurrence,it.detection)==='M').length;
+  const renderComp = (c) => {
+    const style   = COMP_COLORS[c.comp_type] || COMP_COLORS.HW;
+    const fns     = _map.functions.filter(f => f.component_id === c.id);
+    const dItems  = _items.filter(it => it.component_id === c.id || it.component_name === c.name);
+    const apH     = dItems.filter(it => calcAP(it.severity,it.occurrence,it.detection)==='H').length;
+    const apM     = dItems.filter(it => calcAP(it.severity,it.occurrence,it.detection)==='M').length;
 
-    const fnsHTML = fns.map(f => `
-      <div class="dmap-fn-row ${f.is_safety_related ? 'safety' : ''}">
-        ${f.is_safety_related ? '<span class="dmap-safety-dot" title="Safety related">●</span>' : '<span class="dmap-fn-dot">○</span>'}
-        <span>${esc(f.name)}</span>
-      </div>`).join('') || '<div class="dmap-empty-hint">No functions assigned</div>';
+    // Group DFMEA items by function name
+    const dfmeaByFn = {};
+    dItems.forEach(it => {
+      const key = it.function_name || '(no function)';
+      if (!dfmeaByFn[key]) dfmeaByFn[key] = [];
+      dfmeaByFn[key].push(it);
+    });
 
-    const fmHTML = dItems.map(it => {
+    // Merge functions list: arch_functions + any fn names in DFMEA not in arch
+    const fnNames = new Set(fns.map(f => f.name));
+    Object.keys(dfmeaByFn).forEach(k => { if (k !== '(no function)') fnNames.delete(k); });
+
+    const fnRowsHTML = fns.map(f => {
+      const safetyClass = f.is_safety_related ? 'safety' : '';
+      const items = dfmeaByFn[f.name] || [];
+      const fmRows = items.map(it => {
+        const ap    = calcAP(it.severity, it.occurrence, it.detection);
+        const apClr = AP_COLORS[ap] || '#9AA0A6';
+        const label = it.failure_mode || it.effect_local || '—';
+        return `<div class="dmap-fm-row" data-dfmea-id="${it.id}">
+          <span class="dmap-fm-icon">⚡</span>
+          <span class="dmap-fm-label">${esc(label)}</span>
+          <span class="dmap-sod">S:${it.severity} O:${it.occurrence} D:${it.detection}</span>
+          <span class="dfmea-ap-badge sm" style="background:${apClr}">${ap}</span>
+        </div>`;
+      }).join('');
+      return `
+        <div class="dmap-fn-entry ${safetyClass}">
+          <div class="dmap-fn-hdr">
+            <span class="dmap-fn-ico">${f.is_safety_related ? '🔗' : '⚙'}</span>
+            <span class="dmap-fn-name">${esc(f.name)}</span>
+            ${items.length ? `<span class="dmap-fn-count">${items.length} FM</span>` : ''}
+          </div>
+          ${fmRows}
+        </div>`;
+    }).join('');
+
+    // DFMEA items with no matching arch_function
+    const orphanItems = dfmeaByFn['(no function)'] || [];
+    const orphanHTML  = orphanItems.map(it => {
       const ap    = calcAP(it.severity, it.occurrence, it.detection);
       const apClr = AP_COLORS[ap] || '#9AA0A6';
-      return `<div class="dmap-fm-row" data-dfmea-id="${it.id}" title="${esc(it.failure_mode || it.effect_local || '')}">
-        <span class="dmap-fm-name">${esc(it.failure_mode || it.effect_local || '—')}</span>
+      return `<div class="dmap-fm-row" data-dfmea-id="${it.id}">
+        <span class="dmap-fm-icon">⚡</span>
+        <span class="dmap-fm-label">${esc(it.failure_mode || it.effect_local || '—')}</span>
         <span class="dmap-sod">S:${it.severity} O:${it.occurrence} D:${it.detection}</span>
         <span class="dfmea-ap-badge sm" style="background:${apClr}">${ap}</span>
       </div>`;
-    }).join('') || '<div class="dmap-empty-hint">No DFMEA entries</div>';
+    }).join('');
 
-    const riskBadges = (apH ? `<span class="dmap-risk-badge H">H:${apH}</span>` : '')
-                     + (apM ? `<span class="dmap-risk-badge M">M:${apM}</span>` : '');
+    const riskBadges = [
+      apH ? `<span class="dmap-risk-badge H">H:${apH}</span>` : '',
+      apM ? `<span class="dmap-risk-badge M">M:${apM}</span>` : '',
+    ].join('');
 
+    const nodeId = `dmap-comp-${c.id}`;
     return `
-      <div class="dmap-block" data-comp-id="${c.id}"
-           style="left:${pos.x}px;top:${pos.y}px;width:${pos.w}px;border-color:${style.border}">
-        <div class="dmap-block-hdr" style="background:${style.hdr}">
-          <span class="dmap-block-type">${esc(c.comp_type || '')}</span>
-          <span class="dmap-block-name">${esc(c.name)}</span>
-          ${riskBadges ? `<span class="dmap-risk-badges">${riskBadges}</span>` : ''}
+      <div class="dmap-comp-node" id="${nodeId}" data-comp-id="${c.id}">
+        <div class="dmap-comp-hdr" style="border-left:4px solid ${style.border}">
+          <span class="dmap-comp-type-badge" style="background:${style.badge};color:${style.badgeText}">${esc(c.comp_type)}</span>
+          <span class="dmap-comp-name">${esc(c.name)}</span>
+          <span class="dmap-risk-badges">${riskBadges}</span>
+          <button class="dmap-collapse-btn" data-target="${nodeId}-body" title="Expand / collapse">▼</button>
         </div>
-
-        <div class="dmap-section">
-          <button class="dmap-section-toggle" data-section="fn-${c.id}">
-            <span class="dmap-section-icon">▶</span>
-            <span>Functions</span>
-            <span class="dmap-section-count">${fns.length}</span>
-          </button>
-          <div class="dmap-section-body collapsed" id="dmap-fn-${c.id}">
-            ${fnsHTML}
-          </div>
-        </div>
-
-        <div class="dmap-section">
-          <button class="dmap-section-toggle" data-section="fm-${c.id}">
-            <span class="dmap-section-icon">▶</span>
-            <span>DFMEA</span>
-            <span class="dmap-section-count">${dItems.length}</span>
-          </button>
-          <div class="dmap-section-body collapsed" id="dmap-fm-${c.id}">
-            ${fmHTML}
-          </div>
+        <div class="dmap-comp-body" id="${nodeId}-body">
+          ${fnRowsHTML || orphanHTML
+            ? (fnRowsHTML + (orphanHTML ? `<div class="dmap-fn-entry"><div class="dmap-fn-hdr"><span class="dmap-fn-ico">⚙</span><span class="dmap-fn-name" style="color:var(--color-text-muted)">(unassigned)</span></div>${orphanHTML}</div>` : ''))
+            : '<div class="dmap-empty-hint" style="padding:8px 12px">No functions or DFMEA data yet</div>'
+          }
         </div>
       </div>`;
-  }).join('');
+  };
 
-  // Build connection SVG
-  const svgLines = _map.connections.map(cn => {
-    const sp = positions[cn.source_id];
-    const tp = positions[cn.target_id];
-    if (!sp || !tp) return '';
-    const clr  = IFACE_COLORS[cn.interface_type] || '#9AA0A6';
-    const x1 = sp.x + sp.w;      const y1 = sp.y + 28;
-    const x2 = tp.x;              const y2 = tp.y + 28;
-    const mx = (x1 + x2) / 2;
-    const lbl = cn.name || cn.interface_type || '';
-    return `
-      <path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"
-            fill="none" stroke="${clr}" stroke-width="1.5"
-            marker-end="url(#dmap-arr)" opacity="0.8"/>
-      ${lbl ? `<text x="${mx}" y="${(y1+y2)/2-4}" text-anchor="middle"
-               font-size="9" fill="${clr}" font-family="system-ui">${esc(lbl)}</text>` : ''}`;
-  }).join('');
-
-  body.innerHTML = `
-    <div class="dmap-canvas-wrap">
-      <div class="dmap-canvas" style="width:${canvasW}px;height:${canvasH}px">
-        <svg class="dmap-net-svg" width="${canvasW}" height="${canvasH}"
-             xmlns="http://www.w3.org/2000/svg" style="display:${_netVisible?'':'none'}">
-          <defs>
-            <marker id="dmap-arr" markerWidth="8" markerHeight="7"
-                    refX="7" refY="3.5" orient="auto">
-              <path d="M0,0 L7,3.5 L0,7" fill="none" stroke="#666" stroke-width="1.2"/>
-            </marker>
-          </defs>
-          ${svgLines}
-        </svg>
-        ${blocksHTML}
+  // children wrapped in a branch: vertical line + children column
+  const branchWrap = (id, childrenHTML) => `
+    <span class="dmap-arrow">→</span>
+    <div class="dmap-tree-branch">
+      <div class="dmap-tree-branch-line"></div>
+      <div class="dmap-tree-branch-children" id="${id}">
+        ${childrenHTML}
       </div>
     </div>`;
 
-  // Wire section toggles
-  body.querySelectorAll('.dmap-section-toggle').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const key     = btn.dataset.section;
-      const sBody   = document.getElementById(`dmap-${key}`);
-      const icon    = btn.querySelector('.dmap-section-icon');
-      const open    = sBody.classList.toggle('collapsed');
-      if (icon) icon.textContent = open ? '▶' : '▼';
+  const renderGroupNode = ({ group, children }) => {
+    const bid = `dmap-grp-${group.id}-body`;
+    return `
+    <div class="dmap-group-node">
+      <div class="dmap-group-hdr">
+        <span class="dmap-group-name">⬡ ${esc(group.name)}</span>
+        <button class="dmap-collapse-btn" data-target="${bid}">▼</button>
+      </div>
+      ${branchWrap(bid, children.map(renderComp).join(''))}
+    </div>`;
+  };
+
+  const renderSystemNode = (node) => {
+    if (!node.sysName) {
+      return [
+        ...node.grouped.map(renderGroupNode),
+        ...node.ungrouped.map(renderComp),
+      ].join('');
+    }
+    const bid = `dmap-sys-${node.sysId || 'item'}-body`;
+    const childrenHTML = [
+      ...node.grouped.map(renderGroupNode),
+      ...node.ungrouped.map(renderComp),
+    ].join('');
+    return `
+      <div class="dmap-sys-node">
+        <div class="dmap-sys-hdr">
+          <span class="dmap-sys-icon">⬡</span>
+          <span class="dmap-sys-name">${esc(node.sysName)}</span>
+          <button class="dmap-collapse-btn" data-target="${bid}">▼</button>
+        </div>
+        ${branchWrap(bid, childrenHTML)}
+      </div>`;
+  };
+
+  // Connection net (hidden toggleable)
+  const connLines = buildConnLines(nonPortComps);
+
+  body.innerHTML = `
+    <div class="dmap-tree-wrap">
+      ${_netVisible && connLines ? `<div class="dmap-net-legend">${connLines.legend}</div>` : ''}
+      <div class="dmap-tree">
+        ${treeNodes.map(renderSystemNode).join('')}
+      </div>
+    </div>`;
+
+  // Wire collapse buttons (toggle .collapsed on target element)
+  body.querySelectorAll('.dmap-collapse-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const target = document.getElementById(btn.dataset.target);
+      if (!target) return;
+      const nowCollapsed = target.classList.toggle('collapsed');
+      btn.textContent = nowCollapsed ? '▶' : '▼';
     });
   });
 
-  // Wire FM rows → select table row
+  // Wire FM rows → select table row + scroll
   body.querySelectorAll('[data-dfmea-id]').forEach(el => {
     el.addEventListener('click', () => {
       selectRow(el.dataset.dfmeaId);
@@ -453,6 +530,26 @@ function renderMap() {
       tr?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
   });
+}
+
+const IFACE_COLORS = { Data:'#1A73E8', Electrical:'#E37400', Mechanical:'#5D4037', Thermal:'#C5221F', Power:'#7B1FA2' };
+
+function buildConnLines(comps) {
+  // Returns a small legend of connections, shown in net-toggle mode
+  if (!_map.connections.length) return null;
+  const compMap = Object.fromEntries(comps.map(c => [c.id, c]));
+  const items   = _map.connections.slice(0, 12).map(cn => {
+    const src = compMap[cn.source_id];
+    const tgt = compMap[cn.target_id];
+    if (!src || !tgt) return '';
+    const clr = IFACE_COLORS[cn.interface_type] || '#9AA0A6';
+    return `<span class="dmap-conn-chip" style="border-color:${clr}">
+      <span style="color:${clr}">→</span>
+      ${esc(src.name)} → ${esc(tgt.name)}
+      ${cn.interface_type ? `<span class="dmap-conn-type" style="color:${clr}">${esc(cn.interface_type)}</span>` : ''}
+    </span>`;
+  }).filter(Boolean).join('');
+  return { legend: items };
 }
 
 // ── Table render ──────────────────────────────────────────────────────────────

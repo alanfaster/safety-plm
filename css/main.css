@@ -1882,47 +1882,80 @@ input, select, textarea { font-family: var(--font); }
 .dfmea-ap-badge.sm{padding:1px 5px;font-size:10px}
 
 /* ── DFMEA Structure Map panel ───────────────────────────────────────────── */
-.dfmea-map-body{flex:1;overflow:hidden;background:#F4F5F7}
-.dmap-canvas-wrap{width:100%;height:100%;overflow:auto}
-.dmap-canvas{position:relative;min-width:100%}
+.dfmea-map-body{flex:1;overflow:auto;background:#F4F5F7;padding:12px 16px}
 
-/* SVG net overlay */
-.dmap-net-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
+/* Tree wrapper */
+.dmap-tree-wrap{display:flex;flex-direction:column;gap:0}
+.dmap-tree{display:flex;flex-direction:row;gap:0;flex-wrap:nowrap;align-items:flex-start;overflow-x:auto;padding-bottom:8px}
 
-/* Component blocks */
-.dmap-block{position:absolute;background:#fff;border:2px solid #9AA0A6;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);min-width:200px}
-.dmap-block-hdr{display:flex;align-items:center;gap:6px;padding:6px 10px;color:#fff;min-height:30px}
-.dmap-block-type{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;opacity:0.85;background:rgba(0,0,0,0.2);border-radius:3px;padding:1px 5px;flex-shrink:0}
-.dmap-block-name{font-size:12px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Connection net legend (small chips at top) */
+.dmap-net-legend{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;padding:6px 10px;background:#fff;border:1px solid var(--color-border);border-radius:6px}
+.dmap-conn-chip{font-size:10px;padding:2px 8px;border:1px solid;border-radius:10px;display:flex;align-items:center;gap:4px;color:var(--color-text-muted)}
+.dmap-conn-type{font-weight:600}
+
+/* ── Tree node wrappers ── */
+
+/* System node — top level */
+.dmap-sys-node{display:flex;flex-direction:row;align-items:flex-start;gap:0}
+.dmap-sys-hdr{display:flex;align-items:center;gap:6px;padding:6px 10px;background:#253858;color:#fff;border-radius:6px;cursor:default;white-space:nowrap;font-size:12px;font-weight:600;min-width:120px;position:relative}
+.dmap-sys-icon{font-size:14px;opacity:0.8}
+.dmap-sys-name{flex:1}
+
+/* Group node */
+.dmap-group-node{display:flex;flex-direction:row;align-items:flex-start;gap:0}
+.dmap-group-hdr{display:flex;align-items:center;gap:6px;padding:5px 10px;background:#E8EAED;border:1px solid #C1C7D0;border-radius:5px;cursor:default;white-space:nowrap;font-size:11px;font-weight:600;color:#444;min-width:110px;position:relative}
+.dmap-group-name{flex:1}
+
+/* Component node */
+.dmap-comp-node{background:#fff;border:1px solid var(--color-border);border-radius:7px;overflow:hidden;min-width:220px;max-width:280px;box-shadow:0 1px 4px rgba(0,0,0,0.07);flex-shrink:0}
+.dmap-comp-hdr{display:flex;align-items:center;gap:6px;padding:6px 10px;background:#fff;cursor:default;border-bottom:1px solid var(--color-border)}
+.dmap-comp-type-badge{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;padding:1px 6px;border-radius:3px;flex-shrink:0}
+.dmap-comp-name{font-size:12px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text)}
 .dmap-risk-badges{display:flex;gap:3px;flex-shrink:0}
 .dmap-risk-badge{font-size:9px;font-weight:700;border-radius:3px;padding:1px 5px;color:#fff}
 .dmap-risk-badge.H{background:#C5221F}
 .dmap-risk-badge.M{background:#E65100}
+.dmap-comp-body{padding:0}
+.dmap-comp-body.collapsed{display:none}
 
-/* Collapsible sections inside block */
-.dmap-section{border-top:1px solid rgba(0,0,0,0.07)}
-.dmap-section-toggle{display:flex;align-items:center;gap:5px;width:100%;padding:5px 10px;border:none;background:none;cursor:pointer;font-size:11px;font-weight:600;color:var(--color-text-muted);text-align:left;transition:background 0.1s}
-.dmap-section-toggle:hover{background:rgba(0,0,0,0.04)}
-.dmap-section-icon{font-size:8px;transition:transform 0.15s;display:inline-block}
-.dmap-section-count{margin-left:auto;background:var(--color-bg);border:1px solid var(--color-border);border-radius:10px;padding:0 6px;font-size:10px;color:var(--color-text-muted)}
-.dmap-section-body{padding:0 10px;transition:max-height 0.2s ease,opacity 0.2s ease;overflow:hidden;max-height:400px;opacity:1}
-.dmap-section-body.collapsed{max-height:0;opacity:0;padding-top:0;padding-bottom:0}
+/* Collapse button (shared) */
+.dmap-collapse-btn{border:none;background:none;cursor:pointer;font-size:9px;color:var(--color-text-muted);padding:0 2px;flex-shrink:0;line-height:1}
+.dmap-collapse-btn:hover{color:var(--color-primary)}
 
-/* Function rows */
-.dmap-fn-row{display:flex;align-items:baseline;gap:5px;padding:3px 0;font-size:11px;color:var(--color-text);border-bottom:1px solid rgba(0,0,0,0.04)}
-.dmap-fn-row:last-child{border-bottom:none}
-.dmap-fn-row.safety .dmap-safety-dot{color:#C5221F;font-size:8px}
-.dmap-fn-dot{color:#9AA0A6;font-size:8px}
-.dmap-safety-dot{color:#C5221F;font-size:8px}
+/* Function entry inside component */
+.dmap-fn-entry{border-bottom:1px solid rgba(0,0,0,0.06);padding:0}
+.dmap-fn-entry:last-child{border-bottom:none}
+.dmap-fn-entry.safety .dmap-fn-hdr{background:#FFF5F5}
+.dmap-fn-hdr{display:flex;align-items:center;gap:5px;padding:5px 10px;background:#FAFBFC;border-bottom:1px solid rgba(0,0,0,0.04)}
+.dmap-fn-ico{font-size:11px;flex-shrink:0}
+.dmap-fn-name{font-size:11px;font-weight:600;color:var(--color-text);flex:1}
+.dmap-fn-count{font-size:9px;color:var(--color-text-muted);background:var(--color-bg);border:1px solid var(--color-border);border-radius:8px;padding:0 5px}
 
-/* DFMEA FM rows */
-.dmap-fm-row{display:flex;align-items:center;gap:5px;padding:3px 0;font-size:11px;cursor:pointer;border-bottom:1px dashed rgba(0,0,0,0.06)}
-.dmap-fm-row:last-child{border-bottom:none}
-.dmap-fm-row:hover{background:rgba(26,115,232,0.05);border-radius:3px}
-.dmap-fm-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--color-text)}
-.dmap-sod{font-size:10px;color:var(--color-text-muted);white-space:nowrap;font-family:var(--font-mono)}
+/* Failure mode rows */
+.dmap-fm-row{display:flex;align-items:center;gap:5px;padding:4px 10px 4px 22px;font-size:11px;cursor:pointer;transition:background 0.1s}
+.dmap-fm-row:hover{background:#F0F7FF}
+.dmap-fm-icon{font-size:9px;color:#E65100;flex-shrink:0}
+.dmap-fm-label{flex:1;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dmap-sod{font-size:9px;color:var(--color-text-muted);white-space:nowrap;font-family:var(--font-mono);flex-shrink:0}
+.dmap-empty-hint{font-size:10px;color:var(--color-text-subtle);font-style:italic}
 
-.dmap-empty-hint{font-size:10px;color:var(--color-text-subtle);font-style:italic;padding:4px 0 6px}
+/* ── Tree connector lines between nodes ── */
+/* Each node level wraps: [header][arrow][children] in a row */
+.dmap-tree-children{display:flex;flex-direction:column;gap:8px;position:relative;padding-left:0}
 
-/* Section padding when open */
-.dmap-section-body:not(.collapsed){padding-top:4px;padding-bottom:6px}
+/* Arrow connector between levels */
+.dmap-sys-node > .dmap-tree-arrow,
+.dmap-group-node > .dmap-tree-arrow{display:flex;align-items:center;padding:0 4px;color:var(--color-text-muted);font-size:13px;align-self:flex-start;margin-top:8px}
+
+/* Layout: header + arrow + children stacked horizontally */
+.dmap-sys-node,.dmap-group-node{display:flex;flex-direction:row;align-items:flex-start;gap:0}
+.dmap-tree-level{display:flex;flex-direction:column;gap:8px}
+
+/* Arrow connector */
+.dmap-arrow{display:flex;align-items:flex-start;padding:10px 6px 0;color:var(--color-text-muted);font-size:16px;flex-shrink:0;align-self:flex-start}
+
+/* Vertical branch line beside children */
+.dmap-tree-branch{display:flex;flex-direction:row;align-items:stretch;gap:0;flex-shrink:0}
+.dmap-tree-branch-line{width:2px;background:var(--color-border);margin:10px 0;border-radius:1px;flex-shrink:0}
+.dmap-tree-branch-children{display:flex;flex-direction:column;gap:8px;padding-left:6px;flex-shrink:0}
+.dmap-tree-branch-children.collapsed{display:none}
