@@ -79,6 +79,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   let _panDrag = false;
   let _panStart= null;
   let _space   = false;
+  let _lastClick = { id:null, t:0 };  // for dblclick detection in mousedown
 
   // ── Shell ──────────────────────────────────────────────────────────────────
   container.innerHTML = `
@@ -543,8 +544,19 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       if (nodeEl) {
         e.stopPropagation();
         const id=nodeEl.dataset.id;
+        const now=Date.now();
+
+        // Detect double-click here (before render() wipes the DOM)
+        if (_lastClick.id===id && now-_lastClick.t<350) {
+          _lastClick={id:null,t:0};
+          const rh=e.target.closest('.fta-row-hit');
+          if (rh) { editField(id, rh.dataset.field); return; }
+          if (isGate(byId(id)?.type)) { editGate(id); return; }
+          return;
+        }
+        _lastClick={id, t:now};
+
         if (e.shiftKey) {
-          // Toggle selection
           _selSet.has(id)?_selSet.delete(id):_selSet.add(id);
           render(); return;
         }
@@ -599,13 +611,6 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       _panDrag=false;
     });
 
-    // Dblclick: edit field
-    svg.addEventListener('dblclick',e=>{
-      const rh=e.target.closest('.fta-row-hit');
-      if (rh) { const ne=rh.closest('.fta-node'); if(ne){e.stopPropagation();editField(ne.dataset.id,rh.dataset.field);} return; }
-      const gate=e.target.closest('.fta-gate-node');
-      if (gate) { e.stopPropagation(); editGate(gate.dataset.id); }
-    });
   }
 
   // ── Keyboard ─────────────────────────────────────────────────────────────────
