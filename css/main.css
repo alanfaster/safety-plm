@@ -1846,21 +1846,54 @@ input, select, textarea { font-family: var(--font); }
 .dfmea-row.selected td:first-child{border-left:3px solid var(--color-primary)}
 
 /* Column widths */
-.dfmea-col-id{width:90px;white-space:nowrap;font-family:var(--font-mono);font-size:11px;color:var(--color-text-muted)}
-.dfmea-col-comp{width:140px}
-.dfmea-col-func{width:150px}
-.dfmea-col-fm{width:180px}
-.dfmea-col-eff{width:170px}
-.dfmea-col-fc{width:160px}
+.dfmea-col-id{width:80px;white-space:nowrap;font-family:var(--font-mono);font-size:11px;color:var(--color-text-muted)}
+.dfmea-col-comp{width:130px}
+.dfmea-col-func{width:140px}
+.dfmea-col-fm{width:170px}
+.dfmea-col-maxs{width:46px;text-align:center;padding:4px!important}
+.dfmea-col-eff{width:160px}
+.dfmea-col-fc{width:155px}
 .dfmea-col-sod{width:42px;text-align:center;padding:4px!important}
-.dfmea-col-ctrl{width:170px}
-.dfmea-col-ap{width:48px;text-align:center}
-.dfmea-col-actions{width:180px}
-.dfmea-col-resp{width:120px}
-.dfmea-col-date{width:100px}
-.dfmea-col-astatus{width:110px}
-.dfmea-col-status{width:90px}
+.dfmea-col-ctrl{width:155px}
+.dfmea-col-ap{width:44px;text-align:center}
+.dfmea-col-actions{width:170px}
+.dfmea-col-resp{width:110px}
+.dfmea-col-date{width:95px}
+.dfmea-col-astatus{width:105px}
+.dfmea-col-status{width:85px}
+.dfmea-col-add{width:130px;text-align:right;padding:3px 5px!important;white-space:nowrap}
 .dfmea-col-del{width:32px;text-align:center;padding:4px!important}
+
+/* ── FM / Effect / Cause row styles ─────────────────────────────────────── */
+/* FM rows — primary level */
+.dfmea-row-fm td{background:#F0F4FF}
+.dfmea-row-fm td:nth-child(2){border-left:4px solid #1A73E8}
+.dfmea-row-fm:hover td{background:#E8F0FE}
+.dfmea-row-fm.selected td{background:#D2E3FC}
+
+/* Effect rows — secondary level */
+.dfmea-row-effect td{background:#FAFBFC}
+.dfmea-row-effect:hover td{background:#F0F7FF}
+/* Indent visual */
+.dfmea-indent-eff{background:repeating-linear-gradient(90deg,transparent,transparent 11px,rgba(26,115,232,0.15) 11px,rgba(26,115,232,0.15) 12px)!important;border-right:none!important}
+
+/* Cause rows — tertiary level */
+.dfmea-row-cause td{background:#FEFEFE}
+.dfmea-row-cause:hover td{background:#F8FAFF}
+.dfmea-indent-cause{background:repeating-linear-gradient(90deg,transparent,transparent 18px,rgba(30,142,62,0.15) 18px,rgba(30,142,62,0.15) 19px)!important;border-right:none!important}
+
+/* N/A cells */
+.dfmea-cell-na{background:#F4F5F7!important;border-color:#E8EAED!important;pointer-events:none}
+
+/* Max S badge */
+.dfmea-maxs-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:12px;font-weight:700;background:#253858;color:#fff;min-width:22px;text-align:center}
+
+/* Add/del buttons in last column */
+.dfmea-add-cell{display:flex;gap:3px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}
+.dfmea-add-btn{font-size:10px;padding:2px 6px;border:1px solid var(--color-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--color-text);white-space:nowrap;transition:background 0.1s,border-color 0.1s}
+.dfmea-add-btn:hover{background:#E8F0FE;border-color:var(--color-primary);color:var(--color-primary)}
+.dfmea-del-row-btn{font-size:11px;padding:2px 5px;border:1px solid transparent;border-radius:3px;background:none;cursor:pointer;color:var(--color-text-muted);transition:color 0.1s}
+.dfmea-del-row-btn:hover{color:var(--color-danger);background:#FFEBE6;border-color:#FFEBE6}
 
 /* Editable cells */
 .dfmea-editable{cursor:default}
