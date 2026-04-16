@@ -634,7 +634,7 @@ async function addFmRow(prefill={}, rebuild=false){
     dfmea_code:code, parent_type:_ctx.parentType, parent_id:_ctx.parentId,
     project_id:_ctx.project.id, row_type:'fm',
     sort_order:_items.filter(i=>rtype(i)==='fm').length,
-    severity:0, occurrence:5, detection:5, action_status:'open', status:'draft', ...prefill,
+    severity:5, occurrence:5, detection:5, action_status:'open', status:'draft', ...prefill,
   }).select().single();
   if(error){toast('Error creating FM.','error');return null;}
   _items.push(fm);
