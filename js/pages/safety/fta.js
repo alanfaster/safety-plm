@@ -845,11 +845,42 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────────
+  const DEL_SKIP_KEY = 'fta_del_no_confirm';
+
+  async function confirmDelete(ids) {
+    if (localStorage.getItem(DEL_SKIP_KEY) === '1') return true;
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center';
+      const box = document.createElement('div');
+      box.style.cssText = 'background:#fff;border-radius:8px;padding:24px 28px;box-shadow:0 8px 32px rgba(0,0,0,.18);max-width:340px;width:100%;font-family:inherit';
+      const names = ids.map(id=>byId(id)?.fta_code||'node').join(', ');
+      box.innerHTML = `
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px">Delete node${ids.length>1?'s':''}?</div>
+        <div style="font-size:13px;color:#555;margin-bottom:16px">${esc(names)}</div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#555;margin-bottom:20px;cursor:pointer">
+          <input type="checkbox" id="fta-del-skip"> Don't ask again
+        </label>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button id="fta-del-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+          <button id="fta-del-ok" style="padding:6px 16px;border:none;border-radius:4px;background:#d93025;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Delete</button>
+        </div>`;
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      const cleanup = ok => {
+        if (ok && box.querySelector('#fta-del-skip').checked) localStorage.setItem(DEL_SKIP_KEY,'1');
+        overlay.remove(); resolve(ok);
+      };
+      box.querySelector('#fta-del-ok').addEventListener('click', () => cleanup(true));
+      box.querySelector('#fta-del-cancel').addEventListener('click', () => cleanup(false));
+      overlay.addEventListener('click', e => { if (e.target===overlay) cleanup(false); });
+    });
+  }
+
   async function deleteSelected() {
     if (!_selSet.size) return;
     const ids=[..._selSet];
-    const names=ids.map(id=>byId(id)?.fta_code||'node').join(', ');
-    if (!confirm(`Delete ${ids.length} node(s): ${names}?`)) return;
+    if (!await confirmDelete(ids)) return;
     for (const id of ids) {
       _nodes.filter(c=>c.parent_node_id===id).forEach(c=>{c.parent_node_id=null; autosave(c.id,{parent_node_id:null});});
       await sb.from('fta_nodes').delete().eq('id',id);
