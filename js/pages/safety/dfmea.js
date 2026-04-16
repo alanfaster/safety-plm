@@ -307,16 +307,6 @@ function renderGroup(tbody,g){
     maxSTd.innerHTML=maxS?`<span class="dfmea-maxs-badge">${maxS}</span>`:`<span class="dfmea-placeholder">—</span>`;
     fmTr.appendChild(maxSTd);
 
-    // Status cell (rowspan = this FM's rows)
-    const statusTd=makeTd('dfmea-col-status',fmSpan);
-    statusTd.innerHTML=`<select class="dfmea-sel" data-field="status">${ITEM_STATUSES.map(s=>`<option value="${s}"${fm.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
-    fmTr.appendChild(statusTd);
-
-    // Del cell (rowspan = this FM's rows)
-    const delTd=makeTd('dfmea-col-del',fmSpan);
-    delTd.innerHTML=`<button class="dfmea-del-row-btn" data-action="del-fm" title="Delete FM">✕</button>`;
-    fmTr.appendChild(delTd);
-
     // If no effects and no causes, fill the effect+cause columns with NA
     if(!effects.length&&!directCauses.length){
       fmTr.appendChild(naCell('dfmea-col-eff'));
@@ -333,6 +323,16 @@ function renderGroup(tbody,g){
       fmTr.appendChild(naCell('dfmea-col-date'));
       fmTr.appendChild(naCell('dfmea-col-astatus'));
     }
+
+    // Status cell (rowspan = this FM's rows) — MUST come after effect/cause columns
+    const statusTd=makeTd('dfmea-col-status',fmSpan);
+    statusTd.innerHTML=`<select class="dfmea-sel" data-field="status">${ITEM_STATUSES.map(s=>`<option value="${s}"${fm.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
+    fmTr.appendChild(statusTd);
+
+    // Del cell (rowspan = this FM's rows)
+    const delTd=makeTd('dfmea-col-del',fmSpan);
+    delTd.innerHTML=`<button class="dfmea-del-row-btn" data-action="del-fm" title="Delete FM">✕</button>`;
+    fmTr.appendChild(delTd);
 
     tbody.appendChild(fmTr);
     wireFmCells(fmTr,fmTd,statusTd,fm,g);
