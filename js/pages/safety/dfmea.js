@@ -77,7 +77,9 @@ export async function renderDFMEA(container, { project, item, system, parentType
           <h1>DFMEA</h1>
           <p class="page-subtitle">Design FMEA · VDA 2019 · ${esc(parentName)}</p>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div class="dfmea-toolbar">
+          <button class="dfmea-tb-btn" id="btn-dfmea-chain" title="Toggle Structure–Function–Failure chain">⬡ Chain</button>
+          <div class="arch-sep"></div>
           <button class="btn btn-secondary btn-sm" id="btn-dfmea-sync">⟳ Sync from System</button>
           <button class="btn btn-primary   btn-sm" id="btn-dfmea-new" >＋ New Row</button>
         </div>
@@ -87,11 +89,14 @@ export async function renderDFMEA(container, { project, item, system, parentType
       <div class="dfmea-table-area" id="dfmea-table-area">
         <div class="content-loading"><div class="spinner"></div></div>
       </div>
-      <div class="dfmea-divider" id="dfmea-divider" title="Drag to resize"></div>
-      <div class="dfmea-chain-panel" id="dfmea-chain-panel">
-        <div class="dfmea-chain-header">
-          <span class="dfmea-chain-title">Structure — Function — Failure Chain</span>
-          <span class="dfmea-chain-hint">Click a component to explore its functions and failure modes</span>
+
+      <!-- Chain panel — hidden by default, toggleable -->
+      <div class="dfmea-bottom-panel" id="dfmea-chain-panel" style="display:none">
+        <div class="dfmea-panel-resize-bar" id="dfmea-chain-resize"></div>
+        <div class="dfmea-panel-hdr">
+          <span class="dfmea-panel-title">⬡ Structure — Function — Failure Chain</span>
+          <span class="dfmea-panel-hint">Click a component to explore its functions and failure modes</span>
+          <button class="dfmea-tb-btn" id="dfmea-chain-close" title="Close">✕</button>
         </div>
         <div class="dfmea-chain-body" id="dfmea-chain-body">
           <div class="content-loading" style="padding:24px 0"><div class="spinner"></div></div>
@@ -100,30 +105,53 @@ export async function renderDFMEA(container, { project, item, system, parentType
     </div>
   `;
 
-  wireLayout();
+  wirePanelToggles();
   document.getElementById('btn-dfmea-new').onclick  = () => addRow();
   document.getElementById('btn-dfmea-sync').onclick = () => syncFromSystem();
 
   await Promise.all([loadItems(), loadChainData()]);
 }
 
-// ── Layout resize ─────────────────────────────────────────────────────────────
+// ── Panel toggles & resize ────────────────────────────────────────────────────
 
-function wireLayout() {
-  const divider   = document.getElementById('dfmea-divider');
-  const layout    = document.getElementById('dfmea-layout');
-  if (!divider || !layout) return;
+function wirePanelToggles() {
+  // Chain panel toggle button
+  document.getElementById('btn-dfmea-chain')?.addEventListener('click', () => {
+    togglePanel('dfmea-chain-panel', 'btn-dfmea-chain');
+  });
+  document.getElementById('dfmea-chain-close')?.addEventListener('click', () => {
+    closePanel('dfmea-chain-panel', 'btn-dfmea-chain');
+  });
 
-  divider.addEventListener('mousedown', e => {
+  // Resize bar for chain panel
+  wireResizeBar('dfmea-chain-resize', 'dfmea-chain-panel');
+}
+
+function togglePanel(panelId, btnId) {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  const opening = panel.style.display === 'none';
+  panel.style.display = opening ? '' : 'none';
+  document.getElementById(btnId)?.classList.toggle('active', opening);
+}
+
+function closePanel(panelId, btnId) {
+  const panel = document.getElementById(panelId);
+  if (panel) panel.style.display = 'none';
+  document.getElementById(btnId)?.classList.remove('active');
+}
+
+function wireResizeBar(barId, panelId) {
+  const bar   = document.getElementById(barId);
+  const panel = document.getElementById(panelId);
+  if (!bar || !panel) return;
+
+  bar.addEventListener('mousedown', e => {
     e.preventDefault();
-    const startY   = e.clientY;
-    const tableEl  = document.getElementById('dfmea-table-area');
-    const startH   = tableEl.offsetHeight;
-
+    const startY = e.clientY;
+    const startH = panel.offsetHeight;
     const onMove = mv => {
-      const newH = Math.max(120, startH + (mv.clientY - startY));
-      tableEl.style.flexBasis = `${newH}px`;
-      tableEl.style.flexGrow  = '0';
+      panel.style.height = `${Math.max(120, startH - (mv.clientY - startY))}px`;
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
