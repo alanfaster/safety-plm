@@ -307,12 +307,16 @@ function renderGroup(tbody,g){
     maxSTd.innerHTML=maxS?`<span class="dfmea-maxs-badge">${maxS}</span>`:`<span class="dfmea-placeholder">—</span>`;
     fmTr.appendChild(maxSTd);
 
-    // If no effects and no causes, fill the effect+cause columns with NA
+    // If no effects and no causes, show actionable placeholders so user can start filling in
     if(!effects.length&&!directCauses.length){
-      fmTr.appendChild(naCell('dfmea-col-eff'));
+      const addEffTd=makeTd('dfmea-col-eff dfmea-cell-na-add');
+      addEffTd.innerHTML=`<button class="dfmea-inline-add dfmea-add-first-cause" data-action="add-effect" title="Add Effect">＋ Add Effect</button>`;
+      fmTr.appendChild(addEffTd);
       fmTr.appendChild(naCell('dfmea-col-eff'));
       fmTr.appendChild(naCell('dfmea-col-sod'));
-      fmTr.appendChild(naCell('dfmea-col-fc'));
+      const addCauseTd=makeTd('dfmea-col-fc dfmea-cell-na-add');
+      addCauseTd.innerHTML=`<button class="dfmea-inline-add dfmea-add-first-cause" data-action="add-cause" title="Add Cause">＋ Add Cause</button>`;
+      fmTr.appendChild(addCauseTd);
       fmTr.appendChild(naCell('dfmea-col-ctrl'));
       fmTr.appendChild(naCell('dfmea-col-sod'));
       fmTr.appendChild(naCell('dfmea-col-ctrl'));
@@ -322,6 +326,9 @@ function renderGroup(tbody,g){
       fmTr.appendChild(naCell('dfmea-col-resp'));
       fmTr.appendChild(naCell('dfmea-col-date'));
       fmTr.appendChild(naCell('dfmea-col-astatus'));
+      // Wire add buttons
+      addEffTd.querySelector('[data-action="add-effect"]').addEventListener('click',()=>addEffectRow(fm));
+      addCauseTd.querySelector('[data-action="add-cause"]').addEventListener('click',()=>addCauseRow(fm.id,fm));
     }
 
     // Status cell (rowspan = this FM's rows) — MUST come after effect/cause columns
@@ -580,18 +587,20 @@ function wireTextCell(td,it,field,afterSave){
   td.addEventListener('dblclick',()=>{
     if(td.querySelector('textarea')) return;
     const cur=it[field]||'';
-    const hasAddBtn=!!td.querySelector('.dfmea-inline-add');
-    const btnHtml=hasAddBtn?`<button class="dfmea-inline-add" data-action="${td.querySelector('.dfmea-inline-add').dataset.action}" style="display:none">＋</button>`:'';
+    const existingBtn=td.querySelector('.dfmea-inline-add');
+    const hasAddBtn=!!existingBtn;
+    const addAction=existingBtn?.dataset.action||'';
+    const btnHtml=hasAddBtn?`<button class="dfmea-inline-add" data-action="${addAction}" style="display:none">＋</button>`:'';
     td.innerHTML=`<textarea class="dfmea-cell-input" rows="2">${esc(cur)}</textarea>${btnHtml}`;
     const ta=td.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
     ta.addEventListener('blur',async()=>{
       const v=ta.value.trim(); it[field]=v;
-      td.innerHTML=`${cellText(v)}${hasAddBtn?`<button class="dfmea-inline-add" data-action="${td.querySelector('[data-action]')?.dataset.action||''}">＋</button>`:''}`;
+      td.innerHTML=`${cellText(v)}${hasAddBtn?`<button class="dfmea-inline-add" data-action="${addAction}">＋</button>`:''}`;
       if(v!==(cur)) await autosave(it.id,{[field]:v});
       if(afterSave) afterSave();
     });
     ta.addEventListener('keydown',e=>{
-      if(e.key==='Escape'){td.innerHTML=`${cellText(cur)}${hasAddBtn?`<button class="dfmea-inline-add">＋</button>`:''}`;if(afterSave)afterSave();}
+      if(e.key==='Escape'){td.innerHTML=`${cellText(cur)}${hasAddBtn?`<button class="dfmea-inline-add" data-action="${addAction}">＋</button>`:''}`;if(afterSave)afterSave();}
       if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ta.blur();}
     });
   });
