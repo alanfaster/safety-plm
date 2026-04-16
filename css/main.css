@@ -1971,6 +1971,15 @@ td:hover .dfmea-del-inline{display:inline-block}
 /* Empty hint */
 .fta-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:var(--color-text-muted);font-size:13px;pointer-events:none;line-height:2.2}
 
+/* Config panel */
+.fta-cfg-panel{position:absolute;top:42px;right:12px;background:#fff;border:1px solid var(--color-border);border-radius:6px;padding:12px 16px;z-index:200;box-shadow:var(--shadow);min-width:210px}
+.fta-cfg-title{font-size:12px;font-weight:700;color:var(--color-text);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em}
+.fta-cfg-row{display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;cursor:pointer;color:var(--color-text)}
+.fta-cfg-row input[type=checkbox]{cursor:pointer}
+.fta-cfg-sep{border:none;border-top:1px solid var(--color-border);margin:8px 0}
+.fta-color-label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text);cursor:pointer;padding:3px 0}
+.fta-color-label input[type=color]{width:28px;height:20px;padding:0;border:1px solid var(--color-border);border-radius:3px;cursor:pointer;background:none}
+
 /* ── DFMEA Structure Map panel ───────────────────────────────────────────── */
 .dfmea-map-body{flex:1;overflow:auto;background:#F4F5F7;padding:12px 16px}
 
