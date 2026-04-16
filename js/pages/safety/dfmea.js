@@ -669,9 +669,14 @@ async function syncFromSystem() {
       if (importedHazIds.has(haz.id)) continue; // already synced
 
       const d   = haz.data || {};
-      const fc  = d.failure_condition || d.hazard || '';
-      const efH = d.effect_system     || d.effect  || '';
-      const efL = d.effect_local      || '';
+      // FHA mapping → DFMEA:
+      //   failure_condition (FC) → effect_local  (local failure effect)
+      //   effect_system          → effect_higher (system-level effect)
+      //   effect_local           → failure_cause (contributing cause)
+      //   failure_mode           left blank (to be filled manually per VDA)
+      const efL  = d.failure_condition || '';
+      const efH  = d.effect_system     || d.effect || '';
+      const fcause = d.effect_local    || '';
 
       // Try to match arch_function
       let matchedComp = null;
@@ -693,9 +698,10 @@ async function syncFromSystem() {
         component_id:    matchedComp?.id   || null,
         component_name:  matchedComp?.name || '',
         function_name:   matchedFn?.name   || (fnRefs[haz.function_id]?.name || ''),
-        failure_mode:    fc,
+        failure_mode:    '',      // to be filled manually in DFMEA
         effect_higher:   efH,
         effect_local:    efL,
+        failure_cause:   fcause,
         hazard_id:       haz.id,
       };
 
