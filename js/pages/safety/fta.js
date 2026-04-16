@@ -82,6 +82,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   let _panStart= null;
   let _space   = false;
   let _activeMenu = null;             // currently open add-child menu
+  let _editFo     = null;             // active <foreignObject> inline editor
   const _undoStack = [];              // max 10 snapshots
   let _undoToastEl = null;
 
@@ -134,6 +135,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
             <g id="fta-pending"></g>
             <g id="fta-lasso-g"></g>
             <g id="fta-nodes-g"></g>
+            <g id="fta-edit-g"></g>
           </g>
         </svg>
         <div class="fta-hint" id="fta-hint">
@@ -639,14 +641,15 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         }
         if (!_selSet.has(id)) { _selSet.clear(); _selSet.add(id); }
         // Start drag for all selected
+        closeEditor();
         pushUndo(`Move ${[..._selSet].map(sid=>byId(sid)?.fta_code||'node').join(', ')}`);
         const pt=toSvg(e);
         _drag={ origins:[..._selSet].map(sid=>{const sn=byId(sid);return{id:sid,ox:sn.x,oy:sn.y};}), mx:pt.x, my:pt.y };
         render(); return;
       }
 
-      // Empty canvas — close any open menu
-      closeAddMenu();
+      // Empty canvas — close any open menu/editor
+      closeAddMenu(); closeEditor();
       if (_space) {
         _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y};
       } else {
@@ -848,59 +851,86 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     document.getElementById('fta-hint').style.display='none';
   }
 
-  // ── Edit field ───────────────────────────────────────────────────────────────
+  // ── Inline editor (SVG foreignObject — lives inside the transform group) ──────
+  function closeEditor() {
+    if (_editFo) { _editFo.remove(); _editFo = null; }
+  }
+
+  function openEditor(x, y, w, h, value, isNum, onCommit) {
+    closeEditor();
+    const layer = document.getElementById('fta-edit-g');
+    const fo = svgEl('foreignObject');
+    fo.setAttribute('x', x); fo.setAttribute('y', y);
+    fo.setAttribute('width', w); fo.setAttribute('height', h);
+
+    const inp = document.createElement('input');
+    inp.setAttribute('xmlns','http://www.w3.org/1999/xhtml');
+    inp.type = isNum ? 'number' : 'text';
+    if (isNum) { inp.step = 'any'; inp.min = '0'; }
+    inp.value = value != null ? value : '';
+    inp.style.cssText = [
+      'width:100%','height:100%','box-sizing:border-box',
+      'border:2px solid #1A73E8','background:#EEF4FF',
+      'font-size:11px','padding:0 5px','outline:none',
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
+      'color:#172B4D','border-radius:0',
+    ].join(';');
+
+    fo.appendChild(inp);
+    layer.appendChild(fo);
+    _editFo = fo;
+
+    // defer focus so mousedown finishes first
+    requestAnimationFrame(() => { inp.focus(); inp.select(); });
+
+    let committed = false;
+    const commit = async () => {
+      if (committed) return; committed = true;
+      closeEditor();
+      let v = inp.value.trim();
+      if (isNum) v = v === '' ? null : parseFloat(v);
+      await onCommit(v);
+    };
+    inp.addEventListener('blur', commit);
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      if (e.key === 'Escape') { committed = true; closeEditor(); render(); }
+    });
+  }
+
   function editField(id, field) {
-    const n=byId(id); if(!n) return;
-    const wrap=document.getElementById('fta-cw');
-    wrap.querySelector('.fta-label-input')?.remove();
-    const BH=boxH(), hw=BOX_W/2, hh=BH/2;
+    const n = byId(id); if (!n) return;
+    const isNum = field==='probability'||field==='failure_rate'||field==='mttr';
+    const BH = boxH(), hw = BOX_W/2, hh = BH/2;
     let rowY, rowH;
-    if (field==='fta_code')   { rowY=-hh; rowH=ROW_CODE; }
-    else if (field==='component') { rowY=-hh+ROW_CODE; rowH=ROW_STD; }
-    else if (field==='label') { rowY=-hh+ROW_CODE+ROW_STD; rowH=ROW_STD; }
-    else { // numeric fields
-      const rowDefs=[
-        _cfg.showProbability&&{f:'probability', y:-hh+ROW_CODE+ROW_STD*2,            h:ROW_EXTRA},
-        _cfg.showFR         &&{f:'failure_rate', y:-hh+ROW_CODE+ROW_STD*2+ROW_EXTRA*(_cfg.showProbability?1:0), h:ROW_EXTRA},
-        _cfg.showMTTR       &&{f:'mttr',         y:-hh+ROW_CODE+ROW_STD*2+ROW_EXTRA*((_cfg.showProbability?1:0)+(_cfg.showFR?1:0)), h:ROW_EXTRA},
-      ].filter(Boolean);
-      const rd=rowDefs.find(r=>r.f===field);
-      if (!rd) return;
-      rowY=rd.y; rowH=rd.h;
+    if      (field==='fta_code')   { rowY=-hh;                      rowH=ROW_CODE; }
+    else if (field==='component')  { rowY=-hh+ROW_CODE;              rowH=ROW_STD;  }
+    else if (field==='label')      { rowY=-hh+ROW_CODE+ROW_STD;      rowH=ROW_STD;  }
+    else {
+      let ey=-hh+ROW_CODE+ROW_STD*2;
+      if (field==='probability')  { rowY=ey; rowH=ROW_EXTRA; }
+      else { ey+=(_cfg.showProbability?ROW_EXTRA:0);
+        if (field==='failure_rate') { rowY=ey; rowH=ROW_EXTRA; }
+        else { ey+=(_cfg.showFR?ROW_EXTRA:0); rowY=ey; rowH=ROW_EXTRA; }
+      }
     }
-    const sx=(n.x-hw)*_zoom+_pan.x, sy=(n.y+rowY)*_zoom+_pan.y;
-    const inp=document.createElement('input');
-    inp.type=field==='probability'||field==='failure_rate'||field==='mttr'?'number':'text';
-    if (inp.type==='number'){inp.step='any';inp.min='0';}
-    inp.value=n[field]||'';
-    inp.className='fta-label-input';
-    inp.style.cssText=`left:${sx}px;top:${sy}px;width:${BOX_W*_zoom}px;height:${rowH*_zoom}px;font-size:${Math.max(9,10*_zoom)}px`;
-    wrap.appendChild(inp); inp.focus(); inp.select();
-    const commit=async()=>{
-      let v=inp.value.trim(); inp.remove();
-      if (inp.type==='number') v=v===''?null:parseFloat(v);
-      if (v===(n[field]??'')) {render();return;}
+    openEditor(n.x-hw, n.y+rowY, BOX_W, rowH, n[field], isNum, async v => {
+      if (v===(n[field]??'')) { render(); return; }
       pushUndo(`Edit ${n.fta_code||'node'} ${field}`);
       n[field]=v; await autosave(id,{[field]:v}); render();
-    };
-    inp.addEventListener('blur',commit);
-    inp.addEventListener('keydown',e=>{ if(e.key==='Enter')inp.blur(); if(e.key==='Escape'){inp.value=n[field]||'';inp.blur();} });
+    });
   }
 
   function editGate(id) {
-    const n=byId(id);if(!n)return;
-    const t=NT[n.type];if(!t)return;
-    const wrap=document.getElementById('fta-cw');
-    wrap.querySelector('.fta-label-input')?.remove();
-    const gw=t.gw||74,gh=t.gh||62;
-    const sx=(n.x-gw/2)*_zoom+_pan.x, sy=(n.y-gh/2)*_zoom+_pan.y;
-    const inp=document.createElement('input'); inp.type='text'; inp.value=n.label||t.label;
-    inp.className='fta-label-input';
-    inp.style.cssText=`left:${sx}px;top:${sy}px;width:${gw*_zoom}px;height:${gh*_zoom}px;font-size:${Math.max(10,13*_zoom)}px;font-weight:700`;
-    wrap.appendChild(inp); inp.focus(); inp.select();
-    const commit=async()=>{const v=inp.value.trim()||t.label;inp.remove();if(v===n.label)return;pushUndo(`Edit gate ${n.fta_code||'gate'}`);n.label=v;await autosave(id,{label:v});render();};
-    inp.addEventListener('blur',commit);
-    inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur();if(e.key==='Escape'){inp.value=n.label||t.label;inp.blur();}});
+    const n=byId(id); if(!n) return;
+    const t=NT[n.type]||NT.gate_and;
+    const hw=(t.gw||74)/2, hh=(t.gh||62)/2;
+    openEditor(n.x-hw, n.y-hh, t.gw||74, t.gh||62, n.label||t.label, false, async v => {
+      const val = v||t.label;
+      if (val===n.label) { render(); return; }
+      pushUndo(`Edit gate ${n.fta_code||'gate'}`);
+      n.label=val; await autosave(id,{label:val}); render();
+    });
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────────
