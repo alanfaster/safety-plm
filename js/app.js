@@ -19,6 +19,7 @@ import { renderFmea }                  from './pages/safety/fmea.js';
 import { renderPHA }                   from './pages/safety/pha.js';
 import { renderFHA }                   from './pages/safety/fha.js';
 import { renderDFMEA }                 from './pages/safety/dfmea.js';
+import { renderFTA }                   from './pages/safety/fta.js';
 import { renderSafetyGeneric }         from './pages/safety/generic.js';
 import { renderProjectSettings }       from './pages/project-settings.js';
 
@@ -301,6 +302,8 @@ async function renderSafetyPage(container, ctx, parentType, parentId, analysisTy
     await renderFHA(container, { ...ctx, parentType, parentId });
   } else if (analysisType === 'DFMEA') {
     await renderDFMEA(container, { ...ctx, parentType, parentId });
+  } else if (analysisType === 'FTA') {
+    await renderFTA(container, { ...ctx, parentType, parentId });
   } else {
     await renderSafetyGeneric(container, { ...ctx, parentType, parentId, analysisType });
   }

@@ -1941,6 +1941,32 @@ td:hover .dfmea-del-inline{display:inline-block}
 .dfmea-ap-badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap}
 .dfmea-ap-badge.sm{padding:1px 5px;font-size:10px}
 
+/* ── FTA ─────────────────────────────────────────────────────────────────── */
+.fta-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden}
+
+/* Toolbar */
+.fta-toolbar{display:flex;align-items:center;gap:5px;padding:6px 12px;background:var(--color-surface);border-bottom:1px solid var(--color-border);flex-shrink:0;flex-wrap:wrap}
+.fta-toolbar-section{font-size:10px;font-weight:700;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:.5px;padding:0 2px}
+.fta-toolbar-sep{width:1px;height:22px;background:var(--color-border);margin:0 4px;flex-shrink:0}
+.fta-add-btn{font-size:11px!important;padding:3px 8px!important}
+.fta-gate-btn{font-weight:700!important}
+.fta-btn-conn{font-size:11px!important;padding:3px 8px!important}
+.fta-btn-conn.active{background:var(--color-warning-bg)!important;border-color:var(--color-warning)!important;color:var(--color-warning)!important}
+
+/* Canvas */
+.fta-canvas-wrap{flex:1;overflow:hidden;background:#F7F8FA;position:relative;cursor:default}
+.fta-svg{width:100%;height:100%;display:block;user-select:none}
+.fta-node{cursor:grab}
+.fta-node:active{cursor:grabbing}
+.fta-node.fta-conn-mode{cursor:crosshair}
+.fta-conn{pointer-events:none}
+
+/* Floating label editor */
+.fta-label-input{position:absolute;border:1.5px solid var(--color-primary);border-radius:4px;padding:3px 6px;background:#fff;text-align:center;outline:none;box-shadow:0 2px 8px rgba(0,0,0,0.15);z-index:100;font-family:inherit}
+
+/* Empty hint */
+.fta-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:var(--color-text-muted);font-size:13px;pointer-events:none;line-height:2}
+
 /* ── DFMEA Structure Map panel ───────────────────────────────────────────── */
 .dfmea-map-body{flex:1;overflow:auto;background:#F4F5F7;padding:12px 16px}
 
