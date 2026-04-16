@@ -1959,3 +1959,30 @@ input, select, textarea { font-family: var(--font); }
 .dmap-tree-branch-line{width:2px;background:var(--color-border);margin:10px 0;border-radius:1px;flex-shrink:0}
 .dmap-tree-branch-children{display:flex;flex-direction:column;gap:8px;padding-left:6px;flex-shrink:0}
 .dmap-tree-branch-children.collapsed{display:none}
+
+/* ── Structure Map new tree layout ──────────────────────────────────────────── */
+.dmap-root-row{display:flex;flex-direction:row;align-items:flex-start;gap:0;flex-wrap:nowrap}
+.dmap-root-card{display:flex;align-items:center;gap:6px;padding:7px 12px;background:#253858;color:#fff;border-radius:7px;cursor:default;white-space:nowrap;font-size:13px;font-weight:700;min-width:130px;flex-shrink:0}
+.dmap-root-icon{font-size:15px;opacity:0.85}
+.dmap-root-name{flex:1}
+
+.dmap-connector{display:flex;align-items:flex-start;padding-top:12px;flex-shrink:0}
+.dmap-conn-h{width:24px;height:2px;background:var(--color-border);margin-top:0}
+
+.dmap-sys-row{display:flex;flex-direction:row;align-items:flex-start;gap:0}
+.dmap-sys-card{display:flex;align-items:center;gap:6px;padding:6px 10px;background:#E8EAED;border:1px solid #C1C7D0;border-radius:6px;cursor:default;white-space:nowrap;font-size:12px;font-weight:600;color:#253858;min-width:120px;flex-shrink:0}
+.dmap-sys-icon{font-size:13px;opacity:0.7}
+.dmap-sys-name{flex:1}
+
+/* SOD value spans — hoverable for dblclick hint */
+.dmap-sod{display:flex;gap:3px;align-items:center;flex-shrink:0}
+.dmap-sod-val{font-size:9px;color:var(--color-text-muted);font-family:var(--font-mono);cursor:default;padding:1px 3px;border-radius:3px;transition:background 0.1s}
+.dmap-sod-val:hover{background:#E8F0FE;color:#1A73E8}
+
+/* FM label hover */
+.dmap-fm-label{flex:1;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;padding:1px 2px;border-radius:3px;transition:background 0.1s}
+.dmap-fm-label:hover{background:#FFF9C4}
+
+/* Inline editing inputs inside map */
+.dmap-inline-input{font-size:11px;padding:2px 5px;border:1px solid var(--color-primary);border-radius:3px;outline:none;min-width:80px;max-width:220px;background:#fff}
+.dmap-inline-num{font-size:11px;padding:2px 3px;border:1px solid var(--color-primary);border-radius:3px;outline:none;text-align:center;background:#fff}
