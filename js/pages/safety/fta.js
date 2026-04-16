@@ -172,7 +172,25 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   }
 
   function nw(n){ return isGate(n.type) ? (NT[n.type]?.gw||74) : BOX_W; }
-  function nh(n){ return isGate(n.type) ? (NT[n.type]?.gh||62) : boxH(); }
+  function nh(n){
+    if (!isGate(n.type)) return boxH();
+    const base = NT[n.type]?.gh||62;
+    return base + (_cfg.showProbability ? 18 : 0);
+  }
+
+  // Recursively compute probability for a node (gates derive from children)
+  function computeP(n) {
+    if (!isGate(n.type)) return (n.probability != null && n.probability !== '') ? parseFloat(n.probability) : null;
+    const children = _nodes.filter(c => c.parent_node_id === n.id);
+    if (!children.length) return null;
+    const ps = children.map(c => computeP(c)).filter(p => p !== null && !isNaN(p));
+    if (!ps.length) return null;
+    if (n.type === 'gate_and')     return ps.reduce((a,b) => a*b, 1);
+    if (n.type === 'gate_or')      return 1 - ps.reduce((a,b) => a*(1-b), 1);
+    if (n.type === 'gate_not')     return 1 - ps[0];
+    if (n.type === 'gate_inhibit') return ps.reduce((a,b) => a*b, 1);
+    return null;
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   function render() {
@@ -197,12 +215,13 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       if (!n.parent_node_id) return;
       const p=byId(n.parent_node_id); if(!p) return;
       const x1=p.x, y1=p.y+nh(p)/2, x2=n.x, y2=n.y-nh(n)/2;
-      const my=(y1+y2)/2;
+      const mid=(y1+y2)/2;
       const sel=_selSet.has(n.id)||_selSet.has(p.id);
       const el=svgEl('path');
-      el.setAttribute('d',`M ${x1},${y1} C ${x1},${my} ${x2},${my} ${x2},${y2}`);
+      // Classic FTA: vertical down → horizontal → vertical down (orthogonal elbow)
+      el.setAttribute('d',`M ${x1},${y1} L ${x1},${mid} L ${x2},${mid} L ${x2},${y2}`);
       el.setAttribute('fill','none');
-      el.setAttribute('stroke', sel?'#1A73E8':'#97A0AF');
+      el.setAttribute('stroke', sel?'#1A73E8':'#555F6E');
       el.setAttribute('stroke-width', sel?'2.5':'1.8');
       el.setAttribute('marker-end', sel?'url(#farrh)':'url(#farr)');
       layer.appendChild(el);
@@ -321,7 +340,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       txt.setAttribute('font-family','-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif');
       txt.setAttribute('pointer-events','none');
       const maxCh=Math.floor((BOX_W-16)/(r.fs*.58));
-      const raw=(r.prefix||'')+(r.value||'—');
+      // show placeholder only for numeric fields with prefix, not for text fields
+      const empty = r.value===''||r.value==null;
+      const raw = r.prefix ? (r.prefix+(empty?'—':r.value)) : (r.value||'');
       txt.textContent=raw.length>maxCh?raw.slice(0,maxCh-1)+'…':raw;
       g.appendChild(txt);
     });
@@ -386,8 +407,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     else if (n.type==='gate_not'){ shape=svgEl('ellipse'); shape.setAttribute('cx',0); shape.setAttribute('cy',0); shape.setAttribute('rx',hw); shape.setAttribute('ry',hh); }
     else                         { shape=svgEl('path'); shape.setAttribute('d',hexPath(hw,hh)); }
     shape.setAttribute('fill',fill); shape.setAttribute('stroke',stroke);
-    shape.setAttribute('stroke-width',sel?t.sw+1:t.sw);
-    if (sel) shape.setAttribute('filter','drop-shadow(0 2px 6px rgba(26,115,232,.35))');
+    shape.setAttribute('stroke-width',sel?t.sw+2:t.sw);
+    if (sel) shape.setAttribute('filter','drop-shadow(0 0 8px rgba(26,115,232,.6))');
     g.appendChild(shape);
 
     const lbl=svgEl('text');
@@ -400,7 +421,21 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     lbl.textContent=n.label||t.label;
     g.appendChild(lbl);
 
-    g.appendChild(buildPort(n.id,0,hh));
+    // Computed probability label below gate shape
+    if (_cfg.showProbability) {
+      const p=computeP(n);
+      const ptxt=svgEl('text');
+      ptxt.setAttribute('x',0); ptxt.setAttribute('y',hh+12);
+      ptxt.setAttribute('text-anchor','middle'); ptxt.setAttribute('dominant-baseline','middle');
+      ptxt.setAttribute('font-size','10'); ptxt.setAttribute('font-weight','600');
+      ptxt.setAttribute('fill',stroke);
+      ptxt.setAttribute('font-family','-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif');
+      ptxt.setAttribute('pointer-events','none');
+      ptxt.textContent = p !== null ? `P = ${fmtNum(p)}` : 'P = —';
+      g.appendChild(ptxt);
+    }
+
+    g.appendChild(buildPort(n.id, 0, hh + (_cfg.showProbability ? 18 : 0)));
     return g;
   }
 
@@ -421,9 +456,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     const layer=document.getElementById('fta-pending'); layer.innerHTML='';
     if (!_conn) return;
     const n=byId(_conn.fromId); if(!n) return;
-    const x1=n.x, y1=n.y+nh(n)/2, x2=_conn.curX, y2=_conn.curY, my=(y1+y2)/2;
+    const x1=n.x, y1=n.y+nh(n)/2, x2=_conn.curX, y2=_conn.curY, mid=(y1+y2)/2;
     const line=svgEl('path');
-    line.setAttribute('d',`M ${x1},${y1} C ${x1},${my} ${x2},${my} ${x2},${y2}`);
+    line.setAttribute('d',`M ${x1},${y1} L ${x1},${mid} L ${x2},${mid} L ${x2},${y2}`);
     line.setAttribute('fill','none'); line.setAttribute('stroke','#1E8E3E');
     line.setAttribute('stroke-width','2'); line.setAttribute('stroke-dasharray','6,4');
     line.setAttribute('pointer-events','none');
@@ -617,7 +652,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     const code=nextCode(type);
     const {data,error}=await sb.from('fta_nodes').insert({
       parent_type:parentType, parent_id:parentId, project_id:project.id,
-      type, label:t.label, component:'', fta_code:code,
+      type, label:'', component:'', fta_code:code,
       x:cx, y:cy, sort_order:_nodes.length, color:'',
     }).select().single();
     if (error){toast('Error adding node.','error');return;}
