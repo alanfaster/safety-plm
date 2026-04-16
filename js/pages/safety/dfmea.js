@@ -95,15 +95,18 @@ function buildGroups(){
   return order;
 }
 
-/** Total <tr> count for one FM (its own row + effect rows + cause rows). */
+/** Total <tr> count for one FM (its own row + effect rows + cause rows).
+ *  The effect <tr> is merged with its FIRST cause, so each effect contributes
+ *  max(1, causesUnderEffect) rows — not 1 + N.
+ */
 function fmRowCount(fm){
   const effects=_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id);
   const directCauses=_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===fm.id);
-  const effCauses=effects.reduce((n,e)=>n+_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===e.id).length,0);
-  // 1 FM row + N effect rows + N directCause rows + N effectCause rows
-  // (but effect rows are merged into one <tr> with their first cause, see renderFmBlock)
-  // Actual count: 1 + effects.length + directCauses.length + effCauses
-  return 1 + effects.length + directCauses.length + effCauses;
+  const effectRows=effects.reduce((n,e)=>{
+    const c=_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===e.id).length;
+    return n+Math.max(1,c);
+  },0);
+  return 1+effectRows+directCauses.length;
 }
 
 /** Total <tr> count for one group. */
@@ -345,7 +348,8 @@ function renderGroup(tbody,g){
     // ── Effect rows ────────────────────────────────────────────────────────
     effects.forEach((eff,ei)=>{
       const effCauses=_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===eff.id);
-      const effSpan  =1+effCauses.length;
+      // Effect TR is merged with its first cause → actual rows = max(1, N causes)
+      const effSpan  =Math.max(1,effCauses.length);
       const isLastEff=(ei===effects.length-1);
 
       const effTr=document.createElement('tr');
