@@ -1083,10 +1083,18 @@ function wireGroup(id) {
     captureUndo();
     selectComp(id);
     const pos = canvasPos(e);
+    // Include all non-group components that either:
+    //   a) already have group_id pointing to this group, OR
+    //   b) are geometrically inside this group's bounds (orphaned / never individually moved)
+    const childrenForDrag = _s.components.filter(c =>
+      c.comp_type !== 'Group' && (
+        c.data?.group_id === id ||
+        (c.x + c.width/2  > g.x && c.x + c.width/2  < g.x + g.width &&
+         c.y + c.height/2 > g.y && c.y + c.height/2 < g.y + g.height)
+      )
+    );
     _s.dragging = { id, startX:pos.x, startY:pos.y, origX:g.x, origY:g.y, isGroup:true,
-      childOffsets: _s.components
-        .filter(c => c.comp_type!=='Group' && c.data?.group_id===id)
-        .map(c => ({ id:c.id, dx:c.x-g.x, dy:c.y-g.y }))
+      childOffsets: childrenForDrag.map(c => ({ id:c.id, dx:c.x-g.x, dy:c.y-g.y }))
     };
   });
   el.querySelector('.arch-group-info-btn')?.addEventListener('click', e => {
@@ -1231,13 +1239,29 @@ function handleDragEnd() {
   if (c.comp_type === 'Group') {
     // Save group position
     sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id);
-    // Save all child positions
+    // Save all child positions and ensure group_id is assigned in data
     if (childOffsets) {
       childOffsets.forEach(({ id:cid }) => {
         const cc = compById(cid); if (!cc) return;
-        sb.from('arch_components').update({ x:cc.x, y:cc.y, updated_at:now }).eq('id', cid);
+        const dataChanged = (cc.data?.group_id || null) !== id;
+        if (dataChanged) {
+          cc.data = { ...(cc.data || {}), group_id: id };
+          sb.from('arch_components').update({ x:cc.x, y:cc.y, data:cc.data, updated_at:now }).eq('id', cid);
+        } else {
+          sb.from('arch_components').update({ x:cc.x, y:cc.y, updated_at:now }).eq('id', cid);
+        }
       });
     }
+    // Also clear group_id for any non-group component that is no longer inside this group
+    _s.components.filter(cc =>
+      cc.comp_type !== 'Group' &&
+      (cc.data?.group_id || null) === id &&
+      !(cc.x + cc.width/2  > c.x && cc.x + cc.width/2  < c.x + c.width &&
+        cc.y + cc.height/2 > c.y && cc.y + cc.height/2 < c.y + c.height)
+    ).forEach(cc => {
+      cc.data = { ...(cc.data || {}), group_id: null };
+      sb.from('arch_components').update({ data: cc.data, updated_at: now }).eq('id', cc.id);
+    });
     return;
   }
 
@@ -2108,8 +2132,9 @@ async function deleteFun(funId, compId) {
 
 async function savePositions() {
   const btn=document.getElementById('btn-arch-save'); if(btn) btn.disabled=true;
+  const now = new Date().toISOString();
   await Promise.all(_s.components.map(c=>
-    sb.from('arch_components').update({ x:c.x,y:c.y,width:c.width,height:c.height,updated_at:new Date().toISOString() }).eq('id',c.id)
+    sb.from('arch_components').update({ x:c.x, y:c.y, width:c.width, height:c.height, data:c.data, updated_at:now }).eq('id',c.id)
   ));
   if(btn) btn.disabled=false; toast('Saved.','success');
 }
