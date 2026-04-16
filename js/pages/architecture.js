@@ -263,8 +263,6 @@ function buildShell(container, title) {
           <button class="arch-tb-btn" id="btn-arch-frame" title="Architecture Frame tree">🗂 Frame</button>
           <button class="arch-tb-btn" id="btn-arch-idef" title="Item Definition panel">★ Item Def</button>
           <button class="arch-tb-btn" id="btn-arch-ifreqs" title="Interface Requirements panel">⇄ Interfaces</button>
-          <div class="arch-sep"></div>
-          <button class="btn btn-primary btn-sm" id="btn-arch-save">💾 Save</button>
         </div>
       </div>
       <div class="arch-workspace">
@@ -780,8 +778,6 @@ function wireCanvas() {
   document.getElementById('btn-zoom-in').onclick  = () => { _s.zoom=Math.min(2.5,_s.zoom*1.2); applyViewport(); };
   document.getElementById('btn-zoom-out').onclick = () => { _s.zoom=Math.max(0.2,_s.zoom*0.8); applyViewport(); };
   document.getElementById('btn-zoom-fit').onclick = fitView;
-  document.getElementById('btn-arch-save').onclick = savePositions;
-
   // Frame tree toggle
   document.getElementById('btn-arch-frame')?.addEventListener('click', () => {
     const panel = document.getElementById('arch-frame-panel');
@@ -2130,14 +2126,6 @@ async function deleteFun(funId, compId) {
   refreshComp(compId);
 }
 
-async function savePositions() {
-  const btn=document.getElementById('btn-arch-save'); if(btn) btn.disabled=true;
-  const now = new Date().toISOString();
-  await Promise.all(_s.components.map(c=>
-    sb.from('arch_components').update({ x:c.x, y:c.y, width:c.width, height:c.height, data:c.data, updated_at:now }).eq('id',c.id)
-  ));
-  if(btn) btn.disabled=false; toast('Saved.','success');
-}
 
 // ── Selection / refresh ───────────────────────────────────────────────────────
 
