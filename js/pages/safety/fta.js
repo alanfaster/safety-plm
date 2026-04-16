@@ -624,11 +624,13 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       if (nodeEl) {
         e.stopPropagation();
         const id=nodeEl.dataset.id;
-        // If already selected: single click on a field row → edit it inline
+        // If already selected: single click → edit the field under cursor
         if (_selSet.has(id) && !e.shiftKey) {
-          const rh=e.target.closest('.fta-row-hit');
-          if (rh) { editField(id, rh.dataset.field); return; }
-          if (isGate(byId(id)?.type)) { editGate(id); return; }
+          const n=byId(id);
+          if (isGate(n?.type)) { editGate(id); return; }
+          const pt=toSvg(e);
+          const field=fieldAtY(n, pt.y);
+          if (field) { editField(id, field); return; }
         }
 
         if (e.shiftKey) {
@@ -972,6 +974,21 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   // ── Helpers ───────────────────────────────────────────────────────────────────
   function toSvg(e){ const wrap=document.getElementById('fta-cw'),rect=wrap.getBoundingClientRect(); return{x:(e.clientX-rect.left-_pan.x)/_zoom,y:(e.clientY-rect.top-_pan.y)/_zoom}; }
   function setZoom(z){ _zoom=Math.min(3,Math.max(0.15,z));applyTransform(); }
+
+  // Determine which field (by row) a SVG Y coordinate falls on for a box node
+  function fieldAtY(n, svgY) {
+    if (!n || isGate(n.type)) return null;
+    const ry = svgY - n.y;          // Y relative to node centre
+    const hh = boxH() / 2;
+    if (ry >= -hh              && ry < -hh+ROW_CODE)            return 'fta_code';
+    if (ry >= -hh+ROW_CODE     && ry < -hh+ROW_CODE+ROW_STD)   return 'component';
+    if (ry >= -hh+ROW_CODE+ROW_STD && ry < -hh+ROW_CODE+ROW_STD*2) return 'label';
+    let ey = -hh+ROW_CODE+ROW_STD*2;
+    if (_cfg.showProbability){ if(ry>=ey&&ry<ey+ROW_EXTRA)return 'probability'; ey+=ROW_EXTRA; }
+    if (_cfg.showFR)         { if(ry>=ey&&ry<ey+ROW_EXTRA)return 'failure_rate'; ey+=ROW_EXTRA; }
+    if (_cfg.showMTTR)       { if(ry>=ey&&ry<ey+ROW_EXTRA)return 'mttr'; }
+    return null;
+  }
 
   async function autosave(id,fields){
     const{error}=await sb.from('fta_nodes').update({...fields,updated_at:new Date().toISOString()}).eq('id',id);
