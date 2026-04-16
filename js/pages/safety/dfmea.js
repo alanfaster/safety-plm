@@ -145,17 +145,27 @@ export async function renderDFMEA(container, { project, item, system, parentType
   document.getElementById('btn-dfmea-new').onclick  = () => addRow();
   document.getElementById('btn-dfmea-sync').onclick = () => syncFromSystem();
 
-  await Promise.all([loadItems(), loadChainData()]);
+  // Load all data in parallel — map data loads eagerly so refreshMapComp works
+  // even before the panel is opened for the first time.
+  await Promise.all([loadItems(), loadChainData(), loadMapData()]);
 }
 
 // ── Panel toggles & resize ────────────────────────────────────────────────────
 
 function wirePanelToggles() {
   document.getElementById('btn-dfmea-map')?.addEventListener('click', () => {
-    const wasHidden = document.getElementById('dfmea-map-panel').style.display === 'none';
+    const panel    = document.getElementById('dfmea-map-panel');
+    const wasHidden = panel.style.display === 'none';
     togglePanel('dfmea-map-panel', 'btn-dfmea-map');
-    if (wasHidden && !_mapLoaded) { _mapLoaded = true; loadAndRenderMap(); }
-    else if (wasHidden)           { renderMap(); }
+    // Always render when opening; if already open, refresh in place (don't close)
+    if (wasHidden) {
+      renderMap();        // _map.components already loaded eagerly
+    } else {
+      // Button clicked while open → just refresh the map content
+      renderMap();
+      panel.style.display = '';   // keep it open
+      document.getElementById('btn-dfmea-map')?.classList.add('active');
+    }
   });
   document.getElementById('dfmea-map-close')?.addEventListener('click', () => {
     closePanel('dfmea-map-panel', 'btn-dfmea-map');
@@ -262,11 +272,8 @@ async function loadChainData() {
 
 // ── Structure Map — data loading ──────────────────────────────────────────────
 
-async function loadAndRenderMap() {
-  const body = document.getElementById('dfmea-map-body');
-  if (!body) return;
-  body.innerHTML = '<div class="content-loading" style="padding:24px 0"><div class="spinner"></div></div>';
-
+/** Load architecture data into _map without touching the DOM. */
+async function loadMapData() {
   const { data: comps } = await sb.from('arch_components')
     .select('id,name,comp_type,data,sort_order')
     .eq('parent_type', _ctx.parentType)
@@ -293,7 +300,13 @@ async function loadAndRenderMap() {
   _map.components  = allComps;
   _map.connections = conns || [];
   _map.functions   = fns  || [];
+}
 
+/** Load data then render (used when Sync adds new components). */
+async function loadAndRenderMap() {
+  const body = document.getElementById('dfmea-map-body');
+  if (body) body.innerHTML = '<div class="content-loading" style="padding:24px 0"><div class="spinner"></div></div>';
+  await loadMapData();
   renderMap();
 }
 
@@ -463,12 +476,19 @@ function openMapInlineNum(el, it, field, comp) {
 /**
  * Re-render a single component card in the map (after any change).
  * Preserves collapse state.
+ * If compIdOrName is empty or not found, falls back to full renderMap().
  */
 function refreshMapComp(compIdOrName) {
+  const panel = document.getElementById('dfmea-map-panel');
+  if (!panel || panel.style.display === 'none') return; // panel closed — renderMap() on open covers it
+
   const map = document.getElementById('dfmea-map-body');
   if (!map) return;
+
+  if (!compIdOrName) { renderMap(); return; }
+
   const comp = _map.components.find(c => c.id === compIdOrName || c.name === compIdOrName);
-  if (!comp) return;
+  if (!comp) { renderMap(); return; } // component not in map data — full refresh
   const nid = `dmap-c-${comp.id}`;
   const existing = document.getElementById(nid);
   if (!existing) return;
