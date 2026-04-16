@@ -81,7 +81,6 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   let _panDrag = false;
   let _panStart= null;
   let _space   = false;
-  let _lastClick = { id:null, t:0 };  // for dblclick detection in mousedown
   let _activeMenu = null;             // currently open add-child menu
   const _undoStack = [];              // max 10 snapshots
   let _undoToastEl = null;
@@ -625,17 +624,12 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       if (nodeEl) {
         e.stopPropagation();
         const id=nodeEl.dataset.id;
-        const now=Date.now();
-
-        // Detect double-click here (before render() wipes the DOM)
-        if (_lastClick.id===id && now-_lastClick.t<350) {
-          _lastClick={id:null,t:0};
+        // If already selected: single click on a field row → edit it inline
+        if (_selSet.has(id) && !e.shiftKey) {
           const rh=e.target.closest('.fta-row-hit');
           if (rh) { editField(id, rh.dataset.field); return; }
           if (isGate(byId(id)?.type)) { editGate(id); return; }
-          return;
         }
-        _lastClick={id, t:now};
 
         if (e.shiftKey) {
           _selSet.has(id)?_selSet.delete(id):_selSet.add(id);
