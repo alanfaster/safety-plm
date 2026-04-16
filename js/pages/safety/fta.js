@@ -237,7 +237,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       const sh=svgEl('rect');
       sh.setAttribute('x',-hw+3); sh.setAttribute('y',-hh+3);
       sh.setAttribute('width',BOX_W); sh.setAttribute('height',BH);
-      sh.setAttribute('rx','6'); sh.setAttribute('fill','rgba(26,115,232,0.18)');
+      sh.setAttribute('rx','6'); sh.setAttribute('fill','rgba(26,115,232,0.30)');
       g.appendChild(sh);
     }
 
@@ -256,7 +256,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     box.setAttribute('x',-hw); box.setAttribute('y',-hh);
     box.setAttribute('width',BOX_W); box.setAttribute('height',BH);
     box.setAttribute('rx','5'); box.setAttribute('fill',fill);
-    box.setAttribute('stroke',stroke); box.setAttribute('stroke-width',sel?sw+1:sw);
+    box.setAttribute('stroke', sel ? '#1A73E8' : stroke);
+    box.setAttribute('stroke-width', sel ? sw+2 : sw);
+    if (sel) box.setAttribute('filter','drop-shadow(0 0 8px rgba(26,115,232,.6))');
     g.appendChild(box);
 
     // Code row background
