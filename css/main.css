@@ -1756,7 +1756,7 @@ input, select, textarea { font-family: var(--font); }
 /* Thumbnail: fixed height, SVG scales inside */
 .spec-uml-thumb{overflow:hidden;background:#FAFAFA;cursor:zoom-in;transition:max-height 0.2s ease}
 .spec-uml-thumb.collapsed{max-height:110px}
-.spec-uml-thumb:not(.collapsed){max-height:520px;cursor:default}
+.spec-uml-thumb:not(.collapsed){cursor:default}
 .spec-uml-thumb:hover{background:#F0F4FF}
 .uml-prev-svg{width:100%;height:auto;display:block;max-height:108px;object-fit:contain}
 .spec-uml-thumb:not(.collapsed) .uml-prev-svg{max-height:none}

@@ -258,7 +258,27 @@ function wireUmlArea(it) {
     expandBtn.addEventListener('click', e => {
       e.stopPropagation();
       thumb.classList.toggle('collapsed');
-      expandBtn.textContent = thumb.classList.contains('collapsed') ? '▼' : '▲';
+      const isCollapsed = thumb.classList.contains('collapsed');
+      expandBtn.textContent = isCollapsed ? '▼' : '▲';
+      // When expanding, fit SVG to full viewBox height
+      if (!isCollapsed) {
+        const svg = thumb.querySelector('.uml-prev-svg');
+        if (svg) {
+          const vb = svg.getAttribute('viewBox');
+          if (vb) {
+            const parts = vb.split(/[\s,]+/).map(Number);
+            if (parts.length === 4 && parts[3] > 0) {
+              // Set height so the full diagram is visible at 100% width
+              const w = thumb.clientWidth || 600;
+              const ratio = parts[3] / parts[2];
+              svg.style.height = `${Math.max(120, Math.round(w * ratio))}px`;
+            }
+          }
+        }
+      } else {
+        const svg = thumb.querySelector('.uml-prev-svg');
+        if (svg) svg.style.height = '';
+      }
     });
     // Double-click on thumb → open inline editor
     thumb.addEventListener('dblclick', () => openUmlEditor(it));
