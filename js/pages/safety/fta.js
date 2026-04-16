@@ -489,7 +489,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       e.preventDefault();
       const rect=wrap.getBoundingClientRect();
       const mx=e.clientX-rect.left, my=e.clientY-rect.top;
-      const bef={(x:(mx-_pan.x)/_zoom,y:(my-_pan.y)/_zoom)};
+      const bef={x:(mx-_pan.x)/_zoom,y:(my-_pan.y)/_zoom};
       _zoom=Math.min(3,Math.max(0.15,_zoom*(e.deltaY<0?1.1:0.9)));
       _pan.x=mx-bef.x*_zoom; _pan.y=my-bef.y*_zoom;
       applyTransform();
