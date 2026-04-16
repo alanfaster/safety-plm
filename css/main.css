@@ -1769,6 +1769,10 @@ input, select, textarea { font-family: var(--font); }
 /* Inline editor (replaces preview area) */
 .spec-uml-editor-inline{border:1.5px solid var(--color-primary);border-radius:7px;overflow:hidden;background:#fff;box-shadow:0 2px 12px rgba(26,115,232,0.1)}
 .spec-uml-edit-bar{display:flex;align-items:center;gap:6px;padding:6px 10px;background:#EEF4FF;border-bottom:1px solid #C5D8FF;flex-wrap:wrap}
+.uml-zoom-bar{display:flex;align-items:center;gap:3px;background:#fff;border:1px solid #C5D8FF;border-radius:5px;padding:1px 4px}
+.uml-zoom-lbl{font-size:11px;min-width:34px;text-align:center;color:var(--color-text-muted);font-variant-numeric:tabular-nums}
+.spec-uml-resize-handle{height:10px;background:#EEF4FF;border-top:1px solid #C5D8FF;cursor:ns-resize;display:flex;align-items:center;justify-content:center;color:#9AB;font-size:13px;user-select:none;letter-spacing:2px}
+.spec-uml-resize-handle:hover{background:#dceeff}
 
 /* Row action buttons */
 .spec-row-actions{white-space:nowrap;padding-top:8px!important;vertical-align:top}

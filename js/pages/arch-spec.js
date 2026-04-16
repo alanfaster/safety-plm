@@ -288,22 +288,53 @@ function openUmlEditor(it) {
           ${UML_TYPES.map(u => `<option value="${u}" ${(it.uml_type || 'component') === u ? 'selected' : ''}>${umlLabel(u)}</option>`).join('')}
         </select>
         <button class="btn btn-ghost btn-xs" id="ue-clear-${it.id}">Clear</button>
+        <div class="uml-zoom-bar">
+          <button class="btn btn-ghost btn-xs" id="ue-zout-${it.id}" title="Zoom out">−</button>
+          <span class="uml-zoom-lbl" id="ue-zlbl-${it.id}">100%</span>
+          <button class="btn btn-ghost btn-xs" id="ue-zin-${it.id}"  title="Zoom in">+</button>
+          <button class="btn btn-ghost btn-xs" id="ue-fit-${it.id}"  title="Fit all">⊡</button>
+        </div>
         <div style="flex:1"></div>
         <button class="btn btn-ghost btn-xs"    id="ue-cancel-${it.id}">Cancel</button>
         <button class="btn btn-primary btn-xs"  id="ue-save-${it.id}">Save</button>
       </div>
       <div id="ue-canvas-${it.id}"></div>
+      <div class="spec-uml-resize-handle" id="ue-resize-${it.id}" title="Drag to resize">⋯</div>
     </div>
   `;
 
   const editor = new UMLEditor(
     document.getElementById(`ue-canvas-${it.id}`),
     it.uml_type || 'component',
-    it.uml_data || null
+    it.uml_data || null,
+    `ue-zlbl-${it.id}`
   );
 
   document.getElementById(`ue-type-${it.id}`).onchange   = e => editor.setType(e.target.value);
   document.getElementById(`ue-clear-${it.id}`).onclick   = () => editor.clear();
+  document.getElementById(`ue-zout-${it.id}`).onclick    = () => editor.zoomOut();
+  document.getElementById(`ue-zin-${it.id}`).onclick     = () => editor.zoomIn();
+  document.getElementById(`ue-fit-${it.id}`).onclick     = () => editor.autofit();
+
+  // Resize handle
+  const resizeHandle = document.getElementById(`ue-resize-${it.id}`);
+  const canvasDiv    = document.getElementById(`ue-canvas-${it.id}`);
+  resizeHandle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const startY  = e.clientY;
+    const umlEl   = canvasDiv.querySelector('.uml-editor');
+    const startH  = umlEl ? umlEl.offsetHeight : 340;
+    const onMove  = mv => {
+      const newH = Math.max(200, startH + (mv.clientY - startY));
+      if (umlEl) umlEl.style.height = `${newH}px`;
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+  });
 
   document.getElementById(`ue-cancel-${it.id}`).onclick  = () => {
     editor.destroy();
@@ -598,7 +629,7 @@ const EDGE_STYLES = [
 let _ueSeq = 0;
 
 class UMLEditor {
-  constructor(container, umlType, initData) {
+  constructor(container, umlType, initData, zoomLabelId) {
     this._id         = ++_ueSeq;
     this.container   = container;
     this.umlType     = umlType || 'component';
@@ -608,6 +639,11 @@ class UMLEditor {
     this._selected   = null;
     this._connecting = null;
     this._dragState  = null;
+    this._panState   = null;
+    this._zoom       = 1;
+    this._panX       = 20;
+    this._panY       = 20;
+    this._zoomLblId  = zoomLabelId || null;
     this._abortCtrl  = new AbortController();
     this._build();
   }
@@ -616,6 +652,41 @@ class UMLEditor {
   clear()     { this.data = { nodes: [], edges: [] }; this._selected = null; this._connecting = null; this._rc(); this._showHint(true); }
   getData()   { return JSON.parse(JSON.stringify(this.data)); }
   destroy()   { this._abortCtrl.abort(); }
+
+  zoomIn()    { this._zoomAt(1.25, this._svgW()/2, this._svgH()/2); }
+  zoomOut()   { this._zoomAt(0.8,  this._svgW()/2, this._svgH()/2); }
+  autofit()   {
+    if (!this.data.nodes.length) return;
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    this.data.nodes.forEach(n => { minX=Math.min(minX,n.x); minY=Math.min(minY,n.y); maxX=Math.max(maxX,n.x+n.w); maxY=Math.max(maxY,n.y+n.h); });
+    const pad = 32;
+    const W = this._svgW(), H = this._svgH();
+    const scX = (W - pad*2) / (maxX - minX || 1);
+    const scY = (H - pad*2) / (maxY - minY || 1);
+    this._zoom = Math.min(scX, scY, 2);
+    this._panX = pad - minX * this._zoom;
+    this._panY = pad - minY * this._zoom;
+    this._applyVp();
+  }
+
+  _svgW() { return this._svg.clientWidth  || 600; }
+  _svgH() { return this._svg.clientHeight || 340; }
+
+  _zoomAt(factor, cx, cy) {
+    const nz = Math.min(Math.max(this._zoom * factor, 0.2), 4);
+    this._panX = cx - (cx - this._panX) * (nz / this._zoom);
+    this._panY = cy - (cy - this._panY) * (nz / this._zoom);
+    this._zoom = nz;
+    this._applyVp();
+  }
+
+  _applyVp() {
+    if (this._vp) this._vp.setAttribute('transform', `translate(${this._panX},${this._panY}) scale(${this._zoom})`);
+    if (this._zoomLblId) {
+      const lbl = document.getElementById(this._zoomLblId);
+      if (lbl) lbl.textContent = `${Math.round(this._zoom * 100)}%`;
+    }
+  }
 
   _build() {
     const id = this._id;
@@ -635,16 +706,19 @@ class UMLEditor {
                 <path d="M0,0 L10,5 L0,10 Z" fill="white" stroke="#333" stroke-width="1.5"/>
               </marker>
             </defs>
-            <g id="ue-eg-${id}"></g>
-            <g id="ue-ng-${id}"></g>
-            <line id="ue-tmp-${id}" stroke="#F57C00" stroke-width="1.5"
-              stroke-dasharray="5,3" display="none" pointer-events="none"/>
+            <g id="ue-vp-${id}" transform="translate(20,20) scale(1)">
+              <g id="ue-eg-${id}"></g>
+              <g id="ue-ng-${id}"></g>
+              <line id="ue-tmp-${id}" stroke="#F57C00" stroke-width="1.5"
+                stroke-dasharray="5,3" display="none" pointer-events="none"/>
+            </g>
           </svg>
           <div class="uml-hint" id="ue-hint-${id}">Click a shape in the palette to add it</div>
         </div>
       </div>`;
 
     this._svg    = document.getElementById(`ue-svg-${id}`);
+    this._vp     = document.getElementById(`ue-vp-${id}`);
     this._ng     = document.getElementById(`ue-ng-${id}`);
     this._eg     = document.getElementById(`ue-eg-${id}`);
     this._tmp    = document.getElementById(`ue-tmp-${id}`);
@@ -806,10 +880,17 @@ class UMLEditor {
 
   _wireSvg() {
     this._svg.addEventListener('mousemove', e => {
-      const pt = this._pt(e);
+      const pt = this._worldPt(e);
       if (this._dragState) {
         const n = this.data.nodes.find(n => n.id === this._dragState.nodeId);
         if (n) { n.x = Math.max(0, pt.x - this._dragState.offX); n.y = Math.max(0, pt.y - this._dragState.offY); this._rc(); }
+        return;
+      }
+      if (this._panState) {
+        const sp = this._svgPt(e);
+        this._panX = sp.x - this._panState.offX;
+        this._panY = sp.y - this._panState.offY;
+        this._applyVp();
         return;
       }
       if (this._connecting) {
@@ -822,13 +903,27 @@ class UMLEditor {
         }
       }
     });
-    this._svg.addEventListener('mouseup',   () => { this._dragState = null; });
+    this._svg.addEventListener('mousedown', e => {
+      if (e.target === this._svg || e.target === this._vp) {
+        if (!this._connecting && !this._dragState) {
+          const sp = this._svgPt(e);
+          this._panState = { offX: sp.x - this._panX, offY: sp.y - this._panY };
+        }
+      }
+    });
+    this._svg.addEventListener('mouseup',   () => { this._dragState = null; this._panState = null; });
     this._svg.addEventListener('click',     e => {
       if (this._connecting) {
         this._connecting = null; this._tmp.setAttribute('display', 'none'); this._rc(); return;
       }
       this._selected = null; this._rc();
     });
+    this._svg.addEventListener('wheel', e => {
+      e.preventDefault();
+      const sp = this._svgPt(e);
+      const factor = e.deltaY < 0 ? 1.15 : 1/1.15;
+      this._zoomAt(factor, sp.x, sp.y);
+    }, { passive: false });
   }
 
   _wireKeys() {
@@ -849,9 +944,14 @@ class UMLEditor {
     document.addEventListener('keydown', h, { signal: this._abortCtrl.signal });
   }
 
-  _pt(e) {
+  _svgPt(e) {
     const r = this._svg.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  _worldPt(e) {
+    const p = this._svgPt(e);
+    return { x: (p.x - this._panX) / this._zoom, y: (p.y - this._panY) / this._zoom };
   }
 
   _onNDown(e, id) {
@@ -865,7 +965,7 @@ class UMLEditor {
     }
     this._selected = { kind: 'node', id };
     const n = this.data.nodes.find(n => n.id === id);
-    const pt = this._pt(e);
+    const pt = this._worldPt(e);
     this._dragState = { nodeId: id, offX: pt.x - n.x, offY: pt.y - n.y };
     this._rc();
   }
