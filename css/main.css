@@ -1971,6 +1971,8 @@ td:hover .dfmea-del-inline{display:inline-block}
 /* Empty hint */
 .fta-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:var(--color-text-muted);font-size:13px;pointer-events:none;line-height:2.2}
 
+@keyframes fta-spin { to { transform: rotate(360deg); } }
+
 /* Add-child "+" button on nodes */
 .fta-add-child{opacity:0;transition:opacity 0.12s;cursor:pointer}
 .fta-node:hover .fta-add-child{opacity:1}

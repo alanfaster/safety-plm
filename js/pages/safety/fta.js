@@ -83,6 +83,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   let _space   = false;
   let _lastClick = { id:null, t:0 };  // for dblclick detection in mousedown
   let _activeMenu = null;             // currently open add-child menu
+  const _undoStack = [];              // max 10 snapshots
+  let _undoToastEl = null;
 
   // ── Shell ──────────────────────────────────────────────────────────────────
   container.innerHTML = `
@@ -210,6 +212,59 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   function applyTransform() {
     const g=document.getElementById('fta-root');
     if (g) g.setAttribute('transform',`translate(${_pan.x},${_pan.y}) scale(${_zoom})`);
+  }
+
+  // ── Undo ──────────────────────────────────────────────────────────────────────
+  function pushUndo(label) {
+    _undoStack.push({ label, nodes: JSON.parse(JSON.stringify(_nodes)) });
+    if (_undoStack.length > 10) _undoStack.shift();
+  }
+
+  function showUndoToast(msg, state='doing') {
+    if (!_undoToastEl) {
+      _undoToastEl = document.createElement('div');
+      _undoToastEl.style.cssText = 'position:fixed;bottom:24px;right:24px;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:500;z-index:9998;box-shadow:0 4px 16px rgba(0,0,0,.22);display:flex;align-items:center;gap:8px;font-family:inherit;transition:background .25s';
+      document.body.appendChild(_undoToastEl);
+    }
+    if (state === 'doing') {
+      _undoToastEl.style.background = '#E37400';
+      _undoToastEl.style.color = '#fff';
+      _undoToastEl.innerHTML = `<span style="display:inline-block;animation:fta-spin .8s linear infinite">↺</span> ${esc(msg)}`;
+    } else {
+      _undoToastEl.style.background = '#1E8E3E';
+      _undoToastEl.style.color = '#fff';
+      _undoToastEl.innerHTML = `✓ ${esc(msg)}`;
+      setTimeout(() => { _undoToastEl?.remove(); _undoToastEl = null; }, 2200);
+    }
+  }
+
+  async function undo() {
+    if (!_undoStack.length) { toast('Nothing to undo.', 'info'); return; }
+    const snap = _undoStack.pop();
+    showUndoToast(`Undoing: ${snap.label}…`);
+
+    const snapNodes = snap.nodes;
+    const snapMap = new Map(snapNodes.map(n => [n.id, n]));
+    const curMap  = new Map(_nodes.map(n => [n.id, n]));
+
+    const toDelete = _nodes.filter(n => !snapMap.has(n.id));
+    const toInsert = snapNodes.filter(n => !curMap.has(n.id));
+    const toUpdate = snapNodes.filter(n => curMap.has(n.id));
+
+    for (const n of toDelete) await sb.from('fta_nodes').delete().eq('id', n.id);
+    for (const n of toInsert) {
+      const { id, created_at, updated_at, ...rest } = n;
+      await sb.from('fta_nodes').upsert({ id, ...rest });
+    }
+    for (const n of toUpdate) {
+      const { id, created_at, ...rest } = n;
+      await sb.from('fta_nodes').update(rest).eq('id', id);
+    }
+
+    _nodes = JSON.parse(JSON.stringify(snapNodes));
+    _selSet.clear();
+    render();
+    showUndoToast(`Done: ${snap.label}`, 'done');
   }
 
   function renderConns() {
@@ -527,7 +582,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     });
 
     // Colour picker
-    document.getElementById('fta-color-inp').addEventListener('input',async e=>{
+    document.getElementById('fta-color-inp').addEventListener('change',async e=>{
+      // 'change' fires once on picker close; push undo once per colour action
+      pushUndo(`Colour ${[..._selSet].map(id=>byId(id)?.fta_code||'node').join(', ')}`);
       const col=e.target.value;
       for (const id of _selSet) {
         const n=byId(id); if(!n) continue;
@@ -586,6 +643,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         }
         if (!_selSet.has(id)) { _selSet.clear(); _selSet.add(id); }
         // Start drag for all selected
+        pushUndo(`Move ${[..._selSet].map(sid=>byId(sid)?.fta_code||'node').join(', ')}`);
         const pt=toSvg(e);
         _drag={ origins:[..._selSet].map(sid=>{const sn=byId(sid);return{id:sid,ox:sn.x,oy:sn.y};}), mx:pt.x, my:pt.y };
         render(); return;
@@ -646,6 +704,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       if (e.key==='Delete'||e.key==='Backspace') deleteSelected();
       if (e.key==='Escape') { _selSet.clear(); render(); }
       if ((e.ctrlKey||e.metaKey)&&e.key==='a') { e.preventDefault(); _nodes.forEach(n=>_selSet.add(n.id)); render(); }
+      if ((e.ctrlKey||e.metaKey)&&e.key==='z') { e.preventDefault(); undo(); }
     };
     const onKeyUp=e=>{
       if (e.key===' ') { _space=false; document.getElementById('fta-cw').style.cursor='default'; }
@@ -663,6 +722,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   async function createConn(parentId,childId) {
     if (isDescendant(parentId,childId)) { toast('Cycle detected — not connected.','error'); return; }
     const child=byId(childId); if(!child) return;
+    pushUndo(`Connect ${byId(parentId)?.fta_code||'?'} → ${child.fta_code||'?'}`);
     child.parent_node_id=parentId;
     await autosave(childId,{parent_node_id:parentId});
     render();
@@ -735,6 +795,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   // ── Add child node (connected + redistributed) ────────────────────────────────
   async function addChildNode(parentId, type) {
     const parent = byId(parentId); if (!parent) return;
+    pushUndo(`Add ${CODE_PFX[type]||type} under ${parent.fta_code||'node'}`);
     const siblings = _nodes.filter(n => n.parent_node_id === parentId);
     const cx = parent.x;
     const cy = parent.y + CHILD_Y;
@@ -773,6 +834,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   // ── Add node ─────────────────────────────────────────────────────────────────
   async function addNode(type) {
+    pushUndo(`Add ${CODE_PFX[type]||type}`);
     const t=NT[type]||NT.basic;
     const wrap=document.getElementById('fta-cw');
     const cx=(wrap.offsetWidth/2-_pan.x)/_zoom + (_nodes.length%5)*18-36;
@@ -822,6 +884,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       let v=inp.value.trim(); inp.remove();
       if (inp.type==='number') v=v===''?null:parseFloat(v);
       if (v===(n[field]??'')) {render();return;}
+      pushUndo(`Edit ${n.fta_code||'node'} ${field}`);
       n[field]=v; await autosave(id,{[field]:v}); render();
     };
     inp.addEventListener('blur',commit);
@@ -839,7 +902,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     inp.className='fta-label-input';
     inp.style.cssText=`left:${sx}px;top:${sy}px;width:${gw*_zoom}px;height:${gh*_zoom}px;font-size:${Math.max(10,13*_zoom)}px;font-weight:700`;
     wrap.appendChild(inp); inp.focus(); inp.select();
-    const commit=async()=>{const v=inp.value.trim()||t.label;inp.remove();if(v===n.label)return;n.label=v;await autosave(id,{label:v});render();};
+    const commit=async()=>{const v=inp.value.trim()||t.label;inp.remove();if(v===n.label)return;pushUndo(`Edit gate ${n.fta_code||'gate'}`);n.label=v;await autosave(id,{label:v});render();};
     inp.addEventListener('blur',commit);
     inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur();if(e.key==='Escape'){inp.value=n.label||t.label;inp.blur();}});
   }
@@ -881,6 +944,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     if (!_selSet.size) return;
     const ids=[..._selSet];
     if (!await confirmDelete(ids)) return;
+    pushUndo(`Delete ${ids.map(id=>byId(id)?.fta_code||'node').join(', ')}`);
     for (const id of ids) {
       _nodes.filter(c=>c.parent_node_id===id).forEach(c=>{c.parent_node_id=null; autosave(c.id,{parent_node_id:null});});
       await sb.from('fta_nodes').delete().eq('id',id);
