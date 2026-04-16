@@ -239,6 +239,8 @@ function renderTable(area){
           <th class="dfmea-col-compfunc">Component / Function</th>
           <th class="dfmea-col-fm">Failure Mode</th>
           <th class="dfmea-col-maxs" title="Max Severity">Max S</th>
+          <th class="dfmea-col-status">Status</th>
+          <th class="dfmea-col-del"></th>
           <th class="dfmea-col-eff">Effect — Higher Level</th>
           <th class="dfmea-col-eff">Effect — Local</th>
           <th class="dfmea-col-sod" title="Severity">S</th>
@@ -252,8 +254,6 @@ function renderTable(area){
           <th class="dfmea-col-resp">Responsible</th>
           <th class="dfmea-col-date">Target Date</th>
           <th class="dfmea-col-astatus">Action Status</th>
-          <th class="dfmea-col-status">Status</th>
-          <th class="dfmea-col-del"></th>
         </tr></thead>
         <tbody id="dfmea-tbody"></tbody>
       </table>
@@ -307,6 +307,14 @@ function renderGroup(tbody,g){
     maxSTd.innerHTML=maxS?`<span class="dfmea-maxs-badge">${maxS}</span>`:`<span class="dfmea-placeholder">—</span>`;
     fmTr.appendChild(maxSTd);
 
+    // Status + del immediately after maxs (rowspan cells must be contiguous for correct layout)
+    const statusTd=makeTd('dfmea-col-status',fmSpan);
+    statusTd.innerHTML=`<select class="dfmea-sel" data-field="status">${ITEM_STATUSES.map(s=>`<option value="${s}"${fm.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
+    fmTr.appendChild(statusTd);
+    const delTd=makeTd('dfmea-col-del',fmSpan);
+    delTd.innerHTML=`<button class="dfmea-del-row-btn" data-action="del-fm" title="Delete FM">✕</button>`;
+    fmTr.appendChild(delTd);
+
     // If no effects and no causes, show actionable placeholders so user can start filling in
     if(!effects.length&&!directCauses.length){
       const addEffTd=makeTd('dfmea-col-eff dfmea-cell-na-add');
@@ -330,16 +338,6 @@ function renderGroup(tbody,g){
       addEffTd.querySelector('[data-action="add-effect"]').addEventListener('click',()=>addEffectRow(fm));
       addCauseTd.querySelector('[data-action="add-cause"]').addEventListener('click',()=>addCauseRow(fm.id,fm));
     }
-
-    // Status cell (rowspan = this FM's rows) — MUST come after effect/cause columns
-    const statusTd=makeTd('dfmea-col-status',fmSpan);
-    statusTd.innerHTML=`<select class="dfmea-sel" data-field="status">${ITEM_STATUSES.map(s=>`<option value="${s}"${fm.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
-    fmTr.appendChild(statusTd);
-
-    // Del cell (rowspan = this FM's rows)
-    const delTd=makeTd('dfmea-col-del',fmSpan);
-    delTd.innerHTML=`<button class="dfmea-del-row-btn" data-action="del-fm" title="Delete FM">✕</button>`;
-    fmTr.appendChild(delTd);
 
     tbody.appendChild(fmTr);
     wireFmCells(fmTr,fmTd,statusTd,fm,g);
