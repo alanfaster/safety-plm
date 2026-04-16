@@ -38,7 +38,7 @@ export const VCYCLE_PHASES = ALL_PHASES;
 
 export const SAFETY_MENU = {
   automotive: ['HARA', 'FSC', 'TSC', 'FTA', 'FMEA', 'DFMEA'],
-  aerospace:  ['PHL_PHA', 'FHA', 'FMEA', 'DFMEA'],
+  aerospace:  ['PHL_PHA', 'FHA', 'FTA', 'FMEA', 'DFMEA'],
   military:   ['PHL_PHA', 'FHA', 'FTA', 'FMEA', 'DFMEA'],
 };
 
