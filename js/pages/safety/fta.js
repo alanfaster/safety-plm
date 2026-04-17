@@ -196,6 +196,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   wireKeyboard();
 
   // ── Data ───────────────────────────────────────────────────────────────────
+  const UNLINKED_ID = '__unlinked__'; // sentinel for orphaned FTA nodes
+
   async function loadFCs() {
     const { data } = await sb.from('hazards')
       .select('id, haz_code, data, status')
@@ -203,14 +205,27 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       .eq('analysis_type', 'FHA')
       .order('sort_order', { ascending: true });
     _fcs = data || [];
+    // Check for orphaned FTA nodes (FC deleted with "Delete FC only")
+    const { data: orphans } = await sb.from('fta_nodes')
+      .select('id')
+      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .is('hazard_id', null)
+      .limit(1);
+    if (orphans?.length) {
+      _fcs.push({ id: UNLINKED_ID, haz_code: '—', data: { failure_condition: 'Unlinked FTA (FC deleted)' }, status: 'unlinked' });
+    }
     if (_fcs.length && !_activeHazardId) _activeHazardId = _fcs[0].id;
   }
 
   async function loadNodes() {
     if (!_activeHazardId) { _nodes = []; return; }
-    const { data, error } = await sb.from('fta_nodes')
-      .select('*').eq('hazard_id', _activeHazardId)
-      .order('sort_order', { ascending:true });
+    let query = sb.from('fta_nodes').select('*');
+    if (_activeHazardId === UNLINKED_ID) {
+      query = query.eq('parent_type', parentType).eq('parent_id', parentId).is('hazard_id', null);
+    } else {
+      query = query.eq('hazard_id', _activeHazardId);
+    }
+    const { data, error } = await query.order('sort_order', { ascending:true });
     if (error) { toast('Error loading FTA.', 'error'); return; }
     _nodes = data || [];
     if (_nodes.length) document.getElementById('fta-hint').style.display='none';
@@ -225,8 +240,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     el.innerHTML = _fcs.map(fc => {
       const label = fc.data?.failure_condition || fc.haz_code;
       const active = fc.id === _activeHazardId;
+      const isUnlinked = fc.id === UNLINKED_ID;
       const short = label.length > 38 ? label.slice(0, 37) + '…' : label;
-      return `<button class="fta-fc-tab${active?' active':''}" data-hid="${fc.id}" title="${esc(label)}"><span class="fta-fc-tab-code">${esc(fc.haz_code)}</span> ${esc(short)}</button>`;
+      return `<button class="fta-fc-tab${active?' active':''}${isUnlinked?' fta-fc-tab-unlinked':''}" data-hid="${fc.id}" title="${esc(label)}">${isUnlinked ? '⚠ ' : `<span class="fta-fc-tab-code">${esc(fc.haz_code)}</span> `}${esc(short)}</button>`;
     }).join('');
     el.querySelectorAll('.fta-fc-tab').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -923,7 +939,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       const code=nextCode(orig.type);
       const {data,error}=await sb.from('fta_nodes').insert({
         parent_type:parentType, parent_id:parentId, project_id:project.id,
-        hazard_id: _activeHazardId,
+        hazard_id: _activeHazardId === UNLINKED_ID ? null : _activeHazardId,
         type:orig.type, label:orig.label, component:orig.component, fta_code:code,
         x:orig.x+dx, y:orig.y+dy, sort_order:_nodes.length+newNodes.length, color:orig.color,
         probability:orig.probability, failure_rate:orig.failure_rate, mttr:orig.mttr,
@@ -1048,7 +1064,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     const code = nextCode(type);
     const { data, error } = await sb.from('fta_nodes').insert({
       parent_type:parentType, parent_id:parentId, project_id:project.id,
-      hazard_id: _activeHazardId,
+      hazard_id: _activeHazardId === UNLINKED_ID ? null : _activeHazardId,
       type, label:'', component:'', fta_code:code,
       x:cx, y:cy, sort_order:_nodes.length, color:'',
       parent_node_id: parentId,
@@ -1090,7 +1106,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     const code=nextCode(type);
     const {data,error}=await sb.from('fta_nodes').insert({
       parent_type:parentType, parent_id:parentId, project_id:project.id,
-      hazard_id: _activeHazardId,
+      hazard_id: _activeHazardId === UNLINKED_ID ? null : _activeHazardId,
       type, label:'', component:'', fta_code:code,
       x:cx, y:cy, sort_order:_nodes.length, color:'',
     }).select().single();

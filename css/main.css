@@ -2022,6 +2022,8 @@ td:hover .dfmea-del-inline{display:inline-block}
 .fta-fc-tab-code{font-weight:700;font-size:10px;opacity:.8}
 .fta-fc-tab.active .fta-fc-tab-code{opacity:1}
 .fta-fc-empty{font-size:11px;color:var(--color-text-muted);font-style:italic;padding:4px 6px}
+.fta-fc-tab-unlinked{border-color:#E37400!important;color:#E37400!important}
+.fta-fc-tab-unlinked.active{background:#E37400!important;border-color:#E37400!important;color:#fff!important}
 
 /* ── FTA properties read-only field ───────────────────────────────────── */
 .fta-prop-readonly{font-size:12px;color:var(--color-text-muted);padding:3px 6px;background:var(--color-bg-secondary,#F4F5F7);border:1px solid var(--color-border);border-radius:3px;font-family:monospace;letter-spacing:.03em}
