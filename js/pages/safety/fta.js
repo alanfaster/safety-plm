@@ -450,7 +450,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     // indicator (circle/diamond/triangle) comes after ext fields
     if (base.indicator) {
       const ind=buildIndicator(base.indicator, stroke);
-      ind.setAttribute('transform',`translate(0,${belowY+10})`);
+      ind.setAttribute('transform',`translate(0,${belowY+4})`);
       g.appendChild(ind);
       belowY += 26;
     }
@@ -485,9 +485,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   function buildIndicator(shape, stroke) {
     const g=svgEl('g'); g.setAttribute('pointer-events','none');
-    if (shape==='circle')  { const c=svgEl('circle'); c.setAttribute('cx',0);c.setAttribute('cy',0);c.setAttribute('r',10);c.setAttribute('fill','white');c.setAttribute('stroke',stroke);c.setAttribute('stroke-width','2');g.appendChild(c); }
-    else if (shape==='diamond') { const p=svgEl('path'); p.setAttribute('d','M 0,-10 L 10,0 L 0,10 L -10,0 Z');p.setAttribute('fill','white');p.setAttribute('stroke',stroke);p.setAttribute('stroke-width','2');g.appendChild(p); }
-    else if (shape==='triangle') { const p=svgEl('path'); p.setAttribute('d','M 0,-10 L 11,10 L -11,10 Z');p.setAttribute('fill','white');p.setAttribute('stroke',stroke);p.setAttribute('stroke-width','2');g.appendChild(p); }
+    if (shape==='circle')  { const c=svgEl('circle'); c.setAttribute('cx',0);c.setAttribute('cy',0);c.setAttribute('r',13);c.setAttribute('fill','white');c.setAttribute('stroke',stroke);c.setAttribute('stroke-width','2');g.appendChild(c); }
+    else if (shape==='diamond') { const p=svgEl('path'); p.setAttribute('d','M 0,-13 L 13,0 L 0,13 L -13,0 Z');p.setAttribute('fill','white');p.setAttribute('stroke',stroke);p.setAttribute('stroke-width','2');g.appendChild(p); }
+    else if (shape==='triangle') { const p=svgEl('path'); p.setAttribute('d','M 0,-13 L 14,13 L -14,13 Z');p.setAttribute('fill','white');p.setAttribute('stroke',stroke);p.setAttribute('stroke-width','2');g.appendChild(p); }
     return g;
   }
 
