@@ -570,7 +570,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     document.getElementById('fta-btn-layout').addEventListener('click', autoLayout);
     document.getElementById('fta-btn-zi').addEventListener('click',()=>setZoom(_zoom*1.2));
     document.getElementById('fta-btn-zo').addEventListener('click',()=>setZoom(_zoom/1.2));
-    document.getElementById('fta-btn-zr').addEventListener('click',()=>{_zoom=1;_pan={x:100,y:70};applyTransform();});
+    document.getElementById('fta-btn-zr').addEventListener('click', fitAll);
 
     // Prop panel toggle
     document.getElementById('fta-prop-toggle').addEventListener('click',()=>{
@@ -1201,6 +1201,31 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   // ── Helpers ───────────────────────────────────────────────────────────────────
   function toSvg(e){ const wrap=document.getElementById('fta-cw'),rect=wrap.getBoundingClientRect(); return{x:(e.clientX-rect.left-_pan.x)/_zoom,y:(e.clientY-rect.top-_pan.y)/_zoom}; }
   function setZoom(z){ _zoom=Math.min(3,Math.max(0.15,z));applyTransform(); }
+
+  function fitAll() {
+    if (!_nodes.length) { _zoom=1; _pan={x:100,y:70}; applyTransform(); return; }
+    const PAD = 60;
+    // Compute bounding box of all node centres (using half-dimensions for edges)
+    let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    _nodes.forEach(n=>{
+      const hw=nw(n)/2, hh=nh(n)/2;
+      if(n.x-hw<minX) minX=n.x-hw;
+      if(n.y-hh<minY) minY=n.y-hh;
+      if(n.x+hw>maxX) maxX=n.x+hw;
+      if(n.y+hh>maxY) maxY=n.y+hh;
+    });
+    const wrap=document.getElementById('fta-cw');
+    const vw=wrap.clientWidth, vh=wrap.clientHeight;
+    const contentW=maxX-minX, contentH=maxY-minY;
+    const z=Math.min(3, Math.max(0.1, Math.min(
+      (vw-PAD*2)/Math.max(contentW,1),
+      (vh-PAD*2)/Math.max(contentH,1)
+    )));
+    _zoom=z;
+    _pan.x=(vw-contentW*z)/2 - minX*z;
+    _pan.y=(vh-contentH*z)/2 - minY*z;
+    applyTransform();
+  }
 
   // Determine which field a SVG Y coordinate falls on for a box node
   function fieldAtY(n, svgY) {
