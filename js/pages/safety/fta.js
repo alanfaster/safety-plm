@@ -125,6 +125,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         <label class="fta-cfg-row"><input type="checkbox" id="cfg-mttr" ${_cfg.showMTTR?'checked':''}> MTTR</label>
       </div>
 
+      <div class="fta-content-row">
       <div class="fta-canvas-wrap" id="fta-cw">
         <svg id="fta-svg" class="fta-svg" xmlns="http://www.w3.org/2000/svg">
           <defs>
@@ -136,6 +137,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
             <g id="fta-pending"></g>
             <g id="fta-lasso-g"></g>
             <g id="fta-nodes-g"></g>
+            <g id="fta-guides-g"></g>
             <g id="fta-edit-g"></g>
             <g id="fta-copy-g"></g>
           </g>
@@ -145,7 +147,19 @@ export async function renderFTA(container, { project, parentType, parentId }) {
           Drag empty area to multi-select · Space+drag to pan
         </div>
       </div>
-    </div>`;
+
+      <!-- ── Properties side panel ── -->
+      <div class="fta-prop-panel" id="fta-prop-panel">
+        <div class="fta-prop-hdr">
+          <span class="fta-prop-hdr-title">Properties</span>
+          <button class="fta-prop-toggle" id="fta-prop-toggle" title="Collapse">◀</button>
+        </div>
+        <div class="fta-prop-body" id="fta-prop-body">
+          <div class="fta-prop-empty">← Select a node</div>
+        </div>
+      </div>
+
+      </div>`; /* end fta-content-row */
 
   await loadNodes();
   render();
@@ -201,9 +215,11 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     renderPendingConn();
     renderLasso();
     renderCopyGhost();
+    renderGuides();
     applyTransform();
     document.getElementById('fta-hint').style.display = _nodes.length ? 'none' : '';
     updateDelBtn();
+    updatePropPanel();
   }
 
   function applyTransform() {
@@ -556,6 +572,13 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     document.getElementById('fta-btn-zo').addEventListener('click',()=>setZoom(_zoom/1.2));
     document.getElementById('fta-btn-zr').addEventListener('click',()=>{_zoom=1;_pan={x:100,y:70};applyTransform();});
 
+    // Prop panel toggle
+    document.getElementById('fta-prop-toggle').addEventListener('click',()=>{
+      const panel=document.getElementById('fta-prop-panel');
+      const collapsed=panel.classList.toggle('fta-prop-collapsed');
+      document.getElementById('fta-prop-toggle').textContent=collapsed?'▶':'◀';
+    });
+
     // Config toggle
     const cfgBtn=document.getElementById('fta-btn-cfg');
     const cfgPanel=document.getElementById('fta-cfg-panel');
@@ -685,6 +708,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         return;
       }
       if (_drag) {
+        document.getElementById('fta-guides-g').innerHTML='';
         await Promise.all(_drag.origins.map(async({id})=>{ const n=byId(id); if(n) await autosave(id,{x:n.x,y:n.y}); }));
         _drag=null;
       }
@@ -824,39 +848,41 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     menu.className = 'fta-add-menu';
     menu.style.cssText = `left:${left}px;top:${top}px`;
 
-    const sections = [
-      { title:'Events', items:[
-        {type:'top_event',    label:'⬛ Top Event'},
-        {type:'intermediate', label:'▭ Intermediate'},
-        {type:'basic',        label:'● Basic'},
-        {type:'undeveloped',  label:'◇ Undeveloped'},
-        {type:'transfer',     label:'△ Transfer'},
-      ]},
-      { title:'Gates', items:[
-        {type:'gate_and',    label:'∧ AND'},
-        {type:'gate_or',     label:'∨ OR'},
-        {type:'gate_not',    label:'¬ NOT'},
-        {type:'gate_inhibit',label:'⊘ INHIBIT'},
-      ]},
+    // Two-column layout: Events left, Gates right
+    const cols = document.createElement('div');
+    cols.style.cssText='display:flex;gap:2px';
+
+    const events=[
+      {type:'top_event',    label:'⬛ Top'},
+      {type:'intermediate', label:'▭ Interm.'},
+      {type:'basic',        label:'● Basic'},
+      {type:'undeveloped',  label:'◇ Undev.'},
+      {type:'transfer',     label:'△ Transfer'},
+    ];
+    const gates=[
+      {type:'gate_and',    label:'∧ AND'},
+      {type:'gate_or',     label:'∨ OR'},
+      {type:'gate_not',    label:'¬ NOT'},
+      {type:'gate_inhibit',label:'⊘ INH'},
     ];
 
-    sections.forEach(sec => {
-      const hdr = document.createElement('div');
-      hdr.className = 'fta-add-menu-section';
-      hdr.textContent = sec.title;
-      menu.appendChild(hdr);
-      sec.items.forEach(({type,label}) => {
-        const btn = document.createElement('button');
-        btn.className = 'fta-add-menu-item';
-        btn.textContent = label;
-        btn.addEventListener('mousedown', async e => {
-          e.stopPropagation();
-          closeAddMenu();
-          await addChildNode(parentId, type);
+    [{ title:'Events', items:events }, { title:'Gates', items:gates }].forEach(col=>{
+      const wrap=document.createElement('div');
+      wrap.style.cssText='flex:1;min-width:100px';
+      const hdr=document.createElement('div');
+      hdr.className='fta-add-menu-section'; hdr.textContent=col.title;
+      wrap.appendChild(hdr);
+      col.items.forEach(({type,label})=>{
+        const btn=document.createElement('button');
+        btn.className='fta-add-menu-item'; btn.textContent=label;
+        btn.addEventListener('mousedown',async e=>{
+          e.stopPropagation(); closeAddMenu(); await addChildNode(parentId,type);
         });
-        menu.appendChild(btn);
+        wrap.appendChild(btn);
       });
+      cols.appendChild(wrap);
     });
+    menu.appendChild(cols);
 
     wrap.appendChild(menu);
     _activeMenu = menu;
@@ -1078,6 +1104,98 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     let cx=80; roots.forEach(r=>{const w=lay(r,cx,0);cx+=w+GAP*2;});
     await Promise.all(_nodes.map(n=>autosave(n.id,{x:n.x,y:n.y})));
     render(); toast('Layout applied.','success');
+  }
+
+  // ── Properties panel ─────────────────────────────────────────────────────────
+  function updatePropPanel() {
+    const body=document.getElementById('fta-prop-body'); if(!body) return;
+    if (_selSet.size!==1) {
+      body.innerHTML=_selSet.size===0
+        ? '<div class="fta-prop-empty">← Select a node</div>'
+        : `<div class="fta-prop-empty">${_selSet.size} nodes selected</div>`;
+      return;
+    }
+    const n=byId([..._selSet][0]); if(!n) return;
+    const isGateNode=isGate(n.type);
+    const fields=[
+      {key:'fta_code',     label:'Code',        type:'text'},
+      {key:'component',    label:'Component',   type:'text'},
+      {key:'label',        label:isGateNode?'Gate label':'Failure',    type:'text'},
+    ];
+    const numFields=[
+      {key:'probability',  label:'Probability (P)',   type:'number'},
+      {key:'failure_rate', label:'Failure Rate (FR)',  type:'number'},
+      {key:'mttr',         label:'MTTR',              type:'number'},
+    ];
+    let html=`<div class="fta-prop-type">${(NT[n.type]?.label||n.type).replace(/_/g,' ')}</div>`;
+    fields.forEach(f=>{
+      const val=esc(n[f.key]||'');
+      html+=`<div class="fta-prop-field">
+        <label class="fta-prop-label">${f.label}</label>
+        <input class="fta-prop-input" type="${f.type}" value="${val}" data-field="${f.key}" data-nid="${n.id}">
+      </div>`;
+    });
+    html+='<div class="fta-prop-sep"></div>';
+    numFields.forEach(f=>{
+      const val=n[f.key]!=null?n[f.key]:'';
+      html+=`<div class="fta-prop-field">
+        <label class="fta-prop-label">${f.label}</label>
+        <input class="fta-prop-input" type="number" step="any" min="0" value="${val}" data-field="${f.key}" data-nid="${n.id}">
+      </div>`;
+    });
+    if (isGateNode && _cfg.showProbability) {
+      const cp=computeP(n);
+      html+=`<div class="fta-prop-computed">Computed P = ${cp!=null?fmtNum(cp):'—'}</div>`;
+    }
+    body.innerHTML=html;
+    // Wire autosave on blur
+    body.querySelectorAll('.fta-prop-input').forEach(inp=>{
+      inp.addEventListener('blur',async()=>{
+        const field=inp.dataset.field, nid=inp.dataset.nid;
+        const node=byId(nid); if(!node) return;
+        let v=inp.value.trim();
+        if(inp.type==='number') v=v===''?null:parseFloat(v);
+        if(v===(node[field]??'')) return;
+        pushUndo(`Edit ${node.fta_code||'node'} ${field}`);
+        node[field]=v; await autosave(nid,{[field]:v}); render();
+      });
+      inp.addEventListener('keydown',e=>{ if(e.key==='Enter') inp.blur(); });
+    });
+  }
+
+  // ── Alignment guides ──────────────────────────────────────────────────────────
+  function renderGuides() {
+    const layer=document.getElementById('fta-guides-g'); if(!layer){return;} layer.innerHTML='';
+    if (!_drag) return;
+    const THRESH=10, EXT=300;
+    _drag.origins.forEach(({id})=>{
+      const dn=byId(id); if(!dn) return;
+      _nodes.forEach(other=>{
+        if(_drag.origins.find(o=>o.id===other.id)) return;
+        // Vertical guide (same X)
+        if(Math.abs(dn.x-other.x)<THRESH){
+          dn.x=other.x;
+          const yl=Math.min(dn.y,other.y)-EXT, yh=Math.max(dn.y,other.y)+EXT;
+          const l=svgEl('line');
+          l.setAttribute('x1',other.x); l.setAttribute('y1',yl);
+          l.setAttribute('x2',other.x); l.setAttribute('y2',yh);
+          l.setAttribute('stroke','#1A73E8'); l.setAttribute('stroke-width','1');
+          l.setAttribute('stroke-dasharray','5,3'); l.setAttribute('opacity','0.7');
+          l.setAttribute('pointer-events','none'); layer.appendChild(l);
+        }
+        // Horizontal guide (same Y)
+        if(Math.abs(dn.y-other.y)<THRESH){
+          dn.y=other.y;
+          const xl=Math.min(dn.x,other.x)-EXT, xh=Math.max(dn.x,other.x)+EXT;
+          const l=svgEl('line');
+          l.setAttribute('x1',xl); l.setAttribute('y1',other.y);
+          l.setAttribute('x2',xh); l.setAttribute('y2',other.y);
+          l.setAttribute('stroke','#1A73E8'); l.setAttribute('stroke-width','1');
+          l.setAttribute('stroke-dasharray','5,3'); l.setAttribute('opacity','0.7');
+          l.setAttribute('pointer-events','none'); layer.appendChild(l);
+        }
+      });
+    });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
