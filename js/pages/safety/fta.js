@@ -212,9 +212,15 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   // external optional fields height (below box, outside border)
   function extH(){ return ((_cfg.showProbability?1:0)+(_cfg.showFR?1:0)+(_cfg.showMTTR?1:0))*14; }
 
-  // Recursively compute probability for a node (gates derive from children)
+  // Recursively compute probability for a node (gates derive from children;
+  // box nodes propagate from a child gate if no manual value is set)
   function computeP(n) {
-    if (!isGate(n.type)) return (n.probability != null && n.probability !== '') ? parseFloat(n.probability) : null;
+    if (!isGate(n.type)) {
+      if (n.probability != null && n.probability !== '') return parseFloat(n.probability);
+      // Inherit from a single child gate (e.g. top_event → AND gate)
+      const gateChild = _nodes.find(c => c.parent_node_id === n.id && isGate(c.type));
+      return gateChild ? computeP(gateChild) : null;
+    }
     const children = _nodes.filter(c => c.parent_node_id === n.id);
     if (!children.length) return null;
     const ps = children.map(c => computeP(c)).filter(p => p !== null && !isNaN(p));
@@ -423,9 +429,24 @@ export async function renderFTA(container, { project, parentType, parentId }) {
      });
      g.appendChild(t);}
 
-    // ── Below box: optional numeric fields (left-aligned), then indicator ──
+    // ── Below box: indicator (connected by line) then optional numeric fields ──
     // extra gap for top_event double border (border extends 4px outside box)
+    const IND_R = 13;
     let belowY = hh + (n.type==='top_event' ? 14 : 8);
+    if (base.indicator) {
+      // short vertical line from box bottom to indicator centre
+      const indCY = belowY + IND_R + 2; // 2px gap then radius
+      const ln = svgEl('line');
+      ln.setAttribute('x1',0); ln.setAttribute('y1',hh);
+      ln.setAttribute('x2',0); ln.setAttribute('y2',indCY - IND_R);
+      ln.setAttribute('stroke',stroke); ln.setAttribute('stroke-width','1.5');
+      ln.setAttribute('pointer-events','none');
+      g.appendChild(ln);
+      const ind = buildIndicator(base.indicator, stroke);
+      ind.setAttribute('transform',`translate(0,${indCY})`);
+      g.appendChild(ind);
+      belowY = indCY + IND_R + 5; // start ext fields just below indicator
+    }
     const extFields = [];
     if (_cfg.showProbability) extFields.push({f:'probability',  lbl:'P'});
     if (_cfg.showFR)          extFields.push({f:'failure_rate', lbl:'FR'});
@@ -443,17 +464,12 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       txt.setAttribute('font-size','9'); txt.setAttribute('fill','#666');
       txt.setAttribute('pointer-events','none');
       const val = n[f]!=null&&n[f]!=='' ? fmtNum(n[f]) : '—';
-      txt.textContent=`${lbl} = ${val}`;
+      // For P on non-gate: also show computed value from child gate if no manual value
+      const disp = (f==='probability' && (n[f]==null||n[f]==='')) ? computeP(n) : (n[f]!=null&&n[f]!=='' ? n[f] : null);
+      txt.textContent=`${lbl} = ${disp!=null ? fmtNum(disp) : '—'}`;
       g.appendChild(txt);
       belowY+=14;
     });
-    // indicator (circle/diamond/triangle) comes after ext fields
-    if (base.indicator) {
-      const ind=buildIndicator(base.indicator, stroke);
-      ind.setAttribute('transform',`translate(0,${belowY+4})`);
-      g.appendChild(ind);
-      belowY += 26;
-    }
 
     // Port + add-child button
     const portY = belowY + 6;
@@ -1081,8 +1097,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     else if (field==='component') { ry=n.y-hh+ROW_CODE;         rh=ROW_STD;  }
     else if (field==='label')     { ry=n.y-hh+ROW_CODE+ROW_STD; rh=lblRH;   }
     else {
-      // external numeric fields (rendered before indicator now)
-      let ey = n.y+hh+(n.type==='top_event'?14:8);
+      // external numeric fields (below indicator)
+      const IND_R3=13;
+      let ey = n.y+hh+(n.type==='top_event'?14:8)+(base.indicator?IND_R3+2+IND_R3+5:0);
       rw=100; rx=n.x-50; rh=16;
       if (field==='probability')  { ry=ey-8; }
       else { ey+=(_cfg.showProbability?14:0);
@@ -1320,8 +1337,10 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     if (ry >= -hh              && ry < -hh+ROW_CODE)          return 'fta_code';
     if (ry >= -hh+ROW_CODE     && ry < -hh+ROW_CODE+ROW_STD) return 'component';
     if (ry >= -hh+ROW_CODE+ROW_STD && ry < hh)               return 'label';
-    // External fields below box (now rendered before indicator)
+    // External fields below indicator
+    const IND_R2=13;
     let ey = hh + (n.type==='top_event'?14:8);
+    if (base.indicator) ey += IND_R2 + 2 + IND_R2 + 5; // indCY + radius + gap
     if (_cfg.showProbability){ if(ry>=ey-7&&ry<ey+7) return 'probability'; ey+=14; }
     if (_cfg.showFR)         { if(ry>=ey-7&&ry<ey+7) return 'failure_rate'; ey+=14; }
     if (_cfg.showMTTR)       { if(ry>=ey-7&&ry<ey+7) return 'mttr'; }
