@@ -305,14 +305,82 @@ function wireRows(container, scope, hazByFun) {
 
   // Delete
   container.querySelectorAll('.btn-del-fha').forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
       const haz = scope.allHazards.find(h => h.id === btn.dataset.id);
-      confirmDialog(`Delete ${haz?.haz_code || 'this FHA entry'}?`, async () => {
-        const { error } = await sb.from('hazards').delete().eq('id', btn.dataset.id);
+      if (!haz) return;
+
+      // Check if this FC has an associated FTA tree
+      const { data: ftaCheck } = await sb.from('fta_nodes').select('id').eq('hazard_id', haz.id).limit(1);
+      const hasFTA = (ftaCheck?.length || 0) > 0;
+
+      if (!hasFTA) {
+        // No FTA — simple single confirm
+        confirmDialog(`Delete ${haz.haz_code}?`, async () => {
+          const { error } = await sb.from('hazards').delete().eq('id', haz.id);
+          if (error) { toast('Error deleting.', 'error'); return; }
+          toast('FC deleted.', 'success');
+          await reload(scope);
+        });
+        return;
+      }
+
+      // FTA exists — show double-confirm dialog
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center';
+      const fc_label = haz.data?.failure_condition ? `"${haz.data.failure_condition}"` : haz.haz_code;
+      overlay.innerHTML = `
+        <div style="background:#fff;border-radius:8px;padding:24px 28px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2);font-family:inherit">
+          <div style="font-size:15px;font-weight:600;margin-bottom:8px">Delete ${esc(haz.haz_code)}?</div>
+          <div style="font-size:13px;color:#555;margin-bottom:6px">Failure Condition: <strong>${esc(fc_label)}</strong></div>
+          <div style="font-size:13px;color:#888;margin-bottom:20px">This entry has an associated FTA tree. What should be deleted?</div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+            <button id="dfc-cancel" style="padding:6px 14px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+            <button id="dfc-only"   style="padding:6px 14px;border:1px solid #d93025;border-radius:4px;background:#fff;color:#d93025;cursor:pointer;font-size:13px">Delete FC only</button>
+            <button id="dfc-all"    style="padding:6px 14px;border:none;border-radius:4px;background:#d93025;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Delete FC + FTA ⚠</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const close = () => overlay.remove();
+      overlay.querySelector('#dfc-cancel').onclick = close;
+      overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+      overlay.querySelector('#dfc-only').onclick = async () => {
+        close();
+        // Unlink FTA nodes (keep them, just remove the FC association)
+        await sb.from('fta_nodes').update({ hazard_id: null }).eq('hazard_id', haz.id);
+        const { error } = await sb.from('hazards').delete().eq('id', haz.id);
         if (error) { toast('Error deleting.', 'error'); return; }
-        toast('Deleted.', 'success');
+        toast('FC deleted. FTA tree preserved (now unlinked).', 'success');
         await reload(scope);
-      });
+      };
+
+      overlay.querySelector('#dfc-all').onclick = () => {
+        close();
+        // Second confirmation for the destructive combined delete
+        const overlay2 = document.createElement('div');
+        overlay2.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center';
+        overlay2.innerHTML = `
+          <div style="background:#fff;border-radius:8px;padding:24px 28px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.25);font-family:inherit;border-top:4px solid #d93025">
+            <div style="font-size:15px;font-weight:700;margin-bottom:10px;color:#d93025">⚠ Confirm permanent deletion</div>
+            <div style="font-size:13px;color:#555;margin-bottom:20px">This will permanently delete <strong>${esc(haz.haz_code)}</strong> and its entire FTA tree. This cannot be undone.</div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button id="dfc2-cancel"  style="padding:6px 16px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+              <button id="dfc2-confirm" style="padding:6px 16px;border:none;border-radius:4px;background:#d93025;color:#fff;cursor:pointer;font-size:13px;font-weight:700">Yes, delete everything</button>
+            </div>
+          </div>`;
+        document.body.appendChild(overlay2);
+        overlay2.querySelector('#dfc2-cancel').onclick = () => overlay2.remove();
+        overlay2.addEventListener('click', e => { if (e.target === overlay2) overlay2.remove(); });
+        overlay2.querySelector('#dfc2-confirm').onclick = async () => {
+          overlay2.remove();
+          // Delete FTA nodes first, then hazard
+          await sb.from('fta_nodes').delete().eq('hazard_id', haz.id);
+          const { error } = await sb.from('hazards').delete().eq('id', haz.id);
+          if (error) { toast('Error deleting.', 'error'); return; }
+          toast('FC and FTA deleted.', 'success');
+          await reload(scope);
+        };
+      };
     };
   });
 }

@@ -1263,6 +1263,42 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     render(); toast('Layout applied.','success');
   }
 
+  // ── FHA INFO helpers ──────────────────────────────────────────────────────────
+  function getActiveFC() { return _fcs.find(f => f.id === _activeHazardId) || null; }
+
+  const CLS_COLOR = {
+    catastrophic: '#d93025', hazardous: '#E37400', major: '#F9AB00',
+    minor: '#1A73E8', 'no safety effect': '#555',
+  };
+  const DAL_COLOR = { 'DAL-A':'#d93025','DAL-B':'#E37400','DAL-C':'#F9AB00','DAL-D':'#1E8E3E','DAL-E':'#555' };
+
+  function fhaInfoHTML(fc) {
+    if (!fc) return '';
+    const d = fc.data || {};
+    const cls = (d.classification||'').toLowerCase();
+    const clsColor = CLS_COLOR[cls] || '#555';
+    const dalColor = DAL_COLOR[d.dal] || '#555';
+    const badge = (text, color) => text
+      ? `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;background:${color}18;color:${color};border:1px solid ${color}40">${esc(text)}</span>`
+      : '';
+    const row = (label, value) => value
+      ? `<div class="fta-info-row"><span class="fta-info-label">${label}</span><span class="fta-info-value">${esc(value)}</span></div>`
+      : '';
+    return `
+      <div class="fta-info-section">
+        <div class="fta-info-hdr">
+          <span class="fta-info-code">${esc(fc.haz_code)}</span>
+          <span class="fta-info-status">${esc(fc.status||'')}</span>
+        </div>
+        ${d.failure_condition ? `<div class="fta-info-fc">${esc(d.failure_condition)}</div>` : ''}
+        <div class="fta-info-badges">${badge(d.classification, clsColor)} ${badge(d.dal, dalColor)}</div>
+        ${row('Phase', d.phase_of_op)}
+        ${row('Local effect', d.effect_local)}
+        ${row('System effect', d.effect_system)}
+      </div>
+      <div class="fta-prop-sep"></div>`;
+  }
+
   // ── Properties panel ─────────────────────────────────────────────────────────
   function updatePropPanel() {
     const body=document.getElementById('fta-prop-body'); if(!body) return;
@@ -1279,10 +1315,13 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       }
     }
 
+    const infoBlock = fhaInfoHTML(getActiveFC());
+
     if (_selSet.size!==1) {
-      body.innerHTML=_selSet.size===0
+      const hint = _selSet.size===0
         ? '<div class="fta-prop-empty">← Select a node</div>'
         : `<div class="fta-prop-empty">${_selSet.size} nodes selected</div>`;
+      body.innerHTML = infoBlock + hint;
       return;
     }
     const n=byId([..._selSet][0]); if(!n) return;
@@ -1321,7 +1360,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       const cp=computeP(n);
       html+=`<div class="fta-prop-computed">Computed P = ${cp!=null?fmtNum(cp):'—'}</div>`;
     }
-    body.innerHTML=html;
+    body.innerHTML=infoBlock+html;
     // Wire autosave on blur
     body.querySelectorAll('.fta-prop-input').forEach(inp=>{
       inp.addEventListener('blur',async()=>{
