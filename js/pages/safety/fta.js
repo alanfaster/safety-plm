@@ -423,15 +423,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
      });
      g.appendChild(t);}
 
-    // ── Below box: indicator then optional numeric fields (left-aligned) ──
+    // ── Below box: optional numeric fields (left-aligned), then indicator ──
     // extra gap for top_event double border (border extends 4px outside box)
     let belowY = hh + (n.type==='top_event' ? 14 : 8);
-    if (base.indicator) {
-      const ind=buildIndicator(base.indicator, stroke);
-      ind.setAttribute('transform',`translate(0,${belowY+5})`);
-      g.appendChild(ind);
-      belowY += 26;
-    }
     const extFields = [];
     if (_cfg.showProbability) extFields.push({f:'probability',  lbl:'P'});
     if (_cfg.showFR)          extFields.push({f:'failure_rate', lbl:'FR'});
@@ -453,6 +447,13 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       g.appendChild(txt);
       belowY+=14;
     });
+    // indicator (circle/diamond/triangle) comes after ext fields
+    if (base.indicator) {
+      const ind=buildIndicator(base.indicator, stroke);
+      ind.setAttribute('transform',`translate(0,${belowY+10})`);
+      g.appendChild(ind);
+      belowY += 26;
+    }
 
     // Port + add-child button
     const portY = belowY + 6;
@@ -523,13 +524,13 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     lbl.textContent=n.label||t.label;
     g.appendChild(lbl);
 
-    // Computed P below gate shape (outside)
+    // Computed P below gate shape (outside, left-aligned)
     let gBelowY = hh + 8;
     if (_cfg.showProbability) {
       const p=computeP(n);
       const ptxt=svgEl('text');
-      ptxt.setAttribute('x',0); ptxt.setAttribute('y', gBelowY);
-      ptxt.setAttribute('text-anchor','middle'); ptxt.setAttribute('dominant-baseline','middle');
+      ptxt.setAttribute('x',-(hw-4)); ptxt.setAttribute('y', gBelowY);
+      ptxt.setAttribute('text-anchor','start'); ptxt.setAttribute('dominant-baseline','middle');
       ptxt.setAttribute('font-size','9'); ptxt.setAttribute('fill','#555');
       ptxt.setAttribute('pointer-events','none');
       ptxt.textContent = p !== null ? `P = ${fmtNum(p)}` : 'P = —';
@@ -661,10 +662,20 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     svg.addEventListener('mousedown',e=>{
       if (e.button===1){ e.preventDefault(); _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y}; return; }
 
-      // Right-click on node → start copy drag
+      // Right-click: copy drag on node, pan on empty canvas
       if (e.button===2) {
         const nodeEl=e.target.closest('.fta-node');
-        if (nodeEl) { e.stopPropagation(); const pt=toSvg(e); _copyDrag={fromId:nodeEl.dataset.id,startX:pt.x,startY:pt.y,curX:pt.x,curY:pt.y}; return; }
+        if (nodeEl) {
+          e.stopPropagation();
+          const clickedId=nodeEl.dataset.id;
+          // If the clicked node is part of a multi-selection, copy all selected; otherwise just this node
+          const ids = (_selSet.size>1 && _selSet.has(clickedId)) ? [..._selSet] : [clickedId];
+          const pt=toSvg(e);
+          _copyDrag={ids, startX:pt.x, startY:pt.y, curX:pt.x, curY:pt.y};
+          return;
+        }
+        // Empty canvas right-click → pan
+        _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y};
         return;
       }
 
@@ -732,7 +743,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         document.getElementById('fta-copy-g').innerHTML='';
         const dx=cd.curX-cd.startX, dy=cd.curY-cd.startY;
         if (Math.abs(dx)>15||Math.abs(dy)>15) {
-          const orig=byId(cd.fromId); if(orig) await finishCopyDrag(orig, orig.x+dx, orig.y+dy);
+          await finishMultiCopyDrag(cd.ids, dx, dy);
         }
         return;
       }
@@ -801,48 +812,70 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   function renderCopyGhost() {
     const layer=document.getElementById('fta-copy-g'); layer.innerHTML='';
     if (!_copyDrag) return;
-    const orig=byId(_copyDrag.fromId); if(!orig) return;
     const dx=_copyDrag.curX-_copyDrag.startX, dy=_copyDrag.curY-_copyDrag.startY;
     if (Math.abs(dx)<5&&Math.abs(dy)<5) return;
-    const nx=orig.x+dx, ny=orig.y+dy;
-    const hw=BOX_W/2, hh=boxH()/2;
-    const r=svgEl('rect');
-    r.setAttribute('x',nx-hw); r.setAttribute('y',ny-hh);
-    r.setAttribute('width',BOX_W); r.setAttribute('height',boxH());
-    r.setAttribute('fill','rgba(26,115,232,0.12)'); r.setAttribute('stroke','#1A73E8');
-    r.setAttribute('stroke-width','2'); r.setAttribute('stroke-dasharray','6,3');
-    r.setAttribute('rx','5'); r.setAttribute('pointer-events','none');
-    layer.appendChild(r);
+    _copyDrag.ids.forEach(id=>{
+      const orig=byId(id); if(!orig) return;
+      const nx=orig.x+dx, ny=orig.y+dy;
+      const hw=nw(orig)/2, hh=nh(orig)/2;
+      const r=svgEl('rect');
+      r.setAttribute('x',nx-hw); r.setAttribute('y',ny-hh);
+      r.setAttribute('width',nw(orig)); r.setAttribute('height',nh(orig));
+      r.setAttribute('fill','rgba(26,115,232,0.12)'); r.setAttribute('stroke','#1A73E8');
+      r.setAttribute('stroke-width','2'); r.setAttribute('stroke-dasharray','6,3');
+      r.setAttribute('rx','5'); r.setAttribute('pointer-events','none');
+      layer.appendChild(r);
+    });
+    // Label on first ghost
+    const first=byId(_copyDrag.ids[0]); if(!first) return;
     const t=svgEl('text');
-    t.setAttribute('x',nx); t.setAttribute('y',ny);
+    t.setAttribute('x',first.x+dx); t.setAttribute('y',first.y+dy);
     t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','middle');
     t.setAttribute('font-size','10'); t.setAttribute('fill','#1A73E8');
-    t.setAttribute('pointer-events','none'); t.textContent='Copy';
+    t.setAttribute('pointer-events','none');
+    t.textContent=_copyDrag.ids.length>1?`Copy ×${_copyDrag.ids.length}`:'Copy';
     layer.appendChild(t);
   }
 
-  async function finishCopyDrag(orig, tx, ty) {
-    pushUndo(`Copy ${orig.fta_code||'node'}`);
-    const code=nextCode(orig.type);
-    const {data,error}=await sb.from('fta_nodes').insert({
-      parent_type:parentType, parent_id:parentId, project_id:project.id,
-      type:orig.type, label:orig.label, component:orig.component, fta_code:code,
-      x:tx, y:ty, sort_order:_nodes.length, color:orig.color,
-      probability:orig.probability, failure_rate:orig.failure_rate, mttr:orig.mttr,
-      parent_node_id:null,
-    }).select().single();
-    if (error){toast('Error copying node.','error');return;}
-    _nodes.push(data);
-
-    if (orig.parent_node_id) {
-      const doConn=await confirmCopyConnect(orig);
-      if (doConn) {
-        data.parent_node_id=orig.parent_node_id;
-        await autosave(data.id,{parent_node_id:orig.parent_node_id});
-        await redistributeChildren(orig.parent_node_id);
+  async function finishMultiCopyDrag(ids, dx, dy) {
+    pushUndo(`Copy ${ids.length} node${ids.length>1?'s':''}`);
+    const newNodes=[];
+    // Build id-map for remapping parent_node_id within the copied group
+    const idMap={};
+    for (const origId of ids) {
+      const orig=byId(origId); if(!orig) continue;
+      const code=nextCode(orig.type);
+      const {data,error}=await sb.from('fta_nodes').insert({
+        parent_type:parentType, parent_id:parentId, project_id:project.id,
+        type:orig.type, label:orig.label, component:orig.component, fta_code:code,
+        x:orig.x+dx, y:orig.y+dy, sort_order:_nodes.length+newNodes.length, color:orig.color,
+        probability:orig.probability, failure_rate:orig.failure_rate, mttr:orig.mttr,
+        parent_node_id:null,
+      }).select().single();
+      if (error){toast('Error copying node.','error');return;}
+      _nodes.push(data); newNodes.push({data,orig});
+      idMap[origId]=data.id;
+    }
+    // Reconnect intra-group parent_node_id references
+    for (const {data,orig} of newNodes) {
+      if (orig.parent_node_id && idMap[orig.parent_node_id]) {
+        data.parent_node_id=idMap[orig.parent_node_id];
+        await autosave(data.id,{parent_node_id:data.parent_node_id});
       }
     }
-    _selSet.clear(); _selSet.add(data.id); render();
+    // For single-node copy, ask about connecting to same parent
+    if (newNodes.length===1) {
+      const {data,orig}=newNodes[0];
+      if (orig.parent_node_id && !idMap[orig.parent_node_id]) {
+        const doConn=await confirmCopyConnect(orig);
+        if (doConn) {
+          data.parent_node_id=orig.parent_node_id;
+          await autosave(data.id,{parent_node_id:orig.parent_node_id});
+          await redistributeChildren(orig.parent_node_id);
+        }
+      }
+    }
+    _selSet.clear(); newNodes.forEach(({data})=>_selSet.add(data.id)); render();
   }
 
   function confirmCopyConnect(orig) {
@@ -1046,8 +1079,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     else if (field==='component') { ry=n.y-hh+ROW_CODE;         rh=ROW_STD;  }
     else if (field==='label')     { ry=n.y-hh+ROW_CODE+ROW_STD; rh=lblRH;   }
     else {
-      // external numeric fields
-      let ey = n.y+hh+(n.type==='top_event'?14:8)+(base.indicator?26:0);
+      // external numeric fields (rendered before indicator now)
+      let ey = n.y+hh+(n.type==='top_event'?14:8);
       rw=100; rx=n.x-50; rh=16;
       if (field==='probability')  { ry=ey-8; }
       else { ey+=(_cfg.showProbability?14:0);
@@ -1145,6 +1178,19 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   // ── Properties panel ─────────────────────────────────────────────────────────
   function updatePropPanel() {
     const body=document.getElementById('fta-prop-body'); if(!body) return;
+
+    // Flush any in-progress edit — innerHTML removal does NOT fire blur in browsers
+    const activeInp = body.querySelector('input:focus');
+    if (activeInp) {
+      const field=activeInp.dataset.field, nid=activeInp.dataset.nid;
+      const node=byId(nid);
+      if (node && field) {
+        let v=activeInp.value.trim();
+        if(activeInp.type==='number') v=v===''?null:parseFloat(v);
+        if(v!==(node[field]??'')) { node[field]=v; autosave(nid,{[field]:v}); }
+      }
+    }
+
     if (_selSet.size!==1) {
       body.innerHTML=_selSet.size===0
         ? '<div class="fta-prop-empty">← Select a node</div>'
@@ -1272,8 +1318,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     if (ry >= -hh              && ry < -hh+ROW_CODE)          return 'fta_code';
     if (ry >= -hh+ROW_CODE     && ry < -hh+ROW_CODE+ROW_STD) return 'component';
     if (ry >= -hh+ROW_CODE+ROW_STD && ry < hh)               return 'label';
-    // External fields below box
-    let ey = hh + (n.type==='top_event'?14:8) + (base.indicator?26:0);
+    // External fields below box (now rendered before indicator)
+    let ey = hh + (n.type==='top_event'?14:8);
     if (_cfg.showProbability){ if(ry>=ey-7&&ry<ey+7) return 'probability'; ey+=14; }
     if (_cfg.showFR)         { if(ry>=ey-7&&ry<ey+7) return 'failure_rate'; ey+=14; }
     if (_cfg.showMTTR)       { if(ry>=ey-7&&ry<ey+7) return 'mttr'; }
