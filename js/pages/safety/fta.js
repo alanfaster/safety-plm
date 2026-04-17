@@ -188,7 +188,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       </div>`; /* end fta-content-row */
 
   await loadFCs();
-  await loadNodes();
+  try { await loadNodes(); } catch(e) { console.warn('FTA loadNodes error:', e); }
   renderFCTabs();
   render();
   wireToolbar();
@@ -221,16 +221,28 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   async function loadNodes() {
     if (!_activeHazardId) { _nodes = []; return; }
-    let query = sb.from('fta_nodes').select('*');
-    if (_activeHazardId === UNLINKED_ID) {
-      query = query.eq('parent_type', parentType).eq('parent_id', parentId).is('hazard_id', null);
-    } else {
-      query = query.eq('hazard_id', _activeHazardId);
+    try {
+      let query = sb.from('fta_nodes').select('*');
+      if (_activeHazardId === UNLINKED_ID) {
+        query = query.eq('parent_type', parentType).eq('parent_id', parentId).is('hazard_id', null);
+      } else {
+        query = query.eq('hazard_id', _activeHazardId);
+      }
+      const { data, error } = await query.order('sort_order', { ascending:true });
+      if (error) {
+        // Fallback: if hazard_id column missing (migration not yet run), load by parent
+        const { data: d2 } = await sb.from('fta_nodes')
+          .select('*').eq('parent_type', parentType).eq('parent_id', parentId)
+          .order('sort_order', { ascending:true });
+        _nodes = d2 || [];
+      } else {
+        _nodes = data || [];
+      }
+    } catch(e) {
+      console.warn('FTA loadNodes fallback:', e);
+      _nodes = [];
     }
-    const { data, error } = await query.order('sort_order', { ascending:true });
-    if (error) { toast('Error loading FTA.', 'error'); return; }
-    _nodes = data || [];
-    if (_nodes.length) document.getElementById('fta-hint').style.display='none';
+    if (_nodes.length) { const h=document.getElementById('fta-hint'); if(h) h.style.display='none'; }
   }
 
   function renderFCTabs() {
