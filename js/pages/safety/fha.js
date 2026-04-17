@@ -361,9 +361,26 @@ async function generateHazopEntries(panel, fnId, funcType, scope) {
     sort_order:    0,
   }));
 
-  const { error } = await sb.from('hazards').insert(records);
+  const { data: newHazards, error } = await sb.from('hazards').insert(records).select();
   if (error) { toast('Error generating entries: ' + error.message, 'error'); return; }
-  toast(`${records.length} FHA entr${records.length === 1 ? 'y' : 'ies'} created.`, 'success');
+
+  // Auto-seed an FTA tree for each new Failure Condition
+  if (newHazards?.length) {
+    const ftaSeeds = newHazards.map(h => ({
+      parent_type: scope.parentType,
+      parent_id:   scope.parentId,
+      project_id:  scope.project.id,
+      hazard_id:   h.id,
+      type:        'top_event',
+      label:       h.data?.failure_condition || h.haz_code,
+      component:   '',
+      fta_code:    'TE-01',
+      x: 400, y: 100, sort_order: 0, color: '',
+    }));
+    await sb.from('fta_nodes').insert(ftaSeeds);
+  }
+
+  toast(`${records.length} FHA entr${records.length === 1 ? 'y' : 'ies'} + FTAs created.`, 'success');
   await reload(scope);
 }
 
@@ -561,18 +578,34 @@ async function saveRow(row, existingHaz, fnId, scope, onDone) {
     const idx = (existing?.length || 0) + 1;
     const haz_code = buildCode('FHA', { projectName: scope.project.name, index: idx });
 
-    ({ error } = await sb.from('hazards').insert({
+    let newHaz;
+    ({ data: newHaz, error } = await sb.from('hazards').insert({
       parent_type:   scope.parentType,
       parent_id:     scope.parentId,
       analysis_type: 'FHA',
       function_id:   fnId || null,
       haz_code,
       data, status, sort_order: idx,
-    }));
+    }).select().single());
+
+    // Auto-seed an FTA tree for this new Failure Condition
+    if (!error && newHaz) {
+      await sb.from('fta_nodes').insert({
+        parent_type: scope.parentType,
+        parent_id:   scope.parentId,
+        project_id:  scope.project.id,
+        hazard_id:   newHaz.id,
+        type:        'top_event',
+        label:       data.failure_condition,
+        component:   '',
+        fta_code:    'TE-01',
+        x: 400, y: 100, sort_order: 0, color: '',
+      });
+    }
   }
 
   if (error) { toast('Error saving: ' + error.message, 'error'); console.error(error); return; }
-  toast(existingHaz ? 'Updated.' : 'FHA entry added.', 'success');
+  toast(existingHaz ? 'Updated.' : 'FHA entry added. FTA created.', 'success');
   row.remove();
   if (onDone) onDone();
   await reload(scope);

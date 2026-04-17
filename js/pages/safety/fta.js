@@ -86,6 +86,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   function saveCfg() { localStorage.setItem(CFG_KEY, JSON.stringify(_cfg)); }
 
   // ── State ──────────────────────────────────────────────────────────────────
+  let _fcs     = [];             // FHA failure conditions for this parent
+  let _activeHazardId = null;    // currently displayed FC's hazard id
   let _nodes   = [];
   let _selSet  = new Set();      // selected node ids
   let _drag    = null;           // { origins:[{id,ox,oy}], mx, my }
@@ -146,6 +148,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         </div>
       </div>
 
+      <!-- FC sub-page tabs (one per FHA Failure Condition) -->
+      <div class="fta-fc-tabs" id="fta-fc-tabs"></div>
+
       <div class="fta-content-row">
       <div class="fta-canvas-wrap" id="fta-cw">
         <svg id="fta-svg" class="fta-svg" xmlns="http://www.w3.org/2000/svg">
@@ -182,20 +187,58 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
       </div>`; /* end fta-content-row */
 
+  await loadFCs();
   await loadNodes();
+  renderFCTabs();
   render();
   wireToolbar();
   wireCanvas();
   wireKeyboard();
 
   // ── Data ───────────────────────────────────────────────────────────────────
+  async function loadFCs() {
+    const { data } = await sb.from('hazards')
+      .select('id, haz_code, data, status')
+      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .eq('analysis_type', 'FHA')
+      .order('sort_order', { ascending: true });
+    _fcs = data || [];
+    if (_fcs.length && !_activeHazardId) _activeHazardId = _fcs[0].id;
+  }
+
   async function loadNodes() {
+    if (!_activeHazardId) { _nodes = []; return; }
     const { data, error } = await sb.from('fta_nodes')
-      .select('*').eq('parent_type', parentType).eq('parent_id', parentId)
+      .select('*').eq('hazard_id', _activeHazardId)
       .order('sort_order', { ascending:true });
     if (error) { toast('Error loading FTA.', 'error'); return; }
     _nodes = data || [];
     if (_nodes.length) document.getElementById('fta-hint').style.display='none';
+  }
+
+  function renderFCTabs() {
+    const el = document.getElementById('fta-fc-tabs'); if (!el) return;
+    if (!_fcs.length) {
+      el.innerHTML = '<span class="fta-fc-empty">No Failure Conditions found in FHA — create FCs in the FHA page to generate FTA sub-pages.</span>';
+      return;
+    }
+    el.innerHTML = _fcs.map(fc => {
+      const label = fc.data?.failure_condition || fc.haz_code;
+      const active = fc.id === _activeHazardId;
+      const short = label.length > 38 ? label.slice(0, 37) + '…' : label;
+      return `<button class="fta-fc-tab${active?' active':''}" data-hid="${fc.id}" title="${esc(label)}"><span class="fta-fc-tab-code">${esc(fc.haz_code)}</span> ${esc(short)}</button>`;
+    }).join('');
+    el.querySelectorAll('.fta-fc-tab').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (btn.dataset.hid === _activeHazardId) return;
+        _activeHazardId = btn.dataset.hid;
+        _selSet.clear(); _nodes = [];
+        closeEditor(); closeAddMenu();
+        await loadNodes();
+        render();
+        renderFCTabs();
+      });
+    });
   }
 
   function byId(id) { return _nodes.find(n=>n.id===id); }
@@ -880,6 +923,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       const code=nextCode(orig.type);
       const {data,error}=await sb.from('fta_nodes').insert({
         parent_type:parentType, parent_id:parentId, project_id:project.id,
+        hazard_id: _activeHazardId,
         type:orig.type, label:orig.label, component:orig.component, fta_code:code,
         x:orig.x+dx, y:orig.y+dy, sort_order:_nodes.length+newNodes.length, color:orig.color,
         probability:orig.probability, failure_rate:orig.failure_rate, mttr:orig.mttr,
@@ -1004,6 +1048,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     const code = nextCode(type);
     const { data, error } = await sb.from('fta_nodes').insert({
       parent_type:parentType, parent_id:parentId, project_id:project.id,
+      hazard_id: _activeHazardId,
       type, label:'', component:'', fta_code:code,
       x:cx, y:cy, sort_order:_nodes.length, color:'',
       parent_node_id: parentId,
@@ -1045,6 +1090,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     const code=nextCode(type);
     const {data,error}=await sb.from('fta_nodes').insert({
       parent_type:parentType, parent_id:parentId, project_id:project.id,
+      hazard_id: _activeHazardId,
       type, label:'', component:'', fta_code:code,
       x:cx, y:cy, sort_order:_nodes.length, color:'',
     }).select().single();
@@ -1103,6 +1149,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   }
 
   function editField(id, field) {
+    if (field === 'fta_code') return; // auto-generated, read-only
     const n = byId(id); if (!n) return;
     const base = NT[n.type]||NT.basic;
     const isNum = field==='probability'||field==='failure_rate'||field==='mttr';
@@ -1241,7 +1288,6 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     const n=byId([..._selSet][0]); if(!n) return;
     const isGateNode=isGate(n.type);
     const fields=[
-      {key:'fta_code',     label:'Code',        type:'text'},
       {key:'component',    label:'Component',   type:'text'},
       {key:'label',        label:isGateNode?'Gate label':'Failure',    type:'text'},
     ];
@@ -1251,6 +1297,11 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       {key:'mttr',         label:'MTTR',              type:'number'},
     ];
     let html=`<div class="fta-prop-type">${(NT[n.type]?.label||n.type).replace(/_/g,' ')}</div>`;
+    // ID is auto-generated and read-only
+    html+=`<div class="fta-prop-field">
+      <label class="fta-prop-label">ID</label>
+      <div class="fta-prop-readonly">${esc(n.fta_code||'')}</div>
+    </div>`;
     fields.forEach(f=>{
       const val=esc(n[f.key]||'');
       html+=`<div class="fta-prop-field">
