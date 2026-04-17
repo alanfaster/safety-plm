@@ -191,9 +191,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   await loadFCs();
   try { await loadNodes(); } catch(e) { console.warn('FTA loadNodes error:', e); }
   try { renderFCTabs(); } catch(e) { console.warn('FTA renderFCTabs error:', e); }
-  render();
-  wireToolbar();
-  wireCanvas();
+  try { render(); } catch(e) { console.error('FTA render error:', e); }
+  try { wireToolbar(); } catch(e) { console.error('FTA wireToolbar error:', e); }
+  try { wireCanvas(); } catch(e) { console.error('FTA wireCanvas error:', e); }
   wireKeyboard();
 
   // ── Data ───────────────────────────────────────────────────────────────────
@@ -422,13 +422,13 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     renderCopyGhost();
     renderGuides();
     applyTransform();
-    document.getElementById('fta-hint').style.display = _nodes.length ? 'none' : '';
+    const hint=document.getElementById('fta-hint'); if(hint) hint.style.display = _nodes.length ? 'none' : '';
     updateDelBtn();
     updatePropPanel();
   }
 
   function applyTransform() {
-    const g=document.getElementById('fta-root');
+    const g=container.querySelector('#fta-root');
     if (g) g.setAttribute('transform',`translate(${_pan.x},${_pan.y}) scale(${_zoom})`);
   }
 
@@ -486,7 +486,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   }
 
   function renderConns() {
-    const layer=document.getElementById('fta-conns');
+    const layer=document.getElementById('fta-conns'); if(!layer) return;
     layer.innerHTML='';
     _nodes.forEach(n=>{
       if (!n.parent_node_id) return;
@@ -506,7 +506,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   }
 
   function renderNodeEls() {
-    const layer=document.getElementById('fta-nodes-g');
+    const layer=document.getElementById('fta-nodes-g'); if(!layer) return;
     layer.innerHTML='';
     _nodes.forEach(n=>layer.appendChild(isGate(n.type)?buildGateNode(n):buildBoxNode(n)));
   }
@@ -766,7 +766,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   // ── Pending connection ──────────────────────────────────────────────────────
   function renderPendingConn() {
-    const layer=document.getElementById('fta-pending'); layer.innerHTML='';
+    const layer=document.getElementById('fta-pending'); if(!layer) return; layer.innerHTML='';
     if (!_conn) return;
     const n=byId(_conn.fromId); if(!n) return;
     const x1=n.x, y1=n.y+nh(n)/2, x2=_conn.curX, y2=_conn.curY, mid=(y1+y2)/2;
@@ -783,7 +783,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   // ── Rubber-band lasso ───────────────────────────────────────────────────────
   function renderLasso() {
-    const layer=document.getElementById('fta-lasso-g'); layer.innerHTML='';
+    const layer=document.getElementById('fta-lasso-g'); if(!layer) return; layer.innerHTML='';
     if (!_lasso) return;
     const x=Math.min(_lasso.x1,_lasso.x2), y=Math.min(_lasso.y1,_lasso.y2);
     const w=Math.abs(_lasso.x2-_lasso.x1), h=Math.abs(_lasso.y2-_lasso.y1);
@@ -798,44 +798,45 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   // ── Toolbar ─────────────────────────────────────────────────────────────────
   function wireToolbar() {
+    const q = id => container.querySelector('#'+id);
     container.querySelectorAll('.fta-add-btn').forEach(btn=>btn.addEventListener('click',()=>addNode(btn.dataset.type)));
-    document.getElementById('fta-btn-del').addEventListener('click', deleteSelected);
-    document.getElementById('fta-btn-layout').addEventListener('click', autoLayout);
-    document.getElementById('fta-btn-zi').addEventListener('click',()=>setZoom(_zoom*1.2));
-    document.getElementById('fta-btn-zo').addEventListener('click',()=>setZoom(_zoom/1.2));
-    document.getElementById('fta-btn-zr').addEventListener('click', fitAll);
+    q('fta-btn-del').addEventListener('click', deleteSelected);
+    q('fta-btn-layout').addEventListener('click', autoLayout);
+    q('fta-btn-zi').addEventListener('click',()=>setZoom(_zoom*1.2));
+    q('fta-btn-zo').addEventListener('click',()=>setZoom(_zoom/1.2));
+    q('fta-btn-zr').addEventListener('click', fitAll);
 
     // Prop panel toggle
-    document.getElementById('fta-prop-toggle').addEventListener('click',()=>{
-      const panel=document.getElementById('fta-prop-panel');
+    q('fta-prop-toggle').addEventListener('click',()=>{
+      const panel=q('fta-prop-panel');
       const collapsed=panel.classList.toggle('fta-prop-collapsed');
-      document.getElementById('fta-prop-toggle').textContent=collapsed?'▶':'◀';
+      q('fta-prop-toggle').textContent=collapsed?'▶':'◀';
     });
 
     // Config toggle
-    const cfgBtn=document.getElementById('fta-btn-cfg');
-    const cfgPanel=document.getElementById('fta-cfg-panel');
+    const cfgBtn=q('fta-btn-cfg');
+    const cfgPanel=q('fta-cfg-panel');
     cfgBtn.addEventListener('click',()=>{
       cfgPanel.style.display=cfgPanel.style.display==='none'?'':'none';
     });
     ['cfg-prob','cfg-fr','cfg-mttr'].forEach((id,i)=>{
       const key=['showProbability','showFR','showMTTR'][i];
-      document.getElementById(id).addEventListener('change',e=>{
+      q(id).addEventListener('change',e=>{
         _cfg[key]=e.target.checked; saveCfg(); render();
       });
     });
-    document.getElementById('cfg-spacing').addEventListener('input',e=>{
+    q('cfg-spacing').addEventListener('input',e=>{
       _cfg.childY=parseInt(e.target.value);
-      document.getElementById('cfg-spacing-lbl').textContent=_cfg.childY+'px';
+      q('cfg-spacing-lbl').textContent=_cfg.childY+'px';
       relayoutInMemory(); render(); // live preview — no DB save yet
     });
-    document.getElementById('cfg-spacing').addEventListener('change',async e=>{
+    q('cfg-spacing').addEventListener('change',async e=>{
       saveCfg();
       await Promise.all(_nodes.map(n=>autosave(n.id,{x:n.x,y:n.y})));
     });
 
     // Colour picker
-    document.getElementById('fta-color-inp').addEventListener('change',async e=>{
+    q('fta-color-inp').addEventListener('change',async e=>{
       // 'change' fires once on picker close; push undo once per colour action
       pushUndo(`Colour ${[..._selSet].map(id=>byId(id)?.fta_code||'node').join(', ')}`);
       const col=e.target.value;
@@ -850,8 +851,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   // ── Canvas events ────────────────────────────────────────────────────────────
   function wireCanvas() {
-    const wrap=document.getElementById('fta-cw');
-    const svg =document.getElementById('fta-svg');
+    const wrap=container.querySelector('#fta-cw');
+    const svg =container.querySelector('#fta-svg');
 
     wrap.addEventListener('wheel',e=>{
       e.preventDefault();
@@ -866,7 +867,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     svg.addEventListener('contextmenu', e=>e.preventDefault());
 
     svg.addEventListener('mousedown',e=>{
-      if (e.button===1){ e.preventDefault(); _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y}; document.getElementById('fta-cw').style.cursor='grabbing'; return; }
+      if (e.button===1){ e.preventDefault(); _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y}; wrap.style.cursor='grabbing'; return; }
 
       // Right-click: copy drag on node, pan on empty canvas
       if (e.button===2) {
@@ -882,7 +883,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         }
         // Empty canvas right-click → pan
         _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y};
-        document.getElementById('fta-cw').style.cursor='grabbing';
+        wrap.style.cursor='grabbing';
         return;
       }
 
@@ -973,7 +974,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         }
         _lasso=null; render();
       }
-      if (_panDrag && !_space) document.getElementById('fta-cw').style.cursor='default';
+      if (_panDrag && !_space) wrap.style.cursor='default';
       _panDrag=false;
     });
 
@@ -983,14 +984,14 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   function wireKeyboard() {
     const onKey=e=>{
       if (e.target.closest('input,textarea,select')) return;
-      if (e.key===' ') { e.preventDefault(); _space=true; document.getElementById('fta-cw').style.cursor='grab'; }
+      if (e.key===' ') { e.preventDefault(); _space=true; const cw=container.querySelector('#fta-cw'); if(cw) cw.style.cursor='grab'; }
       if (e.key==='Delete'||e.key==='Backspace') deleteSelected();
       if (e.key==='Escape') { _selSet.clear(); render(); }
       if ((e.ctrlKey||e.metaKey)&&e.key==='a') { e.preventDefault(); _nodes.forEach(n=>_selSet.add(n.id)); render(); }
       if ((e.ctrlKey||e.metaKey)&&e.key==='z') { e.preventDefault(); undo(); }
     };
     const onKeyUp=e=>{
-      if (e.key===' ') { _space=false; document.getElementById('fta-cw').style.cursor='default'; }
+      if (e.key===' ') { _space=false; const cw=container.querySelector('#fta-cw'); if(cw) cw.style.cursor='default'; }
     };
     document.addEventListener('keydown',onKey);
     document.addEventListener('keyup',onKeyUp);
@@ -1018,7 +1019,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   // ── Copy drag ────────────────────────────────────────────────────────────────
   function renderCopyGhost() {
-    const layer=document.getElementById('fta-copy-g'); layer.innerHTML='';
+    const layer=document.getElementById('fta-copy-g'); if(!layer) return; layer.innerHTML='';
     if (!_copyDrag) return;
     const dx=_copyDrag.curX-_copyDrag.startX, dy=_copyDrag.curY-_copyDrag.startY;
     if (Math.abs(dx)<5&&Math.abs(dy)<5) return;
@@ -1116,7 +1117,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   function showAddMenu(parentId, clientX, clientY) {
     closeAddMenu();
-    const wrap = document.getElementById('fta-cw');
+    const wrap = container.querySelector('#fta-cw');
     const rect = wrap.getBoundingClientRect();
     const left = clientX - rect.left + 10;
     const top  = clientY - rect.top  + 10;
@@ -1190,7 +1191,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     await redistributeChildren(parentId);
     _selSet.clear(); _selSet.add(data.id);
     render();
-    document.getElementById('fta-hint').style.display='none';
+    { const h=document.getElementById('fta-hint'); if(h) h.style.display='none'; }
   }
 
   // Redistribute all direct children of a node horizontally, centred on parent
@@ -1216,9 +1217,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   async function addNode(type) {
     pushUndo(`Add ${CODE_PFX[type]||type}`);
     const t=NT[type]||NT.basic;
-    const wrap=document.getElementById('fta-cw');
-    const cx=(wrap.offsetWidth/2-_pan.x)/_zoom + (_nodes.length%5)*18-36;
-    const cy=(wrap.offsetHeight/2-_pan.y)/_zoom + (_nodes.length%5)*18-36;
+    const wrap=container.querySelector('#fta-cw');
+    const cx=(wrap ? wrap.offsetWidth/2-_pan.x : 300)/_zoom + (_nodes.length%5)*18-36;
+    const cy=(wrap ? wrap.offsetHeight/2-_pan.y : 200)/_zoom + (_nodes.length%5)*18-36;
     const code=nextCode(type);
     const {data,error}=await sb.from('fta_nodes').insert({
       parent_type:parentType, parent_id:parentId, project_id:project.id,
@@ -1230,7 +1231,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     _nodes.push(data);
     _selSet.clear(); _selSet.add(data.id);
     render();
-    document.getElementById('fta-hint').style.display='none';
+    { const h=document.getElementById('fta-hint'); if(h) h.style.display='none'; }
   }
 
   // ── Inline editor (SVG foreignObject — lives inside the transform group) ──────
@@ -1240,7 +1241,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   function openEditor(x, y, w, h, value, isNum, onCommit) {
     closeEditor();
-    const layer = document.getElementById('fta-edit-g');
+    const layer = container.querySelector('#fta-edit-g'); if (!layer) return;
     const fo = svgEl('foreignObject');
     fo.setAttribute('x', x); fo.setAttribute('y', y);
     fo.setAttribute('width', w); fo.setAttribute('height', h);
@@ -1368,9 +1369,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   }
 
   function updateDelBtn() {
-    const b=document.getElementById('fta-btn-del'); if(b) b.disabled=!_selSet.size;
+    const b=container.querySelector('#fta-btn-del'); if(b) b.disabled=!_selSet.size;
     // Sync colour picker to first selected
-    const inp=document.getElementById('fta-color-inp');
+    const inp=container.querySelector('#fta-color-inp');
     if (inp&&_selSet.size) { const n=byId([..._selSet][0]); if(n?.color?.startsWith('#')) inp.value=n.color; }
   }
 
@@ -1433,7 +1434,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   // ── Properties panel ─────────────────────────────────────────────────────────
   function updatePropPanel() {
-    const body=document.getElementById('fta-prop-body'); if(!body) return;
+    const body=container.querySelector('#fta-prop-body'); if(!body) return;
 
     // Flush any in-progress edit — innerHTML removal does NOT fire blur in browsers
     const activeInp = body.querySelector('input:focus');
@@ -1544,7 +1545,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
-  function toSvg(e){ const wrap=document.getElementById('fta-cw'),rect=wrap.getBoundingClientRect(); return{x:(e.clientX-rect.left-_pan.x)/_zoom,y:(e.clientY-rect.top-_pan.y)/_zoom}; }
+  function toSvg(e){ const wrap=container.querySelector('#fta-cw'),rect=wrap?wrap.getBoundingClientRect():{left:0,top:0}; return{x:(e.clientX-rect.left-_pan.x)/_zoom,y:(e.clientY-rect.top-_pan.y)/_zoom}; }
   function setZoom(z){ _zoom=Math.min(3,Math.max(0.15,z));applyTransform(); }
 
   function fitAll() {
@@ -1559,8 +1560,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       if(n.x+hw>maxX) maxX=n.x+hw;
       if(n.y+hh>maxY) maxY=n.y+hh;
     });
-    const wrap=document.getElementById('fta-cw');
-    const vw=wrap.clientWidth, vh=wrap.clientHeight;
+    const wrap=container.querySelector('#fta-cw');
+    const vw=wrap ? wrap.clientWidth : 800, vh=wrap ? wrap.clientHeight : 600;
     const contentW=maxX-minX, contentH=maxY-minY;
     const z=Math.min(3, Math.max(0.1, Math.min(
       (vw-PAD*2)/Math.max(contentW,1),
