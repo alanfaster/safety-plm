@@ -254,13 +254,16 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       const label = fc.data?.failure_condition || fc.haz_code;
       const active = fc.id === _activeHazardId;
       const isUnlinked = fc.id === UNLINKED_ID;
-      const short = label.length > 38 ? label.slice(0, 37) + '…' : label;
-      return `<button class="fta-fc-tab${active?' active':''}${isUnlinked?' fta-fc-tab-unlinked':''}" data-hid="${fc.id}" title="${esc(label)}">${isUnlinked ? '⚠ ' : `<span class="fta-fc-tab-code">${esc(fc.haz_code)}</span> `}${esc(short)}</button>`;
+      const short = label.length > 32 ? label.slice(0, 31) + '…' : label;
+      return `<span class="fta-fc-tab${active?' active':''}${isUnlinked?' fta-fc-tab-unlinked':''}" data-hid="${fc.id}" title="${esc(label)}">${isUnlinked ? '⚠ ' : `<span class="fta-fc-tab-code">${esc(fc.haz_code)}</span> `}${esc(short)}<span class="fta-fc-tab-del" data-hid="${fc.id}" title="Delete FTA">×</span></span>`;
     }).join('');
-    el.querySelectorAll('.fta-fc-tab').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (btn.dataset.hid === _activeHazardId) return;
-        _activeHazardId = btn.dataset.hid;
+
+    // Tab switch (click on the label part)
+    el.querySelectorAll('.fta-fc-tab').forEach(tab => {
+      tab.addEventListener('click', async e => {
+        if (e.target.classList.contains('fta-fc-tab-del')) return; // handled separately
+        if (tab.dataset.hid === _activeHazardId) return;
+        _activeHazardId = tab.dataset.hid;
         _selSet.clear(); _nodes = [];
         closeEditor(); closeAddMenu();
         await loadNodes();
@@ -268,6 +271,106 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         renderFCTabs();
       });
     });
+
+    // Delete FTA (×)
+    el.querySelectorAll('.fta-fc-tab-del').forEach(x => {
+      x.addEventListener('click', e => { e.stopPropagation(); deleteFTAConfirm(x.dataset.hid); });
+    });
+  }
+
+  function deleteFTAConfirm(hazardId) {
+    const isUnlinked = hazardId === UNLINKED_ID;
+    const fc = _fcs.find(f => f.id === hazardId);
+    const fcLabel = fc?.data?.failure_condition || fc?.haz_code || '—';
+    const fcCode  = fc?.haz_code || '—';
+
+    const mkOverlay = html => {
+      const o = document.createElement('div');
+      o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+      o.innerHTML = html;
+      document.body.appendChild(o);
+      o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+      return o;
+    };
+
+    if (isUnlinked) {
+      // Unlinked FTA: two-step hard delete
+      const o1 = mkOverlay(`
+        <div style="background:#fff;border-radius:8px;padding:24px 28px;max-width:400px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2);font-family:inherit">
+          <div style="font-size:15px;font-weight:600;margin-bottom:8px">Delete unlinked FTA?</div>
+          <div style="font-size:13px;color:#555;margin-bottom:20px">This FTA is no longer linked to any Failure Condition. All nodes will be permanently deleted.</div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button id="d1-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+            <button id="d1-ok"     style="padding:6px 16px;border:none;border-radius:4px;background:#d93025;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Delete</button>
+          </div>
+        </div>`);
+      o1.querySelector('#d1-cancel').onclick = () => o1.remove();
+      o1.querySelector('#d1-ok').onclick = () => {
+        o1.remove();
+        const o2 = mkOverlay(`
+          <div style="background:#fff;border-radius:8px;padding:24px 28px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.25);font-family:inherit;border-top:4px solid #d93025">
+            <div style="font-size:15px;font-weight:700;color:#d93025;margin-bottom:10px">⚠ Confirm permanent deletion</div>
+            <div style="font-size:13px;color:#555;margin-bottom:20px">All FTA nodes will be deleted. This <strong>cannot be undone</strong>.</div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button id="d2-cancel"  style="padding:6px 16px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+              <button id="d2-confirm" style="padding:6px 16px;border:none;border-radius:4px;background:#d93025;color:#fff;cursor:pointer;font-size:13px;font-weight:700">Yes, delete all nodes</button>
+            </div>
+          </div>`);
+        o2.querySelector('#d2-cancel').onclick = () => o2.remove();
+        o2.querySelector('#d2-confirm').onclick = async () => {
+          o2.remove();
+          await sb.from('fta_nodes').delete()
+            .eq('parent_type', parentType).eq('parent_id', parentId).is('hazard_id', null);
+          _nodes = []; _selSet.clear();
+          _fcs = _fcs.filter(f => f.id !== UNLINKED_ID);
+          if (_activeHazardId === UNLINKED_ID) _activeHazardId = _fcs[0]?.id || null;
+          render(); renderFCTabs();
+          toast('Unlinked FTA deleted.', 'success');
+        };
+      });
+    } else {
+      // Linked FTA: recommend clearing instead; still allow with double confirm
+      const o1 = mkOverlay(`
+        <div style="background:#fff;border-radius:8px;padding:24px 28px;max-width:430px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2);font-family:inherit">
+          <div style="font-size:15px;font-weight:600;margin-bottom:8px">Delete FTA for ${esc(fcCode)}?</div>
+          <div style="font-size:13px;color:#555;margin-bottom:8px">Failure Condition: <strong>${esc(fcLabel)}</strong></div>
+          <div style="font-size:13px;background:#FFF8E1;border:1px solid #F9AB00;border-radius:5px;padding:10px 12px;margin-bottom:18px;color:#5F4000">
+            <strong>⚠ Recommendation:</strong> Failure Conditions normally require a Fault Tree Analysis. It is better to <strong>clear the content</strong> and keep the FTA empty than to delete it entirely.
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+            <button id="l1-cancel" style="padding:6px 14px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+            <button id="l1-clear"  style="padding:6px 14px;border:1px solid #1A73E8;border-radius:4px;background:#fff;color:#1A73E8;cursor:pointer;font-size:13px;font-weight:600">Clear content (recommended)</button>
+            <button id="l1-del"    style="padding:6px 14px;border:none;border-radius:4px;background:#d93025;color:#fff;cursor:pointer;font-size:13px">Delete anyway</button>
+          </div>
+        </div>`);
+      o1.querySelector('#l1-cancel').onclick = () => o1.remove();
+      o1.querySelector('#l1-clear').onclick = async () => {
+        o1.remove();
+        await sb.from('fta_nodes').delete().eq('hazard_id', hazardId);
+        _nodes = []; _selSet.clear(); render(); renderFCTabs();
+        toast('FTA content cleared. Empty FTA preserved.', 'success');
+      };
+      o1.querySelector('#l1-del').onclick = () => {
+        o1.remove();
+        const o2 = mkOverlay(`
+          <div style="background:#fff;border-radius:8px;padding:24px 28px;max-width:380px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.25);font-family:inherit;border-top:4px solid #d93025">
+            <div style="font-size:15px;font-weight:700;color:#d93025;margin-bottom:10px">⚠ Confirm deletion</div>
+            <div style="font-size:13px;color:#555;margin-bottom:6px">All FTA nodes for <strong>${esc(fcCode)}</strong> will be permanently deleted.</div>
+            <div style="font-size:12px;color:#888;margin-bottom:20px">The Failure Condition will remain in FHA but will have no FTA. This cannot be undone.</div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button id="l2-cancel"  style="padding:6px 16px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+              <button id="l2-confirm" style="padding:6px 16px;border:none;border-radius:4px;background:#d93025;color:#fff;cursor:pointer;font-size:13px;font-weight:700">Yes, delete all nodes</button>
+            </div>
+          </div>`);
+        o2.querySelector('#l2-cancel').onclick = () => o2.remove();
+        o2.querySelector('#l2-confirm').onclick = async () => {
+          o2.remove();
+          await sb.from('fta_nodes').delete().eq('hazard_id', hazardId);
+          _nodes = []; _selSet.clear(); render(); renderFCTabs();
+          toast('FTA deleted.', 'success');
+        };
+      };
+    }
   }
 
   function byId(id) { return _nodes.find(n=>n.id===id); }
