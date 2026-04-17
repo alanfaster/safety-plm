@@ -81,7 +81,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   // ── Config (persisted in localStorage) ────────────────────────────────────
   const CFG_KEY = `fta_cfg_${parentType}_${parentId}`;
-  let _cfg = { showProbability:false, showFR:false, showMTTR:false, childY:120 };
+  let _cfg = { showProbability:false, showFR:false, showMTTR:false, childY:100 };
   try { Object.assign(_cfg, JSON.parse(localStorage.getItem(CFG_KEY)||'{}')); } catch{}
   function saveCfg() { localStorage.setItem(CFG_KEY, JSON.stringify(_cfg)); }
 
@@ -141,7 +141,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         <div class="fta-cfg-sep"></div>
         <div class="fta-cfg-row fta-cfg-spacing-row">
           <span>Spacing</span>
-          <input type="range" id="cfg-spacing" min="40" max="350" step="5" value="${_cfg.childY}" style="flex:1;margin:0 6px">
+          <input type="range" id="cfg-spacing" min="100" max="150" step="5" value="${_cfg.childY}" style="flex:1;margin:0 6px">
           <span id="cfg-spacing-lbl" style="min-width:36px;text-align:right">${_cfg.childY}px</span>
         </div>
       </div>
