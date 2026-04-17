@@ -346,10 +346,17 @@ function wireRows(container, scope, hazByFun) {
 
       overlay.querySelector('#dfc-only').onclick = async () => {
         close();
-        // Unlink FTA nodes (keep them, just remove the FC association)
-        await sb.from('fta_nodes').update({ hazard_id: null }).eq('hazard_id', haz.id);
+        // Unlink FTA nodes FIRST — must succeed before we delete the hazard,
+        // otherwise the DB-level CASCADE would delete them too.
+        const { error: unlinkErr } = await sb.from('fta_nodes')
+          .update({ hazard_id: null })
+          .eq('hazard_id', haz.id);
+        if (unlinkErr) {
+          toast('Could not unlink FTA nodes: ' + unlinkErr.message, 'error');
+          return; // do NOT delete the FC if unlink failed
+        }
         const { error } = await sb.from('hazards').delete().eq('id', haz.id);
-        if (error) { toast('Error deleting.', 'error'); return; }
+        if (error) { toast('Error deleting FC: ' + error.message, 'error'); return; }
         toast('FC deleted. FTA tree preserved (now unlinked).', 'success');
         await reload(scope);
       };
