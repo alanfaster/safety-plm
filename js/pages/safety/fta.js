@@ -327,7 +327,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
           render(); renderFCTabs();
           toast('Unlinked FTA deleted.', 'success');
         };
-      });
+      };
     } else {
       // Linked FTA: recommend clearing instead; still allow with double confirm
       const o1 = mkOverlay(`
