@@ -81,7 +81,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   // ── Config (persisted in localStorage) ────────────────────────────────────
   const CFG_KEY = `fta_cfg_${parentType}_${parentId}`;
-  let _cfg = { showProbability:false, showFR:false, showMTTR:false, spacing:0.5 };
+  let _cfg = { showProbability:false, showFR:false, showMTTR:false, childY:120 };
   try { Object.assign(_cfg, JSON.parse(localStorage.getItem(CFG_KEY)||'{}')); } catch{}
   function saveCfg() { localStorage.setItem(CFG_KEY, JSON.stringify(_cfg)); }
 
@@ -141,8 +141,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         <div class="fta-cfg-sep"></div>
         <div class="fta-cfg-row fta-cfg-spacing-row">
           <span>Spacing</span>
-          <input type="range" id="cfg-spacing" min="0.2" max="1.5" step="0.05" value="${_cfg.spacing}" style="flex:1;margin:0 6px">
-          <span id="cfg-spacing-lbl" style="min-width:32px;text-align:right">${Math.round(_cfg.spacing*100)}%</span>
+          <input type="range" id="cfg-spacing" min="40" max="350" step="5" value="${_cfg.childY}" style="flex:1;margin:0 6px">
+          <span id="cfg-spacing-lbl" style="min-width:36px;text-align:right">${_cfg.childY}px</span>
         </div>
       </div>
 
@@ -650,9 +650,13 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       });
     });
     document.getElementById('cfg-spacing').addEventListener('input',e=>{
-      _cfg.spacing=parseFloat(e.target.value);
-      document.getElementById('cfg-spacing-lbl').textContent=Math.round(_cfg.spacing*100)+'%';
+      _cfg.childY=parseInt(e.target.value);
+      document.getElementById('cfg-spacing-lbl').textContent=_cfg.childY+'px';
+      relayoutInMemory(); render(); // live preview — no DB save yet
+    });
+    document.getElementById('cfg-spacing').addEventListener('change',async e=>{
       saveCfg();
+      await Promise.all(_nodes.map(n=>autosave(n.id,{x:n.x,y:n.y})));
     });
 
     // Colour picker
@@ -996,7 +1000,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     pushUndo(`Add ${CODE_PFX[type]||type} under ${parent.fta_code||'node'}`);
     const siblings = _nodes.filter(n => n.parent_node_id === parentId);
     const cx = parent.x;
-    const cy = parent.y + CHILD_Y * _cfg.spacing;
+    const cy = parent.y + _cfg.childY;
     const code = nextCode(type);
     const { data, error } = await sb.from('fta_nodes').insert({
       parent_type:parentType, parent_id:parentId, project_id:project.id,
@@ -1018,12 +1022,13 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     const children = _nodes.filter(n => n.parent_node_id === parentId);
     const n = children.length;
     if (!n) return;
-    const totalW = (n - 1) * CHILD_GAP * _cfg.spacing;
+    const childGap = Math.max(BOX_W + 20, _cfg.childY * 1.3);
+    const totalW = (n - 1) * childGap;
     const startX = parent.x - totalW / 2;
-    const childY = parent.y + CHILD_Y * _cfg.spacing;
+    const childY = parent.y + _cfg.childY;
     const saves = [];
     children.forEach((c, i) => {
-      c.x = startX + i * CHILD_GAP * _cfg.spacing;
+      c.x = startX + i * childGap;
       c.y = childY;
       saves.push(autosave(c.id, { x:c.x, y:c.y }));
     });
@@ -1191,16 +1196,22 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   }
 
   // ── Auto layout ───────────────────────────────────────────────────────────────
-  async function autoLayout() {
+  function relayoutInMemory() {
     if (!_nodes.length) return;
     const ch=Object.fromEntries(_nodes.map(n=>[n.id,[]]));
     _nodes.forEach(n=>{if(n.parent_node_id&&ch[n.parent_node_id])ch[n.parent_node_id].push(n);});
     const ids=new Set(_nodes.map(n=>n.id));
     const roots=_nodes.filter(n=>!n.parent_node_id||!ids.has(n.parent_node_id));
     if (!roots.length) roots.push(_nodes[0]);
-    const NW=220,GAP=70;
-    function lay(n,sx,d){ n.y=80+d*LEVEL_H; const kids=ch[n.id]||[]; if(!kids.length){n.x=sx+NW/2;return NW;} let cx=sx; kids.forEach((k,i)=>{const w=lay(k,cx,d+1);cx+=w+(i<kids.length-1?GAP:0);}); n.x=(kids[0].x+kids[kids.length-1].x)/2; return Math.max(NW,cx-sx); }
+    const NW=Math.max(BOX_W+20, _cfg.childY*1.3);
+    const GAP=Math.round(NW*0.3);
+    function lay(n,sx,d){ n.y=80+d*_cfg.childY; const kids=ch[n.id]||[]; if(!kids.length){n.x=sx+NW/2;return NW;} let cx=sx; kids.forEach((k,i)=>{const w=lay(k,cx,d+1);cx+=w+(i<kids.length-1?GAP:0);}); n.x=(kids[0].x+kids[kids.length-1].x)/2; return Math.max(NW,cx-sx); }
     let cx=80; roots.forEach(r=>{const w=lay(r,cx,0);cx+=w+GAP*2;});
+  }
+
+  async function autoLayout() {
+    if (!_nodes.length) return;
+    relayoutInMemory();
     await Promise.all(_nodes.map(n=>autosave(n.id,{x:n.x,y:n.y})));
     render(); toast('Layout applied.','success');
   }
