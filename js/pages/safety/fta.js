@@ -660,7 +660,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     svg.addEventListener('contextmenu', e=>e.preventDefault());
 
     svg.addEventListener('mousedown',e=>{
-      if (e.button===1){ e.preventDefault(); _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y}; return; }
+      if (e.button===1){ e.preventDefault(); _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y}; document.getElementById('fta-cw').style.cursor='grabbing'; return; }
 
       // Right-click: copy drag on node, pan on empty canvas
       if (e.button===2) {
@@ -676,6 +676,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         }
         // Empty canvas right-click → pan
         _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y};
+        document.getElementById('fta-cw').style.cursor='grabbing';
         return;
       }
 
@@ -766,6 +767,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         }
         _lasso=null; render();
       }
+      if (_panDrag && !_space) document.getElementById('fta-cw').style.cursor='default';
       _panDrag=false;
     });
 
