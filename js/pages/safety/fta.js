@@ -81,7 +81,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   // ── Config (persisted in localStorage) ────────────────────────────────────
   const CFG_KEY = `fta_cfg_${parentType}_${parentId}`;
-  let _cfg = { showProbability:false, showFR:false, showMTTR:false };
+  let _cfg = { showProbability:false, showFR:false, showMTTR:false, spacing:0.5 };
   try { Object.assign(_cfg, JSON.parse(localStorage.getItem(CFG_KEY)||'{}')); } catch{}
   function saveCfg() { localStorage.setItem(CFG_KEY, JSON.stringify(_cfg)); }
 
@@ -138,6 +138,12 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         <label class="fta-cfg-row"><input type="checkbox" id="cfg-prob" ${_cfg.showProbability?'checked':''}> Probability (P)</label>
         <label class="fta-cfg-row"><input type="checkbox" id="cfg-fr"   ${_cfg.showFR?'checked':''}> Failure Rate (FR)</label>
         <label class="fta-cfg-row"><input type="checkbox" id="cfg-mttr" ${_cfg.showMTTR?'checked':''}> MTTR</label>
+        <div class="fta-cfg-sep"></div>
+        <div class="fta-cfg-row fta-cfg-spacing-row">
+          <span>Spacing</span>
+          <input type="range" id="cfg-spacing" min="0.2" max="1.5" step="0.05" value="${_cfg.spacing}" style="flex:1;margin:0 6px">
+          <span id="cfg-spacing-lbl" style="min-width:32px;text-align:right">${Math.round(_cfg.spacing*100)}%</span>
+        </div>
       </div>
 
       <div class="fta-content-row">
@@ -643,6 +649,11 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         _cfg[key]=e.target.checked; saveCfg(); render();
       });
     });
+    document.getElementById('cfg-spacing').addEventListener('input',e=>{
+      _cfg.spacing=parseFloat(e.target.value);
+      document.getElementById('cfg-spacing-lbl').textContent=Math.round(_cfg.spacing*100)+'%';
+      saveCfg();
+    });
 
     // Colour picker
     document.getElementById('fta-color-inp').addEventListener('change',async e=>{
@@ -985,7 +996,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     pushUndo(`Add ${CODE_PFX[type]||type} under ${parent.fta_code||'node'}`);
     const siblings = _nodes.filter(n => n.parent_node_id === parentId);
     const cx = parent.x;
-    const cy = parent.y + CHILD_Y;
+    const cy = parent.y + CHILD_Y * _cfg.spacing;
     const code = nextCode(type);
     const { data, error } = await sb.from('fta_nodes').insert({
       parent_type:parentType, parent_id:parentId, project_id:project.id,
@@ -1007,12 +1018,12 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     const children = _nodes.filter(n => n.parent_node_id === parentId);
     const n = children.length;
     if (!n) return;
-    const totalW = (n - 1) * CHILD_GAP;
+    const totalW = (n - 1) * CHILD_GAP * _cfg.spacing;
     const startX = parent.x - totalW / 2;
-    const childY = parent.y + CHILD_Y;
+    const childY = parent.y + CHILD_Y * _cfg.spacing;
     const saves = [];
     children.forEach((c, i) => {
-      c.x = startX + i * CHILD_GAP;
+      c.x = startX + i * CHILD_GAP * _cfg.spacing;
       c.y = childY;
       saves.push(autosave(c.id, { x:c.x, y:c.y }));
     });
