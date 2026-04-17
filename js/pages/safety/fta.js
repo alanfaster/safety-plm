@@ -25,15 +25,15 @@ const ROW_EXTRA = 22;   // probability / FR / MTTR row height
 const BOX_W     = 188;
 
 const NT = {
-  top_event:    { label:'Top Event',    stroke:'#C5221F', sw:3, fill:'#FFF5F5', codeColor:'#FDE8E8', indicator:null    },
-  intermediate: { label:'Intermediate', stroke:'#E37400', sw:2, fill:'#FFFBF0', codeColor:'#FEF3E2', indicator:null    },
-  basic:        { label:'Basic Event',  stroke:'#1E8E3E', sw:2, fill:'#F0FBF4', codeColor:'#E3FCEF', indicator:'circle'  },
-  undeveloped:  { label:'Undeveloped',  stroke:'#6B778C', sw:2, fill:'#F4F5F7', codeColor:'#ECEFF4', indicator:'diamond' },
-  transfer:     { label:'Transfer',     stroke:'#1A73E8', sw:2, fill:'#EEF4FF', codeColor:'#DEEBFF', indicator:'triangle'},
-  gate_and:     { label:'AND',          stroke:'#1E8E3E', sw:2, fill:'#E3FCEF', gw:74, gh:62 },
-  gate_or:      { label:'OR',           stroke:'#1A73E8', sw:2, fill:'#DEEBFF', gw:74, gh:62 },
-  gate_not:     { label:'NOT',          stroke:'#8B00D0', sw:2, fill:'#F3F0FF', gw:60, gh:60 },
-  gate_inhibit: { label:'INHIBIT',      stroke:'#E37400', sw:2, fill:'#FEF3E2', gw:74, gh:58 },
+  top_event:    { stroke:'#000', sw:3, fill:'#fff', codeColor:'#e8e8e8', indicator:null     },
+  intermediate: { stroke:'#000', sw:2, fill:'#fff', codeColor:'#e8e8e8', indicator:null     },
+  basic:        { stroke:'#000', sw:2, fill:'#fff', codeColor:'#e8e8e8', indicator:'circle' },
+  undeveloped:  { stroke:'#000', sw:2, fill:'#fff', codeColor:'#e8e8e8', indicator:'diamond'},
+  transfer:     { stroke:'#000', sw:2, fill:'#fff', codeColor:'#e8e8e8', indicator:'triangle'},
+  gate_and:     { label:'AND',     stroke:'#000', sw:2, fill:'#fff', gw:74, gh:62 },
+  gate_or:      { label:'OR',      stroke:'#000', sw:2, fill:'#fff', gw:74, gh:62 },
+  gate_not:     { label:'NOT',     stroke:'#000', sw:2, fill:'#fff', gw:60, gh:60 },
+  gate_inhibit: { label:'INHIBIT', stroke:'#000', sw:2, fill:'#fff', gw:74, gh:58 },
 };
 
 const CODE_PFX = {
@@ -83,6 +83,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   let _space   = false;
   let _activeMenu = null;             // currently open add-child menu
   let _editFo     = null;             // active <foreignObject> inline editor
+  let _copyDrag   = null;             // { fromId, startX, startY, curX, curY }
   const _undoStack = [];              // max 10 snapshots
   let _undoToastEl = null;
 
@@ -136,6 +137,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
             <g id="fta-lasso-g"></g>
             <g id="fta-nodes-g"></g>
             <g id="fta-edit-g"></g>
+            <g id="fta-copy-g"></g>
           </g>
         </svg>
         <div class="fta-hint" id="fta-hint">
@@ -170,20 +172,13 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     return `${pfx}-${String((nums.length?Math.max(...nums):0)+1).padStart(2,'0')}`;
   }
 
-  // Dynamic box height based on config
-  function boxH() {
-    return ROW_CODE + ROW_STD*2
-      + (_cfg.showProbability ? ROW_EXTRA : 0)
-      + (_cfg.showFR          ? ROW_EXTRA : 0)
-      + (_cfg.showMTTR        ? ROW_EXTRA : 0);
-  }
+  // Box height: only code + component + label rows (optional fields live outside)
+  function boxH() { return ROW_CODE + ROW_STD*2; }
 
   function nw(n){ return isGate(n.type) ? (NT[n.type]?.gw||74) : BOX_W; }
-  function nh(n){
-    if (!isGate(n.type)) return boxH();
-    const base = NT[n.type]?.gh||62;
-    return base + (_cfg.showProbability ? 18 : 0);
-  }
+  function nh(n){ return isGate(n.type) ? (NT[n.type]?.gh||62) : boxH(); }
+  // external optional fields height (below box, outside border)
+  function extH(){ return ((_cfg.showProbability?1:0)+(_cfg.showFR?1:0)+(_cfg.showMTTR?1:0))*14; }
 
   // Recursively compute probability for a node (gates derive from children)
   function computeP(n) {
@@ -205,6 +200,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     renderNodeEls();
     renderPendingConn();
     renderLasso();
+    renderCopyGhost();
     applyTransform();
     document.getElementById('fta-hint').style.display = _nodes.length ? 'none' : '';
     updateDelBtn();
@@ -343,79 +339,72 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     // Code row background
     appendCodeBg(g, -hw, -hh, BOX_W, ROW_CODE, sw, codeColor, stroke);
 
-    // Build rows list
-    const rows = [
-      { field:'fta_code',  value: n.fta_code||'',   y:-hh+ROW_CODE/2,   fs:10, fw:700, fill:stroke  },
-      { field:'component', value: n.component||'',  y:-hh+ROW_CODE+ROW_STD/2, fs:11, fw:400, fill:'#6B778C' },
-      { field:'label',     value: n.label||'',      y:-hh+ROW_CODE+ROW_STD+ROW_STD/2, fs:11, fw:500, fill:'#172B4D' },
+    // ── Fixed inner rows (code / component / label) ──
+    const innerRows = [
+      { field:'fta_code',  y:-hh+ROW_CODE/2,              h:ROW_CODE, fs:10, fw:700, fill:stroke,    x:-(hw-8) },
+      { field:'component', y:-hh+ROW_CODE+ROW_STD/2,      h:ROW_STD,  fs:11, fw:400, fill:'#444',    x:-(hw-6) },
+      { field:'label',     y:-hh+ROW_CODE+ROW_STD+ROW_STD/2, h:ROW_STD, fs:11, fw:500, fill:'#000', x:-(hw-6) },
     ];
-    let extraY = -hh+ROW_CODE+ROW_STD*2;
-    if (_cfg.showProbability) {
-      rows.push({ field:'probability', value:fmtNum(n.probability), y:extraY+ROW_EXTRA/2, fs:10, fw:400, fill:'#253858', prefix:'P = ' });
-      extraY+=ROW_EXTRA;
-    }
-    if (_cfg.showFR) {
-      rows.push({ field:'failure_rate', value:fmtNum(n.failure_rate), y:extraY+ROW_EXTRA/2, fs:10, fw:400, fill:'#253858', prefix:'FR = ' });
-      extraY+=ROW_EXTRA;
-    }
-    if (_cfg.showMTTR) {
-      rows.push({ field:'mttr', value:fmtNum(n.mttr), y:extraY+ROW_EXTRA/2, fs:10, fw:400, fill:'#253858', prefix:'MTTR = ' });
-      extraY+=ROW_EXTRA;
-    }
-
-    // Dividers + rows
-    const divY = [-hh+ROW_CODE];
-    if (rows.length>2) divY.push(-hh+ROW_CODE+ROW_STD);
-    if (_cfg.showProbability||_cfg.showFR||_cfg.showMTTR) divY.push(-hh+ROW_CODE+ROW_STD*2);
-    if (_cfg.showProbability&&(_cfg.showFR||_cfg.showMTTR)) divY.push(-hh+ROW_CODE+ROW_STD*2+ROW_EXTRA);
-    if (_cfg.showFR&&_cfg.showMTTR) divY.push(-hh+ROW_CODE+ROW_STD*2+ROW_EXTRA*(_cfg.showProbability?2:1));
-
-    divY.forEach(dy=>{
+    // Dividers
+    [-hh+ROW_CODE, -hh+ROW_CODE+ROW_STD].forEach(dy=>{
       const line=svgEl('line');
       line.setAttribute('x1',-hw); line.setAttribute('y1',dy);
       line.setAttribute('x2', hw); line.setAttribute('y2',dy);
-      line.setAttribute('stroke',stroke); line.setAttribute('stroke-width','0.7');
-      line.setAttribute('opacity','0.35'); line.setAttribute('pointer-events','none');
+      line.setAttribute('stroke','#bbb'); line.setAttribute('stroke-width','0.8');
+      line.setAttribute('pointer-events','none');
       g.appendChild(line);
     });
-
-    rows.forEach(r=>{
-      // hit rect
+    innerRows.forEach(r=>{
       const rh=svgEl('rect');
-      const rowTop = r.y - (r.fs===10&&r.prefix ? ROW_EXTRA/2 : (r.field==='fta_code'?ROW_CODE/2:ROW_STD/2));
-      const rHeight= r.fs===10&&r.prefix ? ROW_EXTRA : (r.field==='fta_code'?ROW_CODE:ROW_STD);
-      rh.setAttribute('x',-hw); rh.setAttribute('y', r.y - rHeight/2);
-      rh.setAttribute('width',BOX_W); rh.setAttribute('height',rHeight);
+      rh.setAttribute('x',-hw); rh.setAttribute('y',r.y-r.h/2);
+      rh.setAttribute('width',BOX_W); rh.setAttribute('height',r.h);
       rh.setAttribute('fill','transparent'); rh.setAttribute('class','fta-row-hit');
-      rh.dataset.field=r.field;
-      g.appendChild(rh);
-      // text
+      rh.dataset.field=r.field; g.appendChild(rh);
       const txt=svgEl('text');
-      txt.setAttribute('x',r.field==='fta_code'?-(hw-8):-(hw-6));
-      txt.setAttribute('y',r.y);
+      txt.setAttribute('x',r.x); txt.setAttribute('y',r.y);
       txt.setAttribute('dominant-baseline','middle');
-      txt.setAttribute('font-size',r.fs);
-      txt.setAttribute('font-weight',r.fw);
+      txt.setAttribute('font-size',r.fs); txt.setAttribute('font-weight',r.fw);
       txt.setAttribute('fill',r.fill);
       txt.setAttribute('font-family','-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif');
       txt.setAttribute('pointer-events','none');
+      const val=n[r.field]||'';
       const maxCh=Math.floor((BOX_W-16)/(r.fs*.58));
-      // show placeholder only for numeric fields with prefix, not for text fields
-      const empty = r.value===''||r.value==null;
-      const raw = r.prefix ? (r.prefix+(empty?'—':r.value)) : (r.value||'');
-      txt.textContent=raw.length>maxCh?raw.slice(0,maxCh-1)+'…':raw;
+      txt.textContent=val.length>maxCh?val.slice(0,maxCh-1)+'…':val;
       g.appendChild(txt);
     });
 
-    // Shape indicator below box
+    // ── Below box: indicator then optional numeric fields ──
+    let belowY = hh + 8;
     if (base.indicator) {
       const ind=buildIndicator(base.indicator, stroke);
-      ind.setAttribute('transform',`translate(0,${hh+13})`);
+      ind.setAttribute('transform',`translate(0,${belowY+5})`);
       g.appendChild(ind);
+      belowY += 26;
     }
+    const extFields = [];
+    if (_cfg.showProbability) extFields.push({f:'probability',  lbl:'P'});
+    if (_cfg.showFR)          extFields.push({f:'failure_rate', lbl:'FR'});
+    if (_cfg.showMTTR)        extFields.push({f:'mttr',         lbl:'MTTR'});
+    extFields.forEach(({f, lbl})=>{
+      // transparent hit rect for click-to-edit
+      const rh=svgEl('rect');
+      rh.setAttribute('x',-(BOX_W/2)); rh.setAttribute('y',belowY-7);
+      rh.setAttribute('width',BOX_W); rh.setAttribute('height',14);
+      rh.setAttribute('fill','transparent'); rh.setAttribute('class','fta-row-hit');
+      rh.dataset.field=f; g.appendChild(rh);
+      const txt=svgEl('text');
+      txt.setAttribute('x',0); txt.setAttribute('y',belowY);
+      txt.setAttribute('text-anchor','middle'); txt.setAttribute('dominant-baseline','middle');
+      txt.setAttribute('font-size','9'); txt.setAttribute('fill','#555');
+      txt.setAttribute('pointer-events','none');
+      const val = n[f]!=null&&n[f]!=='' ? fmtNum(n[f]) : '—';
+      txt.textContent=`${lbl} = ${val}`;
+      g.appendChild(txt);
+      belowY+=14;
+    });
 
-    // Output port + add-child button
-    const portY = hh+(base.indicator?26:0);
+    // Port + add-child button
+    const portY = belowY + 6;
     g.appendChild(buildPort(n.id, 0, portY));
     g.appendChild(buildAddBtn(n.id, 0, portY+22));
     return g;
@@ -483,23 +472,21 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     lbl.textContent=n.label||t.label;
     g.appendChild(lbl);
 
-    // Computed probability label below gate shape
+    // Computed P below gate shape (outside)
+    let gBelowY = hh + 8;
     if (_cfg.showProbability) {
       const p=computeP(n);
       const ptxt=svgEl('text');
-      ptxt.setAttribute('x',0); ptxt.setAttribute('y',hh+12);
+      ptxt.setAttribute('x',0); ptxt.setAttribute('y', gBelowY);
       ptxt.setAttribute('text-anchor','middle'); ptxt.setAttribute('dominant-baseline','middle');
-      ptxt.setAttribute('font-size','10'); ptxt.setAttribute('font-weight','600');
-      ptxt.setAttribute('fill',stroke);
-      ptxt.setAttribute('font-family','-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif');
+      ptxt.setAttribute('font-size','9'); ptxt.setAttribute('fill','#555');
       ptxt.setAttribute('pointer-events','none');
       ptxt.textContent = p !== null ? `P = ${fmtNum(p)}` : 'P = —';
       g.appendChild(ptxt);
+      gBelowY += 14;
     }
-
-    const gPortY = hh + (_cfg.showProbability ? 18 : 0);
-    g.appendChild(buildPort(n.id, 0, gPortY));
-    g.appendChild(buildAddBtn(n.id, 0, gPortY+22));
+    g.appendChild(buildPort(n.id, 0, gBelowY));
+    g.appendChild(buildAddBtn(n.id, 0, gBelowY+22));
     return g;
   }
 
@@ -611,8 +598,17 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       applyTransform();
     },{passive:false});
 
+    svg.addEventListener('contextmenu', e=>e.preventDefault());
+
     svg.addEventListener('mousedown',e=>{
       if (e.button===1){ e.preventDefault(); _panDrag=true; _panStart={x:e.clientX-_pan.x,y:e.clientY-_pan.y}; return; }
+
+      // Right-click on node → start copy drag
+      if (e.button===2) {
+        const nodeEl=e.target.closest('.fta-node');
+        if (nodeEl) { e.stopPropagation(); const pt=toSvg(e); _copyDrag={fromId:nodeEl.dataset.id,startX:pt.x,startY:pt.y,curX:pt.x,curY:pt.y}; return; }
+        return;
+      }
 
       // "+" add-child button
       const addBtn=e.target.closest('.fta-add-child');
@@ -661,6 +657,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     });
 
     svg.addEventListener('mousemove',e=>{
+      if (_copyDrag) { const pt=toSvg(e); _copyDrag.curX=pt.x; _copyDrag.curY=pt.y; renderCopyGhost(); return; }
       if (_conn) { const pt=toSvg(e); _conn.curX=pt.x; _conn.curY=pt.y; renderPendingConn(); return; }
       if (_drag) {
         const pt=toSvg(e); const dx=pt.x-_drag.mx, dy=pt.y-_drag.my;
@@ -672,6 +669,15 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     });
 
     svg.addEventListener('mouseup',async e=>{
+      if (_copyDrag) {
+        const cd=_copyDrag; _copyDrag=null;
+        document.getElementById('fta-copy-g').innerHTML='';
+        const dx=cd.curX-cd.startX, dy=cd.curY-cd.startY;
+        if (Math.abs(dx)>15||Math.abs(dy)>15) {
+          const orig=byId(cd.fromId); if(orig) await finishCopyDrag(orig, orig.x+dx, orig.y+dy);
+        }
+        return;
+      }
       if (_conn) {
         const nodeEl=e.target.closest('.fta-node');
         const fromId=_conn.fromId; _conn=null; renderPendingConn();
@@ -730,6 +736,76 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     let c=byId(nid); const seen=new Set();
     while(c?.parent_node_id){ if(seen.has(c.id))break; seen.add(c.id); if(c.parent_node_id===ancId)return true; c=byId(c.parent_node_id); }
     return false;
+  }
+
+  // ── Copy drag ────────────────────────────────────────────────────────────────
+  function renderCopyGhost() {
+    const layer=document.getElementById('fta-copy-g'); layer.innerHTML='';
+    if (!_copyDrag) return;
+    const orig=byId(_copyDrag.fromId); if(!orig) return;
+    const dx=_copyDrag.curX-_copyDrag.startX, dy=_copyDrag.curY-_copyDrag.startY;
+    if (Math.abs(dx)<5&&Math.abs(dy)<5) return;
+    const nx=orig.x+dx, ny=orig.y+dy;
+    const hw=BOX_W/2, hh=boxH()/2;
+    const r=svgEl('rect');
+    r.setAttribute('x',nx-hw); r.setAttribute('y',ny-hh);
+    r.setAttribute('width',BOX_W); r.setAttribute('height',boxH());
+    r.setAttribute('fill','rgba(26,115,232,0.12)'); r.setAttribute('stroke','#1A73E8');
+    r.setAttribute('stroke-width','2'); r.setAttribute('stroke-dasharray','6,3');
+    r.setAttribute('rx','5'); r.setAttribute('pointer-events','none');
+    layer.appendChild(r);
+    const t=svgEl('text');
+    t.setAttribute('x',nx); t.setAttribute('y',ny);
+    t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','middle');
+    t.setAttribute('font-size','10'); t.setAttribute('fill','#1A73E8');
+    t.setAttribute('pointer-events','none'); t.textContent='Copy';
+    layer.appendChild(t);
+  }
+
+  async function finishCopyDrag(orig, tx, ty) {
+    pushUndo(`Copy ${orig.fta_code||'node'}`);
+    const code=nextCode(orig.type);
+    const {data,error}=await sb.from('fta_nodes').insert({
+      parent_type:parentType, parent_id:parentId, project_id:project.id,
+      type:orig.type, label:orig.label, component:orig.component, fta_code:code,
+      x:tx, y:ty, sort_order:_nodes.length, color:orig.color,
+      probability:orig.probability, failure_rate:orig.failure_rate, mttr:orig.mttr,
+      parent_node_id:null,
+    }).select().single();
+    if (error){toast('Error copying node.','error');return;}
+    _nodes.push(data);
+
+    if (orig.parent_node_id) {
+      const doConn=await confirmCopyConnect(orig);
+      if (doConn) {
+        data.parent_node_id=orig.parent_node_id;
+        await autosave(data.id,{parent_node_id:orig.parent_node_id});
+        await redistributeChildren(orig.parent_node_id);
+      }
+    }
+    _selSet.clear(); _selSet.add(data.id); render();
+  }
+
+  function confirmCopyConnect(orig) {
+    const parent=byId(orig.parent_node_id);
+    return new Promise(resolve=>{
+      const overlay=document.createElement('div');
+      overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center';
+      const box=document.createElement('div');
+      box.style.cssText='background:#fff;border-radius:8px;padding:24px 28px;box-shadow:0 8px 32px rgba(0,0,0,.18);max-width:360px;width:100%;font-family:inherit';
+      box.innerHTML=`
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px">Connect copy to same parent?</div>
+        <div style="font-size:13px;color:#555;margin-bottom:20px">Parent: <strong>${esc(parent?.fta_code||'?')}</strong>. Connect the new node and redistribute children?</div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button id="cc-no"  style="padding:6px 16px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">No, leave free</button>
+          <button id="cc-yes" style="padding:6px 16px;border:none;border-radius:4px;background:#1A73E8;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Yes, connect</button>
+        </div>`;
+      overlay.appendChild(box); document.body.appendChild(overlay);
+      const cleanup=ok=>{overlay.remove();resolve(ok);};
+      box.querySelector('#cc-yes').addEventListener('click',()=>cleanup(true));
+      box.querySelector('#cc-no').addEventListener('click',()=>cleanup(false));
+      overlay.addEventListener('click',e=>{if(e.target===overlay)cleanup(false);});
+    });
   }
 
   // ── Add-child menu ────────────────────────────────────────────────────────────
@@ -900,21 +976,24 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   function editField(id, field) {
     const n = byId(id); if (!n) return;
+    const base = NT[n.type]||NT.basic;
     const isNum = field==='probability'||field==='failure_rate'||field==='mttr';
-    const BH = boxH(), hw = BOX_W/2, hh = BH/2;
-    let rowY, rowH;
-    if      (field==='fta_code')   { rowY=-hh;                      rowH=ROW_CODE; }
-    else if (field==='component')  { rowY=-hh+ROW_CODE;              rowH=ROW_STD;  }
-    else if (field==='label')      { rowY=-hh+ROW_CODE+ROW_STD;      rowH=ROW_STD;  }
+    const hh = boxH()/2, hw = BOX_W/2;
+    let rx = n.x-hw, ry, rw = BOX_W, rh;
+    if      (field==='fta_code')  { ry=n.y-hh;                rh=ROW_CODE; }
+    else if (field==='component') { ry=n.y-hh+ROW_CODE;        rh=ROW_STD;  }
+    else if (field==='label')     { ry=n.y-hh+ROW_CODE+ROW_STD; rh=ROW_STD; }
     else {
-      let ey=-hh+ROW_CODE+ROW_STD*2;
-      if (field==='probability')  { rowY=ey; rowH=ROW_EXTRA; }
-      else { ey+=(_cfg.showProbability?ROW_EXTRA:0);
-        if (field==='failure_rate') { rowY=ey; rowH=ROW_EXTRA; }
-        else { ey+=(_cfg.showFR?ROW_EXTRA:0); rowY=ey; rowH=ROW_EXTRA; }
+      // external numeric fields
+      let ey = n.y+hh+8+(base.indicator?26:0);
+      rw=100; rx=n.x-50; rh=16;
+      if (field==='probability')  { ry=ey-8; }
+      else { ey+=(_cfg.showProbability?14:0);
+        if (field==='failure_rate') { ry=ey-8; }
+        else { ey+=(_cfg.showFR?14:0); ry=ey-8; }
       }
     }
-    openEditor(n.x-hw, n.y+rowY, BOX_W, rowH, n[field], isNum, async v => {
+    openEditor(rx, ry, rw, rh, n[field], isNum, async v => {
       if (v===(n[field]??'')) { render(); return; }
       pushUndo(`Edit ${n.fta_code||'node'} ${field}`);
       n[field]=v; await autosave(id,{[field]:v}); render();
@@ -1005,18 +1084,20 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   function toSvg(e){ const wrap=document.getElementById('fta-cw'),rect=wrap.getBoundingClientRect(); return{x:(e.clientX-rect.left-_pan.x)/_zoom,y:(e.clientY-rect.top-_pan.y)/_zoom}; }
   function setZoom(z){ _zoom=Math.min(3,Math.max(0.15,z));applyTransform(); }
 
-  // Determine which field (by row) a SVG Y coordinate falls on for a box node
+  // Determine which field a SVG Y coordinate falls on for a box node
   function fieldAtY(n, svgY) {
     if (!n || isGate(n.type)) return null;
-    const ry = svgY - n.y;          // Y relative to node centre
-    const hh = boxH() / 2;
+    const base = NT[n.type]||NT.basic;
+    const ry = svgY - n.y;
+    const hh = boxH()/2;
     if (ry >= -hh              && ry < -hh+ROW_CODE)            return 'fta_code';
     if (ry >= -hh+ROW_CODE     && ry < -hh+ROW_CODE+ROW_STD)   return 'component';
-    if (ry >= -hh+ROW_CODE+ROW_STD && ry < -hh+ROW_CODE+ROW_STD*2) return 'label';
-    let ey = -hh+ROW_CODE+ROW_STD*2;
-    if (_cfg.showProbability){ if(ry>=ey&&ry<ey+ROW_EXTRA)return 'probability'; ey+=ROW_EXTRA; }
-    if (_cfg.showFR)         { if(ry>=ey&&ry<ey+ROW_EXTRA)return 'failure_rate'; ey+=ROW_EXTRA; }
-    if (_cfg.showMTTR)       { if(ry>=ey&&ry<ey+ROW_EXTRA)return 'mttr'; }
+    if (ry >= -hh+ROW_CODE+ROW_STD && ry < hh)                  return 'label';
+    // External fields below box
+    let ey = hh + 8 + (base.indicator ? 26 : 0);
+    if (_cfg.showProbability){ if(ry>=ey-7&&ry<ey+7) return 'probability'; ey+=14; }
+    if (_cfg.showFR)         { if(ry>=ey-7&&ry<ey+7) return 'failure_rate'; ey+=14; }
+    if (_cfg.showMTTR)       { if(ry>=ey-7&&ry<ey+7) return 'mttr'; }
     return null;
   }
 
