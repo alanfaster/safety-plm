@@ -190,7 +190,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   await loadFCs();
   try { await loadNodes(); } catch(e) { console.warn('FTA loadNodes error:', e); }
-  renderFCTabs();
+  try { renderFCTabs(); } catch(e) { console.warn('FTA renderFCTabs error:', e); }
   render();
   wireToolbar();
   wireCanvas();
