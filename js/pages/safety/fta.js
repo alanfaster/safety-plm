@@ -86,6 +86,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   function saveCfg() { localStorage.setItem(CFG_KEY, JSON.stringify(_cfg)); }
 
   // ── State ──────────────────────────────────────────────────────────────────
+  const UNLINKED_ID = '__unlinked__'; // sentinel for orphaned FTA nodes (FC deleted with keep-FTA)
   let _fcs     = [];             // FHA failure conditions for this parent
   let _activeHazardId = null;    // currently displayed FC's hazard id
   let _nodes   = [];
@@ -196,8 +197,6 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   wireKeyboard();
 
   // ── Data ───────────────────────────────────────────────────────────────────
-  const UNLINKED_ID = '__unlinked__'; // sentinel for orphaned FTA nodes
-
   async function loadFCs() {
     const { data } = await sb.from('hazards')
       .select('id, haz_code, data, status')
