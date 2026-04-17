@@ -205,15 +205,17 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       .eq('analysis_type', 'FHA')
       .order('sort_order', { ascending: true });
     _fcs = data || [];
-    // Check for orphaned FTA nodes (FC deleted with "Delete FC only")
-    const { data: orphans } = await sb.from('fta_nodes')
-      .select('id')
-      .eq('parent_type', parentType).eq('parent_id', parentId)
-      .is('hazard_id', null)
-      .limit(1);
-    if (orphans?.length) {
-      _fcs.push({ id: UNLINKED_ID, haz_code: '—', data: { failure_condition: 'Unlinked FTA (FC deleted)' }, status: 'unlinked' });
-    }
+    // Check for orphaned FTA nodes — isolated so any error here doesn't break tab loading
+    try {
+      const { data: orphans } = await sb.from('fta_nodes')
+        .select('id')
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .is('hazard_id', null)
+        .limit(1);
+      if (orphans?.length) {
+        _fcs.push({ id: UNLINKED_ID, haz_code: '—', data: { failure_condition: 'Unlinked FTA (FC deleted)' }, status: 'unlinked' });
+      }
+    } catch(_) { /* non-fatal */ }
     if (_fcs.length && !_activeHazardId) _activeHazardId = _fcs[0].id;
   }
 
