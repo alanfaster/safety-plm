@@ -12,6 +12,7 @@ import { t } from '../../i18n/index.js';
 import { confirmDialog } from '../../components/modal.js';
 import { toast } from '../../toast.js';
 import { navigate } from '../../router.js';
+import { exportFHApdf } from '../../utils/export-pdf.js';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ function paint(scope) {
           <p class="page-subtitle">Functional Hazard Assessment · ARP4761</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-secondary btn-sm" id="btn-fha-pdf" title="Export to PDF">📄 PDF</button>
           <button class="btn btn-secondary btn-sm" id="btn-fha-cfg">⚙ Configure</button>
         </div>
       </div>
@@ -87,7 +89,9 @@ function paint(scope) {
     </div>
   `;
 
-  document.getElementById('btn-fha-cfg').onclick = () => navigate(settingsPath);
+  container.querySelector('#btn-fha-cfg').onclick = () => navigate(settingsPath);
+  const _pdfTitle = `${project.name}${(scope.item?.name || scope.system?.name) ? ' — ' + (scope.item?.name || scope.system?.name) : ''}`;
+  container.querySelector('#btn-fha-pdf').onclick = () => exportFHApdf(container, _pdfTitle);
   wireRows(container, scope, hazByFun);
 }
 

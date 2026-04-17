@@ -15,6 +15,7 @@
 
 import { sb } from '../../config.js';
 import { toast } from '../../toast.js';
+import { exportFTApdf } from '../../utils/export-pdf.js';
 
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -133,6 +134,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         <button class="btn btn-sm"            id="fta-btn-zi">＋</button>
         <button class="btn btn-sm"            id="fta-btn-zo">－</button>
         <button class="btn btn-sm"            id="fta-btn-zr">⊡</button>
+        <span class="fta-toolbar-sep"></span>
+        <button class="btn btn-sm"            id="fta-btn-pdf" title="Export to PDF">📄 PDF</button>
       </div>
 
       <!-- Config panel -->
@@ -805,6 +808,13 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     q('fta-btn-zi').addEventListener('click',()=>setZoom(_zoom*1.2));
     q('fta-btn-zo').addEventListener('click',()=>setZoom(_zoom/1.2));
     q('fta-btn-zr').addEventListener('click', fitAll);
+    q('fta-btn-pdf').addEventListener('click', () => {
+      const svg = container.querySelector('#fta-svg');
+      const fc  = _fcs.find(f => f.id === _activeHazardId);
+      const fcLabel = fc?.data?.failure_condition || fc?.haz_code || '';
+      const title   = project.name || 'FTA';
+      exportFTApdf(svg, _nodes, title, fcLabel);
+    });
 
     // Prop panel toggle
     q('fta-prop-toggle').addEventListener('click',()=>{
