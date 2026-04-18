@@ -259,6 +259,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       _nodes = [];
     }
     if (_nodes.length) { const h=document.getElementById('fta-hint'); if(h) h.style.display='none'; }
+    recomputeMCS();
   }
 
   function renderFCTabs() {
@@ -286,6 +287,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
         await loadNodes();
         render();
         renderFCTabs();
+        recomputeMCS();
       });
     });
 
@@ -432,8 +434,6 @@ export async function renderFTA(container, { project, item, system, parentType, 
 
   // ── Render ─────────────────────────────────────────────────────────────────
   function render() {
-    // Compute MCS/SPF before drawing so colors are available
-    try { _mcs = computeMCS(); _spfNodes = computeSPFNodes(_mcs); } catch(e) { _mcs=[]; _spfNodes=new Set(); }
     renderConns();
     renderNodeEls();
     renderPendingConn();
@@ -444,6 +444,11 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const hint=document.getElementById('fta-hint'); if(hint) hint.style.display = _nodes.length ? 'none' : '';
     updateDelBtn();
     updatePropPanel();
+  }
+
+  // Call after tree structure changes (add/delete/connect) — not on every render
+  function recomputeMCS() {
+    try { _mcs = computeMCS(); _spfNodes = computeSPFNodes(_mcs); } catch(e) { _mcs=[]; _spfNodes=new Set(); }
     try { renderMCSBar(); } catch(e) { /* non-fatal */ }
   }
 
@@ -501,7 +506,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
 
     _nodes = JSON.parse(JSON.stringify(snapNodes));
     _selSet.clear();
-    render();
+    render(); recomputeMCS();
     showUndoToast(`Done: ${snap.label}`, 'done');
   }
 
@@ -1042,7 +1047,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     pushUndo(`Connect ${byId(parentId)?.fta_code||'?'} → ${child.fta_code||'?'}`);
     child.parent_node_id=parentId;
     await autosave(childId,{parent_node_id:parentId});
-    render();
+    render(); recomputeMCS();
   }
   function isDescendant(nid,ancId) {
     let c=byId(nid); const seen=new Set();
@@ -1118,7 +1123,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
         }
       }
     }
-    _selSet.clear(); newNodes.forEach(({data})=>_selSet.add(data.id)); render();
+    _selSet.clear(); newNodes.forEach(({data})=>_selSet.add(data.id)); render(); recomputeMCS();
   }
 
   function confirmCopyConnect(orig) {
@@ -1223,7 +1228,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     _nodes.push(data);
     await redistributeChildren(parentId);
     _selSet.clear(); _selSet.add(data.id);
-    render();
+    render(); recomputeMCS();
     { const h=document.getElementById('fta-hint'); if(h) h.style.display='none'; }
   }
 
@@ -1263,7 +1268,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     if (error){toast('Error adding node.','error');return;}
     _nodes.push(data);
     _selSet.clear(); _selSet.add(data.id);
-    render();
+    render(); recomputeMCS();
     { const h=document.getElementById('fta-hint'); if(h) h.style.display='none'; }
   }
 
@@ -1398,7 +1403,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       await sb.from('fta_nodes').delete().eq('id',id);
     }
     _nodes=_nodes.filter(n=>!ids.includes(n.id));
-    _selSet.clear(); render();
+    _selSet.clear(); render(); recomputeMCS();
   }
 
   function updateDelBtn() {
@@ -1690,7 +1695,9 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const order1 = mcs.filter(s => s.length === 1);
     for (const [leafId] of order1) {
       let cur = byId(leafId);
-      while (cur) {
+      const visited = new Set();
+      while (cur && !visited.has(cur.id)) {
+        visited.add(cur.id);
         spf.add(cur.id);
         if (!cur.parent_node_id) break;
         cur = byId(cur.parent_node_id);
