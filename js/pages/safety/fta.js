@@ -108,6 +108,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
   let _mcs        = [];               // current Minimal Cut Sets
   let _spfNodes   = new Set();        // node IDs on Single Point Failure paths
   let _mcsMaxOrder= 99;               // display cut sets up to this order
+  let _hoveredAddNodeId = null;       // node whose + button is currently visible
+  let _addBtnHideTimer  = null;       // debounce timer for hiding + button
 
   // SPF annotation floating panel state (per-node, persisted in localStorage)
   const ANNOT_KEY = `fta_spf_annot_${parentType}_${parentId}`;
@@ -465,6 +467,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     updateDelBtn();
     updatePropPanel();
     renderSpfAnnotations(); // rebuilds panels (needed when SPF set changes)
+    if (_hoveredAddNodeId) showAddBtn(_hoveredAddNodeId); // restore + button visibility after re-render
   }
 
   // Call after tree structure changes (add/delete/connect) — not on every render
@@ -578,12 +581,14 @@ export async function renderFTA(container, { project, item, system, parentType, 
     layer.innerHTML=''; btnLayer.innerHTML='';
     _nodes.forEach(n => {
       const el = isGate(n.type) ? buildGateNode(n) : buildBoxNode(n);
-      // Lift add-child buttons to the top-layer group so they're never covered by later nodes
+      // Lift add-child buttons to the top-layer group (always in front, shown only on hover)
       el.querySelectorAll('.fta-add-child').forEach(btn => {
         const m = (btn.getAttribute('transform')||'').match(/translate\(\s*([^,]+),([^)]+)\)/);
         const bx = parseFloat(m?.[1]||0), by = parseFloat(m?.[2]||0);
         const clone = btn.cloneNode(true);
         clone.setAttribute('transform', `translate(${n.x + bx},${n.y + by})`);
+        clone.setAttribute('opacity', '0');
+        clone.setAttribute('pointer-events', 'none');
         btnLayer.appendChild(clone);
         btn.remove();
       });
@@ -737,7 +742,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const isLeafType = n.type === 'basic' || n.type === 'undeveloped' || n.type === 'transfer';
     const portY = belowY + 6;
     g.appendChild(buildPort(n.id, 0, portY));
-    if (!isLeafType) g.appendChild(buildAddBtn(n.id, 0, portY+22));
+    if (!isLeafType) g.appendChild(buildAddBtn(n.id, 0, portY+12));
     return g;
   }
 
@@ -819,7 +824,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       gBelowY += 14;
     }
     g.appendChild(buildPort(n.id, 0, gBelowY));
-    g.appendChild(buildAddBtn(n.id, 0, gBelowY+22));
+    g.appendChild(buildAddBtn(n.id, 0, gBelowY+12));
     return g;
   }
 
@@ -940,6 +945,30 @@ export async function renderFTA(container, { project, item, system, parentType, 
       }
       render();
     });
+  }
+
+  // ── Add-button hover visibility ───────────────────────────────────────────────
+  function showAddBtn(nodeId) {
+    clearTimeout(_addBtnHideTimer);
+    _hoveredAddNodeId = nodeId;
+    const btnLayer = document.getElementById('fta-add-btns-g'); if (!btnLayer) return;
+    btnLayer.querySelectorAll('.fta-add-child').forEach(el => {
+      const show = el.dataset.addFor === nodeId;
+      el.setAttribute('opacity', show ? '1' : '0');
+      el.setAttribute('pointer-events', show ? 'all' : 'none');
+    });
+  }
+
+  function hideAddBtn(delay = 120) {
+    clearTimeout(_addBtnHideTimer);
+    _addBtnHideTimer = setTimeout(() => {
+      _hoveredAddNodeId = null;
+      const btnLayer = document.getElementById('fta-add-btns-g'); if (!btnLayer) return;
+      btnLayer.querySelectorAll('.fta-add-child').forEach(el => {
+        el.setAttribute('opacity', '0');
+        el.setAttribute('pointer-events', 'none');
+      });
+    }, delay);
   }
 
   // ── Canvas events ────────────────────────────────────────────────────────────
@@ -1073,6 +1102,19 @@ export async function renderFTA(container, { project, item, system, parentType, 
       }
       if (_panDrag && !_space) wrap.style.cursor='default';
       _panDrag=false;
+    });
+
+    // ── + button hover: show when over a node, hide after leaving ────────────
+    svg.addEventListener('mouseover', e => {
+      const nodeEl = e.target.closest('.fta-node');
+      if (nodeEl && nodeEl.dataset.id) { showAddBtn(nodeEl.dataset.id); return; }
+      const addBtn = e.target.closest('.fta-add-child');
+      if (addBtn && addBtn.dataset.addFor) { showAddBtn(addBtn.dataset.addFor); return; }
+    });
+    svg.addEventListener('mouseout', e => {
+      const nodeEl = e.target.closest('.fta-node');
+      const addBtn = e.target.closest('.fta-add-child');
+      if (nodeEl || addBtn) hideAddBtn(150);
     });
 
   }
@@ -1842,7 +1884,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
         const node = byId(nid); if (!node) return;
         node[field] = val;
         await sb.from('fta_nodes').update({ [field]: val, updated_at: new Date().toISOString() }).eq('id', nid);
-        render(); // refresh SPF annotation on canvas
+        render();
       });
     });
     body.querySelectorAll('.fta-mcs-sel').forEach(sel => {
@@ -1852,7 +1894,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
         const node = byId(nid); if (!node) return;
         node.spf_status = val;
         await sb.from('fta_nodes').update({ spf_status: val, updated_at: new Date().toISOString() }).eq('id', nid);
-        render(); // refresh SPF annotation on canvas
+        recomputeMCS(); // update _spfNodes first (must come before render)
+        render();
       });
     });
   }
@@ -2138,8 +2181,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
         updated_at: new Date().toISOString()
       }).eq('id', nodeId);
       cleanup();
+      recomputeMCS(); // update _spfNodes before render so canvas gets correct colours
       render();
-      recomputeMCS();
     };
   }
 
