@@ -251,7 +251,7 @@ export function exportFTApdf(svgEl, nodes, title, fcLabel, mcs = [], maxOrder = 
     <div style="margin-top:16px;page-break-before:auto">
       <div style="border-bottom:2px solid #111;padding-bottom:5px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline">
         <span style="font-size:13px;font-weight:700">Minimal Cut Sets</span>
-        <span style="font-size:9px;color:#888">${mcs.length} total · ${spfCount} SPF${maxOrder<99?' · showing ≤ order '+maxOrder:''}</span>
+        <span style="font-size:9px;color:#888">${mcs.length} total · ${spfCount} SPF · Max order: ${maxOrder<99?maxOrder:'All'} (${visible.length} shown)</span>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:10px">
         <thead>

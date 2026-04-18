@@ -82,7 +82,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
 
   // ── Config (persisted in localStorage) ────────────────────────────────────
   const CFG_KEY = `fta_cfg_${parentType}_${parentId}`;
-  let _cfg = { showProbability:false, showFR:false, showMTTR:false, childY:100 };
+  let _cfg = { showProbability:false, showFR:false, showMTTR:false, childY:100, showSPF:true };
   try { Object.assign(_cfg, JSON.parse(localStorage.getItem(CFG_KEY)||'{}')); } catch{}
   function saveCfg() { localStorage.setItem(CFG_KEY, JSON.stringify(_cfg)); }
 
@@ -108,6 +108,12 @@ export async function renderFTA(container, { project, item, system, parentType, 
   let _mcs        = [];               // current Minimal Cut Sets
   let _spfNodes   = new Set();        // node IDs on Single Point Failure paths
   let _mcsMaxOrder= 99;               // display cut sets up to this order
+
+  // SPF annotation floating panel state (per-node, persisted in localStorage)
+  const ANNOT_KEY = `fta_spf_annot_${parentType}_${parentId}`;
+  let _spfAnnotState = {};
+  try { _spfAnnotState = JSON.parse(localStorage.getItem(ANNOT_KEY)||'{}'); } catch {}
+  function saveSpfAnnotState() { localStorage.setItem(ANNOT_KEY, JSON.stringify(_spfAnnotState)); }
 
   // ── Shell ──────────────────────────────────────────────────────────────────
   container.innerHTML = `
@@ -148,6 +154,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
         <label class="fta-cfg-row"><input type="checkbox" id="cfg-prob" ${_cfg.showProbability?'checked':''}> Probability (P)</label>
         <label class="fta-cfg-row"><input type="checkbox" id="cfg-fr"   ${_cfg.showFR?'checked':''}> Failure Rate (FR)</label>
         <label class="fta-cfg-row"><input type="checkbox" id="cfg-mttr" ${_cfg.showMTTR?'checked':''}> MTTR</label>
+        <div class="fta-cfg-sep"></div>
+        <label class="fta-cfg-row"><input type="checkbox" id="cfg-spf" ${_cfg.showSPF?'checked':''}> Mark SPF in diagram</label>
         <div class="fta-cfg-sep"></div>
         <div class="fta-cfg-row fta-cfg-spacing-row">
           <span>Spacing</span>
@@ -455,6 +463,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const hint=document.getElementById('fta-hint'); if(hint) hint.style.display = _nodes.length ? 'none' : '';
     updateDelBtn();
     updatePropPanel();
+    renderSpfAnnotations();
   }
 
   // Call after tree structure changes (add/delete/connect) — not on every render
@@ -530,7 +539,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const x1=p.x, y1=p.y+nh(p)/2, x2=n.x, y2=n.y-nh(n)/2;
       const mid=(y1+y2)/2;
       const sel=_selSet.has(n.id)||_selSet.has(p.id);
-      const spf=!sel&&_spfNodes.has(n.id)&&_spfNodes.has(p.id);
+      const nAccepted = byId(n.id)?.spf_status === 'accepted';
+      const spf=!sel&&_spfNodes.has(n.id)&&_spfNodes.has(p.id)&&_cfg.showSPF&&!nAccepted;
       const el=svgEl('path');
       el.setAttribute('d',`M ${x1},${y1} L ${x1},${mid} L ${x2},${mid} L ${x2},${y2}`);
       el.setAttribute('fill','none');
@@ -552,7 +562,9 @@ export async function renderFTA(container, { project, item, system, parentType, 
   function buildBoxNode(n) {
     const base = NT[n.type]||NT.basic;
     const userColor = n.color&&n.color.startsWith('#') ? n.color : null;
-    const spf       = !userColor && _spfNodes.has(n.id);
+    const isSpfNode = _spfNodes.has(n.id);
+    const spfAccepted = n.spf_status === 'accepted';
+    const spf       = !userColor && isSpfNode && !spfAccepted && _cfg.showSPF;
     const stroke    = userColor ? userColor : spf ? '#d93025' : base.stroke;
     const fill      = userColor ? lighten(userColor) : spf ? '#fff5f5' : base.fill;
     const codeColor = userColor ? semiLighten(userColor) : spf ? '#fde8e8' : base.codeColor;
@@ -690,63 +702,11 @@ export async function renderFTA(container, { project, item, system, parentType, 
       belowY+=14;
     });
 
-    // SPF annotation — only on leaves that ARE an order-1 minimal cut set
-    const isSpfLeaf = _mcs.some(s => s.length === 1 && s[0] === n.id);
-    if (isSpfLeaf) {
-      const just = n.spf_justification;
-      const stat = n.spf_status || 'pending';
-      const statColor = stat==='accepted'?'#1E8E3E':stat==='rejected'?'#d93025':'#E37400';
-      const statIcon  = stat==='accepted'?'✓':stat==='rejected'?'✕':'!';
-
-      // Annotation badge to the right of the box
-      const annotG = svgEl('g');
-      annotG.setAttribute('class', 'fta-spf-annot');
-      annotG.setAttribute('transform', `translate(${hw+8}, ${-hh+2})`);
-      annotG.setAttribute('cursor', 'pointer');
-      annotG.dataset.spfFor = n.id;
-
-      const annotW = 136, annotH = 30;
-      const bg = svgEl('rect');
-      bg.setAttribute('x', 0); bg.setAttribute('y', 0);
-      bg.setAttribute('width', annotW); bg.setAttribute('height', annotH);
-      bg.setAttribute('rx', 5); bg.setAttribute('fill', '#fff');
-      bg.setAttribute('stroke', statColor); bg.setAttribute('stroke-width', '1.8');
-      bg.setAttribute('filter', 'drop-shadow(1px 2px 4px rgba(0,0,0,.13))');
-      bg.setAttribute('pointer-events', 'none');
-      annotG.appendChild(bg);
-
-      // Status circle icon
-      const iconC = svgEl('circle');
-      iconC.setAttribute('cx', 12); iconC.setAttribute('cy', 15);
-      iconC.setAttribute('r', 8); iconC.setAttribute('fill', statColor);
-      iconC.setAttribute('pointer-events', 'none');
-      annotG.appendChild(iconC);
-
-      const iconT = svgEl('text');
-      iconT.setAttribute('x', 12); iconT.setAttribute('y', 15);
-      iconT.setAttribute('text-anchor', 'middle'); iconT.setAttribute('dominant-baseline', 'middle');
-      iconT.setAttribute('font-size', '10'); iconT.setAttribute('font-weight', '700');
-      iconT.setAttribute('fill', '#fff'); iconT.setAttribute('pointer-events', 'none');
-      iconT.textContent = statIcon;
-      annotG.appendChild(iconT);
-
-      // Justification text
-      const txt = svgEl('text');
-      txt.setAttribute('x', 25); txt.setAttribute('y', 15);
-      txt.setAttribute('dominant-baseline', 'middle');
-      txt.setAttribute('font-size', '9'); txt.setAttribute('fill', just ? '#172B4D' : '#aaa');
-      txt.setAttribute('font-family', 'inherit'); txt.setAttribute('pointer-events', 'none');
-      const display = just ? (just.length > 16 ? just.slice(0,15)+'…' : just) : 'SPF · click to justify';
-      txt.textContent = display;
-      annotG.appendChild(txt);
-
-      g.appendChild(annotG);
-    }
-
-    // Port + add-child button
+    // Port + optional add-child button (leaf event types cannot have children)
+    const isLeafType = n.type === 'basic' || n.type === 'undeveloped' || n.type === 'transfer';
     const portY = belowY + 6;
     g.appendChild(buildPort(n.id, 0, portY));
-    g.appendChild(buildAddBtn(n.id, 0, portY+22));
+    if (!isLeafType) g.appendChild(buildAddBtn(n.id, 0, portY+22));
     return g;
   }
 
@@ -783,7 +743,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
   function buildGateNode(n) {
     const t=NT[n.type]||NT.gate_and;
     const userColor=n.color&&n.color.startsWith('#')?n.color:null;
-    const spf=!userColor&&_spfNodes.has(n.id);
+    const spf=!userColor&&_spfNodes.has(n.id)&&_cfg.showSPF;
     const stroke=userColor?userColor:spf?'#d93025':t.stroke;
     const fill=userColor?lighten(userColor):spf?'#fff5f5':t.fill;
     const hw=(t.gw||74)/2, hh=(t.gh||62)/2;
@@ -921,8 +881,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
     cfgBtn.addEventListener('click',()=>{
       cfgPanel.style.display=cfgPanel.style.display==='none'?'':'none';
     });
-    ['cfg-prob','cfg-fr','cfg-mttr'].forEach((id,i)=>{
-      const key=['showProbability','showFR','showMTTR'][i];
+    ['cfg-prob','cfg-fr','cfg-mttr','cfg-spf'].forEach((id,i)=>{
+      const key=['showProbability','showFR','showMTTR','showSPF'][i];
       q(id).addEventListener('change',e=>{
         _cfg[key]=e.target.checked; saveCfg(); render();
       });
@@ -1466,11 +1426,21 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const ids=[..._selSet];
     if (!await confirmDelete(ids)) return;
     pushUndo(`Delete ${ids.map(id=>byId(id)?.fta_code||'node').join(', ')}`);
+    // Collect parent IDs to redistribute after delete (skip parents that are also being deleted)
+    const parentsToRedist = new Set();
+    for (const id of ids) {
+      const node = byId(id);
+      if (node?.parent_node_id && !ids.includes(node.parent_node_id)) parentsToRedist.add(node.parent_node_id);
+    }
     for (const id of ids) {
       _nodes.filter(c=>c.parent_node_id===id).forEach(c=>{c.parent_node_id=null; autosave(c.id,{parent_node_id:null});});
       await sb.from('fta_nodes').delete().eq('id',id);
     }
     _nodes=_nodes.filter(n=>!ids.includes(n.id));
+    // Re-balance siblings symmetrically
+    for (const pid of parentsToRedist) {
+      if (byId(pid)) await redistributeChildren(pid);
+    }
     _selSet.clear(); render(); recomputeMCS();
   }
 
@@ -1917,6 +1887,157 @@ export async function renderFTA(container, { project, item, system, parentType, 
     toast(`${created} safety requirement${created!==1?'s':''} created in "Safety Requirements". Reload sidebar to see the new page.`, 'success');
     // Reload sidebar
     window.dispatchEvent(new Event('hashchange'));
+  }
+
+  // ── Floating SPF annotation panels ────────────────────────────────────────────
+  function renderSpfAnnotations() {
+    const wrap = container.querySelector('#fta-cw'); if (!wrap) return;
+    // Remove all existing panels
+    wrap.querySelectorAll('.fta-spf-float').forEach(el => el.remove());
+    if (!_cfg.showSPF) return;
+
+    const spfLeaves = _nodes.filter(n => _mcs.some(s => s.length === 1 && s[0] === n.id));
+    spfLeaves.forEach(n => {
+      const state = _spfAnnotState[n.id] || { x: 20, y: 20, w: 210, h: 80 };
+      if (!_spfAnnotState[n.id]) { _spfAnnotState[n.id] = {...state}; }
+
+      const accepted  = n.spf_status === 'accepted';
+      const rejected  = n.spf_status === 'rejected';
+      const bdColor   = accepted ? '#1E8E3E' : rejected ? '#d93025' : '#E37400';
+      const statIcon  = accepted ? '✓' : rejected ? '✕' : '!';
+
+      const panel = document.createElement('div');
+      panel.className = 'fta-spf-float';
+      panel.dataset.nid = n.id;
+      panel.style.cssText = `position:absolute;left:${state.x}px;top:${state.y}px;width:${state.w}px;` +
+        `background:#fff;border:2px solid ${bdColor};border-radius:6px;` +
+        `box-shadow:2px 4px 12px rgba(0,0,0,.18);z-index:100;font-family:inherit;font-size:11px;overflow:visible;`;
+
+      // Title bar (drag handle)
+      const titleBar = document.createElement('div');
+      titleBar.className = 'fta-spf-float-title';
+      titleBar.style.cssText = `background:${bdColor};color:#fff;padding:3px 8px;cursor:move;` +
+        `display:flex;align-items:center;justify-content:space-between;` +
+        `font-size:10px;font-weight:700;user-select:none;border-radius:3px 3px 0 0;`;
+      titleBar.innerHTML = `<span>⚠ SPF · ${esc(n.fta_code||'')}</span>` +
+        `<span style="background:rgba(255,255,255,.25);border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:9px">${statIcon}</span>`;
+      panel.appendChild(titleBar);
+
+      // Content area
+      const content = document.createElement('div');
+      content.className = 'fta-spf-float-content';
+      content.style.cssText = 'padding:6px 8px;min-height:36px;cursor:default;color:#333;line-height:1.4;word-break:break-word;';
+      if (n.spf_justification) {
+        content.textContent = n.spf_justification;
+      } else {
+        content.textContent = 'Double-click to add justification…';
+        content.style.color = '#aaa';
+        content.style.fontStyle = 'italic';
+      }
+      panel.appendChild(content);
+
+      // 4 corner resize handles
+      [['nw',0,0,'nw'],['ne',1,0,'ne'],['sw',0,1,'sw'],['se',1,1,'se']].forEach(([cls,r,b])=>{
+        const h = document.createElement('div');
+        h.className = `fta-spf-resize fta-spf-resize-${cls}`;
+        h.style.cssText = `position:absolute;width:9px;height:9px;background:${bdColor};opacity:.55;border-radius:2px;cursor:${cls}-resize;` +
+          (r ? 'right:-1px;' : 'left:-1px;') + (b ? 'bottom:-1px;' : 'top:-1px;');
+        panel.appendChild(h);
+      });
+
+      wrap.appendChild(panel);
+      wireDragAnnotation(panel, titleBar, n.id);
+      panel.querySelectorAll('.fta-spf-resize').forEach(h => wireResizeAnnotation(panel, h, n.id));
+
+      // Double-click on content → edit justification inline
+      content.addEventListener('dblclick', e => { e.stopPropagation(); openAnnotEdit(panel, content, n); });
+      // Single-click on title → open full SPF dialog
+      titleBar.addEventListener('click', e => { e.stopPropagation(); openSpfDialog(n.id); });
+    });
+  }
+
+  function wireDragAnnotation(panel, handle, nid) {
+    handle.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      const startX = e.clientX, startY = e.clientY;
+      const startL = parseInt(panel.style.left)||0, startT = parseInt(panel.style.top)||0;
+      const onMove = ev => {
+        panel.style.left = (startL + ev.clientX - startX) + 'px';
+        panel.style.top  = (startT + ev.clientY - startY) + 'px';
+      };
+      const onUp = () => {
+        const s = _spfAnnotState[nid] || {};
+        _spfAnnotState[nid] = { ...s, x: parseInt(panel.style.left)||0, y: parseInt(panel.style.top)||0 };
+        saveSpfAnnotState();
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  function wireResizeAnnotation(panel, handle, nid) {
+    const cls = [...handle.classList].find(c => c.startsWith('fta-spf-resize-'))?.replace('fta-spf-resize-','') || 'se';
+    handle.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      const startX = e.clientX, startY = e.clientY;
+      const startW = panel.offsetWidth, startH = panel.offsetHeight;
+      const startL = parseInt(panel.style.left)||0, startT = parseInt(panel.style.top)||0;
+      const onMove = ev => {
+        const dx = ev.clientX - startX, dy = ev.clientY - startY;
+        let nw2 = startW, nh2 = startH, nl = startL, nt = startT;
+        if (cls.includes('e')) nw2 = Math.max(140, startW + dx);
+        if (cls.includes('s')) nh2 = Math.max(60,  startH + dy);
+        if (cls.includes('w')) { nw2 = Math.max(140, startW - dx); nl = startL + (startW - nw2); }
+        if (cls.includes('n')) { nh2 = Math.max(60,  startH - dy); nt = startT + (startH - nh2); }
+        panel.style.width    = nw2 + 'px';
+        panel.style.minHeight= nh2 + 'px';
+        panel.style.left     = nl  + 'px';
+        panel.style.top      = nt  + 'px';
+      };
+      const onUp = () => {
+        const s = _spfAnnotState[nid] || {};
+        _spfAnnotState[nid] = { ...s, x: parseInt(panel.style.left)||0, y: parseInt(panel.style.top)||0,
+          w: panel.offsetWidth, h: panel.offsetHeight };
+        saveSpfAnnotState();
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  function openAnnotEdit(panel, content, n) {
+    if (panel.querySelector('.fta-spf-float-ta')) return; // already editing
+    const ta = document.createElement('textarea');
+    ta.className = 'fta-spf-float-ta';
+    ta.value = n.spf_justification || '';
+    ta.style.cssText = 'width:100%;box-sizing:border-box;padding:4px 8px;border:none;border-top:1px solid #ddd;' +
+      'font-size:11px;font-family:inherit;resize:none;outline:none;min-height:48px;display:block;';
+    ta.rows = 3;
+    content.style.display = 'none';
+    panel.appendChild(ta);
+    ta.focus(); ta.select();
+    let saved = false;
+    const save = async () => {
+      if (saved) return; saved = true;
+      const val = ta.value.trim() || null;
+      n.spf_justification = val;
+      await sb.from('fta_nodes').update({ spf_justification: val, updated_at: new Date().toISOString() }).eq('id', n.id);
+      ta.remove();
+      content.style.display = '';
+      if (val) { content.textContent = val; content.style.color = '#333'; content.style.fontStyle = ''; }
+      else { content.textContent = 'Double-click to add justification…'; content.style.color = '#aaa'; content.style.fontStyle = 'italic'; }
+      render();
+    };
+    ta.addEventListener('blur', save);
+    ta.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { saved = true; ta.remove(); content.style.display = ''; render(); }
+    });
   }
 
   function openSpfDialog(nodeId) {
