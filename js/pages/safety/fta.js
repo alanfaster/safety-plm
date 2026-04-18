@@ -107,6 +107,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
   let _undoToastEl = null;
   let _mcs        = [];               // current Minimal Cut Sets
   let _spfNodes   = new Set();        // node IDs on Single Point Failure paths
+  let _mcsMaxOrder= 99;               // display cut sets up to this order
 
   // ── Shell ──────────────────────────────────────────────────────────────────
   container.innerHTML = `
@@ -198,6 +199,16 @@ export async function renderFTA(container, { project, item, system, parentType, 
       <div class="fta-mcs-bar fta-mcs-collapsed" id="fta-mcs-bar">
         <div class="fta-mcs-hdr" id="fta-mcs-hdr">
           <span class="fta-mcs-hdr-title">⚡ Minimal Cut Sets</span>
+          <label style="font-size:10px;color:#666;margin-left:12px;white-space:nowrap" onclick="event.stopPropagation()">
+            Max order:
+            <select id="fta-mcs-lvl" style="font-size:10px;padding:1px 4px;border:1px solid #ccc;border-radius:3px;margin-left:3px">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="5">5</option>
+              <option value="99" selected>All</option>
+            </select>
+          </label>
           <span class="fta-mcs-toggle" id="fta-mcs-toggle">▲</span>
         </div>
         <div class="fta-mcs-body" id="fta-mcs-body">
@@ -679,41 +690,53 @@ export async function renderFTA(container, { project, item, system, parentType, 
       belowY+=14;
     });
 
-    // SPF annotation badge (shown when node is a single-point failure)
-    if (_spfNodes.has(n.id)) {
+    // SPF annotation — only on leaves that ARE an order-1 minimal cut set
+    const isSpfLeaf = _mcs.some(s => s.length === 1 && s[0] === n.id);
+    if (isSpfLeaf) {
       const just = n.spf_justification;
       const stat = n.spf_status || 'pending';
-      const statColor = stat==='accepted'?'#1E8E3E':stat==='rejected'?'#d93025':'#888';
+      const statColor = stat==='accepted'?'#1E8E3E':stat==='rejected'?'#d93025':'#E37400';
+      const statIcon  = stat==='accepted'?'✓':stat==='rejected'?'✕':'!';
+
+      // Annotation badge to the right of the box
       const annotG = svgEl('g');
       annotG.setAttribute('class', 'fta-spf-annot');
-      annotG.setAttribute('transform', `translate(${hw+8}, ${-hh+4})`);
+      annotG.setAttribute('transform', `translate(${hw+8}, ${-hh+2})`);
       annotG.setAttribute('cursor', 'pointer');
       annotG.dataset.spfFor = n.id;
 
-      const annotW = 130;
-      const annotH = 28;
+      const annotW = 136, annotH = 30;
       const bg = svgEl('rect');
       bg.setAttribute('x', 0); bg.setAttribute('y', 0);
       bg.setAttribute('width', annotW); bg.setAttribute('height', annotH);
-      bg.setAttribute('rx', 4); bg.setAttribute('fill', '#fff');
-      bg.setAttribute('stroke', statColor); bg.setAttribute('stroke-width', 1.5);
-      bg.setAttribute('filter', 'drop-shadow(1px 1px 3px rgba(0,0,0,.15))');
+      bg.setAttribute('rx', 5); bg.setAttribute('fill', '#fff');
+      bg.setAttribute('stroke', statColor); bg.setAttribute('stroke-width', '1.8');
+      bg.setAttribute('filter', 'drop-shadow(1px 2px 4px rgba(0,0,0,.13))');
+      bg.setAttribute('pointer-events', 'none');
       annotG.appendChild(bg);
 
-      // Status dot
-      const dot = svgEl('circle');
-      dot.setAttribute('cx', 10); dot.setAttribute('cy', 14);
-      dot.setAttribute('r', 4); dot.setAttribute('fill', statColor);
-      dot.setAttribute('pointer-events', 'none');
-      annotG.appendChild(dot);
+      // Status circle icon
+      const iconC = svgEl('circle');
+      iconC.setAttribute('cx', 12); iconC.setAttribute('cy', 15);
+      iconC.setAttribute('r', 8); iconC.setAttribute('fill', statColor);
+      iconC.setAttribute('pointer-events', 'none');
+      annotG.appendChild(iconC);
+
+      const iconT = svgEl('text');
+      iconT.setAttribute('x', 12); iconT.setAttribute('y', 15);
+      iconT.setAttribute('text-anchor', 'middle'); iconT.setAttribute('dominant-baseline', 'middle');
+      iconT.setAttribute('font-size', '10'); iconT.setAttribute('font-weight', '700');
+      iconT.setAttribute('fill', '#fff'); iconT.setAttribute('pointer-events', 'none');
+      iconT.textContent = statIcon;
+      annotG.appendChild(iconT);
 
       // Justification text
       const txt = svgEl('text');
-      txt.setAttribute('x', 18); txt.setAttribute('y', 18);
+      txt.setAttribute('x', 25); txt.setAttribute('y', 15);
       txt.setAttribute('dominant-baseline', 'middle');
-      txt.setAttribute('font-size', 9); txt.setAttribute('fill', just ? '#172B4D' : '#999');
+      txt.setAttribute('font-size', '9'); txt.setAttribute('fill', just ? '#172B4D' : '#aaa');
       txt.setAttribute('font-family', 'inherit'); txt.setAttribute('pointer-events', 'none');
-      const display = just ? (just.length > 15 ? just.slice(0,14)+'…' : just) : '✏ Justification';
+      const display = just ? (just.length > 16 ? just.slice(0,15)+'…' : just) : 'SPF · click to justify';
       txt.textContent = display;
       annotG.appendChild(txt);
 
@@ -880,7 +903,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const fc  = _fcs.find(f => f.id === _activeHazardId);
       const fcLabel = fc?.data?.failure_condition || fc?.haz_code || '';
       const title   = project.name || 'FTA';
-      exportFTApdf(svg, _nodes, title, fcLabel);
+      exportFTApdf(svg, _nodes, title, fcLabel, _mcs, _mcsMaxOrder);
     });
     q('fta-btn-sreqs').addEventListener('click', () => generateSafetyReqs());
     wireMCSBar();
@@ -1762,13 +1785,9 @@ export async function renderFTA(container, { project, item, system, parentType, 
     }
 
     const spfCount = _mcs.filter(s => s.length === 1).length;
-    const statusBadge = s => {
-      const map = { accepted: '#1E8E3E', rejected: '#d93025', pending: '#888' };
-      const col = map[s] || '#888';
-      return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;background:${col}18;color:${col};border:1px solid ${col}40;text-transform:capitalize">${esc(s||'pending')}</span>`;
-    };
+    const visible  = _mcs.filter(cs => cs.length <= _mcsMaxOrder);
 
-    const rows = _mcs.map((cs, i) => {
+    const rows = visible.map((cs, i) => {
       const isSpf = cs.length === 1;
       const codes = cs.map(id => byId(id)?.fta_code || id).join(' ∩ ');
       const events = cs.map(id => { const n=byId(id); return esc(n?.label||n?.component||n?.fta_code||id); }).join(', ');
@@ -1802,7 +1821,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     }).join('');
 
     body.innerHTML = `
-      <div style="font-size:10px;color:#888;margin-bottom:6px">${_mcs.length} cut set${_mcs.length!==1?'s':''} · ${spfCount} single-point failure${spfCount!==1?'s':''}</div>
+      <div style="font-size:10px;color:#888;margin-bottom:6px">${_mcs.length} cut set${_mcs.length!==1?'s':''} · ${spfCount} SPF${_mcsMaxOrder<99?' · showing ≤ order '+_mcsMaxOrder+' ('+visible.length+')':''}</div>
       <div style="overflow-x:auto">
       <table class="fta-mcs-table">
         <thead><tr><th>Order</th><th>IDs</th><th>Events</th><th></th><th>Justification</th><th>Status</th><th>Approver comment</th></tr></thead>
@@ -1962,5 +1981,12 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const collapsed = bar.classList.toggle('fta-mcs-collapsed');
       tog.textContent = collapsed ? '▲' : '▼';
     });
+    const lvlSel = container.querySelector('#fta-mcs-lvl');
+    if (lvlSel) {
+      lvlSel.addEventListener('change', () => {
+        _mcsMaxOrder = parseInt(lvlSel.value) || 99;
+        renderMCSBar();
+      });
+    }
   }
 }

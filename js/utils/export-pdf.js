@@ -161,7 +161,7 @@ ${headerHtml}
  * @param {string}     title   - document title (e.g. project + FC name)
  * @param {string}     fcLabel - active failure-condition label (shown as subtitle)
  */
-export function exportFTApdf(svgEl, nodes, title, fcLabel) {
+export function exportFTApdf(svgEl, nodes, title, fcLabel, mcs = [], maxOrder = 99) {
   if (!svgEl || !nodes.length) return;
 
   const PAD = 60;
@@ -208,6 +208,68 @@ export function exportFTApdf(svgEl, nodes, title, fcLabel) {
 
   const date = new Date().toLocaleDateString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric' });
 
+  // ── MCS table HTML ────────────────────────────────────────────────────────
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const visibleMcs = mcs.filter(cs => cs.length <= maxOrder);
+  const spfCount = mcs.filter(cs => cs.length === 1).length;
+
+  let mcsHtml = '';
+  if (visibleMcs.length) {
+    const statColor = s => s==='accepted'?'#1E8E3E':s==='rejected'?'#d93025':'#888';
+    const statIcon  = s => s==='accepted'?'✓':s==='rejected'?'✕':'⏳';
+    const rows = visibleMcs.map(cs => {
+      const isSpf = cs.length === 1;
+      const codes = cs.map(id => nodeMap.get(id)?.fta_code || id).join(' ∩ ');
+      const events = cs.map(id => { const n=nodeMap.get(id); return esc(n?.label||n?.component||n?.fta_code||id); }).join(', ');
+      const spfCell = isSpf
+        ? `<td style="white-space:nowrap"><span style="padding:1px 5px;border-radius:8px;font-size:8px;font-weight:700;background:#fde8e8;color:#d93025;border:1px solid #f5c6c6">SPF</span></td>`
+        : '<td></td>';
+      let extraCells = '';
+      if (isSpf) {
+        const n = nodeMap.get(cs[0]);
+        const just = n?.spf_justification || '—';
+        const stat = n?.spf_status || 'pending';
+        const comm = n?.spf_approver_comment || '—';
+        const sc = statColor(stat);
+        extraCells = `
+          <td style="font-size:9px;color:#444">${esc(just)}</td>
+          <td style="white-space:nowrap"><span style="color:${sc};font-weight:700;font-size:9px">${statIcon(stat)} ${stat}</span></td>
+          <td style="font-size:9px;color:#666">${esc(comm)}</td>`;
+      } else {
+        extraCells = '<td colspan="3"></td>';
+      }
+      return `<tr style="border-bottom:1px solid #eee">
+        <td style="font-weight:700;font-size:10px;color:#555;padding:3px 6px;text-align:center">${cs.length}</td>
+        <td style="font-family:monospace;font-size:9px;padding:3px 6px">${esc(codes)}</td>
+        <td style="font-size:10px;color:#333;padding:3px 6px">${esc(events)}</td>
+        ${spfCell}
+        ${extraCells}
+      </tr>`;
+    }).join('');
+
+    mcsHtml = `
+    <div style="margin-top:16px;page-break-before:auto">
+      <div style="border-bottom:2px solid #111;padding-bottom:5px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-size:13px;font-weight:700">Minimal Cut Sets</span>
+        <span style="font-size:9px;color:#888">${mcs.length} total · ${spfCount} SPF${maxOrder<99?' · showing ≤ order '+maxOrder:''}</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:10px">
+        <thead>
+          <tr style="background:#f4f5f7;border-bottom:1px solid #ccc">
+            <th style="padding:3px 6px;text-align:center;width:40px">Order</th>
+            <th style="padding:3px 6px;text-align:left">IDs</th>
+            <th style="padding:3px 6px;text-align:left">Events</th>
+            <th style="padding:3px 6px;width:40px"></th>
+            <th style="padding:3px 6px;text-align:left">Justification</th>
+            <th style="padding:3px 6px;text-align:left;width:80px">Status</th>
+            <th style="padding:3px 6px;text-align:left">Approver comment</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -227,7 +289,6 @@ body { margin: 0; padding: 0; background: #fff;
 .print-meta  { font-size: 9px; color: #888; text-align: right; }
 .svg-wrap    { width: 100%; }
 svg          { width: 100%; height: auto; display: block; }
-/* FTA node text styles used inline in SVG — no extra CSS needed */
 </style>
 </head>
 <body>
@@ -252,6 +313,7 @@ svg          { width: 100%; height: auto; display: block; }
     ${nodesHtml}
   </svg>
 </div>
+${mcsHtml}
 <script>window.onload = function() { window.print(); };<\/script>
 </body>
 </html>`;

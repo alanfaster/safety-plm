@@ -122,6 +122,9 @@ async function loadRequirements(project, parentType, parentId, typeFilter = null
     });
   });
 
+  // ── Inline editing ─────────────────────────────────────────────────────────
+  wireInlineReqEditing(body, data, project, parentType, parentId, typeFilter, showAsil, showDal);
+
   body.querySelectorAll('.btn-del-req').forEach(btn => {
     btn.onclick = async () => {
       const req = data.find(r => r.id === btn.dataset.id);
@@ -183,26 +186,129 @@ async function loadRequirements(project, parentType, parentId, typeFilter = null
 }
 
 function reqRow(r, projectType, showAsil, showDal) {
+  const ftaLinked = r.source?.startsWith('FTA-AND:');
   return `
-    <tr>
-      <td class="code-cell">${r.req_code}</td>
-      <td><strong>${escHtml(r.title)}</strong>
-        ${r.description ? `<div class="text-muted" style="font-size:12px;margin-top:2px">${escHtml(r.description.slice(0, 80))}${r.description.length > 80 ? '…' : ''}</div>` : ''}
+    <tr data-rid="${r.id}">
+      <td class="code-cell" style="white-space:nowrap">
+        ${r.req_code}
+        ${ftaLinked ? '<span title="Linked to FTA AND gate" style="margin-left:4px;font-size:10px;color:#1A73E8">⚡</span>' : ''}
       </td>
-      <td><span class="badge badge-${r.priority}">${r.type}</span></td>
-      <td><span class="badge badge-${r.priority}">${r.priority}</span></td>
       <td>
-        <span class="status-dot ${r.status}"></span>
-        <span style="margin-left:4px">${t(`common.${r.status}`) || r.status}</span>
+        <div class="req-editable req-title-cell" data-rid="${r.id}" data-field="title" title="Click to edit">${escHtml(r.title)}</div>
+        ${r.description ? `<div class="text-muted req-editable req-desc-cell" data-rid="${r.id}" data-field="description" title="Click to edit" style="font-size:12px;margin-top:2px">${escHtml(r.description.slice(0, 80))}${r.description.length > 80 ? '…' : ''}</div>` : `<div class="text-muted req-editable req-desc-cell" data-rid="${r.id}" data-field="description" title="Click to add description" style="font-size:11px;color:#aaa">+ description</div>`}
       </td>
-      ${showAsil ? `<td>${r.asil ? `<span class="asil-badge asil-${r.asil.replace('ASIL-','')}">${r.asil}</span>` : '—'}</td>` : ''}
-      ${showDal  ? `<td>${r.dal  ? `<span class="asil-badge dal-${r.dal.replace('DAL-','')}">${r.dal}</span>` : '—'}</td>` : ''}
+      <td>
+        <select class="req-inline-sel" data-rid="${r.id}" data-field="type" style="font-size:12px;border:1px solid transparent;border-radius:4px;padding:1px 3px;background:transparent;cursor:pointer">
+          ${REQ_TYPES.map(v => `<option value="${v}" ${r.type===v?'selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>
+      <td>
+        <select class="req-inline-sel" data-rid="${r.id}" data-field="priority" style="font-size:12px;border:1px solid transparent;border-radius:4px;padding:1px 3px;background:transparent;cursor:pointer">
+          ${REQ_PRIORITIES.map(v => `<option value="${v}" ${r.priority===v?'selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>
+      <td>
+        <select class="req-inline-sel" data-rid="${r.id}" data-field="status" style="font-size:12px;border:1px solid transparent;border-radius:4px;padding:1px 3px;background:transparent;cursor:pointer">
+          ${REQ_STATUSES.map(v => `<option value="${v}" ${r.status===v?'selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>
+      ${showAsil ? `<td>
+        <select class="req-inline-sel" data-rid="${r.id}" data-field="asil" style="font-size:12px;border:1px solid transparent;border-radius:4px;padding:1px 3px;background:transparent;cursor:pointer">
+          <option value="">—</option>
+          ${ASIL_LEVELS.map(v => `<option value="${v}" ${r.asil===v?'selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>` : ''}
+      ${showDal ? `<td>
+        <select class="req-inline-sel" data-rid="${r.id}" data-field="dal" style="font-size:12px;border:1px solid transparent;border-radius:4px;padding:1px 3px;background:transparent;cursor:pointer">
+          <option value="">—</option>
+          ${DAL_LEVELS.map(v => `<option value="${v}" ${r.dal===v?'selected':''}>${v}</option>`).join('')}
+        </select>
+      </td>` : ''}
       <td class="actions-cell">
-        <button class="btn btn-ghost btn-sm btn-view-req" data-id="${r.id}">Edit</button>
+        <button class="btn btn-ghost btn-sm btn-view-req" data-id="${r.id}">Detail</button>
         <button class="btn btn-ghost btn-sm btn-del-req" data-id="${r.id}" data-title="${escHtml(r.title)}">${t('common.delete')}</button>
       </td>
     </tr>
   `;
+}
+
+function wireInlineReqEditing(body, data, project, parentType, parentId, typeFilter, showAsil, showDal) {
+  // Select dropdowns — save on change
+  body.querySelectorAll('.req-inline-sel').forEach(sel => {
+    sel.addEventListener('mouseenter', () => { sel.style.borderColor = '#ccc'; });
+    sel.addEventListener('mouseleave', () => { if (document.activeElement !== sel) sel.style.borderColor = 'transparent'; });
+    sel.addEventListener('focus',      () => { sel.style.borderColor = '#1A73E8'; sel.style.background = '#fff'; });
+    sel.addEventListener('blur',       () => { sel.style.borderColor = 'transparent'; sel.style.background = 'transparent'; });
+    sel.addEventListener('change', async () => {
+      const rid = sel.dataset.rid;
+      const field = sel.dataset.field;
+      const val = sel.value || null;
+      const { error } = await sb.from('requirements').update({ [field]: val, updated_at: new Date().toISOString() }).eq('id', rid);
+      if (error) { toast(t('common.error'), 'error'); return; }
+      // update local cache
+      const r = data.find(r => r.id === rid); if (r) r[field] = val;
+      toast('Saved.', 'success');
+    });
+  });
+
+  // Title / description — click to edit inline
+  body.querySelectorAll('.req-editable').forEach(cell => {
+    cell.style.cursor = 'text';
+    cell.style.borderRadius = '3px';
+    cell.style.padding = '1px 3px';
+    cell.style.transition = 'background .15s';
+    cell.addEventListener('mouseenter', () => { cell.style.background = '#f4f5f7'; });
+    cell.addEventListener('mouseleave', () => { if (!cell.classList.contains('editing')) cell.style.background = ''; });
+
+    cell.addEventListener('click', () => {
+      if (cell.classList.contains('editing')) return;
+      cell.classList.add('editing');
+      const field = cell.dataset.field;
+      const rid   = cell.dataset.rid;
+      const r = data.find(r => r.id === rid);
+      const curVal = r?.[field] || '';
+      cell.style.background = '#EEF4FF';
+
+      const isMultiline = field === 'description';
+      const inp = document.createElement(isMultiline ? 'textarea' : 'input');
+      inp.value = curVal;
+      inp.style.cssText = `width:100%;box-sizing:border-box;border:none;outline:2px solid #1A73E8;border-radius:3px;padding:2px 4px;font-size:${isMultiline?'12':'13'}px;font-family:inherit;background:#EEF4FF;resize:${isMultiline?'vertical':'none'}`;
+      if (isMultiline) inp.rows = 3;
+      cell.innerHTML = '';
+      cell.appendChild(inp);
+      inp.focus();
+      inp.select();
+
+      const commit = async () => {
+        const val = inp.value.trim();
+        cell.classList.remove('editing');
+        cell.style.background = '';
+
+        if (!r || val === (r[field] || '')) {
+          // No change — restore display
+          cell.textContent = r?.[field] || (field === 'description' ? '' : '');
+          if (field === 'description' && !val) cell.textContent = '+ description';
+          return;
+        }
+
+        const { error } = await sb.from('requirements').update({ [field]: val || null, updated_at: new Date().toISOString() }).eq('id', rid);
+        if (error) { toast(t('common.error'), 'error'); cell.textContent = r[field] || ''; return; }
+        r[field] = val;
+        if (field === 'description') {
+          cell.textContent = val ? (val.slice(0, 80) + (val.length > 80 ? '…' : '')) : '+ description';
+        } else {
+          cell.textContent = val;
+        }
+        toast('Saved.', 'success');
+      };
+
+      inp.addEventListener('blur', commit);
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !isMultiline) { e.preventDefault(); inp.blur(); }
+        if (e.key === 'Escape') { cell.classList.remove('editing'); cell.style.background = ''; cell.textContent = r?.[field] || (field === 'description' ? '+ description' : ''); }
+      });
+    });
+  });
 }
 
 function openReqModal({ project, parentType, parentId, projectType, existing, defaultType }) {
