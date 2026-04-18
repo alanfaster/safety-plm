@@ -464,7 +464,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const hint=document.getElementById('fta-hint'); if(hint) hint.style.display = _nodes.length ? 'none' : '';
     updateDelBtn();
     updatePropPanel();
-    renderSpfAnnotations();
+    renderSpfAnnotations(); // rebuilds panels (needed when SPF set changes)
   }
 
   // Call after tree structure changes (add/delete/connect) — not on every render
@@ -476,6 +476,26 @@ export async function renderFTA(container, { project, item, system, parentType, 
   function applyTransform() {
     const g=container.querySelector('#fta-root');
     if (g) g.setAttribute('transform',`translate(${_pan.x},${_pan.y}) scale(${_zoom})`);
+    repositionAnnotPanels();
+  }
+
+  // Convert canvas coords → screen coords (relative to canvas wrap)
+  function canvasToScreen(cx, cy) {
+    return { left: cx * _zoom + _pan.x, top: cy * _zoom + _pan.y };
+  }
+  // Convert screen coords (relative to wrap) → canvas coords
+  function screenToCanvas(left, top) {
+    return { cx: (left - _pan.x) / _zoom, cy: (top - _pan.y) / _zoom };
+  }
+
+  function repositionAnnotPanels() {
+    container.querySelectorAll('.fta-spf-float[data-nid]').forEach(panel => {
+      const s = _spfAnnotState[panel.dataset.nid];
+      if (!s) return;
+      const { left, top } = canvasToScreen(s.cx, s.cy);
+      panel.style.left = left + 'px';
+      panel.style.top  = top  + 'px';
+    });
   }
 
   // ── Undo ──────────────────────────────────────────────────────────────────────
@@ -1905,30 +1925,37 @@ export async function renderFTA(container, { project, item, system, parentType, 
   }
 
   // ── Floating SPF annotation panels ────────────────────────────────────────────
+  // Positions are stored in CANVAS coordinates (like node x/y) so they move with pan/zoom.
+  // Width/height are in screen pixels (consistent visual size regardless of zoom).
   function renderSpfAnnotations() {
     const wrap = container.querySelector('#fta-cw'); if (!wrap) return;
-    // Remove all existing panels
     wrap.querySelectorAll('.fta-spf-float').forEach(el => el.remove());
     if (!_cfg.showSPF) return;
 
     const spfLeaves = _nodes.filter(n => _mcs.some(s => s.length === 1 && s[0] === n.id));
     spfLeaves.forEach(n => {
-      const state = _spfAnnotState[n.id] || { x: 20, y: 20, w: 210, h: 80 };
-      if (!_spfAnnotState[n.id]) { _spfAnnotState[n.id] = {...state}; }
+      // Initialise canvas-coordinate anchor if missing; default = just to the right of the node
+      if (!_spfAnnotState[n.id] || _spfAnnotState[n.id].cx == null) {
+        const existing = _spfAnnotState[n.id] || {};
+        _spfAnnotState[n.id] = { w: 210, h: 80, ...existing, cx: n.x + 110, cy: n.y - 30 };
+      }
+      const state = _spfAnnotState[n.id];
 
       const accepted  = n.spf_status === 'accepted';
       const rejected  = n.spf_status === 'rejected';
       const bdColor   = accepted ? '#1E8E3E' : rejected ? '#d93025' : '#E37400';
       const statIcon  = accepted ? '✓' : rejected ? '✕' : '!';
 
+      const { left, top } = canvasToScreen(state.cx, state.cy);
+
       const panel = document.createElement('div');
       panel.className = 'fta-spf-float';
       panel.dataset.nid = n.id;
-      panel.style.cssText = `position:absolute;left:${state.x}px;top:${state.y}px;width:${state.w}px;` +
+      panel.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${state.w}px;` +
         `background:#fff;border:2px solid ${bdColor};border-radius:6px;` +
         `box-shadow:2px 4px 12px rgba(0,0,0,.18);z-index:100;font-family:inherit;font-size:11px;overflow:visible;`;
 
-      // Title bar (drag handle)
+      // Title bar (drag handle) — double-click opens full dialog
       const titleBar = document.createElement('div');
       titleBar.className = 'fta-spf-float-title';
       titleBar.style.cssText = `background:${bdColor};color:#fff;padding:3px 8px;cursor:move;` +
@@ -1938,7 +1965,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
         `<span style="background:rgba(255,255,255,.25);border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:9px">${statIcon}</span>`;
       panel.appendChild(titleBar);
 
-      // Content area
+      // Content area — double-click to edit justification inline (auto-saves on blur, no popup)
       const content = document.createElement('div');
       content.className = 'fta-spf-float-content';
       content.style.cssText = 'padding:6px 8px;min-height:36px;cursor:default;color:#333;line-height:1.4;word-break:break-word;';
@@ -1952,22 +1979,20 @@ export async function renderFTA(container, { project, item, system, parentType, 
       panel.appendChild(content);
 
       // 4 corner resize handles
-      [['nw',0,0,'nw'],['ne',1,0,'ne'],['sw',0,1,'sw'],['se',1,1,'se']].forEach(([cls,r,b])=>{
+      [['nw','left:-1px;top:-1px'],['ne','right:-1px;top:-1px'],
+       ['sw','left:-1px;bottom:-1px'],['se','right:-1px;bottom:-1px']].forEach(([cls, pos])=>{
         const h = document.createElement('div');
         h.className = `fta-spf-resize fta-spf-resize-${cls}`;
-        h.style.cssText = `position:absolute;width:9px;height:9px;background:${bdColor};opacity:.55;border-radius:2px;cursor:${cls}-resize;` +
-          (r ? 'right:-1px;' : 'left:-1px;') + (b ? 'bottom:-1px;' : 'top:-1px;');
+        h.style.cssText = `position:absolute;width:9px;height:9px;background:${bdColor};opacity:.55;border-radius:2px;cursor:${cls}-resize;${pos}`;
         panel.appendChild(h);
       });
 
       wrap.appendChild(panel);
       wireDragAnnotation(panel, titleBar, n.id);
       panel.querySelectorAll('.fta-spf-resize').forEach(h => wireResizeAnnotation(panel, h, n.id));
-
-      // Double-click on content → edit justification inline
       content.addEventListener('dblclick', e => { e.stopPropagation(); openAnnotEdit(panel, content, n); });
-      // Single-click on title → open full SPF dialog
-      titleBar.addEventListener('click', e => { e.stopPropagation(); openSpfDialog(n.id); });
+      // Double-click on title bar opens full SPF status/approver dialog
+      titleBar.addEventListener('dblclick', e => { e.stopPropagation(); openSpfDialog(n.id); });
     });
   }
 
@@ -1978,26 +2003,29 @@ export async function renderFTA(container, { project, item, system, parentType, 
       e.preventDefault(); e.stopPropagation();
       dragged = false;
       const startX = e.clientX, startY = e.clientY;
-      const startL = parseInt(panel.style.left)||0, startT = parseInt(panel.style.top)||0;
+      const startCX = _spfAnnotState[nid]?.cx || 0;
+      const startCY = _spfAnnotState[nid]?.cy || 0;
       const onMove = ev => {
-        if (Math.abs(ev.clientX-startX)>3 || Math.abs(ev.clientY-startY)>3) dragged = true;
-        panel.style.left = (startL + ev.clientX - startX) + 'px';
-        panel.style.top  = (startT + ev.clientY - startY) + 'px';
+        const dx = ev.clientX - startX, dy = ev.clientY - startY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragged = true;
+        // Convert screen delta → canvas delta
+        const newCX = startCX + dx / _zoom;
+        const newCY = startCY + dy / _zoom;
+        _spfAnnotState[nid] = { ..._spfAnnotState[nid], cx: newCX, cy: newCY };
+        const { left, top } = canvasToScreen(newCX, newCY);
+        panel.style.left = left + 'px';
+        panel.style.top  = top  + 'px';
       };
       const onUp = () => {
-        if (dragged) {
-          const s = _spfAnnotState[nid] || {};
-          _spfAnnotState[nid] = { ...s, x: parseInt(panel.style.left)||0, y: parseInt(panel.style.top)||0 };
-          saveSpfAnnotState();
-        }
+        if (dragged) saveSpfAnnotState();
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
-    // Suppress click on title bar if we just finished a drag (don't open dialog accidentally)
-    handle.addEventListener('click', e => { if (dragged) { e.stopPropagation(); dragged = false; } });
+    // Suppress dblclick-opening-dialog after a drag
+    handle.addEventListener('dblclick', e => { if (dragged) { e.stopPropagation(); dragged = false; } });
   }
 
   function wireResizeAnnotation(panel, handle, nid) {
@@ -2007,23 +2035,25 @@ export async function renderFTA(container, { project, item, system, parentType, 
       e.preventDefault(); e.stopPropagation();
       const startX = e.clientX, startY = e.clientY;
       const startW = panel.offsetWidth, startH = panel.offsetHeight;
-      const startL = parseInt(panel.style.left)||0, startT = parseInt(panel.style.top)||0;
+      const startCX = _spfAnnotState[nid]?.cx || 0;
+      const startCY = _spfAnnotState[nid]?.cy || 0;
       const onMove = ev => {
         const dx = ev.clientX - startX, dy = ev.clientY - startY;
-        let nw2 = startW, nh2 = startH, nl = startL, nt = startT;
+        let nw2 = startW, nh2 = startH, ncx = startCX, ncy = startCY;
         if (cls.includes('e')) nw2 = Math.max(140, startW + dx);
         if (cls.includes('s')) nh2 = Math.max(60,  startH + dy);
-        if (cls.includes('w')) { nw2 = Math.max(140, startW - dx); nl = startL + (startW - nw2); }
-        if (cls.includes('n')) { nh2 = Math.max(60,  startH - dy); nt = startT + (startH - nh2); }
-        panel.style.width    = nw2 + 'px';
-        panel.style.minHeight= nh2 + 'px';
-        panel.style.left     = nl  + 'px';
-        panel.style.top      = nt  + 'px';
+        // West: shrink from left — anchor moves right in canvas space
+        if (cls.includes('w')) { nw2 = Math.max(140, startW - dx); ncx = startCX + (startW - nw2) / _zoom; }
+        // North: shrink from top — anchor moves down in canvas space
+        if (cls.includes('n')) { nh2 = Math.max(60,  startH - dy); ncy = startCY + (startH - nh2) / _zoom; }
+        _spfAnnotState[nid] = { ..._spfAnnotState[nid], cx: ncx, cy: ncy, w: nw2, h: nh2 };
+        const { left, top } = canvasToScreen(ncx, ncy);
+        panel.style.left      = left + 'px';
+        panel.style.top       = top  + 'px';
+        panel.style.width     = nw2  + 'px';
+        panel.style.minHeight = nh2  + 'px';
       };
       const onUp = () => {
-        const s = _spfAnnotState[nid] || {};
-        _spfAnnotState[nid] = { ...s, x: parseInt(panel.style.left)||0, y: parseInt(panel.style.top)||0,
-          w: panel.offsetWidth, h: panel.offsetHeight };
         saveSpfAnnotState();
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
