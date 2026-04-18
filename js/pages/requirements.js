@@ -144,7 +144,22 @@ async function loadRequirements(project, parentType, parentId, typeFilter = null
         toast(alsoConn ? 'Requirement and connection deleted.' : 'Requirement deleted.', 'success');
       };
 
-      if (!linkedConn) { await doDelete(false); return; }
+      // Check if linked to an FTA AND gate
+      const isFtaLinked = req.source?.startsWith('FTA-AND:');
+      if (!linkedConn && !isFtaLinked) { await doDelete(false); return; }
+      if (!linkedConn && isFtaLinked) {
+        showModal({
+          title: 'Delete Safety Requirement',
+          body: `<p style="margin-bottom:8px">Requirement <strong>${escHtml(req.req_code)}</strong> was generated from an FTA AND gate.</p>
+            <div class="modal-warn-box">⚠ Deleting this requirement will create an inconsistency between the FTA and the Requirements. The AND gate that generated it will no longer have a corresponding safety requirement.</div>`,
+          footer: `
+            <button class="btn btn-secondary" id="fta-del-cancel2">Cancel</button>
+            <button class="btn btn-danger"    id="fta-del-ok2">Delete anyway</button>`,
+        });
+        document.getElementById('fta-del-cancel2').onclick = () => hideModal();
+        document.getElementById('fta-del-ok2').onclick = () => { hideModal(); doDelete(false); };
+        return;
+      }
 
       showModal({
         title: 'Delete Requirement',

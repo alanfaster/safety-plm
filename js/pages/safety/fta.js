@@ -679,6 +679,47 @@ export async function renderFTA(container, { project, item, system, parentType, 
       belowY+=14;
     });
 
+    // SPF annotation badge (shown when node is a single-point failure)
+    if (_spfNodes.has(n.id)) {
+      const just = n.spf_justification;
+      const stat = n.spf_status || 'pending';
+      const statColor = stat==='accepted'?'#1E8E3E':stat==='rejected'?'#d93025':'#888';
+      const annotG = svgEl('g');
+      annotG.setAttribute('class', 'fta-spf-annot');
+      annotG.setAttribute('transform', `translate(${hw+8}, ${-hh+4})`);
+      annotG.setAttribute('cursor', 'pointer');
+      annotG.dataset.spfFor = n.id;
+
+      const annotW = 130;
+      const annotH = 28;
+      const bg = svgEl('rect');
+      bg.setAttribute('x', 0); bg.setAttribute('y', 0);
+      bg.setAttribute('width', annotW); bg.setAttribute('height', annotH);
+      bg.setAttribute('rx', 4); bg.setAttribute('fill', '#fff');
+      bg.setAttribute('stroke', statColor); bg.setAttribute('stroke-width', 1.5);
+      bg.setAttribute('filter', 'drop-shadow(1px 1px 3px rgba(0,0,0,.15))');
+      annotG.appendChild(bg);
+
+      // Status dot
+      const dot = svgEl('circle');
+      dot.setAttribute('cx', 10); dot.setAttribute('cy', 14);
+      dot.setAttribute('r', 4); dot.setAttribute('fill', statColor);
+      dot.setAttribute('pointer-events', 'none');
+      annotG.appendChild(dot);
+
+      // Justification text
+      const txt = svgEl('text');
+      txt.setAttribute('x', 18); txt.setAttribute('y', 18);
+      txt.setAttribute('dominant-baseline', 'middle');
+      txt.setAttribute('font-size', 9); txt.setAttribute('fill', just ? '#172B4D' : '#999');
+      txt.setAttribute('font-family', 'inherit'); txt.setAttribute('pointer-events', 'none');
+      const display = just ? (just.length > 15 ? just.slice(0,14)+'…' : just) : '✏ Justification';
+      txt.textContent = display;
+      annotG.appendChild(txt);
+
+      g.appendChild(annotG);
+    }
+
     // Port + add-child button
     const portY = belowY + 6;
     g.appendChild(buildPort(n.id, 0, portY));
@@ -924,6 +965,10 @@ export async function renderFTA(container, { project, item, system, parentType, 
         wrap.style.cursor='grabbing';
         return;
       }
+
+      // SPF annotation click
+      const annotEl = e.target.closest('.fta-spf-annot');
+      if (annotEl) { e.stopPropagation(); openSpfDialog(annotEl.dataset.spfFor); return; }
 
       // "+" add-child button
       const addBtn=e.target.closest('.fta-add-child');
@@ -1711,31 +1756,81 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const body = container.querySelector('#fta-mcs-body');
     if (!bar || !body) return;
 
-    // Wire toggle (once)
     if (!_mcs.length) {
       body.innerHTML = '<div class="fta-mcs-empty">No cut sets — add basic events and connect them to a top event.</div>';
       return;
     }
 
+    const spfCount = _mcs.filter(s => s.length === 1).length;
+    const statusBadge = s => {
+      const map = { accepted: '#1E8E3E', rejected: '#d93025', pending: '#888' };
+      const col = map[s] || '#888';
+      return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;background:${col}18;color:${col};border:1px solid ${col}40;text-transform:capitalize">${esc(s||'pending')}</span>`;
+    };
+
     const rows = _mcs.map((cs, i) => {
       const isSpf = cs.length === 1;
       const codes = cs.map(id => byId(id)?.fta_code || id).join(' ∩ ');
       const events = cs.map(id => { const n=byId(id); return esc(n?.label||n?.component||n?.fta_code||id); }).join(', ');
-      return `<tr>
-        <td class="fta-mcs-order">${cs.length}</td>
+      if (!isSpf) {
+        return `<tr>
+          <td class="fta-mcs-order">${cs.length}</td>
+          <td class="fta-mcs-codes">${esc(codes)}</td>
+          <td colspan="4" style="font-size:11px;color:#555">${esc(events)}</td>
+        </tr>`;
+      }
+      const nodeId = cs[0];
+      const n = byId(nodeId);
+      const just = n?.spf_justification || '';
+      const stat = n?.spf_status || 'pending';
+      const comm = n?.spf_approver_comment || '';
+      return `<tr class="fta-mcs-spf-row" data-nid="${nodeId}">
+        <td class="fta-mcs-order">1</td>
         <td class="fta-mcs-codes">${esc(codes)}</td>
-        <td style="max-width:280px;font-size:11px;color:#555">${esc(events)}</td>
-        <td>${isSpf ? '<span class="fta-mcs-spf">SPF</span>' : ''}</td>
+        <td style="font-size:11px;color:#555">${esc(events)}</td>
+        <td><span class="fta-mcs-spf">SPF</span></td>
+        <td><input class="fta-mcs-inp" data-nid="${nodeId}" data-field="spf_justification" placeholder="Justification…" value="${esc(just)}" style="width:160px;font-size:10px;padding:2px 5px;border:1px solid #ddd;border-radius:3px;outline:none"></td>
+        <td>
+          <select class="fta-mcs-sel" data-nid="${nodeId}" data-field="spf_status" style="font-size:10px;padding:2px 4px;border:1px solid #ddd;border-radius:3px">
+            <option value="pending"  ${stat==='pending' ?'selected':''}>Pending</option>
+            <option value="accepted" ${stat==='accepted'?'selected':''}>Accepted</option>
+            <option value="rejected" ${stat==='rejected'?'selected':''}>Rejected</option>
+          </select>
+        </td>
+        <td><input class="fta-mcs-inp" data-nid="${nodeId}" data-field="spf_approver_comment" placeholder="Approver comment…" value="${esc(comm)}" style="width:140px;font-size:10px;padding:2px 5px;border:1px solid #ddd;border-radius:3px;outline:none"></td>
       </tr>`;
     }).join('');
 
-    const spfCount = _mcs.filter(s => s.length === 1).length;
     body.innerHTML = `
       <div style="font-size:10px;color:#888;margin-bottom:6px">${_mcs.length} cut set${_mcs.length!==1?'s':''} · ${spfCount} single-point failure${spfCount!==1?'s':''}</div>
+      <div style="overflow-x:auto">
       <table class="fta-mcs-table">
-        <thead><tr><th>Order</th><th>IDs</th><th>Events</th><th></th></tr></thead>
+        <thead><tr><th>Order</th><th>IDs</th><th>Events</th><th></th><th>Justification</th><th>Status</th><th>Approver comment</th></tr></thead>
         <tbody>${rows}</tbody>
-      </table>`;
+      </table></div>`;
+
+    // Wire inline save for SPF fields
+    body.querySelectorAll('.fta-mcs-inp').forEach(inp => {
+      inp.addEventListener('change', async () => {
+        const nid = inp.dataset.nid;
+        const field = inp.dataset.field;
+        const val = inp.value.trim() || null;
+        const node = byId(nid); if (!node) return;
+        node[field] = val;
+        await sb.from('fta_nodes').update({ [field]: val, updated_at: new Date().toISOString() }).eq('id', nid);
+        render(); // refresh SPF annotation on canvas
+      });
+    });
+    body.querySelectorAll('.fta-mcs-sel').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        const nid = sel.dataset.nid;
+        const val = sel.value;
+        const node = byId(nid); if (!node) return;
+        node.spf_status = val;
+        await sb.from('fta_nodes').update({ spf_status: val, updated_at: new Date().toISOString() }).eq('id', nid);
+        render(); // refresh SPF annotation on canvas
+      });
+    });
   }
 
   // ── Generate Safety Requirements from AND gates ────────────────────────────
@@ -1743,7 +1838,6 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const andGates = _nodes.filter(n => n.type === 'gate_and');
     if (!andGates.length) { toast('No AND gates found in this FTA.', 'info'); return; }
 
-    // Find or create "Safety Requirements" nav_page
     const SAFETY_REQ_PAGE_NAME = 'Safety Requirements';
     let { data: existingPage } = await sb.from('nav_pages')
       .select('id, domain, phase')
@@ -1752,28 +1846,30 @@ export async function renderFTA(container, { project, item, system, parentType, 
       .maybeSingle();
 
     if (!existingPage) {
-      // Find domain from existing nav_pages with phase=requirements, fallback 'safety'
-      const { data: reqPages } = await sb.from('nav_pages')
+      // Detect domain from any existing nav_page for this parent
+      const { data: anyPages } = await sb.from('nav_pages')
         .select('domain').eq('parent_type', parentType).eq('parent_id', parentId)
-        .eq('phase', 'requirements').limit(1);
-      const domain = reqPages?.[0]?.domain || 'safety';
-      const { data: countRes } = await sb.from('nav_pages')
-        .select('id', { count: 'exact', head: true })
+        .order('sort_order').limit(1);
+      const domain = anyPages?.[0]?.domain || (parentType === 'system' ? 'system' : 'item');
+
+      // Sort order = count of existing pages in this domain+requirements phase
+      const { count: pgCount } = await sb.from('nav_pages')
+        .select('*', { count: 'exact', head: true })
         .eq('parent_type', parentType).eq('parent_id', parentId)
         .eq('domain', domain).eq('phase', 'requirements');
-      const sortOrder = countRes?.length || 0;
+      const sortOrder = pgCount || 0;
+
       const { data: newPage, error: pgErr } = await sb.from('nav_pages').insert({
         parent_type: parentType, parent_id: parentId,
         domain, phase: 'requirements',
         name: SAFETY_REQ_PAGE_NAME, sort_order: sortOrder,
       }).select().single();
-      if (pgErr) { toast('Could not create Safety Requirements page.', 'error'); return; }
+      if (pgErr) { toast(`Could not create Safety Requirements page: ${pgErr.message}`, 'error'); return; }
       existingPage = newPage;
     }
 
-    // Build next req index
     const { count: reqCount } = await sb.from('requirements')
-      .select('id', { count: 'exact', head: true })
+      .select('*', { count: 'exact', head: true })
       .eq('parent_type', parentType).eq('parent_id', parentId);
 
     let created = 0;
@@ -1787,23 +1883,72 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const childNames = children.map(c => c.fta_code || c.label || 'event').join(', ');
       const gateRef = gate.fta_code || gate.label || 'AND gate';
       const title = `Independence between failures of: ${childNames} (${gateRef})`;
-      const description = `Safety requirement derived from FTA AND gate ${gateRef}. The simultaneous occurrence of failures [${childNames}] leads to the top-level failure condition. Ensure independence between these failure sources to prevent common-cause failures.`;
+      const description = `Safety requirement derived from FTA AND gate ${gateRef}. Simultaneous failures of [${childNames}] cause the top-level failure condition. Ensure independence between these failure sources to prevent common-cause failures.`;
       const reqCode = `REQ-${pfx}-${projAbbr}-${String(idx).padStart(3,'0')}`;
       const { error } = await sb.from('requirements').insert({
-        req_code: reqCode,
-        title, description,
-        type: 'safety',
-        priority: 'high',
-        status: 'draft',
-        parent_type: parentType,
-        parent_id: parentId,
-        project_id: project.id,
+        req_code: reqCode, title, description,
+        type: 'safety', priority: 'high', status: 'draft',
+        parent_type: parentType, parent_id: parentId, project_id: project.id,
+        source: `FTA-AND:${gate.id}`,
       });
       if (!error) { created++; idx++; }
     }
 
     if (!created) { toast('No AND gates with ≥2 children found.', 'info'); return; }
-    toast(`${created} safety requirement${created!==1?'s':''} created in "Safety Requirements".`, 'success');
+    toast(`${created} safety requirement${created!==1?'s':''} created in "Safety Requirements". Reload sidebar to see the new page.`, 'success');
+    // Reload sidebar
+    window.dispatchEvent(new Event('hashchange'));
+  }
+
+  function openSpfDialog(nodeId) {
+    const n = byId(nodeId); if (!n) return;
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:8px;padding:24px 28px;max-width:460px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2);font-family:inherit;border-top:4px solid #d93025';
+    box.innerHTML = `
+      <div style="font-size:14px;font-weight:700;color:#d93025;margin-bottom:4px">⚠ Single Point Failure — ${esc(n.fta_code||'')}</div>
+      <div style="font-size:12px;color:#555;margin-bottom:16px">${esc(n.label||n.component||'')}</div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Justification / Safety Argument</label>
+        <textarea id="spf-just" rows="3" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;font-family:inherit;resize:vertical">${esc(n.spf_justification||'')}</textarea>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Status (FSM review)</label>
+        <select id="spf-stat" style="padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;width:180px">
+          <option value="pending"  ${(n.spf_status||'pending')==='pending' ?'selected':''}>⏳ Pending</option>
+          <option value="accepted" ${n.spf_status==='accepted'?'selected':''}>✅ Accepted</option>
+          <option value="rejected" ${n.spf_status==='rejected'?'selected':''}>❌ Rejected</option>
+        </select>
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Approver comment</label>
+        <input id="spf-comm" type="text" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;font-family:inherit" value="${esc(n.spf_approver_comment||'')}" placeholder="FSM comment…">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="spf-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+        <button id="spf-save" style="padding:6px 16px;border:none;border-radius:4px;background:#1A73E8;color:#fff;cursor:pointer;font-size:13px;font-weight:600">Save</button>
+      </div>`;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const cleanup = () => overlay.remove();
+    overlay.addEventListener('click', e => { if (e.target === overlay) cleanup(); });
+    box.querySelector('#spf-cancel').onclick = cleanup;
+    box.querySelector('#spf-save').onclick = async () => {
+      const just = box.querySelector('#spf-just').value.trim() || null;
+      const stat = box.querySelector('#spf-stat').value;
+      const comm = box.querySelector('#spf-comm').value.trim() || null;
+      n.spf_justification = just;
+      n.spf_status = stat;
+      n.spf_approver_comment = comm;
+      await sb.from('fta_nodes').update({
+        spf_justification: just, spf_status: stat, spf_approver_comment: comm,
+        updated_at: new Date().toISOString()
+      }).eq('id', nodeId);
+      cleanup();
+      render();
+      recomputeMCS();
+    };
   }
 
   // Wire MCS bar toggle in init (after HTML is set)
