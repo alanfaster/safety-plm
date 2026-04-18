@@ -1995,9 +1995,8 @@ td:hover .dfmea-del-inline{display:inline-block}
 .fta-prop-sep{border:none;border-top:1px solid var(--color-border);margin:4px 0}
 .fta-prop-computed{font-size:11px;color:#555;background:#f5f5f5;border-radius:3px;padding:4px 6px;font-weight:600}
 
-/* Add-child "+" button on nodes */
-.fta-add-child{opacity:0;transition:opacity 0.12s;cursor:pointer}
-.fta-node:hover .fta-add-child{opacity:1}
+/* Add-child "+" button on nodes — always visible */
+.fta-add-child{opacity:1;cursor:pointer}
 
 /* Add-child floating menu */
 .fta-add-menu{position:absolute;background:#fff;border:1px solid var(--color-border);border-radius:6px;padding:5px 0;box-shadow:var(--shadow);z-index:400;min-width:155px}
