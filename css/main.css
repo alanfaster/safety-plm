@@ -2042,6 +2042,22 @@ td:hover .dfmea-del-inline{display:inline-block}
 .fta-info-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-muted)}
 .fta-info-value{font-size:11px;color:var(--color-text);line-height:1.3}
 
+/* ── FTA MCS bottom bar ─────────────────────────────────────────────────── */
+.fta-mcs-bar{flex-shrink:0;border-top:2px solid var(--color-border);background:#fff;display:flex;flex-direction:column;max-height:220px;overflow:hidden;transition:max-height .2s}
+.fta-mcs-bar.fta-mcs-collapsed{max-height:32px}
+.fta-mcs-hdr{display:flex;align-items:center;gap:8px;padding:0 12px;height:32px;cursor:pointer;user-select:none;flex-shrink:0;background:#f9fafb;border-bottom:1px solid var(--color-border)}
+.fta-mcs-hdr-title{font-size:11px;font-weight:700;color:var(--color-text);flex:1}
+.fta-mcs-toggle{font-size:10px;color:var(--color-text-muted);margin-left:auto}
+.fta-mcs-body{overflow-y:auto;flex:1;padding:6px 12px}
+.fta-mcs-empty{font-size:12px;color:var(--color-text-muted);padding:8px 0;font-style:italic}
+.fta-mcs-table{width:100%;border-collapse:collapse;font-size:11px}
+.fta-mcs-table th{text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);padding:4px 8px 3px;border-bottom:1px solid var(--color-border)}
+.fta-mcs-table td{padding:3px 8px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+.fta-mcs-table tr:last-child td{border-bottom:none}
+.fta-mcs-spf{display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:700;background:#fde8e8;color:#d93025;border:1px solid #f5c6c6}
+.fta-mcs-order{font-weight:700;font-size:10px;color:var(--color-text-muted)}
+.fta-mcs-codes{font-family:monospace;font-size:10px;color:#172B4D}
+
 /* ── DFMEA Structure Map panel ───────────────────────────────────────────── */
 .dfmea-map-body{flex:1;overflow:auto;background:#F4F5F7;padding:12px 16px}
 

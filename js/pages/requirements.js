@@ -18,6 +18,7 @@ export async function renderRequirements(container, { project, item, system, par
     if (pg) {
       subPageName = pg.name;
       if (pg.name.toLowerCase().includes('interface')) typeFilter = 'interface';
+      else if (pg.name.toLowerCase().includes('safety')) typeFilter = 'safety';
     }
   }
 

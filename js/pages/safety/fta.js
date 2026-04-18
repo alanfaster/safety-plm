@@ -78,7 +78,7 @@ const CHILD_Y   = 175;   // vertical distance (centre→centre) from parent to c
 const CHILD_GAP = 225;   // horizontal gap between sibling centres
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-export async function renderFTA(container, { project, parentType, parentId }) {
+export async function renderFTA(container, { project, item, system, parentType, parentId }) {
 
   // ── Config (persisted in localStorage) ────────────────────────────────────
   const CFG_KEY = `fta_cfg_${parentType}_${parentId}`;
@@ -105,6 +105,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   let _copyDrag   = null;             // { fromId, startX, startY, curX, curY }
   const _undoStack = [];              // max 10 snapshots
   let _undoToastEl = null;
+  let _mcs        = [];               // current Minimal Cut Sets
+  let _spfNodes   = new Set();        // node IDs on Single Point Failure paths
 
   // ── Shell ──────────────────────────────────────────────────────────────────
   container.innerHTML = `
@@ -135,6 +137,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         <button class="btn btn-sm"            id="fta-btn-zo">－</button>
         <button class="btn btn-sm"            id="fta-btn-zr">⊡</button>
         <span class="fta-toolbar-sep"></span>
+        <button class="btn btn-sm"            id="fta-btn-sreqs" title="Generate Safety Requirements from AND gates">⚡ Safety Reqs</button>
         <button class="btn btn-sm"            id="fta-btn-pdf" title="Export to PDF">📄 PDF</button>
       </div>
 
@@ -189,7 +192,18 @@ export async function renderFTA(container, { project, parentType, parentId }) {
         </div>
       </div>
 
-      </div>`; /* end fta-content-row */
+      </div>
+
+      <!-- ── MCS bottom bar ── -->
+      <div class="fta-mcs-bar fta-mcs-collapsed" id="fta-mcs-bar">
+        <div class="fta-mcs-hdr" id="fta-mcs-hdr">
+          <span class="fta-mcs-hdr-title">⚡ Minimal Cut Sets</span>
+          <span class="fta-mcs-toggle" id="fta-mcs-toggle">▲</span>
+        </div>
+        <div class="fta-mcs-body" id="fta-mcs-body">
+          <div class="fta-mcs-empty">No cut sets computed yet.</div>
+        </div>
+      </div>`; /* end fta-content-row + mcs-bar */
 
   await loadFCs();
   try { await loadNodes(); } catch(e) { console.warn('FTA loadNodes error:', e); }
@@ -418,6 +432,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   function render() {
+    // Compute MCS/SPF before drawing so colors are available
+    try { _mcs = computeMCS(); _spfNodes = computeSPFNodes(_mcs); } catch(e) { _mcs=[]; _spfNodes=new Set(); }
     renderConns();
     renderNodeEls();
     renderPendingConn();
@@ -428,6 +444,7 @@ export async function renderFTA(container, { project, parentType, parentId }) {
     const hint=document.getElementById('fta-hint'); if(hint) hint.style.display = _nodes.length ? 'none' : '';
     updateDelBtn();
     updatePropPanel();
+    try { renderMCSBar(); } catch(e) { /* non-fatal */ }
   }
 
   function applyTransform() {
@@ -497,13 +514,14 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       const x1=p.x, y1=p.y+nh(p)/2, x2=n.x, y2=n.y-nh(n)/2;
       const mid=(y1+y2)/2;
       const sel=_selSet.has(n.id)||_selSet.has(p.id);
+      const spf=!sel&&_spfNodes.has(n.id)&&_spfNodes.has(p.id);
       const el=svgEl('path');
-      // Classic FTA: vertical down → horizontal → vertical down (orthogonal elbow)
       el.setAttribute('d',`M ${x1},${y1} L ${x1},${mid} L ${x2},${mid} L ${x2},${y2}`);
       el.setAttribute('fill','none');
-      el.setAttribute('stroke', sel?'#1A73E8':'#555F6E');
-      el.setAttribute('stroke-width', sel?'2.5':'1.8');
+      el.setAttribute('stroke', sel?'#1A73E8':spf?'#d93025':'#555F6E');
+      el.setAttribute('stroke-width', sel?'2.5':spf?'2.5':'1.8');
       el.setAttribute('marker-end', sel?'url(#farrh)':'url(#farr)');
+      if (spf) el.setAttribute('stroke-dasharray','none');
       layer.appendChild(el);
     });
   }
@@ -518,9 +536,10 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   function buildBoxNode(n) {
     const base = NT[n.type]||NT.basic;
     const userColor = n.color&&n.color.startsWith('#') ? n.color : null;
-    const stroke    = userColor || base.stroke;
-    const fill      = userColor ? lighten(userColor) : base.fill;
-    const codeColor = userColor ? semiLighten(userColor) : base.codeColor;
+    const spf       = !userColor && _spfNodes.has(n.id);
+    const stroke    = userColor ? userColor : spf ? '#d93025' : base.stroke;
+    const fill      = userColor ? lighten(userColor) : spf ? '#fff5f5' : base.fill;
+    const codeColor = userColor ? semiLighten(userColor) : spf ? '#fde8e8' : base.codeColor;
     const sw        = base.sw;
     const sel       = _selSet.has(n.id);
     const BH        = boxH(n.label);
@@ -695,7 +714,9 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   function buildGateNode(n) {
     const t=NT[n.type]||NT.gate_and;
     const userColor=n.color&&n.color.startsWith('#')?n.color:null;
-    const stroke=userColor||t.stroke, fill=userColor?lighten(userColor):t.fill;
+    const spf=!userColor&&_spfNodes.has(n.id);
+    const stroke=userColor?userColor:spf?'#d93025':t.stroke;
+    const fill=userColor?lighten(userColor):spf?'#fff5f5':t.fill;
     const hw=(t.gw||74)/2, hh=(t.gh||62)/2;
     const sel=_selSet.has(n.id);
 
@@ -815,6 +836,8 @@ export async function renderFTA(container, { project, parentType, parentId }) {
       const title   = project.name || 'FTA';
       exportFTApdf(svg, _nodes, title, fcLabel);
     });
+    q('fta-btn-sreqs').addEventListener('click', () => generateSafetyReqs());
+    wireMCSBar();
 
     // Prop panel toggle
     q('fta-prop-toggle').addEventListener('click',()=>{
@@ -1605,5 +1628,187 @@ export async function renderFTA(container, { project, parentType, parentId }) {
   async function autosave(id,fields){
     const{error}=await sb.from('fta_nodes').update({...fields,updated_at:new Date().toISOString()}).eq('id',id);
     if(error)toast('Autosave failed.','error');
+  }
+
+  // ── Minimal Cut Sets (MOCUS algorithm) ────────────────────────────────────
+  function computeMCS() {
+    if (!_nodes.length) return [];
+    // Build children map (parent→children)
+    const childMap = {};
+    _nodes.forEach(n => { childMap[n.id] = []; });
+    _nodes.forEach(n => { if (n.parent_node_id && childMap[n.parent_node_id]) childMap[n.parent_node_id].push(n.id); });
+    // Find root
+    const nodeIds = new Set(_nodes.map(n => n.id));
+    const roots = _nodes.filter(n => !n.parent_node_id || !nodeIds.has(n.parent_node_id));
+    if (!roots.length) return [];
+    const root = roots[0];
+
+    // Recursive expansion — returns array of cut sets (each = array of leaf IDs)
+    const seen = new Set();
+    function expand(nodeId) {
+      if (seen.has(nodeId)) return [[]]; // cycle guard
+      seen.add(nodeId);
+      const n = byId(nodeId);
+      if (!n) { seen.delete(nodeId); return [[]]; }
+      const kids = childMap[nodeId] || [];
+      if (!kids.length) { seen.delete(nodeId); return [[nodeId]]; } // leaf
+      let result;
+      if (n.type === 'gate_and' || n.type === 'gate_inhibit') {
+        // AND: Cartesian product
+        result = [[]];
+        for (const kid of kids) {
+          const kidSets = expand(kid);
+          const next = [];
+          for (const r of result) for (const ks of kidSets) next.push([...r, ...ks]);
+          result = next;
+          if (result.length > 2000) { result = result.slice(0, 2000); break; } // safety limit
+        }
+      } else {
+        // OR / top_event / intermediate / gate_or / gate_not: union
+        result = [];
+        for (const kid of kids) result.push(...expand(kid));
+      }
+      seen.delete(nodeId);
+      return result;
+    }
+
+    const raw = expand(root.id);
+    // Deduplicate elements in each set and sort
+    const deduped = raw.map(s => [...new Set(s)].sort());
+    // Minimize: remove supersets
+    const minimized = deduped.filter((s, i) =>
+      !deduped.some((other, j) => i !== j && other.length <= s.length && other.every(e => s.includes(e)))
+    );
+    // Sort by order then by first code
+    minimized.sort((a, b) => a.length - b.length || (byId(a[0])?.fta_code||'').localeCompare(byId(b[0])?.fta_code||''));
+    return minimized;
+  }
+
+  // Compute the set of node IDs on SPF (order-1 MCS) paths from leaf to root
+  function computeSPFNodes(mcs) {
+    const spf = new Set();
+    const order1 = mcs.filter(s => s.length === 1);
+    for (const [leafId] of order1) {
+      let cur = byId(leafId);
+      while (cur) {
+        spf.add(cur.id);
+        if (!cur.parent_node_id) break;
+        cur = byId(cur.parent_node_id);
+      }
+    }
+    return spf;
+  }
+
+  function renderMCSBar() {
+    const bar  = container.querySelector('#fta-mcs-bar');
+    const body = container.querySelector('#fta-mcs-body');
+    if (!bar || !body) return;
+
+    // Wire toggle (once)
+    if (!_mcs.length) {
+      body.innerHTML = '<div class="fta-mcs-empty">No cut sets — add basic events and connect them to a top event.</div>';
+      return;
+    }
+
+    const rows = _mcs.map((cs, i) => {
+      const isSpf = cs.length === 1;
+      const codes = cs.map(id => byId(id)?.fta_code || id).join(' ∩ ');
+      const events = cs.map(id => { const n=byId(id); return esc(n?.label||n?.component||n?.fta_code||id); }).join(', ');
+      return `<tr>
+        <td class="fta-mcs-order">${cs.length}</td>
+        <td class="fta-mcs-codes">${esc(codes)}</td>
+        <td style="max-width:280px;font-size:11px;color:#555">${esc(events)}</td>
+        <td>${isSpf ? '<span class="fta-mcs-spf">SPF</span>' : ''}</td>
+      </tr>`;
+    }).join('');
+
+    const spfCount = _mcs.filter(s => s.length === 1).length;
+    body.innerHTML = `
+      <div style="font-size:10px;color:#888;margin-bottom:6px">${_mcs.length} cut set${_mcs.length!==1?'s':''} · ${spfCount} single-point failure${spfCount!==1?'s':''}</div>
+      <table class="fta-mcs-table">
+        <thead><tr><th>Order</th><th>IDs</th><th>Events</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  // ── Generate Safety Requirements from AND gates ────────────────────────────
+  async function generateSafetyReqs() {
+    const andGates = _nodes.filter(n => n.type === 'gate_and');
+    if (!andGates.length) { toast('No AND gates found in this FTA.', 'info'); return; }
+
+    // Find or create "Safety Requirements" nav_page
+    const SAFETY_REQ_PAGE_NAME = 'Safety Requirements';
+    let { data: existingPage } = await sb.from('nav_pages')
+      .select('id, domain, phase')
+      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .ilike('name', SAFETY_REQ_PAGE_NAME)
+      .maybeSingle();
+
+    if (!existingPage) {
+      // Find domain from existing nav_pages with phase=requirements, fallback 'safety'
+      const { data: reqPages } = await sb.from('nav_pages')
+        .select('domain').eq('parent_type', parentType).eq('parent_id', parentId)
+        .eq('phase', 'requirements').limit(1);
+      const domain = reqPages?.[0]?.domain || 'safety';
+      const { data: countRes } = await sb.from('nav_pages')
+        .select('id', { count: 'exact', head: true })
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .eq('domain', domain).eq('phase', 'requirements');
+      const sortOrder = countRes?.length || 0;
+      const { data: newPage, error: pgErr } = await sb.from('nav_pages').insert({
+        parent_type: parentType, parent_id: parentId,
+        domain, phase: 'requirements',
+        name: SAFETY_REQ_PAGE_NAME, sort_order: sortOrder,
+      }).select().single();
+      if (pgErr) { toast('Could not create Safety Requirements page.', 'error'); return; }
+      existingPage = newPage;
+    }
+
+    // Build next req index
+    const { count: reqCount } = await sb.from('requirements')
+      .select('id', { count: 'exact', head: true })
+      .eq('parent_type', parentType).eq('parent_id', parentId);
+
+    let created = 0;
+    let idx = (reqCount || 0) + 1;
+    const pfx = parentType === 'item' ? 'ITEM' : 'SYS';
+    const projAbbr = (project.name||'PRJ').replace(/[^A-Za-z0-9]/g,'').slice(0,4).toUpperCase();
+
+    for (const gate of andGates) {
+      const children = _nodes.filter(n => n.parent_node_id === gate.id);
+      if (children.length < 2) continue;
+      const childNames = children.map(c => c.fta_code || c.label || 'event').join(', ');
+      const gateRef = gate.fta_code || gate.label || 'AND gate';
+      const title = `Independence between failures of: ${childNames} (${gateRef})`;
+      const description = `Safety requirement derived from FTA AND gate ${gateRef}. The simultaneous occurrence of failures [${childNames}] leads to the top-level failure condition. Ensure independence between these failure sources to prevent common-cause failures.`;
+      const reqCode = `REQ-${pfx}-${projAbbr}-${String(idx).padStart(3,'0')}`;
+      const { error } = await sb.from('requirements').insert({
+        req_code: reqCode,
+        title, description,
+        type: 'safety',
+        priority: 'high',
+        status: 'draft',
+        parent_type: parentType,
+        parent_id: parentId,
+        project_id: project.id,
+      });
+      if (!error) { created++; idx++; }
+    }
+
+    if (!created) { toast('No AND gates with ≥2 children found.', 'info'); return; }
+    toast(`${created} safety requirement${created!==1?'s':''} created in "Safety Requirements".`, 'success');
+  }
+
+  // Wire MCS bar toggle in init (after HTML is set)
+  function wireMCSBar() {
+    const hdr = container.querySelector('#fta-mcs-hdr');
+    const bar = container.querySelector('#fta-mcs-bar');
+    const tog = container.querySelector('#fta-mcs-toggle');
+    if (!hdr || bar?.dataset?.wired) return;
+    bar.dataset.wired = '1';
+    hdr.addEventListener('click', () => {
+      const collapsed = bar.classList.toggle('fta-mcs-collapsed');
+      tog.textContent = collapsed ? '▲' : '▼';
+    });
   }
 }
