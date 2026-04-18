@@ -179,6 +179,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
             <g id="fta-pending"></g>
             <g id="fta-lasso-g"></g>
             <g id="fta-nodes-g"></g>
+            <g id="fta-add-btns-g"></g>
             <g id="fta-guides-g"></g>
             <g id="fta-edit-g"></g>
             <g id="fta-copy-g"></g>
@@ -539,8 +540,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const x1=p.x, y1=p.y+nh(p)/2, x2=n.x, y2=n.y-nh(n)/2;
       const mid=(y1+y2)/2;
       const sel=_selSet.has(n.id)||_selSet.has(p.id);
-      const nAccepted = byId(n.id)?.spf_status === 'accepted';
-      const spf=!sel&&_spfNodes.has(n.id)&&_spfNodes.has(p.id)&&_cfg.showSPF&&!nAccepted;
+      const spf=!sel&&_spfNodes.has(n.id)&&_spfNodes.has(p.id)&&_cfg.showSPF;
       const el=svgEl('path');
       el.setAttribute('d',`M ${x1},${y1} L ${x1},${mid} L ${x2},${mid} L ${x2},${y2}`);
       el.setAttribute('fill','none');
@@ -553,18 +553,29 @@ export async function renderFTA(container, { project, item, system, parentType, 
   }
 
   function renderNodeEls() {
-    const layer=document.getElementById('fta-nodes-g'); if(!layer) return;
-    layer.innerHTML='';
-    _nodes.forEach(n=>layer.appendChild(isGate(n.type)?buildGateNode(n):buildBoxNode(n)));
+    const layer   = document.getElementById('fta-nodes-g');    if(!layer)    return;
+    const btnLayer= document.getElementById('fta-add-btns-g'); if(!btnLayer) return;
+    layer.innerHTML=''; btnLayer.innerHTML='';
+    _nodes.forEach(n => {
+      const el = isGate(n.type) ? buildGateNode(n) : buildBoxNode(n);
+      // Lift add-child buttons to the top-layer group so they're never covered by later nodes
+      el.querySelectorAll('.fta-add-child').forEach(btn => {
+        const m = (btn.getAttribute('transform')||'').match(/translate\(\s*([^,]+),([^)]+)\)/);
+        const bx = parseFloat(m?.[1]||0), by = parseFloat(m?.[2]||0);
+        const clone = btn.cloneNode(true);
+        clone.setAttribute('transform', `translate(${n.x + bx},${n.y + by})`);
+        btnLayer.appendChild(clone);
+        btn.remove();
+      });
+      layer.appendChild(el);
+    });
   }
 
   // ── Box node ────────────────────────────────────────────────────────────────
   function buildBoxNode(n) {
     const base = NT[n.type]||NT.basic;
     const userColor = n.color&&n.color.startsWith('#') ? n.color : null;
-    const isSpfNode = _spfNodes.has(n.id);
-    const spfAccepted = n.spf_status === 'accepted';
-    const spf       = !userColor && isSpfNode && !spfAccepted && _cfg.showSPF;
+    const spf       = !userColor && _spfNodes.has(n.id) && _cfg.showSPF;
     const stroke    = userColor ? userColor : spf ? '#d93025' : base.stroke;
     const fill      = userColor ? lighten(userColor) : spf ? '#fff5f5' : base.fill;
     const codeColor = userColor ? semiLighten(userColor) : spf ? '#fde8e8' : base.codeColor;
@@ -1727,11 +1738,15 @@ export async function renderFTA(container, { project, item, system, parentType, 
     return minimized;
   }
 
-  // Compute the set of node IDs on SPF (order-1 MCS) paths from leaf to root
+  // Compute the set of node IDs on SPF (order-1 MCS) paths from leaf to root.
+  // Leaves with spf_status === 'accepted' are excluded — their entire chain loses red
+  // unless another non-accepted SPF also runs through the same node.
   function computeSPFNodes(mcs) {
     const spf = new Set();
     const order1 = mcs.filter(s => s.length === 1);
     for (const [leafId] of order1) {
+      const leaf = byId(leafId);
+      if (leaf?.spf_status === 'accepted') continue; // accepted SPF: skip entire chain
       let cur = byId(leafId);
       const visited = new Set();
       while (cur && !visited.has(cur.id)) {
@@ -1957,25 +1972,32 @@ export async function renderFTA(container, { project, item, system, parentType, 
   }
 
   function wireDragAnnotation(panel, handle, nid) {
+    let dragged = false;
     handle.addEventListener('mousedown', e => {
       if (e.button !== 0) return;
       e.preventDefault(); e.stopPropagation();
+      dragged = false;
       const startX = e.clientX, startY = e.clientY;
       const startL = parseInt(panel.style.left)||0, startT = parseInt(panel.style.top)||0;
       const onMove = ev => {
+        if (Math.abs(ev.clientX-startX)>3 || Math.abs(ev.clientY-startY)>3) dragged = true;
         panel.style.left = (startL + ev.clientX - startX) + 'px';
         panel.style.top  = (startT + ev.clientY - startY) + 'px';
       };
       const onUp = () => {
-        const s = _spfAnnotState[nid] || {};
-        _spfAnnotState[nid] = { ...s, x: parseInt(panel.style.left)||0, y: parseInt(panel.style.top)||0 };
-        saveSpfAnnotState();
+        if (dragged) {
+          const s = _spfAnnotState[nid] || {};
+          _spfAnnotState[nid] = { ...s, x: parseInt(panel.style.left)||0, y: parseInt(panel.style.top)||0 };
+          saveSpfAnnotState();
+        }
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
+    // Suppress click on title bar if we just finished a drag (don't open dialog accidentally)
+    handle.addEventListener('click', e => { if (dragged) { e.stopPropagation(); dragged = false; } });
   }
 
   function wireResizeAnnotation(panel, handle, nid) {
