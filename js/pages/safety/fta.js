@@ -108,8 +108,6 @@ export async function renderFTA(container, { project, item, system, parentType, 
   let _mcs        = [];               // current Minimal Cut Sets
   let _spfNodes   = new Set();        // node IDs on Single Point Failure paths
   let _mcsMaxOrder= 99;               // display cut sets up to this order
-  let _hoveredAddNodeId = null;       // node whose + button is currently visible
-  let _addBtnHideTimer  = null;       // debounce timer for hiding + button
 
   // SPF annotation floating panel state (per-node, persisted in localStorage)
   const ANNOT_KEY = `fta_spf_annot_${parentType}_${parentId}`;
@@ -208,6 +206,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
 
       <!-- ── MCS bottom bar ── -->
       <div class="fta-mcs-bar fta-mcs-collapsed" id="fta-mcs-bar">
+        <div class="fta-mcs-resize-handle" id="fta-mcs-rh" title="Drag to resize"></div>
         <div class="fta-mcs-hdr" id="fta-mcs-hdr">
           <span class="fta-mcs-hdr-title">⚡ Minimal Cut Sets</span>
           <label style="font-size:10px;color:#666;margin-left:12px;white-space:nowrap" onclick="event.stopPropagation()">
@@ -467,7 +466,6 @@ export async function renderFTA(container, { project, item, system, parentType, 
     updateDelBtn();
     updatePropPanel();
     renderSpfAnnotations(); // rebuilds panels (needed when SPF set changes)
-    if (_hoveredAddNodeId) showAddBtn(_hoveredAddNodeId); // restore + button visibility after re-render
   }
 
   // Call after tree structure changes (add/delete/connect) — not on every render
@@ -581,14 +579,12 @@ export async function renderFTA(container, { project, item, system, parentType, 
     layer.innerHTML=''; btnLayer.innerHTML='';
     _nodes.forEach(n => {
       const el = isGate(n.type) ? buildGateNode(n) : buildBoxNode(n);
-      // Lift add-child buttons to the top-layer group (always in front, shown only on hover)
+      // Lift add-child buttons to the top-layer group so they're always in front of all nodes
       el.querySelectorAll('.fta-add-child').forEach(btn => {
         const m = (btn.getAttribute('transform')||'').match(/translate\(\s*([^,]+),([^)]+)\)/);
         const bx = parseFloat(m?.[1]||0), by = parseFloat(m?.[2]||0);
         const clone = btn.cloneNode(true);
         clone.setAttribute('transform', `translate(${n.x + bx},${n.y + by})`);
-        clone.setAttribute('opacity', '0');
-        clone.setAttribute('pointer-events', 'none');
         btnLayer.appendChild(clone);
         btn.remove();
       });
@@ -947,30 +943,6 @@ export async function renderFTA(container, { project, item, system, parentType, 
     });
   }
 
-  // ── Add-button hover visibility ───────────────────────────────────────────────
-  function showAddBtn(nodeId) {
-    clearTimeout(_addBtnHideTimer);
-    _hoveredAddNodeId = nodeId;
-    const btnLayer = document.getElementById('fta-add-btns-g'); if (!btnLayer) return;
-    btnLayer.querySelectorAll('.fta-add-child').forEach(el => {
-      const show = el.dataset.addFor === nodeId;
-      el.setAttribute('opacity', show ? '1' : '0');
-      el.setAttribute('pointer-events', show ? 'all' : 'none');
-    });
-  }
-
-  function hideAddBtn(delay = 120) {
-    clearTimeout(_addBtnHideTimer);
-    _addBtnHideTimer = setTimeout(() => {
-      _hoveredAddNodeId = null;
-      const btnLayer = document.getElementById('fta-add-btns-g'); if (!btnLayer) return;
-      btnLayer.querySelectorAll('.fta-add-child').forEach(el => {
-        el.setAttribute('opacity', '0');
-        el.setAttribute('pointer-events', 'none');
-      });
-    }, delay);
-  }
-
   // ── Canvas events ────────────────────────────────────────────────────────────
   function wireCanvas() {
     const wrap=container.querySelector('#fta-cw');
@@ -1102,19 +1074,6 @@ export async function renderFTA(container, { project, item, system, parentType, 
       }
       if (_panDrag && !_space) wrap.style.cursor='default';
       _panDrag=false;
-    });
-
-    // ── + button hover: show when over a node, hide after leaving ────────────
-    svg.addEventListener('mouseover', e => {
-      const nodeEl = e.target.closest('.fta-node');
-      if (nodeEl && nodeEl.dataset.id) { showAddBtn(nodeEl.dataset.id); return; }
-      const addBtn = e.target.closest('.fta-add-child');
-      if (addBtn && addBtn.dataset.addFor) { showAddBtn(addBtn.dataset.addFor); return; }
-    });
-    svg.addEventListener('mouseout', e => {
-      const nodeEl = e.target.closest('.fta-node');
-      const addBtn = e.target.closest('.fta-add-child');
-      if (nodeEl || addBtn) hideAddBtn(150);
     });
 
   }
@@ -2191,12 +2150,45 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const hdr = container.querySelector('#fta-mcs-hdr');
     const bar = container.querySelector('#fta-mcs-bar');
     const tog = container.querySelector('#fta-mcs-toggle');
+    const rh  = container.querySelector('#fta-mcs-rh');
     if (!hdr || bar?.dataset?.wired) return;
     bar.dataset.wired = '1';
+
+    // Restore saved height
+    const MCS_H_KEY = `fta_mcs_h_${parentType}_${parentId}`;
+    const savedH = parseInt(localStorage.getItem(MCS_H_KEY)) || 220;
+    bar.style.setProperty('--mcs-h', savedH + 'px');
+
     hdr.addEventListener('click', () => {
       const collapsed = bar.classList.toggle('fta-mcs-collapsed');
       tog.textContent = collapsed ? '▲' : '▼';
     });
+
+    // Resize drag on top handle
+    if (rh) {
+      rh.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        e.preventDefault(); e.stopPropagation();
+        const startY   = e.clientY;
+        const startH   = bar.offsetHeight;
+        const onMove = ev => {
+          const newH = Math.max(60, Math.min(window.innerHeight * 0.7, startH - (ev.clientY - startY)));
+          bar.style.setProperty('--mcs-h', newH + 'px');
+          if (bar.classList.contains('fta-mcs-collapsed')) {
+            bar.classList.remove('fta-mcs-collapsed');
+            tog.textContent = '▼';
+          }
+        };
+        const onUp = () => {
+          localStorage.setItem(MCS_H_KEY, parseInt(bar.style.getPropertyValue('--mcs-h')) || savedH);
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    }
+
     const lvlSel = container.querySelector('#fta-mcs-lvl');
     if (lvlSel) {
       lvlSel.addEventListener('change', () => {

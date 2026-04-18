@@ -2042,9 +2042,12 @@ td:hover .dfmea-del-inline{display:inline-block}
 .fta-info-value{font-size:11px;color:var(--color-text);line-height:1.3}
 
 /* ── FTA MCS bottom bar ─────────────────────────────────────────────────── */
-.fta-mcs-bar{flex-shrink:0;border-top:2px solid var(--color-border);background:#fff;display:flex;flex-direction:column;max-height:220px;overflow:hidden;transition:max-height .2s}
-.fta-mcs-bar.fta-mcs-collapsed{max-height:32px}
-.fta-mcs-hdr{display:flex;align-items:center;gap:8px;padding:0 12px;height:32px;cursor:pointer;user-select:none;flex-shrink:0;background:#f9fafb;border-bottom:1px solid var(--color-border)}
+.fta-mcs-bar{flex-shrink:0;border-top:2px solid var(--color-border);background:#fff;display:flex;flex-direction:column;height:36px;min-height:36px;max-height:70vh;overflow:hidden;position:relative}
+.fta-mcs-bar:not(.fta-mcs-collapsed){height:var(--mcs-h,220px)}
+.fta-mcs-bar.fta-mcs-collapsed{height:36px!important;min-height:36px}
+.fta-mcs-resize-handle{position:absolute;top:-4px;left:0;right:0;height:8px;cursor:ns-resize;z-index:10;background:transparent}
+.fta-mcs-resize-handle:hover{background:rgba(26,115,232,.12)}
+.fta-mcs-hdr{display:flex;align-items:center;gap:8px;padding:0 12px;height:36px;cursor:pointer;user-select:none;flex-shrink:0;background:#f9fafb;border-bottom:1px solid var(--color-border)}
 .fta-mcs-hdr-title{font-size:11px;font-weight:700;color:var(--color-text);flex:1}
 .fta-mcs-toggle{font-size:10px;color:var(--color-text-muted);margin-left:auto}
 .fta-mcs-body{overflow-y:auto;flex:1;padding:6px 12px}
