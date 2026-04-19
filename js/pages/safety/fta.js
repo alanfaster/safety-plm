@@ -2220,13 +2220,21 @@ export async function renderFTA(container, { project, item, system, parentType, 
   }
 
   async function loadSafetyReqs() {
-    // Load all FTA-AND requirements for this parent (all FCs)
+    // First: fetch all safety-type reqs for this project to diagnose source values
+    const { data: allSafety } = await sb.from('requirements')
+      .select('id, req_code, source, project_id, parent_type, parent_id')
+      .eq('project_id', project.id)
+      .eq('type', 'safety');
+    console.log('[FTA reqs panel] all safety reqs for project:', allSafety);
+
+    // Load FTA-AND requirements for this project
     const { data, error } = await sb.from('requirements')
       .select('id, req_code, title, status, source, data')
       .eq('project_id', project.id)
       .like('source', 'FTA-AND:%')
       .order('req_code', { ascending: true });
     if (error) { console.warn('loadSafetyReqs error:', error); return; }
+    console.log('[FTA reqs panel] FTA-AND reqs found:', data);
     _safetyReqs = data || [];
     renderSreqsBar();
   }
