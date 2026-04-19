@@ -215,7 +215,55 @@ async function loadItems(){
     return;
   }
   _items=data||[];
+  await refreshNamesFromSources();
   renderTable(area);
+}
+
+/**
+ * Refresh denormalized component_name and function_name from live sources:
+ *   • component_name ← arch_components.name  (keyed by component_id)
+ *   • function_name  ← functions.name via hazard.function_id  (item-definition)
+ * Runs silently on every load so renames in Architecture or Item Definition are
+ * automatically reflected without a manual ⟳ Sync.
+ */
+async function refreshNamesFromSources(){
+  const fmRows=_items.filter(i=>rtype(i)==='fm');
+  if(!fmRows.length) return;
+
+  // 1. Refresh component_name from arch_components
+  const compIds=[...new Set(fmRows.filter(f=>f.component_id).map(f=>f.component_id))];
+  const compMap={};
+  if(compIds.length){
+    const {data:comps}=await sb.from('arch_components').select('id,name').in('id',compIds);
+    (comps||[]).forEach(c=>{compMap[c.id]=c.name;});
+  }
+
+  // 2. Refresh function_name via hazard → item-definition functions
+  const hazIds=[...new Set(fmRows.filter(f=>f.hazard_id).map(f=>f.hazard_id))];
+  const hazFnMap={}; // hazard_id → current function name
+  if(hazIds.length){
+    const {data:hazards}=await sb.from('hazards').select('id,function_id').in('id',hazIds);
+    const fnIds=[...new Set((hazards||[]).filter(h=>h.function_id).map(h=>h.function_id))];
+    if(fnIds.length){
+      const {data:fns}=await sb.from('functions').select('id,name').in('id',fnIds);
+      const fnMap={};
+      (fns||[]).forEach(f=>{fnMap[f.id]=f.name;});
+      (hazards||[]).forEach(h=>{if(h.function_id&&fnMap[h.function_id]) hazFnMap[h.id]=fnMap[h.function_id];});
+    }
+  }
+
+  // 3. Apply updates where name has drifted
+  const now=new Date().toISOString();
+  for(const fm of fmRows){
+    const updates={};
+    const newComp=fm.component_id?compMap[fm.component_id]:undefined;
+    const newFn=fm.hazard_id?hazFnMap[fm.hazard_id]:undefined;
+    if(newComp!==undefined&&newComp!==fm.component_name){fm.component_name=newComp;updates.component_name=newComp;}
+    if(newFn!==undefined&&newFn!==fm.function_name){fm.function_name=newFn;updates.function_name=newFn;}
+    if(Object.keys(updates).length){
+      await sb.from('dfmea_items').update({...updates,updated_at:now}).eq('id',fm.id);
+    }
+  }
 }
 
 // ── Table render (full rebuild — called on any structural change) ──────────────
@@ -985,8 +1033,26 @@ async function syncFromSystem(){
     for(const comp of comps){
       const cFns=(archFns||[]).filter(f=>f.component_id===comp.id);
       for(const fn of cFns){
-        const exists=_items.some(i=>rtype(i)==='fm'&&i.component_id===comp.id&&i.function_name===fn.name);
-        if(!exists){await addFmRow({component_id:comp.id,component_name:comp.name,function_name:fn.name});created++;}
+        // Match by function_ref_id (hard link to item-def function) first, then by name
+        const exists=_items.some(i=>{
+          if(rtype(i)!=='fm'||i.component_id!==comp.id) return false;
+          if(fn.function_ref_id&&i.hazard_id){
+            const haz=(hazards||[]).find(h=>h.id===i.hazard_id);
+            if(haz?.function_id===fn.function_ref_id) return true;
+          }
+          return i.function_name===fn.name;
+        });
+        if(!exists){
+          await addFmRow({component_id:comp.id,component_name:comp.name,function_name:fn.name});
+          created++;
+        } else {
+          // Update component_name and function_name for existing rows if they drifted
+          const existing=_items.find(i=>rtype(i)==='fm'&&i.component_id===comp.id&&(i.function_name===fn.name||(fn.function_ref_id&&_items.some(j=>j.id===i.id))));
+          if(existing&&(existing.component_name!==comp.name||existing.function_name!==fn.name)){
+            existing.component_name=comp.name;existing.function_name=fn.name;
+            await sb.from('dfmea_items').update({component_name:comp.name,function_name:fn.name,updated_at:new Date().toISOString()}).eq('id',existing.id);
+          }
+        }
       }
     }
     toast(created>0?`Synced ${created} new FM(s).`:'Already up to date.','success');
