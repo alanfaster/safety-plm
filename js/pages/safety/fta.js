@@ -1595,6 +1595,9 @@ export async function renderFTA(container, { project, item, system, parentType, 
     if (!_nodes.length) return;
     relayoutInMemory();
     await Promise.all(_nodes.map(n=>autosave(n.id,{x:n.x,y:n.y})));
+    // Reset userMoved on all SPF panels so they recentre below their (new) node positions
+    Object.values(_spfAnnotState).forEach(s => { s.userMoved = false; });
+    saveSpfAnnotState();
     render(); toast('Layout applied.','success');
   }
 
