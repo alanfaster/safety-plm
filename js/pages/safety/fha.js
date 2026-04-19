@@ -43,12 +43,21 @@ export async function renderFHA(container, ctx) {
   paint(scope);
 }
 
-// ── Load tree (with item-level fallback to child systems) ─────────────────────
+// ── Load tree (exhaustive: system → item → child systems) ─────────────────────
 
 async function loadTree(parentType, parentId, item) {
+  // 1. Direct lookup at the given level
   let tree = await getFeaturesTree(parentType, parentId, 'system');
   if (tree.length) return tree;
 
+  // 2. System-level FHA: features may have been defined at item level (single-system items
+  //    whose item-definition was opened without a systemId in the URL)
+  if (parentType === 'system' && item?.id) {
+    tree = await getFeaturesTree('item', item.id, 'system');
+    if (tree.length) return tree;
+  }
+
+  // 3. Item-level FHA: features may live on individual child systems (multi-system items)
   if (parentType === 'item' && item?.id) {
     const { data: systems } = await sb.from('systems').select('id,name').eq('item_id', item.id);
     if (systems?.length) {

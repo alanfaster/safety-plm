@@ -40,14 +40,21 @@ export async function renderPHA(container, ctx) {
   paint(scope);
 }
 
-// ── Load feature tree (item or system level, with fallback) ───────────────────
+// ── Load feature tree (exhaustive: system → item → child systems) ─────────────
 
 async function loadTree(parentType, parentId, item) {
-  // Try direct lookup first
+  // 1. Direct lookup at the given level
   let tree = await getFeaturesTree(parentType, parentId, 'system');
   if (tree.length) return tree;
 
-  // For item-level PHA: features may live on individual systems (multi-system item)
+  // 2. System-level PHA: features may have been defined at item level (single-system items
+  //    whose item-definition was opened without a systemId in the URL)
+  if (parentType === 'system' && item?.id) {
+    tree = await getFeaturesTree('item', item.id, 'system');
+    if (tree.length) return tree;
+  }
+
+  // 3. Item-level PHA: features may live on individual child systems (multi-system items)
   if (parentType === 'item' && item?.id) {
     const { data: systems } = await sb.from('systems').select('id,name').eq('item_id', item.id);
     if (systems?.length) {
