@@ -726,7 +726,11 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const isLeafType = n.type === 'basic' || n.type === 'undeveloped' || n.type === 'transfer';
     const portY = belowY + 6;
     g.appendChild(buildPort(n.id, 0, portY));
-    if (!isLeafType) g.appendChild(buildAddBtn(n.id, 0, hh + 10));
+    if (!isLeafType) {
+      const addBtn = buildAddBtn(n.id, 0, hh + 10);
+      g.appendChild(addBtn);
+      wireAddBtnHover(g, addBtn);
+    }
     return g;
   }
 
@@ -808,7 +812,9 @@ export async function renderFTA(container, { project, item, system, parentType, 
       gBelowY += 14;
     }
     g.appendChild(buildPort(n.id, 0, gBelowY));
-    g.appendChild(buildAddBtn(n.id, 0, hh + 10));
+    const addBtnG = buildAddBtn(n.id, 0, hh + 10);
+    g.appendChild(addBtnG);
+    wireAddBtnHover(g, addBtnG);
     return g;
   }
 
@@ -830,11 +836,20 @@ export async function renderFTA(container, { project, item, system, parentType, 
     g.setAttribute('class','fta-add-child');
     g.setAttribute('transform',`translate(${px},${py})`);
     g.dataset.addFor=nodeId;
+    g.style.opacity='0';
+    g.style.transition='opacity 0.12s';
+    g.style.cursor='pointer';
     const hit=svgEl('circle'); hit.setAttribute('r','12'); hit.setAttribute('fill','transparent');
     const vis=svgEl('circle'); vis.setAttribute('r','9'); vis.setAttribute('fill','#1A73E8'); vis.setAttribute('stroke','#fff'); vis.setAttribute('stroke-width','1.5'); vis.setAttribute('pointer-events','none');
     const txt=svgEl('text'); txt.setAttribute('x','0'); txt.setAttribute('y','1'); txt.setAttribute('text-anchor','middle'); txt.setAttribute('dominant-baseline','middle'); txt.setAttribute('font-size','14'); txt.setAttribute('font-weight','700'); txt.setAttribute('fill','#fff'); txt.setAttribute('pointer-events','none'); txt.textContent='+';
     g.appendChild(hit); g.appendChild(vis); g.appendChild(txt);
     return g;
+  }
+
+  // Wire hover show/hide for the add-child button on a node group
+  function wireAddBtnHover(nodeG, addBtnG) {
+    nodeG.addEventListener('mouseenter', () => { addBtnG.style.opacity='1'; }, false);
+    nodeG.addEventListener('mouseleave', () => { addBtnG.style.opacity='0'; }, false);
   }
 
   // ── Pending connection ──────────────────────────────────────────────────────
