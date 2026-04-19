@@ -1487,7 +1487,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
         const oldType = n.type;
         pushUndo(`Change gate ${n.fta_code||'gate'} → ${newType}`);
         n.type = newType;
-        await autosave(id, { type: newType });
+        n.label = '';  // reset label so NT default for new type shows
+        await autosave(id, { type: newType, label: '' });
         render(); recomputeMCS();
         // Sync independence requirement: AND↔other
         if (oldType === 'gate_and' && newType !== 'gate_and') {
