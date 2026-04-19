@@ -48,7 +48,7 @@ export async function renderFHA(container, ctx) {
 // and must never be mixed. Queries exactly the level this safety page belongs to.
 
 async function loadTree(parentType, parentId) {
-  return getFeaturesTree(parentType, parentId, 'system');
+  return getFeaturesTree(parentType, parentId);
 }
 
 // ── Full paint ────────────────────────────────────────────────────────────────

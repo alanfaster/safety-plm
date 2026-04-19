@@ -186,13 +186,15 @@ export async function renderItemDefinition(container, { project, item, system, d
 }
 
 /**
- * Returns the full feature tree for a given parent/domain.
+ * Returns the full feature tree for a given parent.
+ * domain is optional — when omitted or null all domains are returned.
  * Used by safety analysis to access features/UC/functions.
  */
-export async function getFeaturesTree(parentType, parentId, domain) {
-  const { data: features } = await sb.from('features')
-    .select('*').eq('parent_type', parentType).eq('parent_id', parentId)
-    .eq('domain', domain).order('sort_order').order('created_at');
+export async function getFeaturesTree(parentType, parentId, domain = null) {
+  let q = sb.from('features')
+    .select('*').eq('parent_type', parentType).eq('parent_id', parentId);
+  if (domain) q = q.eq('domain', domain);
+  const { data: features } = await q.order('sort_order').order('created_at');
 
   if (!features?.length) return [];
 

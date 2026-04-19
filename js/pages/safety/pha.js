@@ -45,7 +45,10 @@ export async function renderPHA(container, ctx) {
 // and must never be mixed. Queries exactly the level this safety page belongs to.
 
 async function loadTree(parentType, parentId) {
-  return getFeaturesTree(parentType, parentId, 'system');
+  // No domain filter — features may be stored under any domain value depending
+  // on which item-definition URL was used. Level (item vs system) is enforced
+  // by parentType/parentId; domains within the same level are always included.
+  return getFeaturesTree(parentType, parentId);
 }
 
 // ── Full paint ────────────────────────────────────────────────────────────────
