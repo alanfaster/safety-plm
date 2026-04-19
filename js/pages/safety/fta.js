@@ -2303,14 +2303,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
     _selSet.clear(); _selSet.add(gateId);
     _highlightedGateId = gateId;
     render();
-    // Center view on the AND gate
-    const svgEl2 = container.querySelector('#fta-svg');
-    if (!svgEl2) return;
-    const vw = svgEl2.clientWidth  || 800;
-    const vh = svgEl2.clientHeight || 600;
-    _pan.x = vw / 2 - n.x * _zoom;
-    _pan.y = vh / 2 - n.y * _zoom;
-    applyTransform();
+    // Fit entire diagram so the gate is visible, then nudge it to centre
+    fitAll();
   }
 
   function highlightAndGateInSreqs(gateId) {
