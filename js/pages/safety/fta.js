@@ -507,9 +507,12 @@ export async function renderFTA(container, { project, item, system, parentType, 
 
   function repositionAnnotPanels() {
     container.querySelectorAll('.fta-spf-float[data-nid]').forEach(panel => {
-      const s = _spfAnnotState[panel.dataset.nid];
+      const nid = panel.dataset.nid;
+      const s = _spfAnnotState[nid];
       if (!s) return;
-      const { left, top } = canvasToScreen(s.cx, s.cy);
+      const n = byId(nid);
+      const cy = n ? n.y + nh(n) / 2 + (s.relY ?? 20) : (s.cy ?? 0);
+      const { left, top } = canvasToScreen(s.cx, cy);
       panel.style.left = left + 'px';
       panel.style.top  = top  + 'px';
     });
@@ -2052,23 +2055,29 @@ export async function renderFTA(container, { project, item, system, parentType, 
       !isGate(n.type) && n.type !== 'top_event' &&
       _mcs.some(s => s.length === 1 && s[0] === n.id));
     spfLeaves.forEach(n => {
-      // Initialise canvas-coordinate anchor; only use saved position if user manually moved it
-      if (!_spfAnnotState[n.id]?.userMoved) {
-        const existing = _spfAnnotState[n.id] || {};
-        const dw = existing?.w || 210;
-        _spfAnnotState[n.id] = { ...existing, w: dw, h: existing.h || 80,
-          cx: n.x - dw / (2 * _zoom),          // horizontally centred on node
-          cy: n.y + nh(n) / 2 + 14,            // 14px below node bottom edge
-        };
+      const existing = _spfAnnotState[n.id] || {};
+      const dw = existing.w || 210;
+      // Ensure relY exists (migrate old cy-based state)
+      if (existing.relY == null) {
+        existing.relY = existing.cy != null
+          ? existing.cy - (n.y + nh(n) / 2)   // convert old absolute cy → relative
+          : 20;                                  // default: 20px below node bottom
       }
+      if (!existing.userMoved) {
+        existing.cx = n.x - dw / (2 * _zoom);  // default: horizontally centred on node
+      }
+      _spfAnnotState[n.id] = existing;
+
       const state = _spfAnnotState[n.id];
+      // cy is always computed from node bottom + relY so it tracks display-field height changes
+      const cy = n.y + nh(n) / 2 + state.relY;
 
       const accepted  = n.spf_status === 'accepted';
       const rejected  = n.spf_status === 'rejected';
       const bdColor   = accepted ? '#1E8E3E' : rejected ? '#d93025' : '#E37400';
       const statIcon  = accepted ? '✓' : rejected ? '✕' : '!';
 
-      const { left, top } = canvasToScreen(state.cx, state.cy);
+      const { left, top } = canvasToScreen(state.cx, cy);
 
       const panel = document.createElement('div');
       panel.className = 'fta-spf-float';
@@ -2131,24 +2140,24 @@ export async function renderFTA(container, { project, item, system, parentType, 
       e.preventDefault(); e.stopPropagation();
       dragged = false;
       const startX = e.clientX, startY = e.clientY;
-      const startCX = _spfAnnotState[nid]?.cx || 0;
-      const startCY = _spfAnnotState[nid]?.cy || 0;
+      const startCX  = _spfAnnotState[nid]?.cx || 0;
+      const startRelY = _spfAnnotState[nid]?.relY ?? 20;
+      const n = byId(nid);
+      const nodeBottom = n ? n.y + nh(n) / 2 : 0;
+      const startScreenTop = parseFloat(panel.style.top) || 0;
       const onMove = ev => {
         const dx = ev.clientX - startX, dy = ev.clientY - startY;
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragged = true;
-        // Convert screen delta → canvas delta
-        const newCX = startCX + dx / _zoom;
-        const newCY = startCY + dy / _zoom;
-        _spfAnnotState[nid] = { ..._spfAnnotState[nid], cx: newCX, cy: newCY };
+        const newCX   = startCX + dx / _zoom;
+        const newRelY = startRelY + dy / _zoom;
+        _spfAnnotState[nid] = { ..._spfAnnotState[nid], cx: newCX, relY: newRelY, userMoved: true };
+        const newCY = nodeBottom + newRelY;
         const { left, top } = canvasToScreen(newCX, newCY);
         panel.style.left = left + 'px';
         panel.style.top  = top  + 'px';
       };
       const onUp = () => {
-        if (dragged) {
-          _spfAnnotState[nid].userMoved = true;
-          saveSpfAnnotState();
-        }
+        if (dragged) saveSpfAnnotState();
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
       };
