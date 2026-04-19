@@ -1947,7 +1947,6 @@ export async function renderFTA(container, { project, item, system, parentType, 
         type: 'safety', priority: 'high', status: 'draft',
         parent_type: parentType, parent_id: parentId, project_id: project.id,
         source: gateSource,
-        data: { hazard_id: _activeHazardId, gate_code: gate.fta_code || gate.label || 'AND' },
       });
       if (!error) { created++; idx++; }
     }
@@ -2220,21 +2219,12 @@ export async function renderFTA(container, { project, item, system, parentType, 
   }
 
   async function loadSafetyReqs() {
-    // First: fetch all safety-type reqs for this project to diagnose source values
-    const { data: allSafety } = await sb.from('requirements')
-      .select('id, req_code, source, project_id, parent_type, parent_id')
-      .eq('project_id', project.id)
-      .eq('type', 'safety');
-    console.log('[FTA reqs panel] all safety reqs for project:', allSafety);
-
-    // Load FTA-AND requirements for this project
     const { data, error } = await sb.from('requirements')
-      .select('id, req_code, title, status, source, data')
+      .select('id, req_code, title, status, source')
       .eq('project_id', project.id)
       .like('source', 'FTA-AND:%')
       .order('req_code', { ascending: true });
     if (error) { console.warn('loadSafetyReqs error:', error); return; }
-    console.log('[FTA reqs panel] FTA-AND reqs found:', data);
     _safetyReqs = data || [];
     renderSreqsBar();
   }
@@ -2256,14 +2246,17 @@ export async function renderFTA(container, { project, item, system, parentType, 
       </tr></thead>
       <tbody>${_safetyReqs.map(r => {
         const gateId  = r.source?.replace('FTA-AND:', '') || '';
-        const hazId   = r.data?.hazard_id || '';
-        const fcLabel = fcMap[hazId] || hazId || '—';
-        const short   = fcLabel.length > 30 ? fcLabel.slice(0,29)+'…' : fcLabel;
+        // Look up gate in current diagram nodes; gate may belong to a different FC
+        const gateNode = _nodes.find(n => n.id === gateId);
+        const gateCode = gateNode?.fta_code || gateNode?.label || gateId.slice(0,8);
+        const hazId    = gateNode?.hazard_id || '';
+        const fcLabel  = fcMap[hazId] || '—';
+        const short    = fcLabel.length > 30 ? fcLabel.slice(0,29)+'…' : fcLabel;
         const isHighlighted = _highlightedGateId && _highlightedGateId === gateId;
         return `<tr class="fta-sreqs-row${isHighlighted?' fta-sreqs-row-hl':''}" data-gate-id="${esc(gateId)}" data-haz-id="${esc(hazId)}" style="cursor:pointer">
           <td><b>${esc(r.req_code||'')}</b></td>
           <td title="${esc(fcLabel)}">${esc(short)}</td>
-          <td>${esc(r.data?.gate_code||gateId)}</td>
+          <td>${esc(gateCode)}</td>
           <td>${esc(r.title||'')}</td>
           <td><span class="fta-sreqs-status fta-sreqs-status-${esc(r.status||'draft')}">${esc(r.status||'draft')}</span></td>
         </tr>`;
