@@ -2081,7 +2081,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       titleBar.style.cssText = `background:${bdColor};color:#fff;padding:3px 8px;cursor:move;` +
         `display:flex;align-items:center;justify-content:space-between;` +
         `font-size:10px;font-weight:700;user-select:none;border-radius:3px 3px 0 0;`;
-      titleBar.innerHTML = `<span>⚠ SPF · ${esc(n.fta_code||'')}</span>` +
+      titleBar.innerHTML = `<span>SPF ${esc(n.fta_code||'')} Justification</span>` +
         `<span style="background:rgba(255,255,255,.25);border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:9px">${statIcon}</span>`;
       panel.appendChild(titleBar);
 
