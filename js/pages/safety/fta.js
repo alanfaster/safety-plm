@@ -135,10 +135,19 @@ export async function renderFTA(container, { project, item, system, parentType, 
         <button class="btn btn-sm fta-add-btn fta-gate-btn" data-type="gate_not">¬ NOT</button>
         <button class="btn btn-sm fta-add-btn fta-gate-btn" data-type="gate_inhibit">⊘ INH</button>
         <span class="fta-toolbar-sep"></span>
-        <label class="fta-color-label" title="Node colour">
-          <span>🎨</span>
-          <input type="color" id="fta-color-inp" value="#1E8E3E" style="width:28px;height:22px;border:none;padding:0;cursor:pointer;background:none">
-        </label>
+        <button class="btn btn-sm fta-color-btn" id="fta-color-btn" title="Node colour" disabled>
+          🎨 <span class="fta-color-swatch" id="fta-color-swatch"></span>
+        </button>
+        <div class="fta-palette-popup" id="fta-palette-popup" style="display:none">
+          <div class="fta-palette-swatches" id="fta-palette-swatches"></div>
+          <div class="fta-palette-custom">
+            <span style="font-size:11px;color:#666">Custom:</span>
+            <input type="color" id="fta-color-inp" value="#1E8E3E">
+          </div>
+          <div class="fta-palette-reset">
+            <button id="fta-color-reset">✕ Reset to default</button>
+          </div>
+        </div>
         <span class="fta-toolbar-sep"></span>
         <button class="btn btn-sm btn-danger" id="fta-btn-del" disabled>✕ Delete</button>
         <button class="btn btn-sm"            id="fta-btn-cfg" title="Display settings">⚙ Config</button>
@@ -967,17 +976,75 @@ export async function renderFTA(container, { project, item, system, parentType, 
       await Promise.all(_nodes.map(n=>autosave(n.id,{x:n.x,y:n.y})));
     });
 
-    // Colour picker
-    q('fta-color-inp').addEventListener('change',async e=>{
-      // 'change' fires once on picker close; push undo once per colour action
+    // ── Colour palette ──────────────────────────────────────────────────────
+    const PALETTE_COLORS = [
+      '#1E8E3E','#34A853','#7CB342','#F9AB00','#E37400','#EA4335',
+      '#D32F2F','#E91E63','#8E24AA','#3949AB','#1A73E8','#039BE5',
+      '#00897B','#00ACC1','#546E7A','#78909C','#BDBDBD','#5D4037',
+    ];
+    const swatchesEl = q('fta-palette-swatches');
+    PALETTE_COLORS.forEach(col => {
+      const s = document.createElement('button');
+      s.className = 'fta-palette-swatch';
+      s.style.background = col;
+      s.title = col;
+      s.addEventListener('click', () => applyColor(col));
+      swatchesEl.appendChild(s);
+    });
+
+    async function applyColor(col) {
+      if (!_selSet.size) return;
       pushUndo(`Colour ${[..._selSet].map(id=>byId(id)?.fta_code||'node').join(', ')}`);
-      const col=e.target.value;
       for (const id of _selSet) {
         const n=byId(id); if(!n) continue;
-        n.color=col;
+        n.color = col;
         await autosave(id,{color:col});
       }
+      // sync swatch preview
+      const sw = container.querySelector('#fta-color-swatch');
+      if (sw) sw.style.background = col || '';
+      closePalette();
       render();
+    }
+
+    function closePalette() {
+      const pop = container.querySelector('#fta-palette-popup');
+      if (pop) pop.style.display = 'none';
+    }
+
+    q('fta-color-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      const pop = container.querySelector('#fta-palette-popup');
+      if (!pop) return;
+      if (pop.style.display === 'none') {
+        // position below button (relative to .fta-wrap which is position:relative)
+        const btn = q('fta-color-btn');
+        const br = btn.getBoundingClientRect();
+        const wr = (container.querySelector('.fta-wrap')||container).getBoundingClientRect();
+        pop.style.top  = (br.bottom - wr.top + 4) + 'px';
+        pop.style.left = (br.left - wr.left) + 'px';
+        pop.style.display = 'block';
+      } else {
+        closePalette();
+      }
+    });
+
+    // Custom colour input — apply on change (picker close) or input (live)
+    q('fta-color-inp').addEventListener('input', e => {
+      const sw = container.querySelector('#fta-color-swatch');
+      if (sw) sw.style.background = e.target.value;
+    });
+    q('fta-color-inp').addEventListener('change', e => applyColor(e.target.value));
+
+    // Reset to default
+    q('fta-color-reset').addEventListener('click', () => applyColor(''));
+
+    // Close palette on outside click
+    document.addEventListener('click', e => {
+      const pop = container.querySelector('#fta-palette-popup');
+      if (pop && pop.style.display !== 'none') {
+        if (!pop.contains(e.target) && e.target.id !== 'fta-color-btn') closePalette();
+      }
     });
   }
 
@@ -1587,9 +1654,19 @@ export async function renderFTA(container, { project, item, system, parentType, 
 
   function updateDelBtn() {
     const b=container.querySelector('#fta-btn-del'); if(b) b.disabled=!_selSet.size;
-    // Sync colour picker to first selected
+    const colorBtn=container.querySelector('#fta-color-btn');
+    if (colorBtn) colorBtn.disabled=!_selSet.size;
+    // Sync swatch and custom input to first selected node's colour
+    const sw=container.querySelector('#fta-color-swatch');
     const inp=container.querySelector('#fta-color-inp');
-    if (inp&&_selSet.size) { const n=byId([..._selSet][0]); if(n?.color?.startsWith('#')) inp.value=n.color; }
+    if (_selSet.size) {
+      const n=byId([..._selSet][0]);
+      const col=n?.color?.startsWith('#')?n.color:'';
+      if (sw) sw.style.background=col||'transparent';
+      if (inp&&col) inp.value=col;
+    } else {
+      if (sw) sw.style.background='transparent';
+    }
   }
 
   // ── Auto layout ───────────────────────────────────────────────────────────────

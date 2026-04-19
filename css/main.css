@@ -2020,6 +2020,19 @@ td:hover .dfmea-del-inline{display:inline-block}
 .fta-color-label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text);cursor:pointer;padding:3px 0}
 .fta-color-label input[type=color]{width:28px;height:20px;padding:0;border:1px solid var(--color-border);border-radius:3px;cursor:pointer;background:none}
 
+/* ── FTA colour palette ──────────────────────────────────────────────── */
+.fta-color-btn{display:inline-flex;align-items:center;gap:5px}
+.fta-color-swatch{display:inline-block;width:14px;height:14px;border-radius:3px;border:1px solid rgba(0,0,0,.25);background:transparent;flex-shrink:0}
+.fta-palette-popup{position:absolute;z-index:200;background:#fff;border:1px solid var(--color-border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);padding:12px;min-width:196px}
+.fta-palette-swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-bottom:10px}
+.fta-palette-swatch{width:26px;height:26px;border-radius:4px;border:2px solid transparent;cursor:pointer;transition:transform .1s,border-color .1s;padding:0}
+.fta-palette-swatch:hover{transform:scale(1.18);border-color:#333}
+.fta-palette-custom{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.fta-palette-custom input[type=color]{width:32px;height:24px;padding:0;border:1px solid var(--color-border);border-radius:4px;cursor:pointer;background:none}
+.fta-palette-reset{text-align:center}
+.fta-palette-reset button{font-size:11px;color:#888;background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:3px}
+.fta-palette-reset button:hover{background:#f5f5f5;color:#333}
+
 /* ── FTA FC sub-page tabs ──────────────────────────────────────────────── */
 .fta-fc-tabs{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:2px;padding:4px 10px;background:var(--color-bg-secondary,#F4F5F7);border-bottom:1px solid var(--color-border);flex-shrink:0;min-height:34px;align-items:center}
 .fta-fc-tab{display:inline-flex;align-items:center;gap:5px;padding:3px 6px 3px 10px;border:1px solid var(--color-border);border-radius:4px;font-size:11px;cursor:pointer;background:#fff;color:var(--color-text);white-space:nowrap;transition:background .15s,border-color .15s;flex-shrink:0;user-select:none}
