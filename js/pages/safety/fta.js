@@ -564,7 +564,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
 
     _nodes = JSON.parse(JSON.stringify(snapNodes));
     _selSet.clear();
-    render(); recomputeMCS();
+    recomputeMCS(); render();
     showUndoToast(`Done: ${snap.label}`, 'done');
   }
 
@@ -1147,7 +1147,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     pushUndo(`Connect ${byId(parentId)?.fta_code||'?'} → ${child.fta_code||'?'}`);
     child.parent_node_id=parentId;
     await autosave(childId,{parent_node_id:parentId});
-    render(); recomputeMCS();
+    recomputeMCS(); render();
     syncAndGateReq(parentId);
   }
   function isDescendant(nid,ancId) {
@@ -1224,7 +1224,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
         }
       }
     }
-    _selSet.clear(); newNodes.forEach(({data})=>_selSet.add(data.id)); render(); recomputeMCS();
+    _selSet.clear(); newNodes.forEach(({data})=>_selSet.add(data.id)); recomputeMCS(); render();
   }
 
   function confirmCopyConnect(orig) {
@@ -1329,7 +1329,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     _nodes.push(data);
     await redistributeChildren(parentId);
     _selSet.clear(); _selSet.add(data.id);
-    render(); recomputeMCS();
+    recomputeMCS(); render();
     syncAndGateReq(parentId);
     { const h=document.getElementById('fta-hint'); if(h) h.style.display='none'; }
   }
@@ -1370,7 +1370,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     if (error){toast('Error adding node.','error');return;}
     _nodes.push(data);
     _selSet.clear(); _selSet.add(data.id);
-    render(); recomputeMCS();
+    recomputeMCS(); render();
     { const h=document.getElementById('fta-hint'); if(h) h.style.display='none'; }
   }
 
@@ -1489,7 +1489,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
         n.type = newType;
         n.label = '';  // reset label so NT default for new type shows
         await autosave(id, { type: newType, label: '' });
-        render(); recomputeMCS();
+        recomputeMCS(); render();
         // Sync independence requirement: AND↔other
         if (oldType === 'gate_and' && newType !== 'gate_and') {
           // Removing AND → delete requirement
@@ -1562,7 +1562,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     for (const pid of parentsToRedist) {
       if (byId(pid)) await redistributeChildren(pid);
     }
-    _selSet.clear(); render(); recomputeMCS();
+    _selSet.clear(); recomputeMCS(); render();
     // Sync requirements for any AND gate parents that lost children
     for (const pid of parentsToRedist) { syncAndGateReq(pid); }
   }
