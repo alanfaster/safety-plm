@@ -448,6 +448,21 @@ export async function renderFTA(container, { project, item, system, parentType, 
   function nh(n){ return isGate(n.type) ? (NT[n.type]?.gh||62) : boxH(n.label); }
   // external optional fields height (below box, outside border)
   function extH(){ return ((_cfg.showProbability?1:0)+(_cfg.showFR?1:0)+(_cfg.showMTTR?1:0))*14; }
+  // True visual bottom of a node in canvas coords (matches what buildBoxNode renders)
+  function nodeVisualBottom(n) {
+    if (isGate(n.type)) {
+      const hh = (NT[n.type]?.gh||62)/2;
+      let by = hh + 8;
+      if (_cfg.showProbability) by += 14;
+      return n.y + by;
+    }
+    const hh = nh(n) / 2;
+    const base = NT[n.type];
+    let by = hh + (n.type === 'top_event' ? 14 : 8);
+    if (base?.indicator) by += 13 + 2 + 13 + 5; // line + IND_R + gap + IND_R + margin
+    by += extH();
+    return n.y + by;
+  }
 
   // Recursively compute probability for a node (gates derive from children;
   // box nodes propagate from a child gate if no manual value is set)
@@ -511,7 +526,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const s = _spfAnnotState[nid];
       if (!s) return;
       const n = byId(nid);
-      const cy = n ? n.y + nh(n) / 2 + extH() + (s.relY ?? 20) : 0;
+      const cy = n ? nodeVisualBottom(n) + (s.relY ?? 20) : 0;
       const { left, top } = canvasToScreen(s.cx, cy);
       panel.style.left = left + 'px';
       panel.style.top  = top  + 'px';
@@ -2073,9 +2088,9 @@ export async function renderFTA(container, { project, item, system, parentType, 
       _spfAnnotState[n.id] = existing;
 
       const state = _spfAnnotState[n.id];
-      // cy tracks the TRUE visual bottom = box bottom + external optional rows + relY
-      const nodeVisualBottom = n.y + nh(n) / 2 + extH();
-      const cy = nodeVisualBottom + state.relY;
+      // cy tracks the TRUE visual bottom (including indicator shapes + ext fields) + relY
+      const nodeBtm = nodeVisualBottom(n);
+      const cy = nodeBtm + state.relY;
 
       const accepted  = n.spf_status === 'accepted';
       const rejected  = n.spf_status === 'rejected';
@@ -2148,14 +2163,14 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const startCX  = _spfAnnotState[nid]?.cx || 0;
       const startRelY = _spfAnnotState[nid]?.relY ?? 20;
       const n = byId(nid);
-      const nodeVisualBottom = n ? n.y + nh(n) / 2 + extH() : 0;
+      const nodeBtm = n ? nodeVisualBottom(n) : 0;
       const onMove = ev => {
         const dx = ev.clientX - startX, dy = ev.clientY - startY;
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragged = true;
         const newCX   = startCX + dx / _zoom;
         const newRelY = startRelY + dy / _zoom;
         _spfAnnotState[nid] = { ..._spfAnnotState[nid], cx: newCX, relY: newRelY, userMoved: true };
-        const newCY = nodeVisualBottom + newRelY;
+        const newCY = nodeBtm + newRelY;
         const { left, top } = canvasToScreen(newCX, newCY);
         panel.style.left = left + 'px';
         panel.style.top  = top  + 'px';
