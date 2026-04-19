@@ -2048,7 +2048,9 @@ export async function renderFTA(container, { project, item, system, parentType, 
     wrap.querySelectorAll('.fta-spf-float').forEach(el => el.remove());
     if (!_cfg.showSPF) return;
 
-    const spfLeaves = _nodes.filter(n => n.type !== 'top_event' && _mcs.some(s => s.length === 1 && s[0] === n.id));
+    const spfLeaves = _nodes.filter(n =>
+      !isGate(n.type) && n.type !== 'top_event' &&
+      _mcs.some(s => s.length === 1 && s[0] === n.id));
     spfLeaves.forEach(n => {
       // Initialise canvas-coordinate anchor; only use saved position if user manually moved it
       if (!_spfAnnotState[n.id]?.userMoved) {
