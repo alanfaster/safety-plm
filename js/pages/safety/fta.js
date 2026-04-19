@@ -146,7 +146,6 @@ export async function renderFTA(container, { project, item, system, parentType, 
         <button class="btn btn-sm"            id="fta-btn-zo">－</button>
         <button class="btn btn-sm"            id="fta-btn-zr">⊡</button>
         <span class="fta-toolbar-sep"></span>
-        <button class="btn btn-sm"            id="fta-btn-sreqs" title="Generate Safety Requirements from AND gates">⚡ Safety Reqs</button>
         <button class="btn btn-sm"            id="fta-btn-sreqs-panel" title="Show/Hide Safety Requirements panel">🔗 Reqs Panel</button>
         <button class="btn btn-sm"            id="fta-btn-pdf" title="Export to PDF">📄 PDF</button>
       </div>
@@ -914,7 +913,6 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const title   = project.name || 'FTA';
       exportFTApdf(svg, _nodes, title, fcLabel, _mcs, _mcsMaxOrder);
     });
-    q('fta-btn-sreqs').addEventListener('click', () => generateSafetyReqs());
     q('fta-btn-sreqs-panel').addEventListener('click', () => toggleSreqsPanel());
     wireMCSBar();
     wireSreqsBar();
@@ -1129,6 +1127,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     child.parent_node_id=parentId;
     await autosave(childId,{parent_node_id:parentId});
     render(); recomputeMCS();
+    syncAndGateReq(parentId);
   }
   function isDescendant(nid,ancId) {
     let c=byId(nid); const seen=new Set();
@@ -1310,6 +1309,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     await redistributeChildren(parentId);
     _selSet.clear(); _selSet.add(data.id);
     render(); recomputeMCS();
+    syncAndGateReq(parentId);
     { const h=document.getElementById('fta-hint'); if(h) h.style.display='none'; }
   }
 
@@ -1495,6 +1495,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
       if (byId(pid)) await redistributeChildren(pid);
     }
     _selSet.clear(); render(); recomputeMCS();
+    // Sync requirements for any AND gate parents that lost children
+    for (const pid of parentsToRedist) { syncAndGateReq(pid); }
   }
 
   function updateDelBtn() {
@@ -1882,81 +1884,92 @@ export async function renderFTA(container, { project, item, system, parentType, 
   }
 
   // ── Generate Safety Requirements from AND gates ────────────────────────────
-  async function generateSafetyReqs() {
-    const andGates = _nodes.filter(n => n.type === 'gate_and');
-    if (!andGates.length) { toast('No AND gates found in this FTA.', 'info'); return; }
+  // ── Auto-sync safety requirement for a single AND gate ───────────────────────
+  // Called whenever children of an AND gate change (add node, create conn, delete).
+  // • < 2 children → delete requirement if it exists
+  // • ≥ 2 children → upsert requirement (create or update title/description)
+  async function syncAndGateReq(gateId) {
+    const gate = byId(gateId);
+    if (!gate || gate.type !== 'gate_and') return;
 
-    const SAFETY_REQ_PAGE_NAME = 'Safety Requirements';
-    let { data: existingPage } = await sb.from('nav_pages')
-      .select('id, domain, phase')
-      .eq('parent_type', parentType).eq('parent_id', parentId)
-      .ilike('name', SAFETY_REQ_PAGE_NAME)
+    const gateSource = `FTA-AND:${gateId}`;
+    const children   = _nodes.filter(n => n.parent_node_id === gateId);
+
+    // Fetch existing requirement for this gate (if any)
+    const { data: existing } = await sb.from('requirements')
+      .select('id, req_code')
+      .eq('project_id', project.id)
+      .eq('source', gateSource)
       .maybeSingle();
 
-    if (!existingPage) {
-      // Detect domain from any existing nav_page for this parent
-      const { data: anyPages } = await sb.from('nav_pages')
-        .select('domain').eq('parent_type', parentType).eq('parent_id', parentId)
-        .order('sort_order').limit(1);
-      const domain = anyPages?.[0]?.domain || (parentType === 'system' ? 'system' : 'item');
-
-      // Sort order = count of existing pages in this domain+requirements phase
-      const { count: pgCount } = await sb.from('nav_pages')
-        .select('*', { count: 'exact', head: true })
-        .eq('parent_type', parentType).eq('parent_id', parentId)
-        .eq('domain', domain).eq('phase', 'requirements');
-      const sortOrder = pgCount || 0;
-
-      const { data: newPage, error: pgErr } = await sb.from('nav_pages').insert({
-        parent_type: parentType, parent_id: parentId,
-        domain, phase: 'requirements',
-        name: SAFETY_REQ_PAGE_NAME, sort_order: sortOrder,
-      }).select().single();
-      if (pgErr) { toast(`Could not create Safety Requirements page: ${pgErr.message}`, 'error'); return; }
-      existingPage = newPage;
+    if (children.length < 2) {
+      // Not enough children for an independence requirement — delete if exists
+      if (existing) {
+        await sb.from('requirements').delete().eq('id', existing.id);
+        _safetyReqs = _safetyReqs.filter(r => r.source !== gateSource);
+        renderSreqsBar();
+      }
+      return;
     }
 
-    const { count: reqCount } = await sb.from('requirements')
-      .select('*', { count: 'exact', head: true })
-      .eq('parent_type', parentType).eq('parent_id', parentId);
+    const childNames = children.map(c => c.fta_code || c.label || 'event').join(', ');
+    const gateRef    = gate.fta_code || gate.label || 'AND gate';
+    const title      = `Independence between failures of: ${childNames} (${gateRef})`;
+    const description = `Safety requirement derived from FTA AND gate ${gateRef}. ` +
+      `Simultaneous failures of [${childNames}] cause the top-level failure condition. ` +
+      `Ensure independence between these failure sources to prevent common-cause failures.`;
 
-    // Fetch already-existing FTA-AND requirements for this item/system to avoid duplicates
-    const { data: existingReqs } = await sb.from('requirements')
-      .select('source')
-      .eq('parent_type', parentType).eq('parent_id', parentId)
-      .like('source', 'FTA-AND:%');
-    const existingSources = new Set((existingReqs || []).map(r => r.source));
-
-    let created = 0;
-    let skipped = 0;
-    let idx = (reqCount || 0) + 1;
-    const pfx = parentType === 'item' ? 'ITEM' : 'SYS';
-    const projAbbr = (project.name||'PRJ').replace(/[^A-Za-z0-9]/g,'').slice(0,4).toUpperCase();
-
-    for (const gate of andGates) {
-      const gateSource = `FTA-AND:${gate.id}`;
-      if (existingSources.has(gateSource)) { skipped++; continue; } // already generated
-      const children = _nodes.filter(n => n.parent_node_id === gate.id);
-      if (children.length < 2) continue;
-      const childNames = children.map(c => c.fta_code || c.label || 'event').join(', ');
-      const gateRef = gate.fta_code || gate.label || 'AND gate';
-      const title = `Independence between failures of: ${childNames} (${gateRef})`;
-      const description = `Safety requirement derived from FTA AND gate ${gateRef}. Simultaneous failures of [${childNames}] cause the top-level failure condition. Ensure independence between these failure sources to prevent common-cause failures.`;
-      const reqCode = `REQ-${pfx}-${projAbbr}-${String(idx).padStart(3,'0')}`;
-      const { error } = await sb.from('requirements').insert({
+    if (existing) {
+      // Update title and description to reflect new child list
+      await sb.from('requirements').update({
+        title, description, updated_at: new Date().toISOString(),
+      }).eq('id', existing.id);
+      // Refresh local cache entry
+      const idx = _safetyReqs.findIndex(r => r.source === gateSource);
+      if (idx !== -1) { _safetyReqs[idx] = { ..._safetyReqs[idx], title }; }
+      else { _safetyReqs.push({ id: existing.id, req_code: existing.req_code, title, status: 'draft', source: gateSource }); }
+    } else {
+      // Ensure the Safety Requirements nav page exists
+      await ensureSafetyReqPage();
+      // Generate a new req_code
+      const { count: reqCount } = await sb.from('requirements')
+        .select('*', { count: 'exact', head: true })
+        .eq('parent_type', parentType).eq('parent_id', parentId);
+      const pfx      = parentType === 'item' ? 'ITEM' : 'SYS';
+      const projAbbr = (project.name||'PRJ').replace(/[^A-Za-z0-9]/g,'').slice(0,4).toUpperCase();
+      const reqCode  = `REQ-${pfx}-${projAbbr}-${String((reqCount||0)+1).padStart(3,'0')}`;
+      const { data: inserted, error } = await sb.from('requirements').insert({
         req_code: reqCode, title, description,
         type: 'safety', priority: 'high', status: 'draft',
         parent_type: parentType, parent_id: parentId, project_id: project.id,
         source: gateSource,
-      });
-      if (!error) { created++; idx++; }
+      }).select('id, req_code, title, status, source').single();
+      if (!error && inserted) _safetyReqs.push(inserted);
     }
 
-    if (!created && !skipped) { toast('No AND gates with ≥2 children found.', 'info'); return; }
-    if (!created && skipped)  { toast(`All ${skipped} AND gate requirement${skipped!==1?'s':''} already exist.`, 'info'); return; }
-    toast(`${created} safety requirement${created!==1?'s':''} created in "Safety Requirements". Reload sidebar to see the new page.`, 'success');
-    // Reload sidebar
-    window.dispatchEvent(new Event('hashchange'));
+    _safetyReqs.sort((a,b) => (a.req_code||'').localeCompare(b.req_code||''));
+    renderSreqsBar();
+  }
+
+  async function ensureSafetyReqPage() {
+    const SAFETY_REQ_PAGE_NAME = 'Safety Requirements';
+    const { data: existing } = await sb.from('nav_pages')
+      .select('id').eq('parent_type', parentType).eq('parent_id', parentId)
+      .ilike('name', SAFETY_REQ_PAGE_NAME).maybeSingle();
+    if (existing) return;
+    const { data: anyPages } = await sb.from('nav_pages')
+      .select('domain').eq('parent_type', parentType).eq('parent_id', parentId)
+      .order('sort_order').limit(1);
+    const domain = anyPages?.[0]?.domain || (parentType === 'system' ? 'system' : 'item');
+    const { count: pgCount } = await sb.from('nav_pages')
+      .select('*', { count: 'exact', head: true })
+      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .eq('domain', domain).eq('phase', 'requirements');
+    await sb.from('nav_pages').insert({
+      parent_type: parentType, parent_id: parentId,
+      domain, phase: 'requirements',
+      name: SAFETY_REQ_PAGE_NAME, sort_order: pgCount || 0,
+    });
   }
 
   // ── Floating SPF annotation panels ────────────────────────────────────────────
