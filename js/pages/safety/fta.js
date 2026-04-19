@@ -511,7 +511,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const s = _spfAnnotState[nid];
       if (!s) return;
       const n = byId(nid);
-      const cy = n ? n.y + nh(n) / 2 + (s.relY ?? 20) : (s.cy ?? 0);
+      const cy = n ? n.y + nh(n) / 2 + extH() + (s.relY ?? 20) : 0;
       const { left, top } = canvasToScreen(s.cx, cy);
       panel.style.left = left + 'px';
       panel.style.top  = top  + 'px';
@@ -2055,22 +2055,20 @@ export async function renderFTA(container, { project, item, system, parentType, 
       !isGate(n.type) && n.type !== 'top_event' &&
       _mcs.some(s => s.length === 1 && s[0] === n.id));
     spfLeaves.forEach(n => {
+      // Migrate or reset old state that lacks relY (pre-v0.2.2 format)
+      if (_spfAnnotState[n.id]?.relY == null) delete _spfAnnotState[n.id];
       const existing = _spfAnnotState[n.id] || {};
       const dw = existing.w || 210;
-      // Ensure relY exists (migrate old cy-based state)
-      if (existing.relY == null) {
-        existing.relY = existing.cy != null
-          ? existing.cy - (n.y + nh(n) / 2)   // convert old absolute cy → relative
-          : 20;                                  // default: 20px below node bottom
-      }
+      if (existing.relY == null) existing.relY = 20; // default: 20 canvas-px below visual bottom
       if (!existing.userMoved) {
-        existing.cx = n.x - dw / (2 * _zoom);  // default: horizontally centred on node
+        existing.cx = n.x - dw / (2 * _zoom);  // horizontally centred on node
       }
       _spfAnnotState[n.id] = existing;
 
       const state = _spfAnnotState[n.id];
-      // cy is always computed from node bottom + relY so it tracks display-field height changes
-      const cy = n.y + nh(n) / 2 + state.relY;
+      // cy tracks the TRUE visual bottom = box bottom + external optional rows + relY
+      const nodeVisualBottom = n.y + nh(n) / 2 + extH();
+      const cy = nodeVisualBottom + state.relY;
 
       const accepted  = n.spf_status === 'accepted';
       const rejected  = n.spf_status === 'rejected';
@@ -2143,15 +2141,14 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const startCX  = _spfAnnotState[nid]?.cx || 0;
       const startRelY = _spfAnnotState[nid]?.relY ?? 20;
       const n = byId(nid);
-      const nodeBottom = n ? n.y + nh(n) / 2 : 0;
-      const startScreenTop = parseFloat(panel.style.top) || 0;
+      const nodeVisualBottom = n ? n.y + nh(n) / 2 + extH() : 0;
       const onMove = ev => {
         const dx = ev.clientX - startX, dy = ev.clientY - startY;
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragged = true;
         const newCX   = startCX + dx / _zoom;
         const newRelY = startRelY + dy / _zoom;
         _spfAnnotState[nid] = { ..._spfAnnotState[nid], cx: newCX, relY: newRelY, userMoved: true };
-        const newCY = nodeBottom + newRelY;
+        const newCY = nodeVisualBottom + newRelY;
         const { left, top } = canvasToScreen(newCX, newCY);
         panel.style.left = left + 'px';
         panel.style.top  = top  + 'px';
