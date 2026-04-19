@@ -539,6 +539,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const { left, top } = canvasToScreen(s.cx, cy);
       panel.style.left = left + 'px';
       panel.style.top  = top  + 'px';
+      panel.style.transform = `scale(${_zoom})`;
+      panel.style.transformOrigin = 'top left';
     });
   }
 
@@ -2180,6 +2182,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       panel.className = 'fta-spf-float';
       panel.dataset.nid = n.id;
       panel.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${state.w}px;` +
+        `transform:scale(${_zoom});transform-origin:top left;` +
         `background:#fff;border:2px solid ${bdColor};border-radius:6px;` +
         `box-shadow:2px 4px 12px rgba(0,0,0,.18);z-index:100;font-family:inherit;font-size:11px;overflow:visible;`;
 
@@ -2274,14 +2277,15 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const startCX = _spfAnnotState[nid]?.cx || 0;
       const startCY = _spfAnnotState[nid]?.cy || 0;
       const onMove = ev => {
-        const dx = ev.clientX - startX, dy = ev.clientY - startY;
+        // Deltas are screen px; divide by _zoom to get DOM px (panel dims stored at zoom=1)
+        const dx = (ev.clientX - startX) / _zoom, dy = (ev.clientY - startY) / _zoom;
         let nw2 = startW, nh2 = startH, ncx = startCX, ncy = startCY;
         if (cls.includes('e')) nw2 = Math.max(140, startW + dx);
         if (cls.includes('s')) nh2 = Math.max(60,  startH + dy);
         // West: shrink from left — anchor moves right in canvas space
-        if (cls.includes('w')) { nw2 = Math.max(140, startW - dx); ncx = startCX + (startW - nw2) / _zoom; }
+        if (cls.includes('w')) { nw2 = Math.max(140, startW - dx); ncx = startCX + (startW - nw2); }
         // North: shrink from top — anchor moves down in canvas space
-        if (cls.includes('n')) { nh2 = Math.max(60,  startH - dy); ncy = startCY + (startH - nh2) / _zoom; }
+        if (cls.includes('n')) { nh2 = Math.max(60,  startH - dy); ncy = startCY + (startH - nh2); }
         _spfAnnotState[nid] = { ..._spfAnnotState[nid], cx: ncx, cy: ncy, w: nw2, h: nh2 };
         const { left, top } = canvasToScreen(ncx, ncy);
         panel.style.left      = left + 'px';
