@@ -105,6 +105,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
   let _copyDrag   = null;             // { fromId, startX, startY, curX, curY }
   const _undoStack = [];              // max 10 snapshots
   let _undoToastEl = null;
+  let _lastGateClick = null;          // { id, t } — used to detect dblclick on gates
   let _mcs        = [];               // current Minimal Cut Sets
   let _spfNodes   = new Set();        // node IDs on Single Point Failure paths
   let _mcsMaxOrder= 99;               // display cut sets up to this order
@@ -1033,6 +1034,14 @@ export async function renderFTA(container, { project, item, system, parentType, 
         }
         if (!_selSet.has(id)) { _selSet.clear(); _selSet.add(id); }
         onSelectionChanged();
+        // For gates: suppress render on 2nd rapid mousedown so dblclick can fire
+        const n2=byId(id);
+        if (isGate(n2?.type) && _lastGateClick?.id===id && Date.now()-_lastGateClick.t < 400) {
+          _lastGateClick = null;
+          return; // let dblclick handle it
+        }
+        if (isGate(n2?.type)) _lastGateClick = { id, t: Date.now() };
+        else _lastGateClick = null;
         // Start drag for all selected
         closeEditor();
         pushUndo(`Move ${[..._selSet].map(sid=>byId(sid)?.fta_code||'node').join(', ')}`);
