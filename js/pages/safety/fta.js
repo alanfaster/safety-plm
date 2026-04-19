@@ -1919,12 +1919,22 @@ export async function renderFTA(container, { project, item, system, parentType, 
       .select('*', { count: 'exact', head: true })
       .eq('parent_type', parentType).eq('parent_id', parentId);
 
+    // Fetch already-existing FTA-AND requirements for this item/system to avoid duplicates
+    const { data: existingReqs } = await sb.from('requirements')
+      .select('source')
+      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .like('source', 'FTA-AND:%');
+    const existingSources = new Set((existingReqs || []).map(r => r.source));
+
     let created = 0;
+    let skipped = 0;
     let idx = (reqCount || 0) + 1;
     const pfx = parentType === 'item' ? 'ITEM' : 'SYS';
     const projAbbr = (project.name||'PRJ').replace(/[^A-Za-z0-9]/g,'').slice(0,4).toUpperCase();
 
     for (const gate of andGates) {
+      const gateSource = `FTA-AND:${gate.id}`;
+      if (existingSources.has(gateSource)) { skipped++; continue; } // already generated
       const children = _nodes.filter(n => n.parent_node_id === gate.id);
       if (children.length < 2) continue;
       const childNames = children.map(c => c.fta_code || c.label || 'event').join(', ');
@@ -1936,13 +1946,14 @@ export async function renderFTA(container, { project, item, system, parentType, 
         req_code: reqCode, title, description,
         type: 'safety', priority: 'high', status: 'draft',
         parent_type: parentType, parent_id: parentId, project_id: project.id,
-        source: `FTA-AND:${gate.id}`,
+        source: gateSource,
         data: { hazard_id: _activeHazardId, gate_code: gate.fta_code || gate.label || 'AND' },
       });
       if (!error) { created++; idx++; }
     }
 
-    if (!created) { toast('No AND gates with ≥2 children found.', 'info'); return; }
+    if (!created && !skipped) { toast('No AND gates with ≥2 children found.', 'info'); return; }
+    if (!created && skipped)  { toast(`All ${skipped} AND gate requirement${skipped!==1?'s':''} already exist.`, 'info'); return; }
     toast(`${created} safety requirement${created!==1?'s':''} created in "Safety Requirements". Reload sidebar to see the new page.`, 'success');
     // Reload sidebar
     window.dispatchEvent(new Event('hashchange'));
@@ -2212,7 +2223,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     // Load all FTA-AND requirements for this parent (all FCs)
     const { data, error } = await sb.from('requirements')
       .select('id, req_code, title, status, source, data')
-      .eq('project_id', project.id)
+      .eq('parent_type', parentType).eq('parent_id', parentId)
       .like('source', 'FTA-AND:%')
       .order('req_code', { ascending: true });
     if (error) { console.warn('loadSafetyReqs error:', error); return; }
