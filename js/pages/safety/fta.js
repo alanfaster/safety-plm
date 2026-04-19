@@ -142,9 +142,6 @@ export async function renderFTA(container, { project, item, system, parentType, 
         <button class="btn btn-sm btn-danger" id="fta-btn-del" disabled>✕ Delete</button>
         <button class="btn btn-sm"            id="fta-btn-layout">⟳ Layout</button>
         <button class="btn btn-sm"            id="fta-btn-cfg" title="Display settings">⚙ Config</button>
-        <button class="btn btn-sm"            id="fta-btn-zi">＋</button>
-        <button class="btn btn-sm"            id="fta-btn-zo">－</button>
-        <button class="btn btn-sm"            id="fta-btn-zr">⊡</button>
         <span class="fta-toolbar-sep"></span>
         <button class="btn btn-sm"            id="fta-btn-sreqs-panel" title="Show/Hide Safety Requirements panel">🔗 Reqs Panel</button>
         <button class="btn btn-sm"            id="fta-btn-pdf" title="Export to PDF">📄 PDF</button>
@@ -187,6 +184,11 @@ export async function renderFTA(container, { project, item, system, parentType, 
             <g id="fta-copy-g"></g>
           </g>
         </svg>
+        <div class="canvas-zoom-fab" id="fta-zoom-fab">
+          <button class="czf-btn" id="fta-btn-zi" title="Zoom in">＋</button>
+          <button class="czf-btn" id="fta-btn-zo" title="Zoom out">－</button>
+          <button class="czf-btn" id="fta-btn-zr" title="Fit all">⊡</button>
+        </div>
         <div class="fta-hint" id="fta-hint">
           Add a node above · Hover node → drag <span style="color:#1E8E3E">●</span> to connect ·
           Drag empty area to multi-select · Space+drag to pan

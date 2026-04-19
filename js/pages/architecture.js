@@ -255,10 +255,6 @@ function buildShell(container, title) {
       <div class="arch-topbar">
         <span class="arch-topbar-title">◈ ${escH(title)} — Architecture</span>
         <div class="arch-topbar-right">
-          <button class="arch-tb-btn" id="btn-zoom-out">−</button>
-          <span class="arch-zoom-lbl" id="arch-zoom-lbl">100%</span>
-          <button class="arch-tb-btn" id="btn-zoom-in">＋</button>
-          <button class="arch-tb-btn" id="btn-zoom-fit">⊞ Fit</button>
           <div class="arch-sep"></div>
           <button class="arch-tb-btn" id="btn-arch-frame" title="Architecture Frame tree">🗂 Frame</button>
           <button class="arch-tb-btn" id="btn-arch-idef" title="Item Definition panel">★ Item Def</button>
@@ -267,6 +263,11 @@ function buildShell(container, title) {
       </div>
       <div class="arch-workspace">
         <div class="arch-canvas-outer" id="arch-outer">
+          <div class="canvas-zoom-fab" id="arch-zoom-fab">
+            <button class="czf-btn" id="btn-zoom-in"  title="Zoom in">＋</button>
+            <button class="czf-btn" id="btn-zoom-out" title="Zoom out">－</button>
+            <button class="czf-btn" id="btn-zoom-fit" title="Fit all">⊡</button>
+          </div>
           <div class="arch-viewport" id="arch-vp">
             <div class="arch-group-layer" id="arch-group-layer"></div>
             <svg class="arch-svg" id="arch-svg" xmlns="http://www.w3.org/2000/svg">
