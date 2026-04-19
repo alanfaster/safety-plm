@@ -43,29 +43,39 @@ export async function renderFHA(container, ctx) {
   paint(scope);
 }
 
-// ── Load tree (exhaustive: system → item → child systems) ─────────────────────
+// ── Load tree ─────────────────────────────────────────────────────────────────
+// Always queries ALL possible storage levels in parallel and merges results.
+// Features can be stored at parent_type='system' OR parent_type='item'.
+// When the same feat_code exists at both levels, item-level wins.
 
 async function loadTree(parentType, parentId, item) {
-  // 1. Direct lookup at the given level
-  let tree = await getFeaturesTree(parentType, parentId, 'system');
-  if (tree.length) return tree;
+  const queries = [getFeaturesTree(parentType, parentId, 'system')];
 
-  // 2. System-level FHA: features may have been defined at item level (single-system items
-  //    whose item-definition was opened without a systemId in the URL)
   if (parentType === 'system' && item?.id) {
-    tree = await getFeaturesTree('item', item.id, 'system');
-    if (tree.length) return tree;
-  }
-
-  // 3. Item-level FHA: features may live on individual child systems (multi-system items)
-  if (parentType === 'item' && item?.id) {
-    const { data: systems } = await sb.from('systems').select('id,name').eq('item_id', item.id);
+    queries.push(getFeaturesTree('item', item.id, 'system'));
+  } else if (parentType === 'item' && item?.id) {
+    const { data: systems } = await sb.from('systems').select('id').eq('item_id', item.id);
     if (systems?.length) {
-      const trees = await Promise.all(systems.map(s => getFeaturesTree('system', s.id, 'system')));
-      tree = trees.flat();
+      systems.forEach(s => queries.push(getFeaturesTree('system', s.id, 'system')));
     }
   }
-  return tree;
+
+  const allTrees = await Promise.all(queries);
+  const ordered = parentType === 'system'
+    ? [allTrees[1] || [], allTrees[0]]   // item-level first → wins deduplication
+    : allTrees;
+
+  const seen = new Set();
+  const merged = [];
+  for (const tree of ordered) {
+    for (const feat of (tree || [])) {
+      if (!seen.has(feat.feat_code)) {
+        seen.add(feat.feat_code);
+        merged.push(feat);
+      }
+    }
+  }
+  return merged;
 }
 
 // ── Full paint ────────────────────────────────────────────────────────────────
