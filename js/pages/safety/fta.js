@@ -2010,14 +2010,13 @@ export async function renderFTA(container, { project, item, system, parentType, 
           ? `<span style="font-size:10px;color:#1E8E3E;font-style:italic;padding:2px 5px">${esc(just)||'—'}</span>`
           : `<input class="fta-mcs-inp" data-nid="${nodeId}" data-field="spf_justification" placeholder="Justification…" value="${esc(just)}" style="width:160px;font-size:10px;padding:2px 5px;border:1px solid #ddd;border-radius:3px;outline:none">`
         }</td>
-        <td>${stat==='accepted'
-          ? `<span style="font-size:10px;font-weight:700;color:#1E8E3E;white-space:nowrap">🔒 Accepted</span>`
-          : `<select class="fta-mcs-sel" data-nid="${nodeId}" data-field="spf_status" style="font-size:10px;padding:2px 4px;border:1px solid #ddd;border-radius:3px">
-               <option value="pending"  ${stat==='pending' ?'selected':''}>Pending</option>
-               <option value="accepted" ${stat==='accepted'?'selected':''}>Accepted</option>
-               <option value="rejected" ${stat==='rejected'?'selected':''}>Rejected</option>
-             </select>`
-        }</td>
+        <td>
+          <select class="fta-mcs-sel" data-nid="${nodeId}" data-field="spf_status" style="font-size:10px;padding:2px 4px;border:1px solid #ddd;border-radius:3px">
+            <option value="pending"  ${stat==='pending' ?'selected':''}>Pending</option>
+            <option value="accepted" ${stat==='accepted'?'selected':''}>✓ Accepted</option>
+            <option value="rejected" ${stat==='rejected'?'selected':''}>Rejected</option>
+          </select>
+        </td>
         <td><input class="fta-mcs-inp" data-nid="${nodeId}" data-field="spf_approver_comment" placeholder="Approver comment…" value="${esc(comm)}" style="width:140px;font-size:10px;padding:2px 5px;border:1px solid #ddd;border-radius:3px;outline:none"></td>
       </tr>`;
     }).join('');
@@ -2211,7 +2210,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       if (accepted) {
         const lock = document.createElement('div');
         lock.style.cssText = 'font-size:9px;color:#1E8E3E;padding:2px 8px 4px;opacity:.7;user-select:none';
-        lock.textContent = '🔒 Accepted — read-only';
+        lock.textContent = '🔒 Text locked — dbl-click title to change status';
         panel.appendChild(lock);
       }
 
@@ -2343,8 +2342,13 @@ export async function renderFTA(container, { project, item, system, parentType, 
       <div style="font-size:14px;font-weight:700;color:#d93025;margin-bottom:4px">⚠ Single Point Failure — ${esc(n.fta_code||'')}</div>
       <div style="font-size:12px;color:#555;margin-bottom:16px">${esc(n.label||n.component||'')}</div>
       <div style="margin-bottom:12px">
-        <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Justification / Safety Argument</label>
-        <textarea id="spf-just" rows="3" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;font-family:inherit;resize:vertical">${esc(n.spf_justification||'')}</textarea>
+        <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">
+          Justification / Safety Argument
+          ${n.spf_status==='accepted'?'<span style="font-size:10px;color:#1E8E3E;font-weight:400;margin-left:6px">🔒 locked while accepted</span>':''}
+        </label>
+        <textarea id="spf-just" rows="3" ${n.spf_status==='accepted'?'readonly':''}
+          style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;font-family:inherit;resize:vertical;${n.spf_status==='accepted'?'background:#f5f5f5;color:#888;cursor:not-allowed;':''}"
+        >${esc(n.spf_justification||'')}</textarea>
       </div>
       <div style="margin-bottom:12px">
         <label style="font-size:11px;font-weight:600;color:#555;display:block;margin-bottom:4px">Status (FSM review)</label>
@@ -2368,8 +2372,10 @@ export async function renderFTA(container, { project, item, system, parentType, 
     overlay.addEventListener('click', e => { if (e.target === overlay) cleanup(); });
     box.querySelector('#spf-cancel').onclick = cleanup;
     box.querySelector('#spf-save').onclick = async () => {
-      const just = box.querySelector('#spf-just').value.trim() || null;
       const stat = box.querySelector('#spf-stat').value;
+      // Keep existing justification if it was locked (accepted → accepted or accepted → other)
+      const justEl = box.querySelector('#spf-just');
+      const just = justEl.readOnly ? (n.spf_justification || null) : (justEl.value.trim() || null);
       const comm = box.querySelector('#spf-comm').value.trim() || null;
       n.spf_justification = just;
       n.spf_status = stat;
