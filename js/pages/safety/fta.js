@@ -141,7 +141,6 @@ export async function renderFTA(container, { project, item, system, parentType, 
         </label>
         <span class="fta-toolbar-sep"></span>
         <button class="btn btn-sm btn-danger" id="fta-btn-del" disabled>✕ Delete</button>
-        <button class="btn btn-sm"            id="fta-btn-layout">⟳ Layout</button>
         <button class="btn btn-sm"            id="fta-btn-cfg" title="Display settings">⚙ Config</button>
         <span class="fta-toolbar-sep"></span>
         <button class="btn btn-sm"            id="fta-btn-sreqs-panel" title="Show/Hide Safety Requirements panel">🔗 Reqs Panel</button>
@@ -186,9 +185,10 @@ export async function renderFTA(container, { project, item, system, parentType, 
           </g>
         </svg>
         <div class="canvas-zoom-fab" id="fta-zoom-fab">
-          <button class="czf-btn" id="fta-btn-zi" title="Zoom in">＋</button>
-          <button class="czf-btn" id="fta-btn-zo" title="Zoom out">－</button>
-          <button class="czf-btn" id="fta-btn-zr" title="Fit all">⊡</button>
+          <button class="czf-btn" id="fta-btn-zi"     title="Zoom in">＋</button>
+          <button class="czf-btn" id="fta-btn-zo"     title="Zoom out">－</button>
+          <button class="czf-btn" id="fta-btn-zr"     title="Fit all">⊡</button>
+          <button class="czf-btn" id="fta-btn-layout" title="Auto layout">⟳</button>
         </div>
         <div class="fta-hint" id="fta-hint">
           Add a node above · Hover node → drag <span style="color:#1E8E3E">●</span> to connect ·
@@ -1909,14 +1909,18 @@ export async function renderFTA(container, { project, item, system, parentType, 
         <td class="fta-mcs-codes">${esc(codes)}</td>
         <td style="font-size:11px;color:#555">${esc(events)}</td>
         <td><span class="fta-mcs-spf">SPF</span></td>
-        <td><input class="fta-mcs-inp" data-nid="${nodeId}" data-field="spf_justification" placeholder="Justification…" value="${esc(just)}" style="width:160px;font-size:10px;padding:2px 5px;border:1px solid #ddd;border-radius:3px;outline:none"></td>
-        <td>
-          <select class="fta-mcs-sel" data-nid="${nodeId}" data-field="spf_status" style="font-size:10px;padding:2px 4px;border:1px solid #ddd;border-radius:3px">
-            <option value="pending"  ${stat==='pending' ?'selected':''}>Pending</option>
-            <option value="accepted" ${stat==='accepted'?'selected':''}>Accepted</option>
-            <option value="rejected" ${stat==='rejected'?'selected':''}>Rejected</option>
-          </select>
-        </td>
+        <td>${stat==='accepted'
+          ? `<span style="font-size:10px;color:#1E8E3E;font-style:italic;padding:2px 5px">${esc(just)||'—'}</span>`
+          : `<input class="fta-mcs-inp" data-nid="${nodeId}" data-field="spf_justification" placeholder="Justification…" value="${esc(just)}" style="width:160px;font-size:10px;padding:2px 5px;border:1px solid #ddd;border-radius:3px;outline:none">`
+        }</td>
+        <td>${stat==='accepted'
+          ? `<span style="font-size:10px;font-weight:700;color:#1E8E3E;white-space:nowrap">🔒 Accepted</span>`
+          : `<select class="fta-mcs-sel" data-nid="${nodeId}" data-field="spf_status" style="font-size:10px;padding:2px 4px;border:1px solid #ddd;border-radius:3px">
+               <option value="pending"  ${stat==='pending' ?'selected':''}>Pending</option>
+               <option value="accepted" ${stat==='accepted'?'selected':''}>Accepted</option>
+               <option value="rejected" ${stat==='rejected'?'selected':''}>Rejected</option>
+             </select>`
+        }</td>
         <td><input class="fta-mcs-inp" data-nid="${nodeId}" data-field="spf_approver_comment" placeholder="Approver comment…" value="${esc(comm)}" style="width:140px;font-size:10px;padding:2px 5px;border:1px solid #ddd;border-radius:3px;outline:none"></td>
       </tr>`;
     }).join('');
