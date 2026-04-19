@@ -2053,7 +2053,11 @@ export async function renderFTA(container, { project, item, system, parentType, 
       // Initialise canvas-coordinate anchor if missing; default = just to the right of the node
       if (!_spfAnnotState[n.id] || _spfAnnotState[n.id].cx == null) {
         const existing = _spfAnnotState[n.id] || {};
-        _spfAnnotState[n.id] = { w: 210, h: 80, ...existing, cx: n.x + 110, cy: n.y - 30 };
+        const dw = existing?.w || 210;
+        _spfAnnotState[n.id] = { w: dw, h: 80, ...existing,
+          cx: n.x - dw / (2 * _zoom),          // horizontally centred on node
+          cy: n.y + nh(n) / 2 + 14,            // 14px below node bottom edge
+        };
       }
       const state = _spfAnnotState[n.id];
 
