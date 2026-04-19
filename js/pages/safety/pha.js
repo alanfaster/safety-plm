@@ -25,7 +25,7 @@ export async function renderPHA(container, ctx) {
     sb.from('hazards')
       .select('*').eq('parent_type', parentType).eq('parent_id', parentId)
       .order('sort_order'),
-    loadTree(parentType, parentId, item),
+    loadTree(parentType, parentId),
   ]);
 
   const fields     = effectivePHAFields(pcRow || null);
@@ -41,43 +41,11 @@ export async function renderPHA(container, ctx) {
 }
 
 // ── Load feature tree ─────────────────────────────────────────────────────────
-// Always queries ALL possible storage levels in parallel and merges results.
-// Features can be stored at parent_type='system' (system-level item-definition)
-// OR parent_type='item' (single-system items opened without a systemId in URL).
-// When the same feat_code exists at both levels, item-level wins (it's what the
-// item-definition page edits when there's no systemId).
+// Strict single-level query: item-level data and system-level data are independent
+// and must never be mixed. Queries exactly the level this safety page belongs to.
 
-async function loadTree(parentType, parentId, item) {
-  const queries = [getFeaturesTree(parentType, parentId, 'system')];
-
-  if (parentType === 'system' && item?.id) {
-    // Also check item-level (single-system items whose item-definition ran without systemId)
-    queries.push(getFeaturesTree('item', item.id, 'system'));
-  } else if (parentType === 'item' && item?.id) {
-    // Also check individual child systems (multi-system items)
-    const { data: systems } = await sb.from('systems').select('id').eq('item_id', item.id);
-    if (systems?.length) {
-      systems.forEach(s => queries.push(getFeaturesTree('system', s.id, 'system')));
-    }
-  }
-
-  const allTrees = await Promise.all(queries);
-  // Merge: item-level trees come first so their feat_codes win deduplication
-  const ordered = parentType === 'system'
-    ? [allTrees[1] || [], allTrees[0]]   // item-level first, then system-level
-    : allTrees;
-
-  const seen = new Set();
-  const merged = [];
-  for (const tree of ordered) {
-    for (const feat of (tree || [])) {
-      if (!seen.has(feat.feat_code)) {
-        seen.add(feat.feat_code);
-        merged.push(feat);
-      }
-    }
-  }
-  return merged;
+async function loadTree(parentType, parentId) {
+  return getFeaturesTree(parentType, parentId, 'system');
 }
 
 // ── Full paint ────────────────────────────────────────────────────────────────
@@ -265,11 +233,12 @@ function noFeaturesHint(project, scope) {
   return `
     <div class="pha-empty-state">
       <div class="pha-empty-icon">⊙</div>
-      <h3>No Features or Use Cases defined yet</h3>
-      <p>PHL/PHA links hazards to Use Cases. First define Features and Use Cases in
-         <strong>System Definition</strong>, then return here to record hazards.</p>
+      <h3>No features found</h3>
+      <p>No Features or Use Cases are defined at this level. Please check the
+         <strong>Item / System Definition</strong> page and make sure Features and
+         Use Cases are defined for this ${system ? 'system' : 'item'}.</p>
       <button class="btn btn-primary" onclick="window.location.hash='${defPath}'">
-        Go to System Definition →
+        Go to Item / System Definition →
       </button>
     </div>`;
 }
