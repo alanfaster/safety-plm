@@ -738,7 +738,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const isLeafType = n.type === 'basic' || n.type === 'undeveloped' || n.type === 'transfer';
     const portY = belowY + 6;
     g.appendChild(buildPort(n.id, 0, portY));
-    if (!isLeafType) g.appendChild(buildAddBtn(n.id, 0, portY+12));
+    if (!isLeafType) g.appendChild(buildAddBtn(n.id, 0, hh + 10));
     return g;
   }
 
@@ -820,7 +820,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       gBelowY += 14;
     }
     g.appendChild(buildPort(n.id, 0, gBelowY));
-    g.appendChild(buildAddBtn(n.id, 0, gBelowY+12));
+    g.appendChild(buildAddBtn(n.id, 0, hh + 10));
     return g;
   }
 
