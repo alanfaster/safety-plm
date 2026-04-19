@@ -2212,7 +2212,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     // Load all FTA-AND requirements for this parent (all FCs)
     const { data, error } = await sb.from('requirements')
       .select('id, req_code, title, status, source, data')
-      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .eq('project_id', project.id)
       .like('source', 'FTA-AND:%')
       .order('req_code', { ascending: true });
     if (error) { console.warn('loadSafetyReqs error:', error); return; }
