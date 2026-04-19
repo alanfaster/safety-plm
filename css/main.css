@@ -2061,6 +2061,27 @@ td:hover .dfmea-del-inline{display:inline-block}
 .fta-mcs-order{font-weight:700;font-size:10px;color:var(--color-text-muted)}
 .fta-mcs-codes{font-family:monospace;font-size:10px;color:#172B4D}
 
+/* ── FTA Safety Requirements bottom bar ─────────────────────────────────── */
+.fta-sreqs-bar{flex-shrink:0;border-top:2px solid var(--color-border);background:#fff;display:flex;flex-direction:column;height:36px;min-height:36px;max-height:50vh;overflow:hidden;position:relative}
+.fta-sreqs-bar:not(.fta-sreqs-collapsed){height:200px}
+.fta-sreqs-bar.fta-sreqs-collapsed{height:36px!important;min-height:36px}
+.fta-sreqs-hdr{display:flex;align-items:center;gap:8px;padding:0 12px;height:36px;cursor:pointer;user-select:none;flex-shrink:0;background:#f4f8ff;border-bottom:1px solid var(--color-border)}
+.fta-sreqs-hdr-title{font-size:11px;font-weight:700;color:#1A73E8;flex:1}
+.fta-sreqs-toggle{font-size:10px;color:var(--color-text-muted);margin-left:auto}
+.fta-sreqs-body{overflow-y:auto;flex:1;padding:6px 12px}
+.fta-sreqs-empty{font-size:12px;color:var(--color-text-muted);padding:8px 0;font-style:italic}
+.fta-sreqs-table{width:100%;border-collapse:collapse;font-size:11px}
+.fta-sreqs-table th{text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);padding:4px 8px 3px;border-bottom:1px solid var(--color-border)}
+.fta-sreqs-table td{padding:3px 8px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+.fta-sreqs-table tr:last-child td{border-bottom:none}
+.fta-sreqs-row:hover{background:#f0f8ff}
+.fta-sreqs-row-hl{background:#e8f4fd!important;outline:2px solid #1A73E8;outline-offset:-2px}
+.fta-sreqs-status{display:inline-block;padding:1px 6px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase}
+.fta-sreqs-status-draft{background:#fef9e7;color:#b7950b;border:1px solid #f0d882}
+.fta-sreqs-status-approved{background:#e8f5e9;color:#1E8E3E;border:1px solid #a5d6a7}
+.fta-sreqs-status-rejected{background:#fde8e8;color:#d93025;border:1px solid #f5c6c6}
+.fta-sreqs-status-review{background:#e8f0fe;color:#1A73E8;border:1px solid #a8c4f8}
+
 /* ── DFMEA Structure Map panel ───────────────────────────────────────────── */
 .dfmea-map-body{flex:1;overflow:auto;background:#F4F5F7;padding:12px 16px}
 

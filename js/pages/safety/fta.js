@@ -108,6 +108,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
   let _mcs        = [];               // current Minimal Cut Sets
   let _spfNodes   = new Set();        // node IDs on Single Point Failure paths
   let _mcsMaxOrder= 99;               // display cut sets up to this order
+  let _safetyReqs  = [];              // cached safety requirements from DB
+  let _highlightedGateId = null;      // AND gate currently highlighted via reqs panel
 
   // SPF annotation floating panel state (per-node, persisted in localStorage)
   const ANNOT_KEY = `fta_spf_annot_${parentType}_${parentId}`;
@@ -145,6 +147,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
         <button class="btn btn-sm"            id="fta-btn-zr">⊡</button>
         <span class="fta-toolbar-sep"></span>
         <button class="btn btn-sm"            id="fta-btn-sreqs" title="Generate Safety Requirements from AND gates">⚡ Safety Reqs</button>
+        <button class="btn btn-sm"            id="fta-btn-sreqs-panel" title="Show/Hide Safety Requirements panel">🔗 Reqs Panel</button>
         <button class="btn btn-sm"            id="fta-btn-pdf" title="Export to PDF">📄 PDF</button>
       </div>
 
@@ -202,6 +205,17 @@ export async function renderFTA(container, { project, item, system, parentType, 
         </div>
       </div>
 
+      </div>
+
+      <!-- ── Safety Requirements bottom bar ── -->
+      <div class="fta-sreqs-bar fta-sreqs-collapsed" id="fta-sreqs-bar">
+        <div class="fta-sreqs-hdr" id="fta-sreqs-hdr">
+          <span class="fta-sreqs-hdr-title">🔗 Safety Requirements (Independence)</span>
+          <span class="fta-sreqs-toggle" id="fta-sreqs-toggle">▲</span>
+        </div>
+        <div class="fta-sreqs-body" id="fta-sreqs-body">
+          <div class="fta-sreqs-empty">Click the ⚡ Safety Reqs button to generate requirements from AND gates, then expand this panel.</div>
+        </div>
       </div>
 
       <!-- ── MCS bottom bar ── -->
@@ -901,7 +915,9 @@ export async function renderFTA(container, { project, item, system, parentType, 
       exportFTApdf(svg, _nodes, title, fcLabel, _mcs, _mcsMaxOrder);
     });
     q('fta-btn-sreqs').addEventListener('click', () => generateSafetyReqs());
+    q('fta-btn-sreqs-panel').addEventListener('click', () => toggleSreqsPanel());
     wireMCSBar();
+    wireSreqsBar();
 
     // Prop panel toggle
     q('fta-prop-toggle').addEventListener('click',()=>{
@@ -1011,9 +1027,11 @@ export async function renderFTA(container, { project, item, system, parentType, 
 
         if (e.shiftKey) {
           _selSet.has(id)?_selSet.delete(id):_selSet.add(id);
+          onSelectionChanged();
           render(); return;
         }
         if (!_selSet.has(id)) { _selSet.clear(); _selSet.add(id); }
+        onSelectionChanged();
         // Start drag for all selected
         closeEditor();
         pushUndo(`Move ${[..._selSet].map(sid=>byId(sid)?.fta_code||'node').join(', ')}`);
@@ -1919,6 +1937,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
         type: 'safety', priority: 'high', status: 'draft',
         parent_type: parentType, parent_id: parentId, project_id: project.id,
         source: `FTA-AND:${gate.id}`,
+        data: { hazard_id: _activeHazardId, gate_code: gate.fta_code || gate.label || 'AND' },
       });
       if (!error) { created++; idx++; }
     }
@@ -1977,11 +1996,17 @@ export async function renderFTA(container, { project, item, system, parentType, 
       if (n.spf_justification) {
         content.textContent = n.spf_justification;
       } else {
-        content.textContent = 'Double-click to add justification…';
+        content.textContent = accepted ? '(no justification)' : 'Double-click to add justification…';
         content.style.color = '#aaa';
         content.style.fontStyle = 'italic';
       }
       panel.appendChild(content);
+      if (accepted) {
+        const lock = document.createElement('div');
+        lock.style.cssText = 'font-size:9px;color:#1E8E3E;padding:2px 8px 4px;opacity:.7;user-select:none';
+        lock.textContent = '🔒 Accepted — read-only';
+        panel.appendChild(lock);
+      }
 
       // 4 corner resize handles
       [['nw','left:-1px;top:-1px'],['ne','right:-1px;top:-1px'],
@@ -2069,6 +2094,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
   }
 
   function openAnnotEdit(panel, content, n) {
+    if (n.spf_status === 'accepted') return; // locked — accepted justifications are read-only
     if (panel.querySelector('.fta-spf-float-ta')) return; // already editing
     const ta = document.createElement('textarea');
     ta.className = 'fta-spf-float-ta';
@@ -2146,6 +2172,133 @@ export async function renderFTA(container, { project, item, system, parentType, 
       recomputeMCS(); // update _spfNodes before render so canvas gets correct colours
       render();
     };
+  }
+
+  function onSelectionChanged() {
+    // If a single AND gate is selected, highlight its requirement in the reqs panel
+    const bar = container.querySelector('#fta-sreqs-bar');
+    if (!bar || bar.classList.contains('fta-sreqs-collapsed')) return;
+    if (_selSet.size === 1) {
+      const n = byId([..._selSet][0]);
+      if (n?.type === 'gate_and') { highlightAndGateInSreqs(n.id); return; }
+    }
+    highlightAndGateInSreqs(null);
+  }
+
+  // ── Safety Requirements panel ───────────────────────────────────────────────
+  function wireSreqsBar() {
+    const hdr  = container.querySelector('#fta-sreqs-hdr');
+    const bar  = container.querySelector('#fta-sreqs-bar');
+    const tog  = container.querySelector('#fta-sreqs-toggle');
+    if (!hdr || bar?.dataset?.wired) return;
+    bar.dataset.wired = '1';
+    hdr.addEventListener('click', () => {
+      const collapsed = bar.classList.toggle('fta-sreqs-collapsed');
+      tog.textContent = collapsed ? '▲' : '▼';
+      if (!collapsed) loadSafetyReqs();
+    });
+  }
+
+  function toggleSreqsPanel() {
+    const bar = container.querySelector('#fta-sreqs-bar');
+    const tog = container.querySelector('#fta-sreqs-toggle');
+    if (!bar) return;
+    const collapsed = bar.classList.toggle('fta-sreqs-collapsed');
+    if (tog) tog.textContent = collapsed ? '▲' : '▼';
+    if (!collapsed) loadSafetyReqs();
+  }
+
+  async function loadSafetyReqs() {
+    // Load all FTA-AND requirements for this parent (all FCs)
+    const { data, error } = await sb.from('requirements')
+      .select('id, req_code, title, status, source, data')
+      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .like('source', 'FTA-AND:%')
+      .order('req_code', { ascending: true });
+    if (error) { console.warn('loadSafetyReqs error:', error); return; }
+    _safetyReqs = data || [];
+    renderSreqsBar();
+  }
+
+  function renderSreqsBar() {
+    const body = container.querySelector('#fta-sreqs-body');
+    if (!body) return;
+    if (!_safetyReqs.length) {
+      body.innerHTML = '<div class="fta-sreqs-empty">No independence requirements found. Use ⚡ Safety Reqs to generate them from AND gates.</div>';
+      return;
+    }
+    // Build a map of hazard_id → fc label for display
+    const fcMap = {};
+    _fcs.forEach(fc => { fcMap[fc.id] = fc.data?.failure_condition || fc.haz_code || fc.id; });
+
+    body.innerHTML = `<table class="fta-sreqs-table">
+      <thead><tr>
+        <th>Req Code</th><th>Failure Condition</th><th>AND Gate</th><th>Title</th><th>Status</th>
+      </tr></thead>
+      <tbody>${_safetyReqs.map(r => {
+        const gateId  = r.source?.replace('FTA-AND:', '') || '';
+        const hazId   = r.data?.hazard_id || '';
+        const fcLabel = fcMap[hazId] || hazId || '—';
+        const short   = fcLabel.length > 30 ? fcLabel.slice(0,29)+'…' : fcLabel;
+        const isHighlighted = _highlightedGateId && _highlightedGateId === gateId;
+        return `<tr class="fta-sreqs-row${isHighlighted?' fta-sreqs-row-hl':''}" data-gate-id="${esc(gateId)}" data-haz-id="${esc(hazId)}" style="cursor:pointer">
+          <td><b>${esc(r.req_code||'')}</b></td>
+          <td title="${esc(fcLabel)}">${esc(short)}</td>
+          <td>${esc(r.data?.gate_code||gateId)}</td>
+          <td>${esc(r.title||'')}</td>
+          <td><span class="fta-sreqs-status fta-sreqs-status-${esc(r.status||'draft')}">${esc(r.status||'draft')}</span></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+
+    // Wire row clicks
+    body.querySelectorAll('.fta-sreqs-row').forEach(row => {
+      row.addEventListener('click', () => navigateToAndGate(row.dataset.gateId, row.dataset.hazId));
+    });
+  }
+
+  async function navigateToAndGate(gateId, hazId) {
+    if (!gateId) return;
+    // If no hazard_id stored, look it up from DB
+    if (!hazId) {
+      const { data: gateRow } = await sb.from('fta_nodes').select('hazard_id').eq('id', gateId).maybeSingle();
+      hazId = gateRow?.hazard_id || null;
+    }
+    // If the requirement belongs to a different FC, switch to it
+    if (hazId && hazId !== _activeHazardId) {
+      _activeHazardId = hazId;
+      renderFCTabs();
+      await loadNodes();
+      render();
+    }
+    // Highlight the AND gate
+    const n = byId(gateId);
+    if (!n) return;
+    _selSet.clear(); _selSet.add(gateId);
+    _highlightedGateId = gateId;
+    render();
+    // Center view on the AND gate
+    const svgEl2 = container.querySelector('#fta-svg');
+    if (!svgEl2) return;
+    const vw = svgEl2.clientWidth  || 800;
+    const vh = svgEl2.clientHeight || 600;
+    _pan.x = vw / 2 - n.x * _zoom;
+    _pan.y = vh / 2 - n.y * _zoom;
+    applyTransform();
+  }
+
+  function highlightAndGateInSreqs(gateId) {
+    _highlightedGateId = gateId || null;
+    const body = container.querySelector('#fta-sreqs-body');
+    if (!body) return;
+    body.querySelectorAll('.fta-sreqs-row').forEach(row => {
+      if (row.dataset.gateId === gateId) {
+        row.classList.add('fta-sreqs-row-hl');
+        row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } else {
+        row.classList.remove('fta-sreqs-row-hl');
+      }
+    });
   }
 
   // Wire MCS bar toggle in init (after HTML is set)
