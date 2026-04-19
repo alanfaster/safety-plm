@@ -2050,11 +2050,11 @@ export async function renderFTA(container, { project, item, system, parentType, 
 
     const spfLeaves = _nodes.filter(n => n.type !== 'top_event' && _mcs.some(s => s.length === 1 && s[0] === n.id));
     spfLeaves.forEach(n => {
-      // Initialise canvas-coordinate anchor if missing; default = just to the right of the node
-      if (!_spfAnnotState[n.id] || _spfAnnotState[n.id].cx == null) {
+      // Initialise canvas-coordinate anchor; only use saved position if user manually moved it
+      if (!_spfAnnotState[n.id]?.userMoved) {
         const existing = _spfAnnotState[n.id] || {};
         const dw = existing?.w || 210;
-        _spfAnnotState[n.id] = { w: dw, h: 80, ...existing,
+        _spfAnnotState[n.id] = { ...existing, w: dw, h: existing.h || 80,
           cx: n.x - dw / (2 * _zoom),          // horizontally centred on node
           cy: n.y + nh(n) / 2 + 14,            // 14px below node bottom edge
         };
@@ -2143,7 +2143,10 @@ export async function renderFTA(container, { project, item, system, parentType, 
         panel.style.top  = top  + 'px';
       };
       const onUp = () => {
-        if (dragged) saveSpfAnnotState();
+        if (dragged) {
+          _spfAnnotState[nid].userMoved = true;
+          saveSpfAnnotState();
+        }
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
       };
