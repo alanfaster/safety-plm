@@ -2048,7 +2048,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     wrap.querySelectorAll('.fta-spf-float').forEach(el => el.remove());
     if (!_cfg.showSPF) return;
 
-    const spfLeaves = _nodes.filter(n => _mcs.some(s => s.length === 1 && s[0] === n.id));
+    const spfLeaves = _nodes.filter(n => n.type !== 'top_event' && _mcs.some(s => s.length === 1 && s[0] === n.id));
     spfLeaves.forEach(n => {
       // Initialise canvas-coordinate anchor if missing; default = just to the right of the node
       if (!_spfAnnotState[n.id] || _spfAnnotState[n.id].cx == null) {
