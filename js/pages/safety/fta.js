@@ -1016,13 +1016,14 @@ export async function renderFTA(container, { project, item, system, parentType, 
       if (nodeEl) {
         e.stopPropagation();
         const id=nodeEl.dataset.id;
-        // If already selected: single click → edit the field under cursor
+        // If already selected: single click → edit field (not gates — gates use dblclick)
         if (_selSet.has(id) && !e.shiftKey) {
           const n=byId(id);
-          if (isGate(n?.type)) { editGate(id); return; }
-          const pt=toSvg(e);
-          const field=fieldAtY(n, pt.y);
-          if (field) { editField(id, field); return; }
+          if (!isGate(n?.type)) {
+            const pt=toSvg(e);
+            const field=fieldAtY(n, pt.y);
+            if (field) { editField(id, field); return; }
+          }
         }
 
         if (e.shiftKey) {
@@ -1095,6 +1096,15 @@ export async function renderFTA(container, { project, item, system, parentType, 
       }
       if (_panDrag && !_space) wrap.style.cursor='default';
       _panDrag=false;
+    });
+
+    // Double-click on a gate → open type picker
+    svg.addEventListener('dblclick', e => {
+      const nodeEl = e.target.closest('.fta-node');
+      if (!nodeEl) return;
+      const id = nodeEl.dataset.id;
+      const n  = byId(id);
+      if (n && isGate(n.type)) { e.stopPropagation(); openGatePicker(id); }
     });
 
   }
@@ -1431,15 +1441,61 @@ export async function renderFTA(container, { project, item, system, parentType, 
     });
   }
 
-  function editGate(id) {
-    const n=byId(id); if(!n) return;
-    const t=NT[n.type]||NT.gate_and;
-    const hw=(t.gw||74)/2, hh=(t.gh||62)/2;
-    openEditor(n.x-hw, n.y-hh, t.gw||74, t.gh||62, n.label||t.label, false, async v => {
-      const val = v||t.label;
-      if (val===n.label) { render(); return; }
-      pushUndo(`Edit gate ${n.fta_code||'gate'}`);
-      n.label=val; await autosave(id,{label:val}); render();
+  function openGatePicker(id) {
+    const n = byId(id); if (!n) return;
+    const GATE_OPTS = [
+      { type:'gate_and',     icon:'∧', label:'AND' },
+      { type:'gate_or',      icon:'∨', label:'OR'  },
+      { type:'gate_not',     icon:'¬', label:'NOT' },
+      { type:'gate_inhibit', icon:'⊘', label:'INH' },
+    ];
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:9999;display:flex;align-items:center;justify-content:center';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:10px;padding:20px 24px;box-shadow:0 8px 32px rgba(0,0,0,.2);font-family:inherit;min-width:260px';
+    box.innerHTML = `
+      <div style="font-size:13px;font-weight:700;color:#172B4D;margin-bottom:14px">Change gate type — <span style="color:#666;font-weight:400">${esc(n.fta_code||'gate')}</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${GATE_OPTS.map(g => `
+          <button data-gtype="${g.type}" style="padding:10px 8px;border:2px solid ${n.type===g.type?'#1A73E8':'#ddd'};border-radius:8px;background:${n.type===g.type?'#e8f0fe':'#fff'};cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:${n.type===g.type?'#1A73E8':'#333'}">
+            <span style="font-size:18px">${g.icon}</span>${g.label}
+            ${n.type===g.type?'<span style="margin-left:auto;font-size:10px;color:#1A73E8">current</span>':''}
+          </button>`).join('')}
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <button id="gp-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Cancel</button>
+      </div>`;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const cleanup = () => overlay.remove();
+    overlay.addEventListener('click', e => { if (e.target === overlay) cleanup(); });
+    box.querySelector('#gp-cancel').addEventListener('click', cleanup);
+    box.querySelectorAll('[data-gtype]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const newType = btn.dataset.gtype;
+        cleanup();
+        if (newType === n.type) return;
+        const oldType = n.type;
+        pushUndo(`Change gate ${n.fta_code||'gate'} → ${newType}`);
+        n.type = newType;
+        await autosave(id, { type: newType });
+        render(); recomputeMCS();
+        // Sync independence requirement: AND↔other
+        if (oldType === 'gate_and' && newType !== 'gate_and') {
+          // Removing AND → delete requirement
+          const gateSource = `FTA-AND:${id}`;
+          const { data: existing } = await sb.from('requirements')
+            .select('id').eq('project_id', project.id).eq('source', gateSource).maybeSingle();
+          if (existing) {
+            await sb.from('requirements').delete().eq('id', existing.id);
+            _safetyReqs = _safetyReqs.filter(r => r.source !== gateSource);
+            renderSreqsBar();
+          }
+        } else if (oldType !== 'gate_and' && newType === 'gate_and') {
+          // Becoming AND → create requirement if ≥2 children
+          syncAndGateReq(id);
+        }
+      });
     });
   }
 
