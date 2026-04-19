@@ -108,6 +108,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
   let _mcs        = [];               // current Minimal Cut Sets
   let _spfNodes   = new Set();        // node IDs on Single Point Failure paths
   let _mcsMaxOrder= 99;               // display cut sets up to this order
+  let _addBtnTimer = null;            // debounce timer for hiding + buttons
 
   // SPF annotation floating panel state (per-node, persisted in localStorage)
   const ANNOT_KEY = `fta_spf_annot_${parentType}_${parentId}`;
@@ -579,12 +580,14 @@ export async function renderFTA(container, { project, item, system, parentType, 
     layer.innerHTML=''; btnLayer.innerHTML='';
     _nodes.forEach(n => {
       const el = isGate(n.type) ? buildGateNode(n) : buildBoxNode(n);
-      // Lift add-child buttons to the top-layer group so they're always in front of all nodes
+      // Lift add-child buttons to the top-layer group (always in front); hidden until node hover
       el.querySelectorAll('.fta-add-child').forEach(btn => {
         const m = (btn.getAttribute('transform')||'').match(/translate\(\s*([^,]+),([^)]+)\)/);
         const bx = parseFloat(m?.[1]||0), by = parseFloat(m?.[2]||0);
         const clone = btn.cloneNode(true);
         clone.setAttribute('transform', `translate(${n.x + bx},${n.y + by})`);
+        clone.setAttribute('opacity', '0');
+        clone.setAttribute('pointer-events', 'none');
         btnLayer.appendChild(clone);
         btn.remove();
       });
@@ -943,6 +946,26 @@ export async function renderFTA(container, { project, item, system, parentType, 
     });
   }
 
+  function showAddBtn(nodeId) {
+    clearTimeout(_addBtnTimer);
+    const layer = document.getElementById('fta-add-btns-g'); if (!layer) return;
+    layer.querySelectorAll('.fta-add-child').forEach(el => {
+      const show = el.dataset.addFor === nodeId;
+      el.setAttribute('opacity', show ? '1' : '0');
+      el.setAttribute('pointer-events', show ? 'all' : 'none');
+    });
+  }
+  function hideAddBtns(delay = 80) {
+    clearTimeout(_addBtnTimer);
+    _addBtnTimer = setTimeout(() => {
+      const layer = document.getElementById('fta-add-btns-g'); if (!layer) return;
+      layer.querySelectorAll('.fta-add-child').forEach(el => {
+        el.setAttribute('opacity', '0');
+        el.setAttribute('pointer-events', 'none');
+      });
+    }, delay);
+  }
+
   // ── Canvas events ────────────────────────────────────────────────────────────
   function wireCanvas() {
     const wrap=container.querySelector('#fta-cw');
@@ -1074,6 +1097,26 @@ export async function renderFTA(container, { project, item, system, parentType, 
       }
       if (_panDrag && !_space) wrap.style.cursor='default';
       _panDrag=false;
+    });
+
+    // + button: show on node hover, hide when cursor leaves node AND its button
+    svg.addEventListener('mouseover', e => {
+      const nodeEl = e.target.closest('.fta-node');
+      if (nodeEl?.dataset.id) { showAddBtn(nodeEl.dataset.id); return; }
+      const btn = e.target.closest('.fta-add-child');
+      if (btn?.dataset.addFor) { showAddBtn(btn.dataset.addFor); }
+    });
+    svg.addEventListener('mouseout', e => {
+      // Only hide if the cursor is leaving towards something that is NOT the same node or its button
+      const from = e.target.closest('.fta-node') || e.target.closest('.fta-add-child');
+      if (!from) return;
+      const to = e.relatedTarget;
+      const toNode = to?.closest?.('.fta-node');
+      const toBtn  = to?.closest?.('.fta-add-child');
+      const fromId = from.dataset.id || from.dataset.addFor;
+      const toId   = toNode?.dataset.id || toBtn?.dataset.addFor;
+      if (fromId && fromId === toId) return; // still on same node or its button
+      hideAddBtns(80);
     });
 
   }
