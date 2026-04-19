@@ -1528,11 +1528,12 @@ export async function renderFTA(container, { project, item, system, parentType, 
   // ── FHA INFO helpers ──────────────────────────────────────────────────────────
   function getActiveFC() { return _fcs.find(f => f.id === _activeHazardId) || null; }
 
-  const CLS_COLOR = {
+  // Declared with var so they are hoisted above render() calls that happen before this line
+  var CLS_COLOR = {
     catastrophic: '#d93025', hazardous: '#E37400', major: '#F9AB00',
     minor: '#1A73E8', 'no safety effect': '#555',
   };
-  const DAL_COLOR = { 'DAL-A':'#d93025','DAL-B':'#E37400','DAL-C':'#F9AB00','DAL-D':'#1E8E3E','DAL-E':'#555' };
+  var DAL_COLOR = { 'DAL-A':'#d93025','DAL-B':'#E37400','DAL-C':'#F9AB00','DAL-D':'#1E8E3E','DAL-E':'#555' };
 
   function fhaInfoHTML(fc) {
     if (!fc) return '';
