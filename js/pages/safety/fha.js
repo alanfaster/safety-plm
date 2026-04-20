@@ -30,14 +30,16 @@ export async function renderFHA(container, ctx) {
     loadTree(parentType, parentId),
   ]);
 
-  const fields      = effectiveFHAFields(pcRow || null);
-  const allHazards  = hazards || [];
-  const funcTypes   = pcRow?.config?.function_types || [];
+  const fields         = effectiveFHAFields(pcRow || null);
+  const allHazards     = hazards || [];
+  const funcTypes      = pcRow?.config?.function_types || [];
+  const topEventField  = pcRow?.config?.fha_top_event_field || 'effect_item';
 
   const scope = {
     container, project, item, system,
     parentType, parentId,
     fields, tree: rawTree, allHazards, funcTypes,
+    topEventField,
   };
 
   paint(scope);
@@ -201,7 +203,10 @@ function funSection(fn, funHazards, scope) {
         <table class="fha-table" data-fn-id="${fn.id}">
           <thead><tr>
             <th class="fha-th-code">ID</th>
-            ${cols.map(f => `<th class="fha-th-${f.key}">${esc(f.label)}</th>`).join('')}
+            ${cols.map(f => {
+              const suffix = f.key === scope.topEventField ? ' <span class="fha-th-fta-badge" title="Used as FTA top event">FTA base</span>' : '';
+              return `<th class="fha-th-${f.key}">${esc(f.label)}${suffix}</th>`;
+            }).join('')}
             <th class="fha-th-status">Status</th>
             <th class="fha-th-actions"></th>
           </tr></thead>
@@ -446,20 +451,34 @@ async function generateHazopEntries(panel, fnId, funcType, scope) {
   const { data: newHazards, error } = await sb.from('hazards').insert(records).select();
   if (error) { toast('Error generating entries: ' + error.message, 'error'); return; }
 
-  // Auto-seed an FTA tree for each new Failure Condition
+  // Auto-seed FTA trees — deduplicated by top-event label
   if (newHazards?.length) {
-    const ftaSeeds = newHazards.map(h => ({
-      parent_type: scope.parentType,
-      parent_id:   scope.parentId,
-      project_id:  scope.project.id,
-      hazard_id:   h.id,
-      type:        'top_event',
-      label:       h.data?.failure_condition || h.haz_code,
-      component:   '',
-      fta_code:    'TE-01',
-      x: 400, y: 100, sort_order: 0, color: '',
-    }));
-    await sb.from('fta_nodes').insert(ftaSeeds);
+    const { data: existingTops } = await sb.from('fta_nodes')
+      .select('label')
+      .eq('parent_type', scope.parentType).eq('parent_id', scope.parentId)
+      .eq('type', 'top_event');
+    const existingLabels = new Set((existingTops || []).map(n => n.label));
+
+    const seen = new Set();
+    const ftaSeeds = [];
+    newHazards.forEach(h => {
+      const topLabel = h.data?.[scope.topEventField] || h.data?.failure_condition || h.haz_code;
+      if (topLabel && !existingLabels.has(topLabel) && !seen.has(topLabel)) {
+        seen.add(topLabel);
+        ftaSeeds.push({
+          parent_type: scope.parentType,
+          parent_id:   scope.parentId,
+          project_id:  scope.project.id,
+          hazard_id:   h.id,
+          type:        'top_event',
+          label:       topLabel,
+          component:   '',
+          fta_code:    'TE-01',
+          x: 400, y: 100, sort_order: 0, color: '',
+        });
+      }
+    });
+    if (ftaSeeds.length) await sb.from('fta_nodes').insert(ftaSeeds);
   }
 
   toast(`${records.length} FHA entr${records.length === 1 ? 'y' : 'ies'} + FTAs created.`, 'success');
@@ -516,22 +535,20 @@ function openEditRow(haz, scope) {
   const cols = visibleCols(scope.fields);
   const d    = haz.data || {};
 
-  const selOpts = (opts, val) => (opts || []).map(o =>
-    `<option value="${esc(o)}" ${val === o ? 'selected' : ''}>${esc(o)}</option>`).join('');
+  // Inject datalist for top-event autocomplete (appended to <tbody>, removed on restore)
+  const existingDl = tr.closest('tbody')?.querySelector('#fha-dl-top-event');
+  if (!existingDl) {
+    const dl = document.createElement('template');
+    dl.innerHTML = topEventDatalistHTML(scope);
+    tr.closest('tbody')?.append(...dl.content.childNodes);
+  }
 
   // Transform each data cell into an input
   cols.forEach(f => {
     const td = tr.querySelector(`.fha-td-${f.key}`);
     if (!td) return;
     td.dataset.origHtml = td.innerHTML;
-    const val = d[f.key] || '';
-    if (f.type === 'select' || f.type === 'badge_select') {
-      td.innerHTML = `<select class="form-input fha-ir-input" id="fha-ir-${f.key}">${selOpts(f.options, val)}</select>`;
-    } else if (f.type === 'textarea') {
-      td.innerHTML = `<textarea class="form-input fha-ir-input" id="fha-ir-${f.key}" rows="2">${esc(val)}</textarea>`;
-    } else {
-      td.innerHTML = `<input class="form-input fha-ir-input" id="fha-ir-${f.key}" value="${esc(val)}"/>`;
-    }
+    td.innerHTML = inputForField(f, d[f.key] || '', scope);
   });
 
   // Status cell
@@ -588,12 +605,40 @@ function restoreRow(tr) {
     td.innerHTML = td.dataset.origHtml;
     delete td.dataset.origHtml;
   });
+  tr.closest('tbody')?.querySelector('#fha-dl-top-event')?.remove();
 }
 
 function cancelAllEdits(scope) {
   scope.container.querySelectorAll('.fha-row-editing').forEach(tr => restoreRow(tr));
   scope.container.querySelectorAll('.fha-inline-tr').forEach(el => el.remove());
   scope.container.querySelectorAll('.btn-add-fn-fha').forEach(b => b.textContent = '＋ Add FHA');
+}
+
+// ── Top-event datalist ────────────────────────────────────────────────────────
+
+function topEventDatalistHTML(scope) {
+  const vals = [...new Set(
+    scope.allHazards
+      .map(h => h.data?.[scope.topEventField])
+      .filter(v => v && v !== '—')
+  )];
+  if (!vals.length) return '';
+  return `<datalist id="fha-dl-top-event">
+    ${vals.map(v => `<option value="${esc(v)}">`).join('')}
+  </datalist>`;
+}
+
+function inputForField(f, val, scope) {
+  if (f.type === 'select' || f.type === 'badge_select') {
+    const selOpts = (opts, v) => (opts || []).map(o =>
+      `<option value="${esc(o)}" ${v === o ? 'selected' : ''}>${esc(o)}</option>`).join('');
+    return `<select class="form-input fha-ir-input" id="fha-ir-${f.key}">${selOpts(f.options, val)}</select>`;
+  }
+  if (f.type === 'textarea') {
+    return `<textarea class="form-input fha-ir-input" id="fha-ir-${f.key}" rows="2">${esc(val)}</textarea>`;
+  }
+  const listAttr = f.key === scope.topEventField ? ' list="fha-dl-top-event"' : '';
+  return `<input class="form-input fha-ir-input" id="fha-ir-${f.key}" value="${esc(val)}" placeholder="${esc(f.label)}"${listAttr}/>`;
 }
 
 // ── Inline row HTML (returns <td> cells, inserted into a <tr>) ───────────────
@@ -603,23 +648,10 @@ function inlineRowHTML(haz, fnId, scope) {
   const cols   = visibleCols(scope.fields);
   const statusVal = haz?.status || 'open';
 
-  const selOpts = (opts, val) => (opts || []).map(o =>
-    `<option value="${esc(o)}" ${val === o ? 'selected' : ''}>${esc(o)}</option>`).join('');
-
-  const inputFor = (f) => {
-    const val = d[f.key] || '';
-    if (f.type === 'select' || f.type === 'badge_select') {
-      return `<select class="form-input fha-ir-input" id="fha-ir-${f.key}">${selOpts(f.options, val)}</select>`;
-    }
-    if (f.type === 'textarea') {
-      return `<textarea class="form-input fha-ir-input" id="fha-ir-${f.key}" rows="2">${esc(val)}</textarea>`;
-    }
-    return `<input class="form-input fha-ir-input" id="fha-ir-${f.key}" value="${esc(val)}" placeholder="${esc(f.label)}"/>`;
-  };
-
   return `
+    ${topEventDatalistHTML(scope)}
     <td class="fha-td-code"><span class="pha-mono fha-ir-newlabel">${haz ? esc(haz.haz_code) : 'new'}</span></td>
-    ${cols.map(f => `<td class="fha-td-${f.key} fha-td-input">${inputFor(f)}</td>`).join('')}
+    ${cols.map(f => `<td class="fha-td-${f.key} fha-td-input">${inputForField(f, d[f.key] || '', scope)}</td>`).join('')}
     <td class="fha-td-status fha-td-input">
       <select class="form-input fha-ir-input" id="fha-ir-status">
         ${['open','in_progress','closed','n/a'].map(s =>
@@ -674,25 +706,33 @@ async function saveRow(row, existingHaz, fnId, scope, onDone) {
       data, status, sort_order: idx,
     }).select().single());
 
-    // Auto-seed an FTA tree for this new Failure Condition
+    // Auto-seed an FTA tree — one per unique top-event value (no duplicates)
     if (!error && newHaz) {
-      await sb.from('fta_nodes').insert({
-        parent_type: scope.parentType,
-        parent_id:   scope.parentId,
-        project_id:  scope.project.id,
-        hazard_id:   newHaz.id,
-        type:        'top_event',
-        label:       data.failure_condition,
-        component:   '',
-        fta_code:    'TE-01',
-        x: 400, y: 100, sort_order: 0, color: '',
-      });
+      const topLabel = data[scope.topEventField] || data.failure_condition || newHaz.haz_code;
+      if (topLabel) {
+        const { data: existing } = await sb.from('fta_nodes')
+          .select('id').eq('parent_type', scope.parentType).eq('parent_id', scope.parentId)
+          .eq('type', 'top_event').eq('label', topLabel).maybeSingle();
+        if (!existing) {
+          await sb.from('fta_nodes').insert({
+            parent_type: scope.parentType,
+            parent_id:   scope.parentId,
+            project_id:  scope.project.id,
+            hazard_id:   newHaz.id,
+            type:        'top_event',
+            label:       topLabel,
+            component:   '',
+            fta_code:    'TE-01',
+            x: 400, y: 100, sort_order: 0, color: '',
+          });
+        }
+      }
     }
   }
 
   if (error) { toast('Error saving: ' + error.message, 'error'); console.error(error); return; }
-  toast(existingHaz ? 'Updated.' : 'FHA entry added. FTA created.', 'success');
-  row.remove();
+  toast(existingHaz ? 'Updated.' : 'FHA entry added.', 'success');
+  if (row.tagName === 'TR') row.remove();
   if (onDone) onDone();
   await reload(scope);
 }

@@ -102,6 +102,13 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, c
             Configure which columns are shown in the FHA table for this project.
             Label changes only affect this project.
           </p>
+          <div class="settings-row" style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+            <label style="font-weight:600;font-size:var(--text-sm);white-space:nowrap">FTA Top Event column:</label>
+            <select class="form-input" id="fha-top-event-select" style="max-width:260px">
+              ${DEFAULT_FHA_FIELDS.map(f => `<option value="${escHtml(f.key)}" ${(fullConfig.fha_top_event_field||'effect_item')===f.key?'selected':''}>${escHtml(f.label)}</option>`).join('')}
+            </select>
+            <span style="font-size:var(--text-xs);color:var(--color-text-muted)">One FTA tree created per unique value. Default: Item Effect.</span>
+          </div>
           <table class="settings-table">
             <thead>
               <tr>
@@ -236,7 +243,8 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, c
       fha_fields[key] = patch;
     });
 
-    const newConfig = { ...fullConfig, fha_fields };
+    const fha_top_event_field = document.getElementById('fha-top-event-select')?.value || 'effect_item';
+    const newConfig = { ...fullConfig, fha_fields, fha_top_event_field };
     let error;
     if (configId) {
       ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));
