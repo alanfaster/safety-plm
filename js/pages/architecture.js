@@ -14,6 +14,7 @@
  */
 
 import { sb } from '../config.js';
+import { wireBottomPanel } from '../utils/bottom-panel.js';
 import { toast, toastPersist, toastDismiss } from '../toast.js';
 import { showModal, hideModal, confirmDialog } from '../components/modal.js';
 import { getFeaturesTree, ICONS as IDEF_ICONS } from './item-definition.js';
@@ -257,8 +258,6 @@ function buildShell(container, title) {
         <div class="arch-topbar-right">
           <div class="arch-sep"></div>
           <button class="arch-tb-btn" id="btn-arch-frame" title="Architecture Frame tree">🗂 Frame</button>
-          <button class="arch-tb-btn" id="btn-arch-idef" title="Item Definition panel">★ Item Def</button>
-          <button class="arch-tb-btn" id="btn-arch-ifreqs" title="Interface Requirements panel">⇄ Interfaces</button>
         </div>
       </div>
       <div class="arch-workspace">
@@ -356,25 +355,26 @@ function buildShell(container, title) {
       </div>
 
       <!-- Interface Requirements panel (bottom) -->
-      <div class="arch-idef-panel arch-ifreqs-panel" id="arch-ifreqs-panel" style="display:none">
-        <div class="arch-idef-resize-bar" id="arch-ifreqs-resize-bar" title="Drag to resize"></div>
-        <div class="arch-idef-hdr">
-          <span class="arch-idef-title">⇄ Interface Requirements</span>
-          <button class="arch-tb-btn" id="arch-ifreqs-close" title="Close">✕</button>
+      <div class="bp-bar bp-collapsed arch-bp-ifreqs" id="arch-ifreqs-panel">
+        <div class="bp-resize-handle"></div>
+        <div class="bp-hdr">
+          <span class="bp-title">⇄ Interface Requirements</span>
+          <span class="bp-toggle">▲</span>
         </div>
-        <div class="arch-idef-body" id="arch-ifreqs-body">
+        <div class="bp-body arch-idef-body" id="arch-ifreqs-body">
           <div class="arch-idef-loading">Loading…</div>
         </div>
       </div>
 
       <!-- Item Definition panel (bottom) -->
-      <div class="arch-idef-panel" id="arch-idef-panel">
-        <div class="arch-idef-resize-bar" id="arch-idef-resize-bar" title="Drag to resize"></div>
-        <div class="arch-idef-hdr">
-          <span class="arch-idef-title">★ Item Definition <span class="arch-idef-hint">— drag a function onto a component to assign it</span></span>
-          <button class="arch-tb-btn" id="arch-idef-close" title="Close">✕</button>
+      <div class="bp-bar bp-collapsed arch-bp-idef" id="arch-idef-panel">
+        <div class="bp-resize-handle"></div>
+        <div class="bp-hdr">
+          <span class="bp-title">★ Item Definition</span>
+          <span class="bp-subtitle">drag a function onto a component to assign it</span>
+          <span class="bp-toggle">▲</span>
         </div>
-        <div class="arch-idef-body" id="arch-idef-body">
+        <div class="bp-body arch-idef-body" id="arch-idef-body">
           <div class="arch-idef-loading">Loading…</div>
         </div>
       </div>
@@ -792,62 +792,18 @@ function wireCanvas() {
     if (panel) panel.style.display = 'none';
   });
 
-  // Interface Requirements panel toggle + resize
-  document.getElementById('btn-arch-ifreqs')?.addEventListener('click', () => {
-    const panel = document.getElementById('arch-ifreqs-panel');
-    if (!panel) return;
-    const opening = panel.style.display === 'none';
-    panel.style.display = opening ? '' : 'none';
-    if (opening) loadIfaceReqs();
-  });
-  document.getElementById('arch-ifreqs-close')?.addEventListener('click', () => {
-    const panel = document.getElementById('arch-ifreqs-panel');
-    if (panel) panel.style.display = 'none';
-  });
-  const ifreqsPanel = document.getElementById('arch-ifreqs-panel');
-  const ifreqsResizeBar = document.getElementById('arch-ifreqs-resize-bar');
-  if (ifreqsPanel && ifreqsResizeBar) {
-    let drag = null;
-    ifreqsResizeBar.addEventListener('pointerdown', e => {
-      e.preventDefault();
-      drag = { startY: e.clientY, origH: ifreqsPanel.offsetHeight };
-      ifreqsResizeBar.setPointerCapture(e.pointerId);
-    });
-    ifreqsResizeBar.addEventListener('pointermove', e => {
-      if (!drag) return;
-      const h = Math.max(100, Math.min(600, drag.origH - (e.clientY - drag.startY)));
-      ifreqsPanel.style.height = h + 'px';
-    });
-    ifreqsResizeBar.addEventListener('pointerup', () => { drag = null; });
-  }
-
-  // Item Definition panel toggle
-  document.getElementById('btn-arch-idef')?.addEventListener('click', () => {
-    const panel = document.getElementById('arch-idef-panel');
-    if (panel) panel.style.display = panel.style.display === 'none' ? '' : 'none';
-  });
-  document.getElementById('arch-idef-close')?.addEventListener('click', () => {
-    const panel = document.getElementById('arch-idef-panel');
-    if (panel) panel.style.display = 'none';
+  // Interface Requirements panel — bp-bar (lazy load on first expand)
+  wireBottomPanel(document.getElementById('arch-ifreqs-panel'), {
+    key: 'arch_ifreqs_h',
+    defaultH: 220,
+    onExpand: () => loadIfaceReqs(),
   });
 
-  // Idef panel vertical resize via top drag bar
-  const idefPanel = document.getElementById('arch-idef-panel');
-  const idefResizeBar = document.getElementById('arch-idef-resize-bar');
-  if (idefPanel && idefResizeBar) {
-    let idefDrag = null;
-    idefResizeBar.addEventListener('pointerdown', e => {
-      e.preventDefault();
-      idefDrag = { startY: e.clientY, origH: idefPanel.offsetHeight };
-      idefResizeBar.setPointerCapture(e.pointerId);
-    });
-    idefResizeBar.addEventListener('pointermove', e => {
-      if (!idefDrag) return;
-      const h = Math.max(100, Math.min(600, idefDrag.origH - (e.clientY - idefDrag.startY)));
-      idefPanel.style.height = h + 'px';
-    });
-    idefResizeBar.addEventListener('pointerup', () => { idefDrag = null; });
-  }
+  // Item Definition panel — bp-bar (load eagerly, content ready when expanded)
+  wireBottomPanel(document.getElementById('arch-idef-panel'), {
+    key: 'arch_idef_h',
+    defaultH: 200,
+  });
 
   // Load idef data
   loadIdefData();
