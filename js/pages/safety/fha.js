@@ -21,13 +21,15 @@ export async function renderFHA(container, ctx) {
 
   container.innerHTML = '<div class="content-loading"><div class="spinner"></div></div>';
 
-  const [{ data: pcRow }, { data: hazards }, rawTree] = await Promise.all([
+  const [{ data: pcRow }, { data: hazards }, rawTree, { data: ftaTops }] = await Promise.all([
     sb.from('project_config').select('config').eq('project_id', project.id).maybeSingle(),
     sb.from('hazards')
       .select('*').eq('parent_type', parentType).eq('parent_id', parentId)
       .eq('analysis_type', 'FHA')
       .order('sort_order'),
     loadTree(parentType, parentId),
+    sb.from('fta_nodes').select('id,label,hazard_id')
+      .eq('parent_type', parentType).eq('parent_id', parentId).eq('type', 'top_event'),
   ]);
 
   const fields         = effectiveFHAFields(pcRow || null);
@@ -39,7 +41,7 @@ export async function renderFHA(container, ctx) {
     container, project, item, system,
     parentType, parentId,
     fields, tree: rawTree, allHazards, funcTypes,
-    topEventField,
+    topEventField, topEventNodes: ftaTops || [],
   };
 
   paint(scope);
@@ -81,12 +83,14 @@ function paint(scope) {
         : tree.map(feat => featSection(feat, hazByFun, scope)).join('')
       }
     </div>
+    ${ftaEventsPanel(scope)}
   `;
 
   container.querySelector('#btn-fha-cfg').onclick = () => navigate(settingsPath);
   const _pdfTitle = `${project.name}${(scope.item?.name || scope.system?.name) ? ' — ' + (scope.item?.name || scope.system?.name) : ''}`;
   container.querySelector('#btn-fha-pdf').onclick = () => exportFHApdf(container, _pdfTitle);
   wireRows(container, scope, hazByFun);
+  wireFTAPanel(container, scope);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -737,18 +741,133 @@ async function saveRow(row, existingHaz, fnId, scope, onDone) {
   await reload(scope);
 }
 
+// ── FTA Top Events bottom panel ───────────────────────────────────────────────
+
+function ftaPath(scope) {
+  const { project, item, system } = scope;
+  if (system) return `/project/${project.id}/item/${item.id}/system/${system.id}/safety/FTA`;
+  return `/project/${project.id}/item/${item.id}/safety/FTA`;
+}
+
+function uniqueTopEvents(scope) {
+  const seen = new Set();
+  const result = [];
+  scope.allHazards.forEach(h => {
+    const val = h.data?.[scope.topEventField];
+    if (val && val !== '—' && !seen.has(val)) {
+      seen.add(val);
+      result.push({ label: val, hazard: h });
+    }
+  });
+  return result;
+}
+
+function ftaEventsPanel(scope) {
+  const events    = uniqueTopEvents(scope);
+  const existingLabels = new Set(scope.topEventNodes.map(n => n.label));
+  const topField  = scope.fields.find(f => f.key === scope.topEventField);
+  const fieldLabel = topField?.label || scope.topEventField;
+
+  const rows = events.map(ev => {
+    const exists  = existingLabels.has(ev.label);
+    const hazCodes = scope.allHazards
+      .filter(h => h.data?.[scope.topEventField] === ev.label)
+      .map(h => h.haz_code).join(', ');
+    return `
+      <div class="fha-tev-row" data-label="${esc(ev.label)}" data-haz-id="${ev.hazard.id}">
+        <div class="fha-tev-info">
+          <span class="fha-tev-label">${esc(ev.label)}</span>
+          <span class="fha-tev-refs">${esc(hazCodes)}</span>
+        </div>
+        <div class="fha-tev-actions">
+          ${exists
+            ? `<span class="fha-tev-badge fha-tev-badge--ok" title="FTA tree exists">✓ FTA exists</span>`
+            : `<span class="fha-tev-badge fha-tev-badge--missing" title="No FTA yet">— No FTA</span>`}
+          <button class="btn btn-sm btn-fta-open ${exists ? 'btn-secondary' : 'btn-primary'}"
+            data-label="${esc(ev.label)}" data-haz-id="${ev.hazard.id}"
+            title="${exists ? 'Open FTA' : 'Generate FTA and open'}">
+            ${exists ? '→ Open FTA' : '⚡ Generate FTA'}
+          </button>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="fha-tev-panel" id="fha-tev-panel">
+      <div class="fha-tev-header">
+        <div class="fha-tev-title">
+          <span>⚡ Identified FTA top events</span>
+          <span class="fha-tev-subtitle">based on column: <strong>${esc(fieldLabel)}</strong> · ${events.length} unique value${events.length !== 1 ? 's' : ''}</span>
+        </div>
+        ${events.length
+          ? `<button class="btn btn-primary btn-sm" id="btn-gen-all-fta">⚡ Generate all FTAs</button>`
+          : ''}
+      </div>
+      <div class="fha-tev-body">
+        ${events.length
+          ? rows
+          : `<span class="fha-tev-empty">No top-event values found yet — add FHA entries to see them here.</span>`}
+      </div>
+    </div>`;
+}
+
+async function ensureFtaNode(label, hazardId, scope) {
+  const { data: existing } = await sb.from('fta_nodes')
+    .select('id').eq('parent_type', scope.parentType).eq('parent_id', scope.parentId)
+    .eq('type', 'top_event').eq('label', label).maybeSingle();
+  if (existing) return;
+  await sb.from('fta_nodes').insert({
+    parent_type: scope.parentType,
+    parent_id:   scope.parentId,
+    project_id:  scope.project.id,
+    hazard_id:   hazardId,
+    type:        'top_event',
+    label,
+    component:   '',
+    fta_code:    'TE-01',
+    x: 400, y: 100, sort_order: 0, color: '',
+  });
+}
+
+function wireFTAPanel(container, scope) {
+  // Per-event generate/open
+  container.querySelectorAll('.btn-fta-open').forEach(btn => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = '…';
+      await ensureFtaNode(btn.dataset.label, btn.dataset.hazId, scope);
+      navigate(ftaPath(scope));
+    };
+  });
+
+  // Generate all
+  container.querySelector('#btn-gen-all-fta')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating…';
+    const events = uniqueTopEvents(scope);
+    for (const ev of events) {
+      await ensureFtaNode(ev.label, ev.hazard.id, scope);
+    }
+    navigate(ftaPath(scope));
+  });
+}
+
 // ── Reload ────────────────────────────────────────────────────────────────────
 
 async function reload(scope) {
-  const [{ data: hazards }, rawTree] = await Promise.all([
+  const [{ data: hazards }, rawTree, { data: ftaTops }] = await Promise.all([
     sb.from('hazards')
       .select('*').eq('parent_type', scope.parentType).eq('parent_id', scope.parentId)
       .eq('analysis_type', 'FHA')
       .order('sort_order'),
     loadTree(scope.parentType, scope.parentId),
+    sb.from('fta_nodes').select('id,label,hazard_id')
+      .eq('parent_type', scope.parentType).eq('parent_id', scope.parentId).eq('type', 'top_event'),
   ]);
-  scope.allHazards = hazards || [];
-  scope.tree       = rawTree;
+  scope.allHazards     = hazards || [];
+  scope.tree           = rawTree;
+  scope.topEventNodes  = ftaTops || [];
   paint(scope);
 }
 
