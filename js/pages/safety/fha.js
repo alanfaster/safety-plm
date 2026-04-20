@@ -65,26 +65,30 @@ function paint(scope) {
   const settingsPath = `/project/${project.id}/settings`;
 
   container.innerHTML = `
-    <div class="page-header">
-      <div class="page-header-top">
-        <div>
-          <h1>FHA</h1>
-          <p class="page-subtitle">Functional Hazard Assessment · ARP4761</p>
+    <div class="fha-wrap">
+      <div class="page-header fha-page-header">
+        <div class="page-header-top">
+          <div>
+            <h1>FHA</h1>
+            <p class="page-subtitle">Functional Hazard Assessment · ARP4761</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-secondary btn-sm" id="btn-fha-pdf" title="Export to PDF">📄 PDF</button>
+            <button class="btn btn-secondary btn-sm" id="btn-fha-cfg">⚙ Configure</button>
+          </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn btn-secondary btn-sm" id="btn-fha-pdf" title="Export to PDF">📄 PDF</button>
-          <button class="btn btn-secondary btn-sm" id="btn-fha-cfg">⚙ Configure</button>
+        ${allHazards.length ? summaryBar(allHazards, clsField) : ''}
+      </div>
+      <div class="fha-scroll-body" id="fha-body">
+        <div class="pha-body">
+          ${tree.length === 0
+            ? noFunctionsHint(project, scope)
+            : tree.map(feat => featSection(feat, hazByFun, scope)).join('')
+          }
         </div>
       </div>
-      ${allHazards.length ? summaryBar(allHazards, clsField) : ''}
+      ${ftaEventsPanel(scope)}
     </div>
-    <div class="page-body pha-body" id="fha-body">
-      ${tree.length === 0
-        ? noFunctionsHint(project, scope)
-        : tree.map(feat => featSection(feat, hazByFun, scope)).join('')
-      }
-    </div>
-    ${ftaEventsPanel(scope)}
   `;
 
   container.querySelector('#btn-fha-cfg').onclick = () => navigate(settingsPath);
@@ -836,7 +840,7 @@ function wireFTAPanel(container, scope) {
   if (bar) {
     wireBottomPanel(bar, {
       key: `fha_tev_h_${scope.parentType}_${scope.parentId}`,
-      defaultH: 240,
+      defaultH: 320,
     });
   }
 

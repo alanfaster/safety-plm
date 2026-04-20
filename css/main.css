@@ -1410,6 +1410,28 @@ input, select, textarea { font-family: var(--font); }
 }
 
 /* ============================================================
+   FHA page layout (flex-column so bp-bar sticks at bottom)
+   ============================================================ */
+
+.fha-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.fha-page-header {
+  flex-shrink: 0;
+}
+
+.fha-scroll-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 24px 8px;
+}
+
+/* ============================================================
    FHA page — Function section
    ============================================================ */
 
