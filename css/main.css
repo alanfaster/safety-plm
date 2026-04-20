@@ -1399,22 +1399,24 @@ input, select, textarea { font-family: var(--font); }
 .fha-table thead th {
   background: var(--color-bg-subtle);
   border: 1px solid var(--color-border);
-  padding: 5px 8px;
+  padding: 3px 7px;
   font-weight: 600;
   color: var(--color-text-muted);
   white-space: nowrap;
   text-align: left;
+  font-size: var(--text-xs);
 }
 
 .fha-table tbody td {
   border: 1px solid var(--color-border);
-  padding: 5px 8px;
+  padding: 2px 7px;
   vertical-align: middle;
+  line-height: 1.4;
 }
 
-.fha-haz-row:hover td {
-  background: var(--color-bg-subtle);
-}
+.fha-haz-row { cursor: default; }
+.fha-haz-row:hover td { background: var(--color-bg-subtle); }
+.fha-haz-row[title] { cursor: pointer; }
 
 /* Column widths */
 .fha-th-code,  .fha-td-code   { width: 90px; white-space: nowrap; }
@@ -1452,10 +1454,23 @@ input, select, textarea { font-family: var(--font); }
 
 .fha-ir-input {
   width: 100%;
-  min-width: 80px;
+  min-width: 70px;
   font-size: var(--text-xs);
-  padding: 3px 5px;
+  padding: 1px 4px;
+  height: 22px;
 }
+
+.fha-ir-input textarea {
+  height: auto;
+  padding: 2px 4px;
+}
+
+.fha-discard-btn {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+  font-size: 11px;
+}
+.fha-discard-btn:hover { opacity: 1; color: var(--color-danger); }
 
 .fha-ir-newlabel {
   color: var(--color-text-subtle);

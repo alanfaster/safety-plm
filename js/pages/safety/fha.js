@@ -237,7 +237,7 @@ function hazRow(h, cols, scope) {
   };
 
   return `
-    <tr class="fha-haz-row" data-haz-id="${h.id}">
+    <tr class="fha-haz-row" data-haz-id="${h.id}" title="Double-click to edit">
       <td class="fha-td-code"><span class="pha-mono">${esc(h.haz_code)}</span></td>
       ${cols.map(f => `<td class="fha-td-${f.key}">${cellContent(f)}</td>`).join('')}
       <td class="fha-td-status"><span class="pha-status-chip" style="background:${sc}20;color:${sc}">${esc(h.status)}</span></td>
@@ -293,12 +293,21 @@ function wireRows(container, scope, hazByFun) {
     };
   });
 
-  // Edit
+  // Edit button
   container.querySelectorAll('.btn-edit-fha').forEach(btn => {
     btn.onclick = () => {
       const haz = scope.allHazards.find(h => h.id === btn.dataset.id);
       if (haz) openEditRow(haz, scope);
     };
+  });
+
+  // Double-click any data cell to edit
+  container.querySelectorAll('.fha-haz-row').forEach(tr => {
+    tr.addEventListener('dblclick', e => {
+      if (e.target.closest('.fha-td-actions')) return;
+      const haz = scope.allHazards.find(h => h.id === tr.dataset.hazId);
+      if (haz && !tr.classList.contains('fha-row-editing')) openEditRow(haz, scope);
+    });
   });
 
   // Delete
@@ -535,25 +544,41 @@ function openEditRow(haz, scope) {
     </select>`;
   }
 
-  // Actions cell — replace with Save / Cancel
+  // Actions cell — show discard button; save fires on blur automatically
   const actionsTd = tr.querySelector('.fha-td-actions');
   if (actionsTd) {
     actionsTd.dataset.origHtml = actionsTd.innerHTML;
-    actionsTd.innerHTML = `
-      <button class="btn btn-primary btn-sm pha-ir-save" title="Save">✓</button>
-      <button class="btn btn-secondary btn-sm pha-ir-cancel" title="Cancel">✗</button>`;
-    actionsTd.querySelector('.pha-ir-save').onclick   = () => saveRow(tr, haz, haz.function_id, scope);
-    actionsTd.querySelector('.pha-ir-cancel').onclick = () => restoreRow(tr);
+    actionsTd.innerHTML = `<button class="btn-icon fha-discard-btn" title="Discard (Esc)">✗</button>`;
+    actionsTd.querySelector('.fha-discard-btn').onmousedown = e => {
+      e.preventDefault(); // prevent blur from firing first
+      restoreRow(tr);
+    };
   }
 
-  tr.querySelectorAll('input, select, textarea').forEach(el => {
+  // Auto-save on blur (when focus leaves the row entirely)
+  let _blurTimer;
+  tr.querySelectorAll('.fha-ir-input').forEach(el => {
+    el.addEventListener('blur', () => {
+      _blurTimer = setTimeout(() => {
+        if (tr.classList.contains('fha-row-editing') && !tr.contains(document.activeElement)) {
+          saveRow(tr, haz, haz.function_id, scope);
+        }
+      }, 180);
+    });
+    el.addEventListener('focus', () => clearTimeout(_blurTimer));
     el.onkeydown = e => {
-      if (e.key === 'Enter')  { e.preventDefault(); tr.querySelector('.pha-ir-save')?.click(); }
-      if (e.key === 'Escape') { e.preventDefault(); tr.querySelector('.pha-ir-cancel')?.click(); }
+      if (e.key === 'Escape') { e.preventDefault(); clearTimeout(_blurTimer); restoreRow(tr); }
+      // Enter on non-textarea: move to next input, auto-save will fire on final blur
+      if (e.key === 'Enter' && el.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        const inputs = [...tr.querySelectorAll('.fha-ir-input')];
+        const next = inputs[inputs.indexOf(el) + 1];
+        if (next) next.focus(); else el.blur();
+      }
     };
   });
 
-  const first = tr.querySelector('input, textarea');
+  const first = tr.querySelector('.fha-ir-input');
   if (first) { first.focus(); first.select?.(); }
 }
 
