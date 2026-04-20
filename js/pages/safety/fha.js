@@ -7,6 +7,7 @@
  * a HAZOP panel shows checkboxes for bulk FHA entry generation.
  */
 import { sb, effectiveFHAFields, buildCode } from '../../config.js';
+import { wireBottomPanel } from '../../utils/bottom-panel.js';
 import { getFeaturesTree, ICONS } from '../item-definition.js';
 import { t } from '../../i18n/index.js';
 import { confirmDialog } from '../../components/modal.js';
@@ -793,17 +794,17 @@ function ftaEventsPanel(scope) {
   }).join('');
 
   return `
-    <div class="fha-tev-panel" id="fha-tev-panel">
-      <div class="fha-tev-header">
-        <div class="fha-tev-title">
-          <span>⚡ Identified FTA top events</span>
-          <span class="fha-tev-subtitle">based on column: <strong>${esc(fieldLabel)}</strong> · ${events.length} unique value${events.length !== 1 ? 's' : ''}</span>
-        </div>
+    <div class="bp-bar bp-collapsed fha-tev-panel" id="fha-tev-panel">
+      <div class="bp-resize-handle"></div>
+      <div class="bp-hdr">
+        <span class="bp-title">⚡ Identified FTA top events</span>
+        <span class="bp-subtitle">column: <strong>${esc(fieldLabel)}</strong> · ${events.length} unique value${events.length !== 1 ? 's' : ''}</span>
         ${events.length
-          ? `<button class="btn btn-primary btn-sm" id="btn-gen-all-fta">⚡ Generate all FTAs</button>`
+          ? `<button class="btn btn-primary btn-sm" id="btn-gen-all-fta" style="margin-left:8px">⚡ Generate all FTAs</button>`
           : ''}
+        <span class="bp-toggle">▲</span>
       </div>
-      <div class="fha-tev-body">
+      <div class="bp-body fha-tev-body">
         ${events.length
           ? rows
           : `<span class="fha-tev-empty">No top-event values found yet — add FHA entries to see them here.</span>`}
@@ -830,6 +831,15 @@ async function ensureFtaNode(label, hazardId, scope) {
 }
 
 function wireFTAPanel(container, scope) {
+  // Wire collapse/expand/resize
+  const bar = container.querySelector('#fha-tev-panel');
+  if (bar) {
+    wireBottomPanel(bar, {
+      key: `fha_tev_h_${scope.parentType}_${scope.parentId}`,
+      defaultH: 240,
+    });
+  }
+
   // Per-event generate/open
   container.querySelectorAll('.btn-fta-open').forEach(btn => {
     btn.onclick = async () => {

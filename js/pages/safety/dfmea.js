@@ -20,6 +20,7 @@
  */
 
 import { sb, buildCode, nextIndex } from '../../config.js';
+import { wireBottomPanel } from '../../utils/bottom-panel.js';
 import { toast } from '../../toast.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -130,8 +131,6 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
           <p class="page-subtitle">Design FMEA · VDA 2019 · ${esc(parentName)}</p>
         </div>
         <div class="dfmea-toolbar">
-          <button class="dfmea-tb-btn" id="btn-dfmea-map"   title="Toggle Structure Map">◈ Structure</button>
-          <button class="dfmea-tb-btn" id="btn-dfmea-chain" title="Toggle chain">⬡ Chain</button>
           <div class="arch-sep"></div>
           <button class="btn btn-secondary btn-sm" id="btn-dfmea-sync">⟳ Sync from System</button>
           <button class="btn btn-primary   btn-sm" id="btn-dfmea-new" title="Add new Component / Function group">＋ New</button>
@@ -142,23 +141,23 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
       <div class="dfmea-table-area" id="dfmea-table-area">
         <div class="content-loading"><div class="spinner"></div></div>
       </div>
-      <div class="dfmea-bottom-panel" id="dfmea-map-panel" style="display:none">
-        <div class="dfmea-panel-resize-bar" id="dfmea-map-resize"></div>
-        <div class="dfmea-panel-hdr">
-          <span class="dfmea-panel-title">◈ Structure Map</span>
-          <span class="dfmea-panel-hint">Live — dblclick to edit</span>
-          <button class="dfmea-tb-btn" id="btn-dfmea-net">⇄ Net</button>
-          <button class="dfmea-tb-btn" id="dfmea-map-close">✕</button>
+      <div class="bp-bar bp-collapsed dfmea-bp-map" id="dfmea-map-panel">
+        <div class="bp-resize-handle"></div>
+        <div class="bp-hdr">
+          <span class="bp-title">◈ Structure Map</span>
+          <span class="bp-subtitle">Live — dblclick to edit</span>
+          <button class="dfmea-tb-btn" id="btn-dfmea-net" style="margin-left:8px">⇄ Net</button>
+          <span class="bp-toggle">▲</span>
         </div>
-        <div class="dfmea-map-body" id="dfmea-map-body"></div>
+        <div class="bp-body dfmea-map-body" id="dfmea-map-body"></div>
       </div>
-      <div class="dfmea-bottom-panel" id="dfmea-chain-panel" style="display:none">
-        <div class="dfmea-panel-resize-bar" id="dfmea-chain-resize"></div>
-        <div class="dfmea-panel-hdr">
-          <span class="dfmea-panel-title">⬡ Structure — Function — Failure Chain</span>
-          <button class="dfmea-tb-btn" id="dfmea-chain-close">✕</button>
+      <div class="bp-bar bp-collapsed dfmea-bp-chain" id="dfmea-chain-panel">
+        <div class="bp-resize-handle"></div>
+        <div class="bp-hdr">
+          <span class="bp-title">⬡ Structure — Function — Failure Chain</span>
+          <span class="bp-toggle">▲</span>
         </div>
-        <div class="dfmea-chain-body" id="dfmea-chain-body"></div>
+        <div class="bp-body dfmea-chain-body" id="dfmea-chain-body"></div>
       </div>
     </div>`;
 
@@ -172,32 +171,27 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
 // ── Panels ────────────────────────────────────────────────────────────────────
 
 function wirePanelToggles(){
-  const mapBtn=document.getElementById('btn-dfmea-map');
-  mapBtn?.addEventListener('click',()=>{
-    const p=document.getElementById('dfmea-map-panel');
-    const wasHidden=p.style.display==='none';
-    togglePanel('dfmea-map-panel','btn-dfmea-map');
-    if(wasHidden){renderMap();}else{renderMap();p.style.display='';mapBtn.classList.add('active');}
+  // Structure Map — lazy-render on first expand
+  const mapBar = document.getElementById('dfmea-map-panel');
+  wireBottomPanel(mapBar, {
+    key: 'dfmea_map_h',
+    defaultH: 260,
+    onExpand: () => renderMap(),
   });
-  document.getElementById('dfmea-map-close')?.addEventListener('click',()=>closePanel('dfmea-map-panel','btn-dfmea-map'));
-  document.getElementById('btn-dfmea-net')?.addEventListener('click',()=>{
-    _netVisible=!_netVisible;
-    document.getElementById('btn-dfmea-net')?.classList.toggle('active',_netVisible);
-    document.querySelectorAll('.dmap-net-legend').forEach(s=>{s.style.display=_netVisible?'':'none';});
+  // ⇄ Net toggle (inside header, stops propagation via bp-hdr logic)
+  document.getElementById('btn-dfmea-net')?.addEventListener('click', () => {
+    _netVisible = !_netVisible;
+    document.getElementById('btn-dfmea-net')?.classList.toggle('active', _netVisible);
+    document.querySelectorAll('.dmap-net-legend').forEach(s => { s.style.display = _netVisible ? '' : 'none'; });
   });
-  wireResizeBar('dfmea-map-resize','dfmea-map-panel');
-  document.getElementById('btn-dfmea-chain')?.addEventListener('click',()=>togglePanel('dfmea-chain-panel','btn-dfmea-chain'));
-  document.getElementById('dfmea-chain-close')?.addEventListener('click',()=>closePanel('dfmea-chain-panel','btn-dfmea-chain'));
-  wireResizeBar('dfmea-chain-resize','dfmea-chain-panel');
-}
-function togglePanel(pid,bid){const p=document.getElementById(pid);if(!p)return;const op=p.style.display==='none';p.style.display=op?'':'none';document.getElementById(bid)?.classList.toggle('active',op);}
-function closePanel(pid,bid){const p=document.getElementById(pid);if(p)p.style.display='none';document.getElementById(bid)?.classList.remove('active');}
-function wireResizeBar(bid,pid){
-  const b=document.getElementById(bid),p=document.getElementById(pid);if(!b||!p)return;
-  b.addEventListener('mousedown',e=>{e.preventDefault();const sy=e.clientY,sh=p.offsetHeight;
-    const mv=m=>{p.style.height=`${Math.max(120,sh-(m.clientY-sy))}px`;};
-    const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);};
-    document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);});
+
+  // Failure Chain — lazy-render on first expand
+  const chainBar = document.getElementById('dfmea-chain-panel');
+  wireBottomPanel(chainBar, {
+    key: 'dfmea_chain_h',
+    defaultH: 200,
+    onExpand: () => renderChain(),
+  });
 }
 
 // ── Load items ────────────────────────────────────────────────────────────────
