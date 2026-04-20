@@ -1,7 +1,7 @@
 /**
  * Project Settings — PHA field configuration, Function Types (HAZOP), team members
  */
-import { sb, DEFAULT_PHA_FIELDS } from '../config.js';
+import { sb, DEFAULT_PHA_FIELDS, DEFAULT_FHA_FIELDS } from '../config.js';
 import { t } from '../i18n/index.js';
 import { navigate } from '../router.js';
 import { toast } from '../toast.js';
@@ -27,13 +27,15 @@ export async function renderProjectSettings(container, ctx) {
 
   const config = pcRow?.config || {};
   const phaOverrides   = config.pha_fields    || {};
+  const fhaOverrides   = config.fha_fields    || {};
   const functionTypes  = config.function_types || [];
 
-  render(container, project, phaOverrides, functionTypes, pcRow?.id, config);
+  render(container, project, phaOverrides, fhaOverrides, functionTypes, pcRow?.id, config);
 }
 
-function render(container, project, phaOverrides, functionTypes, configId, fullConfig = {}) {
-  const fields = DEFAULT_PHA_FIELDS.map(f => ({ ...f, ...(phaOverrides[f.key] || {}) }));
+function render(container, project, phaOverrides, fhaOverrides, functionTypes, configId, fullConfig = {}) {
+  const fields    = DEFAULT_PHA_FIELDS.map(f => ({ ...f, ...(phaOverrides[f.key] || {}) }));
+  const fhaFields = DEFAULT_FHA_FIELDS.map(f => ({ ...f, ...(fhaOverrides[f.key] || {}) }));
 
   container.innerHTML = `
     <div class="page-header">
@@ -48,6 +50,7 @@ function render(container, project, phaOverrides, functionTypes, configId, fullC
     <div class="page-body">
       <div class="settings-tabs">
         <button class="settings-tab active" data-tab="pha">PHA Fields</button>
+        <button class="settings-tab" data-tab="fha">FHA Fields</button>
         <button class="settings-tab" data-tab="funtypes">Function Types</button>
         <button class="settings-tab" data-tab="members">Members <span class="badge-soon">soon</span></button>
       </div>
@@ -89,6 +92,47 @@ function render(container, project, phaOverrides, functionTypes, configId, fullC
           <div style="margin-top:16px;display:flex;gap:8px">
             <button class="btn btn-primary" id="btn-save-pha-config">Save Field Settings</button>
             <button class="btn btn-secondary" id="btn-reset-pha-config">Reset to Defaults</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-fha" class="settings-tab-panel" style="display:none">
+        <div class="settings-section">
+          <p class="settings-section-desc">
+            Configure which columns are shown in the FHA table for this project.
+            Label changes only affect this project.
+          </p>
+          <table class="settings-table">
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Default Label</th>
+                <th>Custom Label</th>
+                <th style="text-align:center">Visible</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${fhaFields.map(f => `
+                <tr data-fha-field-key="${f.key}">
+                  <td><code class="field-key">${escHtml(f.key)}</code></td>
+                  <td style="color:var(--color-text-muted)">${escHtml(DEFAULT_FHA_FIELDS.find(x=>x.key===f.key)?.label || f.label)}</td>
+                  <td>
+                    <input class="form-input fha-field-label-input" data-key="${f.key}"
+                      value="${escHtml(f.label !== DEFAULT_FHA_FIELDS.find(x=>x.key===f.key)?.label ? f.label : '')}"
+                      placeholder="${escHtml(DEFAULT_FHA_FIELDS.find(x=>x.key===f.key)?.label || f.label)}"/>
+                  </td>
+                  <td style="text-align:center">
+                    <label class="toggle-switch">
+                      <input type="checkbox" class="fha-field-visible-check" data-key="${f.key}" ${f.visible ? 'checked' : ''}/>
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+          <div style="margin-top:16px;display:flex;gap:8px">
+            <button class="btn btn-primary" id="btn-save-fha-config">Save FHA Field Settings</button>
+            <button class="btn btn-secondary" id="btn-reset-fha-config">Reset to Defaults</button>
           </div>
         </div>
       </div>
@@ -146,7 +190,7 @@ function render(container, project, phaOverrides, functionTypes, configId, fullC
       pha_fields[key] = patch;
     });
 
-    const newConfig = { pha_fields };
+    const newConfig = { ...fullConfig, pha_fields };
 
     let error;
     if (configId) {
@@ -157,6 +201,7 @@ function render(container, project, phaOverrides, functionTypes, configId, fullC
 
     btn.disabled = false;
     if (error) { toast(t('common.error'), 'error'); return; }
+    fullConfig = newConfig;
     toast('Settings saved.', 'success');
   };
 
@@ -166,10 +211,53 @@ function render(container, project, phaOverrides, functionTypes, configId, fullC
       await sb.from('project_config').update({ config: { ...fullConfig, pha_fields: {} }, updated_at: new Date().toISOString() }).eq('id', configId);
     }
     toast('Reset to defaults.', 'success');
-    // Reload
     container.querySelectorAll('.field-label-input').forEach(el => { el.value = ''; });
     container.querySelectorAll('.field-visible-check').forEach((el, i) => {
       el.checked = DEFAULT_PHA_FIELDS[i]?.visible ?? true;
+    });
+  };
+
+  // ── FHA Fields tab ─────────────────────────────────────────────────────────
+
+  document.getElementById('btn-save-fha-config').onclick = async () => {
+    const btn = document.getElementById('btn-save-fha-config');
+    btn.disabled = true;
+
+    const fha_fields = {};
+    container.querySelectorAll('[data-fha-field-key]').forEach(row => {
+      const key          = row.dataset.fhaFieldKey;
+      const labelEl      = row.querySelector('.fha-field-label-input');
+      const visEl        = row.querySelector('.fha-field-visible-check');
+      const defaultLabel = DEFAULT_FHA_FIELDS.find(f => f.key === key)?.label || '';
+      const customLabel  = labelEl.value.trim();
+      const patch = {};
+      if (customLabel && customLabel !== defaultLabel) patch.label = customLabel;
+      patch.visible = visEl.checked;
+      fha_fields[key] = patch;
+    });
+
+    const newConfig = { ...fullConfig, fha_fields };
+    let error;
+    if (configId) {
+      ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));
+    } else {
+      ({ error } = await sb.from('project_config').insert({ project_id: project.id, config: newConfig }));
+    }
+    btn.disabled = false;
+    if (error) { toast(t('common.error'), 'error'); return; }
+    fullConfig = newConfig;
+    toast('FHA field settings saved.', 'success');
+  };
+
+  document.getElementById('btn-reset-fha-config').onclick = async () => {
+    if (!confirm('Reset all FHA field settings to defaults?')) return;
+    if (configId) {
+      await sb.from('project_config').update({ config: { ...fullConfig, fha_fields: {} }, updated_at: new Date().toISOString() }).eq('id', configId);
+    }
+    toast('Reset to defaults.', 'success');
+    container.querySelectorAll('.fha-field-label-input').forEach(el => { el.value = ''; });
+    container.querySelectorAll('.fha-field-visible-check').forEach((el, i) => {
+      el.checked = DEFAULT_FHA_FIELDS[i]?.visible ?? true;
     });
   };
 

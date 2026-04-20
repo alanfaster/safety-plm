@@ -1381,6 +1381,86 @@ input, select, textarea { font-family: var(--font); }
 }
 
 /* ============================================================
+   FHA table (Excel-like row layout)
+   ============================================================ */
+
+.fha-table-wrap {
+  overflow-x: auto;
+  margin: 0 0 0 40px;
+}
+
+.fha-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+  min-width: 600px;
+}
+
+.fha-table thead th {
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  padding: 5px 8px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  text-align: left;
+}
+
+.fha-table tbody td {
+  border: 1px solid var(--color-border);
+  padding: 5px 8px;
+  vertical-align: middle;
+}
+
+.fha-haz-row:hover td {
+  background: var(--color-bg-subtle);
+}
+
+/* Column widths */
+.fha-th-code,  .fha-td-code   { width: 90px; white-space: nowrap; }
+.fha-th-failure_condition      { min-width: 160px; }
+.fha-th-phase_of_op            { width: 120px; }
+.fha-th-effect_local,
+.fha-th-effect_system,
+.fha-th-effect_item,
+.fha-th-effect_environment,
+.fha-th-effect_3rdparties      { min-width: 110px; }
+.fha-th-classification,
+.fha-th-dal                    { width: 110px; }
+.fha-th-probability            { width: 140px; }
+.fha-th-mitigation_avoid,
+.fha-th-safety_measures        { min-width: 130px; }
+.fha-th-requirements           { min-width: 100px; }
+.fha-th-remarks                { min-width: 100px; }
+.fha-th-status, .fha-td-status { width: 90px; white-space: nowrap; }
+.fha-th-actions, .fha-td-actions { width: 64px; white-space: nowrap; text-align: right; }
+
+.fha-cell-empty { color: var(--color-text-subtle); }
+.fha-cell-text  { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Inline editing row */
+.fha-inline-tr td {
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-primary-light, #4C9AFF40);
+}
+
+.fha-ir-input {
+  width: 100%;
+  min-width: 80px;
+  font-size: var(--text-xs);
+  padding: 3px 5px;
+}
+
+.fha-ir-newlabel {
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+}
+
+.fha-td-input {
+  padding: 3px 4px !important;
+}
+
+/* ============================================================
    HAZOP panel
    ============================================================ */
 

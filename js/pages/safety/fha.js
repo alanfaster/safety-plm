@@ -160,7 +160,16 @@ function ucSection(uc, hazByFun, scope) {
     </div>`;
 }
 
-// ── Function section ──────────────────────────────────────────────────────────
+// ── Visible columns helper ────────────────────────────────────────────────────
+
+// Columns always present regardless of config
+const FIXED_COLS = ['failure_condition'];
+
+function visibleCols(fields) {
+  return fields.filter(f => f.visible || FIXED_COLS.includes(f.key));
+}
+
+// ── Function section (table layout) ──────────────────────────────────────────
 
 function funSection(fn, funHazards, scope) {
   const clsField = scope.fields.find(f => f.key === 'classification');
@@ -171,15 +180,10 @@ function funSection(fn, funHazards, scope) {
     return `<span class="pha-mini-badge" style="background:${c}20;color:${c}" title="${esc(h.haz_code)}: ${esc(s)}">${esc(s.split(' ')[0])}</span>`;
   }).join('');
 
-  // HAZOP trigger: does this function's type have failure conditions?
-  const funcType = fn.function_type
-    ? scope.funcTypes.find(ft => ft.name === fn.function_type)
-    : null;
+  const funcType = fn.function_type ? scope.funcTypes.find(ft => ft.name === fn.function_type) : null;
   const hasHazop = funcType?.failure_conditions?.length > 0;
-
-  const ftBadge = fn.function_type
-    ? `<span class="fun-type-badge">${esc(fn.function_type)}</span>`
-    : '';
+  const ftBadge  = fn.function_type ? `<span class="fun-type-badge">${esc(fn.function_type)}</span>` : '';
+  const cols     = visibleCols(scope.fields);
 
   return `
     <div class="fha-fun-wrap" data-fn-id="${fn.id}">
@@ -190,57 +194,58 @@ function funSection(fn, funHazards, scope) {
         <span class="fha-fun-name"><strong>${esc(fn.name)}</strong>${ftBadge}${fn.description ? `: <span class="pha-ctx-desc">${esc(fn.description)}</span>` : ''}</span>
         <span class="pha-spacer"></span>
         ${mini}
-        ${hasHazop ? `
-          <button class="btn-ghost btn-sm btn-fha-hazop"
-            data-fn-id="${fn.id}" data-fn-type="${esc(fn.function_type || '')}">
-            ⚡ HAZOP
-          </button>` : ''}
-        <button class="btn-ghost btn-sm btn-add-fn-fha"
-          data-fn-id="${fn.id}" data-fn-code="${esc(fn.func_code)}" data-fn-name="${esc(fn.name)}">
-          ＋ Add FHA
-        </button>
+        ${hasHazop ? `<button class="btn-ghost btn-sm btn-fha-hazop" data-fn-id="${fn.id}" data-fn-type="${esc(fn.function_type || '')}">⚡ HAZOP</button>` : ''}
+        <button class="btn-ghost btn-sm btn-add-fn-fha" data-fn-id="${fn.id}">＋ Add FHA</button>
       </div>
-      ${funHazards.map(h => hazRow(h, scope)).join('')}
-      <div class="pha-add-row-anchor" id="fha-anchor-${fn.id}"></div>
+      <div class="fha-table-wrap">
+        <table class="fha-table" data-fn-id="${fn.id}">
+          <thead><tr>
+            <th class="fha-th-code">ID</th>
+            ${cols.map(f => `<th class="fha-th-${f.key}">${esc(f.label)}</th>`).join('')}
+            <th class="fha-th-status">Status</th>
+            <th class="fha-th-actions"></th>
+          </tr></thead>
+          <tbody id="fha-tbody-${fn.id}">
+            ${funHazards.map(h => hazRow(h, cols, scope)).join('')}
+          </tbody>
+        </table>
+      </div>
       <div class="fha-hazop-panel" id="fha-hazop-${fn.id}" style="display:none"></div>
     </div>`;
 }
 
-// ── FHA hazard row ────────────────────────────────────────────────────────────
+// ── FHA hazard row (table row) ────────────────────────────────────────────────
 
-function hazRow(h, scope) {
+function hazRow(h, cols, scope) {
   const d = h.data || {};
   const clsField = scope.fields.find(f => f.key === 'classification');
-  const cls = d.classification && d.classification !== '—' ? d.classification : null;
-  const clsColor = cls && clsField?.colors ? (clsField.colors[cls] || '#6B778C') : null;
+  const dalField = scope.fields.find(f => f.key === 'dal');
   const sc = { open:'#FF8B00', in_progress:'#0065FF', closed:'#00875A', 'n/a':'#97A0AF' }[h.status] || '#97A0AF';
 
-  const fc = d.failure_condition ? `<strong>${esc(d.failure_condition)}</strong>` : '';
-  const effectStr = d.effect_system ? `<span class="pha-ctx-desc">${esc(d.effect_system)}</span>` : '';
-  const main = fc && effectStr ? `${fc}: ${effectStr}` : fc || effectStr || '<span style="color:var(--color-text-subtle)">—</span>';
+  const cellContent = (f) => {
+    const v = d[f.key];
+    if (!v || v === '—') return '<span class="fha-cell-empty">—</span>';
+    if (f.key === 'classification' && clsField?.colors) {
+      const c = clsField.colors[v] || '#6B778C';
+      return `<span class="pha-badge" style="background:${c}20;color:${c}">${esc(v)}</span>`;
+    }
+    if (f.key === 'dal' && dalField?.colors) {
+      const c = dalField.colors[v] || '#6554C0';
+      return `<span class="pha-badge" style="background:${c}20;color:${c}">${esc(v)}</span>`;
+    }
+    return `<span class="fha-cell-text">${esc(v)}</span>`;
+  };
 
   return `
-    <div class="pha-haz-row" data-haz-id="${h.id}">
-      <span class="pha-haz-tree-indent">│     └</span>
-      <span class="pha-haz-icon">⚡</span>
-      <span class="pha-mono pha-haz-code">${esc(h.haz_code)}</span>
-      ${clsColor ? `<span class="pha-badge" style="background:${clsColor}20;color:${clsColor}">${esc(cls)}</span>` : ''}
-      ${d.dal && d.dal !== '—' ? `<span class="pha-badge" style="background:#6554C020;color:#6554C0">${esc(d.dal)}</span>` : ''}
-      <span class="pha-haz-desc">${main}</span>
-      ${d.phase_of_op && d.phase_of_op !== '—' ? `<span class="pha-meta">${esc(d.phase_of_op)}</span>` : ''}
-      <span class="pha-spacer"></span>
-      <span class="pha-status-chip" style="background:${sc}20;color:${sc}">${esc(h.status)}</span>
-      <button class="btn-icon btn-edit-fha" data-id="${h.id}">✎</button>
-      <button class="btn-icon btn-del-fha"  data-id="${h.id}">✕</button>
-    </div>
-    ${(d.mitigation_avoid || d.safety_measures || d.requirements) ? `
-      <div class="pha-haz-mit-row">
-        <span class="pha-haz-mit-indent">│        </span>
-        ${d.mitigation_avoid ? `<span class="pha-mit-label">↳ Mitigation:</span><span class="pha-mit-text">${esc(d.mitigation_avoid)}</span>` : ''}
-        ${d.safety_measures  ? `<span class="pha-mit-label" style="margin-left:12px">🛡 Measures:</span><span class="pha-mit-text">${esc(d.safety_measures)}</span>` : ''}
-        ${d.requirements     ? `<span class="pha-mit-label" style="margin-left:12px">📋 Req:</span><span class="pha-mit-text">${esc(d.requirements)}</span>` : ''}
-      </div>` : ''}
-    <div class="pha-add-row-anchor" id="fha-edit-anchor-${h.id}"></div>`;
+    <tr class="fha-haz-row" data-haz-id="${h.id}">
+      <td class="fha-td-code"><span class="pha-mono">${esc(h.haz_code)}</span></td>
+      ${cols.map(f => `<td class="fha-td-${f.key}">${cellContent(f)}</td>`).join('')}
+      <td class="fha-td-status"><span class="pha-status-chip" style="background:${sc}20;color:${sc}">${esc(h.status)}</span></td>
+      <td class="fha-td-actions">
+        <button class="btn-icon btn-edit-fha" data-id="${h.id}" title="Edit">✎</button>
+        <button class="btn-icon btn-del-fha"  data-id="${h.id}" title="Delete">✕</button>
+      </td>
+    </tr>`;
 }
 
 // ── No functions hint ─────────────────────────────────────────────────────────
@@ -268,10 +273,7 @@ function noFunctionsHint(project, scope) {
 function wireRows(container, scope, hazByFun) {
   // "+ Add FHA" on each function
   container.querySelectorAll('.btn-add-fn-fha').forEach(btn => {
-    btn.onclick = () => {
-      const anchor = container.querySelector(`#fha-anchor-${btn.dataset.fnId}`);
-      if (anchor) openAddRow(anchor, btn.dataset.fnId, scope, btn);
-    };
+    btn.onclick = () => openAddRow(btn.dataset.fnId, scope, btn);
   });
 
   // HAZOP panel toggle
@@ -294,9 +296,8 @@ function wireRows(container, scope, hazByFun) {
   // Edit
   container.querySelectorAll('.btn-edit-fha').forEach(btn => {
     btn.onclick = () => {
-      const haz    = scope.allHazards.find(h => h.id === btn.dataset.id);
-      const anchor = container.querySelector(`#fha-edit-anchor-${haz.id}`);
-      if (haz && anchor) openEditRow(anchor, haz, scope);
+      const haz = scope.allHazards.find(h => h.id === btn.dataset.id);
+      if (haz) openEditRow(haz, scope);
     };
   });
 
@@ -458,182 +459,132 @@ async function generateHazopEntries(panel, fnId, funcType, scope) {
 
 // ── Inline add row ────────────────────────────────────────────────────────────
 
-function openAddRow(anchor, fnId, scope, triggerBtn) {
-  if (anchor.firstChild) {
-    anchor.innerHTML = '';
-    if (triggerBtn) triggerBtn.textContent = '＋ Add FHA';
-    return;
-  }
-
-  scope.container.querySelectorAll('.pha-inline-row').forEach(el => el.remove());
+function openAddRow(fnId, scope, triggerBtn) {
+  // Close existing inline rows
+  scope.container.querySelectorAll('.fha-inline-tr').forEach(el => el.remove());
   scope.container.querySelectorAll('.btn-add-fn-fha').forEach(b => b.textContent = '＋ Add FHA');
+
+  // Toggle off if this button was already open
+  if (triggerBtn && triggerBtn.textContent.includes('Cancel')) return;
+
+  const tbody = scope.container.querySelector(`#fha-tbody-${fnId}`);
+  if (!tbody) return;
 
   if (triggerBtn) triggerBtn.textContent = '✕ Cancel';
 
-  const row = document.createElement('div');
-  row.className = 'pha-inline-row';
-  row.innerHTML = inlineRowHTML(null, fnId, scope);
-  anchor.appendChild(row);
+  const tr = document.createElement('tr');
+  tr.className = 'fha-inline-tr';
+  tr.innerHTML = inlineRowHTML(null, fnId, scope);
+  tbody.appendChild(tr);
 
-  row.querySelector('.pha-ir-cancel').onclick = () => {
-    row.remove();
+  tr.querySelector('.pha-ir-cancel').onclick = () => {
+    tr.remove();
     if (triggerBtn) triggerBtn.textContent = '＋ Add FHA';
   };
-  row.querySelector('.pha-ir-save').onclick = () => saveRow(row, null, fnId, scope, () => {
+  tr.querySelector('.pha-ir-save').onclick = () => saveRow(tr, null, fnId, scope, () => {
     if (triggerBtn) triggerBtn.textContent = '＋ Add FHA';
   });
 
-  row.querySelectorAll('input, select').forEach(el => {
+  tr.querySelectorAll('input, select, textarea').forEach(el => {
     el.onkeydown = e => {
-      if (e.key === 'Enter')  { e.preventDefault(); row.querySelector('.pha-ir-save').click(); }
-      if (e.key === 'Escape') { e.preventDefault(); row.querySelector('.pha-ir-cancel').click(); }
+      if (e.key === 'Enter')  { e.preventDefault(); tr.querySelector('.pha-ir-save').click(); }
+      if (e.key === 'Escape') { e.preventDefault(); tr.querySelector('.pha-ir-cancel').click(); }
     };
   });
 
-  const first = row.querySelector('input, textarea');
+  const first = tr.querySelector('input, textarea');
   if (first) first.focus();
 }
 
 // ── Inline edit row ───────────────────────────────────────────────────────────
 
-function openEditRow(anchor, haz, scope) {
-  if (anchor.firstChild) { anchor.innerHTML = ''; return; }
+function openEditRow(haz, scope) {
+  // Close any existing inline rows
+  scope.container.querySelectorAll('.fha-inline-tr').forEach(el => {
+    const prevHidden = scope.container.querySelector(`.fha-haz-row[data-haz-id="${el.dataset.editFor}"]`);
+    if (prevHidden) prevHidden.style.display = '';
+    el.remove();
+  });
 
-  scope.container.querySelectorAll('.pha-inline-row').forEach(el => el.remove());
+  const origTr = scope.container.querySelector(`.fha-haz-row[data-haz-id="${haz.id}"]`);
+  if (!origTr) return;
 
-  const row = document.createElement('div');
-  row.className = 'pha-inline-row pha-inline-row--edit';
-  row.innerHTML = inlineRowHTML(haz, haz.function_id, scope);
-  anchor.appendChild(row);
+  const editTr = document.createElement('tr');
+  editTr.className = 'fha-inline-tr fha-inline-tr--edit';
+  editTr.dataset.editFor = haz.id;
+  editTr.innerHTML = inlineRowHTML(haz, haz.function_id, scope);
+  origTr.after(editTr);
+  origTr.style.display = 'none';
 
-  row.querySelector('.pha-ir-cancel').onclick = () => row.remove();
-  row.querySelector('.pha-ir-save').onclick   = () => saveRow(row, haz, haz.function_id, scope);
+  editTr.querySelector('.pha-ir-cancel').onclick = () => {
+    editTr.remove();
+    origTr.style.display = '';
+  };
+  editTr.querySelector('.pha-ir-save').onclick = () => saveRow(editTr, haz, haz.function_id, scope);
 
-  row.querySelectorAll('input, select').forEach(el => {
+  editTr.querySelectorAll('input, select, textarea').forEach(el => {
     el.onkeydown = e => {
-      if (e.key === 'Enter')  { e.preventDefault(); row.querySelector('.pha-ir-save').click(); }
-      if (e.key === 'Escape') { e.preventDefault(); row.querySelector('.pha-ir-cancel').click(); }
+      if (e.key === 'Enter')  { e.preventDefault(); editTr.querySelector('.pha-ir-save').click(); }
+      if (e.key === 'Escape') { e.preventDefault(); editTr.querySelector('.pha-ir-cancel').click(); }
     };
   });
 
-  const first = row.querySelector('input, textarea');
-  if (first) { first.focus(); first.select(); }
+  const first = editTr.querySelector('input, textarea');
+  if (first) { first.focus(); first.select?.(); }
 }
 
-// ── Inline row HTML ───────────────────────────────────────────────────────────
+// ── Inline row HTML (returns <td> cells, inserted into a <tr>) ───────────────
 
 function inlineRowHTML(haz, fnId, scope) {
-  const d   = haz?.data || {};
-  const fld = (key) => scope.fields.find(f => f.key === key);
-
-  const fcF      = fld('failure_condition');
-  const phaseF   = fld('phase_of_op');
-  const effLocF  = fld('effect_local');
-  const effSysF  = fld('effect_system');
-  const clsF     = fld('classification');
-  const dalF     = fld('dal');
-  const mitAvF   = fld('mitigation_avoid');
-  const measF    = fld('safety_measures');
-  const reqF     = fld('requirements');
+  const d      = haz?.data || {};
+  const cols   = visibleCols(scope.fields);
   const statusVal = haz?.status || 'open';
 
   const selOpts = (opts, val) => (opts || []).map(o =>
     `<option value="${esc(o)}" ${val === o ? 'selected' : ''}>${esc(o)}</option>`).join('');
 
+  const inputFor = (f) => {
+    const val = d[f.key] || '';
+    if (f.type === 'select' || f.type === 'badge_select') {
+      return `<select class="form-input fha-ir-input" id="fha-ir-${f.key}">${selOpts(f.options, val)}</select>`;
+    }
+    if (f.type === 'textarea') {
+      return `<textarea class="form-input fha-ir-input" id="fha-ir-${f.key}" rows="2">${esc(val)}</textarea>`;
+    }
+    return `<input class="form-input fha-ir-input" id="fha-ir-${f.key}" value="${esc(val)}" placeholder="${esc(f.label)}"/>`;
+  };
+
   return `
-    <div class="pha-ir-tree">│     └</div>
-    <div class="pha-ir-body">
-      <div class="pha-ir-row1">
-        ${fcF ? `
-          <div class="pha-ir-field pha-ir-fc">
-            <label>Failure Condition *</label>
-            <input class="form-input" id="fha-ir-fc" value="${esc(d.failure_condition || '')}" placeholder="e.g. Loss of function"/>
-          </div>` : ''}
-        ${clsF ? `
-          <div class="pha-ir-field pha-ir-cls">
-            <label>${esc(clsF.label)}</label>
-            <select class="form-input" id="fha-ir-cls">
-              ${selOpts(clsF.options, d.classification)}
-            </select>
-          </div>` : ''}
-        ${dalF ? `
-          <div class="pha-ir-field pha-ir-dal">
-            <label>${esc(dalF.label)}</label>
-            <select class="form-input" id="fha-ir-dal">
-              ${selOpts(dalF.options, d.dal)}
-            </select>
-          </div>` : ''}
-        ${phaseF ? `
-          <div class="pha-ir-field pha-ir-phase">
-            <label>${esc(phaseF.label)}</label>
-            <select class="form-input" id="fha-ir-phase">
-              ${selOpts(phaseF.options, d.phase_of_op)}
-            </select>
-          </div>` : ''}
-        <div class="pha-ir-field pha-ir-status">
-          <label>Status</label>
-          <select class="form-input" id="fha-ir-status">
-            ${['open','in_progress','closed','n/a'].map(s =>
-              `<option value="${s}" ${statusVal === s ? 'selected':''}>${s}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-      <div class="pha-ir-row2">
-        ${effLocF ? `
-          <div class="pha-ir-field" style="flex:1">
-            <label>${esc(effLocF.label)}</label>
-            <input class="form-input" id="fha-ir-eff-loc" value="${esc(d.effect_local || '')}" placeholder="Local effect…"/>
-          </div>` : ''}
-        ${effSysF ? `
-          <div class="pha-ir-field" style="flex:1">
-            <label>${esc(effSysF.label)}</label>
-            <input class="form-input" id="fha-ir-eff-sys" value="${esc(d.effect_system || '')}" placeholder="System level effect…"/>
-          </div>` : ''}
-      </div>
-      <div class="pha-ir-row3">
-        ${mitAvF ? `
-          <div class="pha-ir-field" style="flex:1">
-            <label>${esc(mitAvF.label)}</label>
-            <textarea class="form-input form-textarea" id="fha-ir-mit" rows="2" placeholder="Mitigation/avoidance measures…">${esc(d.mitigation_avoid || '')}</textarea>
-          </div>` : ''}
-        ${measF ? `
-          <div class="pha-ir-field" style="flex:1">
-            <label>${esc(measF.label)}</label>
-            <textarea class="form-input form-textarea" id="fha-ir-meas" rows="2" placeholder="Safety measures…">${esc(d.safety_measures || '')}</textarea>
-          </div>` : ''}
-        ${reqF ? `
-          <div class="pha-ir-field" style="flex:1">
-            <label>${esc(reqF.label)}</label>
-            <input class="form-input" id="fha-ir-req" value="${esc(d.requirements || '')}" placeholder="Requirement ref…"/>
-          </div>` : ''}
-      </div>
-      <div class="pha-ir-actions">
-        <button class="btn btn-primary btn-sm pha-ir-save">✓ Save</button>
-        <button class="btn btn-secondary btn-sm pha-ir-cancel">✗ Cancel</button>
-      </div>
-    </div>`;
+    <td class="fha-td-code"><span class="pha-mono fha-ir-newlabel">${haz ? esc(haz.haz_code) : 'new'}</span></td>
+    ${cols.map(f => `<td class="fha-td-${f.key} fha-td-input">${inputFor(f)}</td>`).join('')}
+    <td class="fha-td-status fha-td-input">
+      <select class="form-input fha-ir-input" id="fha-ir-status">
+        ${['open','in_progress','closed','n/a'].map(s =>
+          `<option value="${s}" ${statusVal === s ? 'selected':''}>${s}</option>`).join('')}
+      </select>
+    </td>
+    <td class="fha-td-actions fha-td-input">
+      <button class="btn btn-primary btn-sm pha-ir-save" title="Save">✓</button>
+      <button class="btn btn-secondary btn-sm pha-ir-cancel" title="Cancel">✗</button>
+    </td>`;
 }
 
 // ── Save row ──────────────────────────────────────────────────────────────────
 
 async function saveRow(row, existingHaz, fnId, scope, onDone) {
-  const v  = id => row.querySelector(id)?.value?.trim() || '';
-  const fc = v('#fha-ir-fc');
-  const fcEl = row.querySelector('#fha-ir-fc');
+  const v    = id => row.querySelector(id)?.value?.trim() || '';
+  const fcEl = row.querySelector('#fha-ir-failure_condition');
+  const fc   = fcEl?.value?.trim() || '';
   if (!fc && fcEl) { fcEl.style.borderColor = 'var(--color-danger)'; fcEl.focus(); return; }
   if (fcEl) fcEl.style.borderColor = '';
 
-  const data = {
-    failure_condition: fc,
-    phase_of_op:       v('#fha-ir-phase')   || null,
-    effect_local:      v('#fha-ir-eff-loc') || null,
-    effect_system:     v('#fha-ir-eff-sys') || null,
-    classification:    v('#fha-ir-cls')     || null,
-    dal:               v('#fha-ir-dal')     || null,
-    mitigation_avoid:  v('#fha-ir-mit')     || null,
-    safety_measures:   v('#fha-ir-meas')    || null,
-    requirements:      v('#fha-ir-req')     || null,
-  };
+  // Start from existing data (preserves hidden fields on edit)
+  const data = existingHaz ? { ...(existingHaz.data || {}) } : {};
+  visibleCols(scope.fields).forEach(f => {
+    data[f.key] = row.querySelector(`#fha-ir-${f.key}`)?.value?.trim() || null;
+  });
+  if (!data.failure_condition) data.failure_condition = fc || null;
+
   const status = v('#fha-ir-status') || 'open';
 
   let error;
@@ -691,7 +642,7 @@ async function reload(scope) {
       .select('*').eq('parent_type', scope.parentType).eq('parent_id', scope.parentId)
       .eq('analysis_type', 'FHA')
       .order('sort_order'),
-    loadTree(scope.parentType, scope.parentId, scope.item),
+    loadTree(scope.parentType, scope.parentId),
   ]);
   scope.allHazards = hazards || [];
   scope.tree       = rawTree;
