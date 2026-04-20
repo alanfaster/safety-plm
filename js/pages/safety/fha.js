@@ -460,12 +460,9 @@ async function generateHazopEntries(panel, fnId, funcType, scope) {
 // ── Inline add row ────────────────────────────────────────────────────────────
 
 function openAddRow(fnId, scope, triggerBtn) {
-  // Close existing inline rows
-  scope.container.querySelectorAll('.fha-inline-tr').forEach(el => el.remove());
-  scope.container.querySelectorAll('.btn-add-fn-fha').forEach(b => b.textContent = '＋ Add FHA');
-
-  // Toggle off if this button was already open
-  if (triggerBtn && triggerBtn.textContent.includes('Cancel')) return;
+  const alreadyOpen = triggerBtn && triggerBtn.textContent.includes('Cancel');
+  cancelAllEdits(scope);
+  if (alreadyOpen) return; // toggle off
 
   const tbody = scope.container.querySelector(`#fha-tbody-${fnId}`);
   if (!tbody) return;
@@ -496,41 +493,82 @@ function openAddRow(fnId, scope, triggerBtn) {
   if (first) first.focus();
 }
 
-// ── Inline edit row ───────────────────────────────────────────────────────────
+// ── Inline edit row — transforms cells in-place ───────────────────────────────
 
 function openEditRow(haz, scope) {
-  // Close any existing inline rows
-  scope.container.querySelectorAll('.fha-inline-tr').forEach(el => {
-    const prevHidden = scope.container.querySelector(`.fha-haz-row[data-haz-id="${el.dataset.editFor}"]`);
-    if (prevHidden) prevHidden.style.display = '';
-    el.remove();
+  // Cancel any other row being edited
+  cancelAllEdits(scope);
+
+  const tr = scope.container.querySelector(`.fha-haz-row[data-haz-id="${haz.id}"]`);
+  if (!tr) return;
+
+  tr.classList.add('fha-row-editing');
+
+  const cols = visibleCols(scope.fields);
+  const d    = haz.data || {};
+
+  const selOpts = (opts, val) => (opts || []).map(o =>
+    `<option value="${esc(o)}" ${val === o ? 'selected' : ''}>${esc(o)}</option>`).join('');
+
+  // Transform each data cell into an input
+  cols.forEach(f => {
+    const td = tr.querySelector(`.fha-td-${f.key}`);
+    if (!td) return;
+    td.dataset.origHtml = td.innerHTML;
+    const val = d[f.key] || '';
+    if (f.type === 'select' || f.type === 'badge_select') {
+      td.innerHTML = `<select class="form-input fha-ir-input" id="fha-ir-${f.key}">${selOpts(f.options, val)}</select>`;
+    } else if (f.type === 'textarea') {
+      td.innerHTML = `<textarea class="form-input fha-ir-input" id="fha-ir-${f.key}" rows="2">${esc(val)}</textarea>`;
+    } else {
+      td.innerHTML = `<input class="form-input fha-ir-input" id="fha-ir-${f.key}" value="${esc(val)}"/>`;
+    }
   });
 
-  const origTr = scope.container.querySelector(`.fha-haz-row[data-haz-id="${haz.id}"]`);
-  if (!origTr) return;
+  // Status cell
+  const statusTd = tr.querySelector('.fha-td-status');
+  if (statusTd) {
+    statusTd.dataset.origHtml = statusTd.innerHTML;
+    statusTd.innerHTML = `<select class="form-input fha-ir-input" id="fha-ir-status">
+      ${['open','in_progress','closed','n/a'].map(s =>
+        `<option value="${s}" ${(haz.status||'open') === s ? 'selected':''}>${s}</option>`).join('')}
+    </select>`;
+  }
 
-  const editTr = document.createElement('tr');
-  editTr.className = 'fha-inline-tr fha-inline-tr--edit';
-  editTr.dataset.editFor = haz.id;
-  editTr.innerHTML = inlineRowHTML(haz, haz.function_id, scope);
-  origTr.after(editTr);
-  origTr.style.display = 'none';
+  // Actions cell — replace with Save / Cancel
+  const actionsTd = tr.querySelector('.fha-td-actions');
+  if (actionsTd) {
+    actionsTd.dataset.origHtml = actionsTd.innerHTML;
+    actionsTd.innerHTML = `
+      <button class="btn btn-primary btn-sm pha-ir-save" title="Save">✓</button>
+      <button class="btn btn-secondary btn-sm pha-ir-cancel" title="Cancel">✗</button>`;
+    actionsTd.querySelector('.pha-ir-save').onclick   = () => saveRow(tr, haz, haz.function_id, scope);
+    actionsTd.querySelector('.pha-ir-cancel').onclick = () => restoreRow(tr);
+  }
 
-  editTr.querySelector('.pha-ir-cancel').onclick = () => {
-    editTr.remove();
-    origTr.style.display = '';
-  };
-  editTr.querySelector('.pha-ir-save').onclick = () => saveRow(editTr, haz, haz.function_id, scope);
-
-  editTr.querySelectorAll('input, select, textarea').forEach(el => {
+  tr.querySelectorAll('input, select, textarea').forEach(el => {
     el.onkeydown = e => {
-      if (e.key === 'Enter')  { e.preventDefault(); editTr.querySelector('.pha-ir-save').click(); }
-      if (e.key === 'Escape') { e.preventDefault(); editTr.querySelector('.pha-ir-cancel').click(); }
+      if (e.key === 'Enter')  { e.preventDefault(); tr.querySelector('.pha-ir-save')?.click(); }
+      if (e.key === 'Escape') { e.preventDefault(); tr.querySelector('.pha-ir-cancel')?.click(); }
     };
   });
 
-  const first = editTr.querySelector('input, textarea');
+  const first = tr.querySelector('input, textarea');
   if (first) { first.focus(); first.select?.(); }
+}
+
+function restoreRow(tr) {
+  tr.classList.remove('fha-row-editing');
+  tr.querySelectorAll('[data-orig-html]').forEach(td => {
+    td.innerHTML = td.dataset.origHtml;
+    delete td.dataset.origHtml;
+  });
+}
+
+function cancelAllEdits(scope) {
+  scope.container.querySelectorAll('.fha-row-editing').forEach(tr => restoreRow(tr));
+  scope.container.querySelectorAll('.fha-inline-tr').forEach(el => el.remove());
+  scope.container.querySelectorAll('.btn-add-fn-fha').forEach(b => b.textContent = '＋ Add FHA');
 }
 
 // ── Inline row HTML (returns <td> cells, inserted into a <tr>) ───────────────

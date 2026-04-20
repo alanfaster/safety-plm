@@ -1438,10 +1438,16 @@ input, select, textarea { font-family: var(--font); }
 .fha-cell-empty { color: var(--color-text-subtle); }
 .fha-cell-text  { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Inline editing row */
+/* Inline editing row (add) */
 .fha-inline-tr td {
   background: var(--color-bg-subtle);
   border: 1px solid var(--color-primary-light, #4C9AFF40);
+}
+
+/* In-place row editing */
+.fha-row-editing td {
+  background: #F0F7FF;
+  border-color: #4C9AFF60 !important;
 }
 
 .fha-ir-input {
