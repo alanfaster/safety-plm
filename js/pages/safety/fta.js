@@ -2217,7 +2217,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
         parent_type: parentType, parent_id: parentId, project_id: project.id,
         source: gateSource,
       }).select('id, req_code, title, status, source').single();
-      if (!error && inserted) _safetyReqs.push(inserted);
+      if (error) { console.error('syncAndGateReq insert error:', error); toast('Could not create independence requirement: ' + (error.message || error.code), 'error'); return; }
+      if (inserted) _safetyReqs.push(inserted);
     }
 
     _safetyReqs.sort((a,b) => (a.req_code||'').localeCompare(b.req_code||''));
