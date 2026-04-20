@@ -2,6 +2,7 @@ import { sb, buildCode, nextIndex } from '../config.js';
 import { t } from '../i18n/index.js';
 import { showModal, hideModal, confirmDialog } from '../components/modal.js';
 import { toast } from '../toast.js';
+import { navigate } from '../router.js';
 
 const REQ_TYPES     = ['functional','performance','safety','safety-independency','interface','constraint'];
 const REQ_STATUSES  = ['draft','review','approved','deprecated'];
@@ -58,15 +59,15 @@ export async function renderRequirements(container, { project, item, system, par
         container.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
         if (tab.dataset.tab === 'matrix') renderTraceability(project, parentType, parentId);
-        else loadRequirements(project, parentType, parentId, null, true);
+        else loadRequirements(project, item, system, parentType, parentId, null, true);
       };
     });
   }
 
-  await loadRequirements(project, parentType, parentId, typeFilter, typeFilter == null);
+  await loadRequirements(project, item, system, parentType, parentId, typeFilter, typeFilter == null);
 }
 
-async function loadRequirements(project, parentType, parentId, typeFilter = null, excludeInterface = false) {
+async function loadRequirements(project, item, system, parentType, parentId, typeFilter = null, excludeInterface = false) {
   let q = sb.from('requirements')
     .select('*')
     .eq('parent_type', parentType)
@@ -107,11 +108,12 @@ async function loadRequirements(project, parentType, parentId, typeFilter = null
               <th>${t('req.status')}</th>
               ${showAsil ? `<th>${t('req.asil')}</th>` : ''}
               ${showDal  ? `<th>${t('req.dal')}</th>`  : ''}
+              <th>Verification</th>
               <th>${t('common.actions')}</th>
             </tr>
           </thead>
           <tbody>
-            ${data.map(r => reqRow(r, project.type, showAsil, showDal)).join('')}
+            ${data.map(r => reqRow(r, project, item, system, showAsil, showDal)).join('')}
           </tbody>
         </table>
       </div>
@@ -126,7 +128,7 @@ async function loadRequirements(project, parentType, parentId, typeFilter = null
   });
 
   // ── Inline editing ─────────────────────────────────────────────────────────
-  wireInlineReqEditing(body, data, project, parentType, parentId, typeFilter, showAsil, showDal);
+  wireInlineReqEditing(body, data, project, item, system, parentType, parentId, typeFilter, showAsil, showDal);
 
   body.querySelectorAll('.btn-del-req').forEach(btn => {
     btn.onclick = async () => {
@@ -146,7 +148,7 @@ async function loadRequirements(project, parentType, parentId, typeFilter = null
         if (alsoConn && linkedConn) {
           await sb.from('arch_connections').delete().eq('id', linkedConn.id);
         }
-        await loadRequirements(project, parentType, parentId, typeFilter);
+        await loadRequirements(project, item, system, parentType, parentId, typeFilter);
         toast(alsoConn ? 'Requirement and connection deleted.' : 'Requirement deleted.', 'success');
       };
 
@@ -188,7 +190,12 @@ async function loadRequirements(project, parentType, parentId, typeFilter = null
   });
 }
 
-function reqRow(r, projectType, showAsil, showDal) {
+function dfaUrl(project, item, system) {
+  if (system) return `/project/${project.id}/item/${item.id}/system/${system.id}/safety/DFA`;
+  return `/project/${project.id}/item/${item.id}/safety/DFA`;
+}
+
+function reqRow(r, project, item, system, showAsil, showDal) {
   const ftaLinked = r.source?.startsWith('FTA-AND:');
   return `
     <tr data-rid="${r.id}">
@@ -227,6 +234,25 @@ function reqRow(r, projectType, showAsil, showDal) {
           ${DAL_LEVELS.map(v => `<option value="${v}" ${r.dal===v?'selected':''}>${v}</option>`).join('')}
         </select>
       </td>` : ''}
+      <td class="req-verification-cell">
+        <select class="req-inline-sel req-verification-sel" data-rid="${r.id}" data-field="verification_type"
+          style="font-size:11px;border:1px solid transparent;border-radius:4px;padding:1px 3px;background:transparent;cursor:pointer;min-width:72px">
+          <option value="">—</option>
+          <option value="static"  ${r.verification_type==='static' ?'selected':''}>Static</option>
+          <option value="dynamic" ${r.verification_type==='dynamic'?'selected':''}>Dynamic</option>
+          <option value="na"      ${r.verification_type==='na'     ?'selected':''}>N/A</option>
+        </select>
+        ${r.type === 'safety-independency'
+          ? `<button class="btn btn-ghost btn-sm req-dfa-link" data-id="${r.id}"
+               title="Open DFA analysis for this requirement"
+               style="font-size:10px;padding:1px 6px;margin-left:4px;color:#1A73E8">🔍 DFA</button>`
+          : (r.verification_type === 'dynamic'
+              ? `<span class="req-verif-link-hint" style="font-size:10px;color:#aaa;margin-left:4px">→ test spec</span>`
+              : r.verification_type === 'static'
+                ? `<span class="req-verif-link-hint" style="font-size:10px;color:#aaa;margin-left:4px">→ analysis</span>`
+                : '')
+        }
+      </td>
       <td class="actions-cell">
         <button class="btn btn-ghost btn-sm btn-view-req" data-id="${r.id}">Detail</button>
         <button class="btn btn-ghost btn-sm btn-del-req" data-id="${r.id}" data-title="${escHtml(r.title)}">${t('common.delete')}</button>
@@ -235,7 +261,7 @@ function reqRow(r, projectType, showAsil, showDal) {
   `;
 }
 
-function wireInlineReqEditing(body, data, project, parentType, parentId, typeFilter, showAsil, showDal) {
+function wireInlineReqEditing(body, data, project, item, system, parentType, parentId, typeFilter, showAsil, showDal) {
   // Select dropdowns — save on change
   body.querySelectorAll('.req-inline-sel').forEach(sel => {
     sel.addEventListener('mouseenter', () => { sel.style.borderColor = '#ccc'; });
@@ -310,6 +336,15 @@ function wireInlineReqEditing(body, data, project, parentType, parentId, typeFil
         if (e.key === 'Enter' && !isMultiline) { e.preventDefault(); inp.blur(); }
         if (e.key === 'Escape') { cell.classList.remove('editing'); cell.style.background = ''; cell.textContent = r?.[field] || (field === 'description' ? '+ description' : ''); }
       });
+    });
+  });
+
+  // DFA link buttons — navigate to DFA page with this requirement pre-selected
+  body.querySelectorAll('.req-dfa-link').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const rid = btn.dataset.id;
+      sessionStorage.setItem('dfa_target_req', rid);
+      navigate(dfaUrl(project, item, system));
     });
   });
 }
@@ -424,7 +459,7 @@ function openReqModal({ project, parentType, parentId, projectType, existing, de
 
     hideModal();
     toast(isEdit ? 'Requirement updated.' : 'Requirement created.', 'success');
-    await loadRequirements(project, parentType, parentId);
+    await loadRequirements(project, item, system, parentType, parentId);
   };
 }
 

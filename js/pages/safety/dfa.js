@@ -183,6 +183,21 @@ export async function renderDFA(container, { project, item, system, parentType, 
       card.classList.toggle('dfa-card-collapsed');
     });
   });
+
+  // Auto-expand and scroll to a requirement if navigated from the Requirements page
+  const targetReqId = sessionStorage.getItem('dfa_target_req');
+  if (targetReqId) {
+    sessionStorage.removeItem('dfa_target_req');
+    const targetCard = body.querySelector(`.dfa-card[data-req-id="${CSS.escape(targetReqId)}"]`);
+    if (targetCard) {
+      targetCard.classList.remove('dfa-card-collapsed');
+      // Highlight briefly
+      targetCard.style.transition = 'box-shadow 0.3s';
+      targetCard.style.boxShadow = '0 0 0 3px #1A73E8, 0 2px 12px rgba(26,115,232,.25)';
+      setTimeout(() => { targetCard.style.boxShadow = ''; }, 2000);
+      requestAnimationFrame(() => targetCard.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    }
+  }
 }
 
 // ── Build card HTML ──────────────────────────────────────────────────────────
