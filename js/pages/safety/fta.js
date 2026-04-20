@@ -2229,37 +2229,20 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const { data: existing } = await sb.from('nav_pages')
       .select('id').eq('parent_type', parentType).eq('parent_id', parentId)
       .ilike('name', SAFETY_REQ_PAGE_NAME).maybeSingle();
+    if (existing) return;
     const { data: anyPages } = await sb.from('nav_pages')
       .select('domain').eq('parent_type', parentType).eq('parent_id', parentId)
       .order('sort_order').limit(1);
     const domain = anyPages?.[0]?.domain || (parentType === 'system' ? 'system' : 'item');
-    if (!existing) {
-      const { count: pgCount } = await sb.from('nav_pages')
-        .select('*', { count: 'exact', head: true })
-        .eq('parent_type', parentType).eq('parent_id', parentId)
-        .eq('domain', domain).eq('phase', 'requirements');
-      await sb.from('nav_pages').insert({
-        parent_type: parentType, parent_id: parentId,
-        domain, phase: 'requirements',
-        name: SAFETY_REQ_PAGE_NAME, sort_order: pgCount || 0,
-      });
-    }
-    // Also ensure DFA nav page exists (sibling of Safety Requirements)
-    const { data: dfaPage } = await sb.from('nav_pages')
-      .select('id').eq('parent_type', parentType).eq('parent_id', parentId)
-      .ilike('name', 'DFA').maybeSingle();
-    if (!dfaPage) {
-      const { count: pgCount2 } = await sb.from('nav_pages')
-        .select('*', { count: 'exact', head: true })
-        .eq('parent_type', parentType).eq('parent_id', parentId)
-        .eq('domain', domain).eq('phase', 'safety');
-      await sb.from('nav_pages').insert({
-        parent_type: parentType, parent_id: parentId,
-        domain, phase: 'safety',
-        name: 'DFA', sort_order: pgCount2 || 0,
-        analysis_type: 'DFA',
-      });
-    }
+    const { count: pgCount } = await sb.from('nav_pages')
+      .select('*', { count: 'exact', head: true })
+      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .eq('domain', domain).eq('phase', 'requirements');
+    await sb.from('nav_pages').insert({
+      parent_type: parentType, parent_id: parentId,
+      domain, phase: 'requirements',
+      name: SAFETY_REQ_PAGE_NAME, sort_order: pgCount || 0,
+    });
   }
 
   // ── Floating SPF annotation panels ────────────────────────────────────────────
