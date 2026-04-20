@@ -2183,7 +2183,8 @@ export async function renderFTA(container, { project, item, system, parentType, 
     // Fetch existing requirement for this gate (if any)
     const { data: existing } = await sb.from('requirements')
       .select('id, req_code')
-      .eq('project_id', project.id)
+      .eq('parent_type', parentType)
+      .eq('parent_id', parentId)
       .eq('source', gateSource)
       .maybeSingle();
 
@@ -2766,8 +2767,9 @@ export async function renderFTA(container, { project, item, system, parentType, 
   async function loadSafetyReqs() {
     const { data, error } = await sb.from('requirements')
       .select('id, req_code, title, status, source')
-      .eq('project_id', project.id)
-      .like('source', 'FTA-AND:%')
+      .eq('parent_type', parentType)
+      .eq('parent_id', parentId)
+      .eq('type', 'safety-independency')
       .order('req_code', { ascending: true });
     if (error) { console.warn('loadSafetyReqs error:', error); return; }
     _safetyReqs = data || [];

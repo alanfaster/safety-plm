@@ -3,7 +3,7 @@ import { t } from '../i18n/index.js';
 import { showModal, hideModal, confirmDialog } from '../components/modal.js';
 import { toast } from '../toast.js';
 
-const REQ_TYPES     = ['functional','performance','safety','interface','constraint'];
+const REQ_TYPES     = ['functional','performance','safety','safety-independency','interface','constraint'];
 const REQ_STATUSES  = ['draft','review','approved','deprecated'];
 const REQ_PRIORITIES= ['critical','high','medium','low'];
 const ASIL_LEVELS   = ['QM','ASIL-A','ASIL-B','ASIL-C','ASIL-D'];
@@ -17,8 +17,8 @@ export async function renderRequirements(container, { project, item, system, par
     const { data: pg } = await sb.from('nav_pages').select('name').eq('id', pageId).maybeSingle();
     if (pg) {
       subPageName = pg.name;
-      if (pg.name.toLowerCase().includes('interface')) typeFilter = 'interface';
-      else if (pg.name.toLowerCase().includes('safety')) typeFilter = 'safety';
+      if (pg.name.toLowerCase().includes('interface')) typeFilter = ['interface'];
+      else if (pg.name.toLowerCase().includes('safety')) typeFilter = ['safety', 'safety-independency'];
     }
   }
 
@@ -46,9 +46,11 @@ export async function renderRequirements(container, { project, item, system, par
     </div>
   `;
 
+  // defaultType for new requirements: use first type in filter array, or null
+  const defaultType = Array.isArray(typeFilter) ? typeFilter[0] : (typeFilter || undefined);
   document.getElementById('btn-new-req').onclick = () =>
     openReqModal({ project, parentType, parentId, projectType: project.type,
-      defaultType: typeFilter || undefined });
+      defaultType });
 
   if (!typeFilter) {
     container.querySelectorAll('.page-tab').forEach(tab => {
@@ -61,7 +63,7 @@ export async function renderRequirements(container, { project, item, system, par
     });
   }
 
-  await loadRequirements(project, parentType, parentId, typeFilter, typeFilter === null);
+  await loadRequirements(project, parentType, parentId, typeFilter, typeFilter == null);
 }
 
 async function loadRequirements(project, parentType, parentId, typeFilter = null, excludeInterface = false) {
@@ -70,7 +72,8 @@ async function loadRequirements(project, parentType, parentId, typeFilter = null
     .eq('parent_type', parentType)
     .eq('parent_id', parentId)
     .order('created_at', { ascending: true });
-  if (typeFilter) q = q.eq('type', typeFilter);
+  if (Array.isArray(typeFilter) && typeFilter.length) q = q.in('type', typeFilter);
+  else if (typeFilter) q = q.eq('type', typeFilter);
   else if (excludeInterface) q = q.neq('type', 'interface');
   const { data, error } = await q;
 
