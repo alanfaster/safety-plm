@@ -16,6 +16,7 @@
 import { sb } from '../../config.js';
 import { toast } from '../../toast.js';
 import { exportFTApdf } from '../../utils/export-pdf.js';
+import { wireBottomPanel } from '../../utils/bottom-panel.js';
 
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -89,6 +90,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
   // ── State ──────────────────────────────────────────────────────────────────
   const UNLINKED_ID = '__unlinked__'; // sentinel for orphaned FTA nodes (FC deleted with keep-FTA)
   let _fcs     = [];             // FHA failure conditions for this parent
+  let _topEventField = 'effect_item'; // column used as FTA top-event label (from project config)
   let _activeHazardId = null;    // currently displayed FC's hazard id
   let _nodes   = [];
   let _selSet  = new Set();      // selected node ids
@@ -200,7 +202,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
           <button class="czf-btn" id="fta-btn-layout" title="Auto layout">⟳</button>
         </div>
         <div class="fta-hint" id="fta-hint">
-          Add a node above · Hover node → drag <span style="color:#1E8E3E">●</span> to connect ·
+          Add a node above · Hover node → drag <span style="color:#1E8E3E;font-weight:700">⇣</span> (bottom) to connect · Drag from FFC panel to insert Basic Event ·
           Drag empty area to multi-select · Space+drag to pan
         </div>
       </div>
@@ -218,22 +220,36 @@ export async function renderFTA(container, { project, item, system, parentType, 
 
       </div>
 
-      <!-- ── Safety Requirements bottom bar ── -->
-      <div class="fta-sreqs-bar fta-sreqs-collapsed" id="fta-sreqs-bar">
-        <div class="fta-sreqs-hdr" id="fta-sreqs-hdr">
-          <span class="fta-sreqs-hdr-title">🔗 Safety Requirements (Independence)</span>
-          <span class="fta-sreqs-toggle" id="fta-sreqs-toggle">▲</span>
+      <!-- ── Functional Failure Conditions bottom bar ── -->
+      <div class="bp-bar bp-collapsed fta-ffc-bar" id="fta-ffc-bar">
+        <div class="bp-resize-handle"></div>
+        <div class="bp-hdr">
+          <span class="bp-title">⬇ Functional Failure Conditions — drag to canvas</span>
+          <span class="bp-subtitle" id="fta-ffc-subtitle"></span>
+          <span class="bp-toggle">▲</span>
         </div>
-        <div class="fta-sreqs-body" id="fta-sreqs-body">
+        <div class="bp-body fta-ffc-body-wrap" id="fta-ffc-body">
+          <div class="fta-ffc-loading">Expand to browse Features → Use Cases → Functions → FFCs</div>
+        </div>
+      </div>
+
+      <!-- ── Safety Requirements bottom bar ── -->
+      <div class="bp-bar bp-collapsed fta-sreqs-bar" id="fta-sreqs-bar">
+        <div class="bp-resize-handle"></div>
+        <div class="bp-hdr" id="fta-sreqs-hdr">
+          <span class="bp-title fta-sreqs-hdr-title">🔗 Safety Requirements (Independence)</span>
+          <span class="bp-toggle fta-sreqs-toggle">▲</span>
+        </div>
+        <div class="bp-body fta-sreqs-body" id="fta-sreqs-body">
           <div class="fta-sreqs-empty">Click the ⚡ Safety Reqs button to generate requirements from AND gates, then expand this panel.</div>
         </div>
       </div>
 
       <!-- ── MCS bottom bar ── -->
-      <div class="fta-mcs-bar fta-mcs-collapsed" id="fta-mcs-bar">
-        <div class="fta-mcs-resize-handle" id="fta-mcs-rh" title="Drag to resize"></div>
-        <div class="fta-mcs-hdr" id="fta-mcs-hdr">
-          <span class="fta-mcs-hdr-title">⚡ Minimal Cut Sets</span>
+      <div class="bp-bar bp-collapsed fta-mcs-bar" id="fta-mcs-bar">
+        <div class="bp-resize-handle"></div>
+        <div class="bp-hdr" id="fta-mcs-hdr">
+          <span class="bp-title fta-mcs-hdr-title">⚡ Minimal Cut Sets</span>
           <label style="font-size:10px;color:#666;margin-left:12px;white-space:nowrap" onclick="event.stopPropagation()">
             Max order:
             <select id="fta-mcs-lvl" style="font-size:10px;padding:1px 4px;border:1px solid #ccc;border-radius:3px;margin-left:3px">
@@ -244,30 +260,53 @@ export async function renderFTA(container, { project, item, system, parentType, 
               <option value="99" selected>All</option>
             </select>
           </label>
-          <span class="fta-mcs-toggle" id="fta-mcs-toggle">▲</span>
+          <span class="bp-toggle fta-mcs-toggle" id="fta-mcs-toggle">▲</span>
         </div>
-        <div class="fta-mcs-body" id="fta-mcs-body">
+        <div class="bp-body fta-mcs-body" id="fta-mcs-body">
           <div class="fta-mcs-empty">No cut sets computed yet.</div>
         </div>
       </div>`; /* end fta-content-row + mcs-bar */
 
+  // Load project config to get the configured FTA top-event field
+  try {
+    const { data: pcRow } = await sb.from('project_config').select('config').eq('project_id', project.id).maybeSingle();
+    _topEventField = pcRow?.config?.fha_top_event_field || 'effect_item';
+  } catch(_) { /* non-fatal, keep default */ }
+
   await loadFCs();
   try { await loadNodes(); } catch(e) { console.warn('FTA loadNodes error:', e); }
   try { renderFCTabs(); } catch(e) { console.warn('FTA renderFCTabs error:', e); }
+  try { recomputeMCS(); } catch(e) { console.warn('FTA recomputeMCS error:', e); }
   try { render(); } catch(e) { console.error('FTA render error:', e); }
   try { wireToolbar(); } catch(e) { console.error('FTA wireToolbar error:', e); }
   try { wireCanvas(); } catch(e) { console.error('FTA wireCanvas error:', e); }
   wireKeyboard();
+  // Defer a second annotation pass so the browser completes flex layout before
+  // positioning the absolutely-placed SPF panels (overflow:hidden clips them
+  // if container dimensions aren't resolved yet during synchronous init).
+  requestAnimationFrame(() => { try { renderSpfAnnotations(); } catch(e) {} });
 
   // ── Data ───────────────────────────────────────────────────────────────────
   async function loadFCs() {
-    const { data } = await sb.from('hazards')
-      .select('id, haz_code, data, status')
+    // Only show tabs for hazards that have FTA nodes generated (on-demand, not auto)
+    const { data: nodes } = await sb.from('fta_nodes')
+      .select('hazard_id')
       .eq('parent_type', parentType).eq('parent_id', parentId)
-      .eq('analysis_type', 'FHA')
-      .order('sort_order', { ascending: true });
-    _fcs = data || [];
-    // Check for orphaned FTA nodes — isolated so any error here doesn't break tab loading
+      .not('hazard_id', 'is', null);
+
+    const hazardIdsWithFTA = [...new Set((nodes || []).map(n => n.hazard_id))];
+
+    if (hazardIdsWithFTA.length) {
+      const { data } = await sb.from('hazards')
+        .select('id, haz_code, data, status')
+        .in('id', hazardIdsWithFTA)
+        .order('sort_order', { ascending: true });
+      _fcs = (data || []);
+    } else {
+      _fcs = [];
+    }
+
+    // Check for orphaned FTA nodes (hazard_id = null)
     try {
       const { data: orphans } = await sb.from('fta_nodes')
         .select('id')
@@ -278,6 +317,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
         _fcs.push({ id: UNLINKED_ID, haz_code: '—', data: { failure_condition: 'Unlinked FTA (FC deleted)' }, status: 'unlinked' });
       }
     } catch(_) { /* non-fatal */ }
+
     if (_fcs.length && !_activeHazardId) _activeHazardId = _fcs[0].id;
   }
 
@@ -315,11 +355,14 @@ export async function renderFTA(container, { project, item, system, parentType, 
       return;
     }
     el.innerHTML = _fcs.map(fc => {
-      const label = fc.data?.failure_condition || fc.haz_code;
+      const label = fc.id === UNLINKED_ID
+        ? (fc.data?.failure_condition || fc.haz_code)
+        : (fc.data?.[_topEventField] || fc.data?.failure_condition || fc.haz_code);
       const active = fc.id === _activeHazardId;
       const isUnlinked = fc.id === UNLINKED_ID;
-      const short = label.length > 32 ? label.slice(0, 31) + '…' : label;
-      return `<span class="fta-fc-tab${active?' active':''}${isUnlinked?' fta-fc-tab-unlinked':''}" data-hid="${fc.id}" title="${esc(label)}">${isUnlinked ? '⚠ ' : `<span class="fta-fc-tab-code">${esc(fc.haz_code)}</span> `}${esc(short)}<span class="fta-fc-tab-del" data-hid="${fc.id}" title="Delete FTA">×</span></span>`;
+      const full = isUnlinked ? label : `${fc.haz_code} ${label}`;
+      const short = full.length > 40 ? full.slice(0, 39) + '…' : full;
+      return `<span class="fta-fc-tab${active?' active':''}${isUnlinked?' fta-fc-tab-unlinked':''}" data-hid="${fc.id}" title="${esc(full)}">${isUnlinked ? '⚠ ' : ''}${esc(short)}<span class="fta-fc-tab-del" data-hid="${fc.id}" title="Delete FTA">×</span></span>`;
     }).join('');
 
     // Tab switch (click on the label part)
@@ -331,9 +374,10 @@ export async function renderFTA(container, { project, item, system, parentType, 
         _selSet.clear(); _nodes = [];
         closeEditor(); closeAddMenu();
         await loadNodes();
+        recomputeMCS();
         render();
         renderFCTabs();
-        recomputeMCS();
+        refreshFFCPanelIfOpen();
       });
     });
 
@@ -431,7 +475,10 @@ export async function renderFTA(container, { project, item, system, parentType, 
         o2.querySelector('#l2-confirm').onclick = async () => {
           o2.remove();
           await sb.from('fta_nodes').delete().eq('hazard_id', hazardId);
-          _nodes = []; _selSet.clear(); render(); renderFCTabs();
+          _nodes = []; _selSet.clear();
+          _fcs = _fcs.filter(f => f.id !== hazardId);
+          if (_activeHazardId === hazardId) _activeHazardId = _fcs[0]?.id || null;
+          render(); renderFCTabs();
           toast('FTA deleted.', 'success');
         };
       };
@@ -769,12 +816,17 @@ export async function renderFTA(container, { project, item, system, parentType, 
 
     // Port + optional add-child button (leaf event types cannot have children)
     const isLeafType = n.type === 'basic' || n.type === 'undeveloped' || n.type === 'transfer';
-    const portY = belowY + 6;
-    g.appendChild(buildPort(n.id, 0, portY));
+    const portY = belowY + 14;
+    const portG = buildPort(n.id, 0, portY);
+    g.appendChild(portG);
     if (!isLeafType) {
       const addBtn = buildAddBtn(n.id, 0, hh + 10);
       g.appendChild(addBtn);
-      wireAddBtnHover(g, addBtn);
+      wireAddBtnHover(g, addBtn, portG);
+    } else {
+      // Leaf nodes: show port on hover even without add button
+      g.addEventListener('mouseenter', () => { portG.style.opacity='1'; }, false);
+      g.addEventListener('mouseleave', () => { portG.style.opacity='0'; }, false);
     }
     return g;
   }
@@ -856,22 +908,28 @@ export async function renderFTA(container, { project, item, system, parentType, 
       g.appendChild(ptxt);
       gBelowY += 14;
     }
-    g.appendChild(buildPort(n.id, 0, gBelowY));
+    const portGG = buildPort(n.id, 0, gBelowY + 10);
+    g.appendChild(portGG);
     const addBtnG = buildAddBtn(n.id, 0, hh + 10);
     g.appendChild(addBtnG);
-    wireAddBtnHover(g, addBtnG);
+    wireAddBtnHover(g, addBtnG, portGG);
     return g;
   }
 
-  // ── Port ────────────────────────────────────────────────────────────────────
+  // ── Port (connection handle — visible on hover, drag to connect) ────────────
   function buildPort(nodeId, px, py) {
     const g=svgEl('g');
     g.setAttribute('class','fta-port');
     g.setAttribute('transform',`translate(${px},${py})`);
     g.dataset.portFor=nodeId;
-    const hit=svgEl('circle'); hit.setAttribute('r','12'); hit.setAttribute('fill','transparent'); hit.setAttribute('class','fta-port-hit');
-    const vis=svgEl('circle'); vis.setAttribute('r','5'); vis.setAttribute('fill','#1E8E3E'); vis.setAttribute('stroke','#fff'); vis.setAttribute('stroke-width','1.5'); vis.setAttribute('pointer-events','none');
-    g.appendChild(hit); g.appendChild(vis);
+    g.style.opacity='0';
+    g.style.transition='opacity 0.12s';
+    g.style.cursor='crosshair';
+    const title=svgEl('title'); title.textContent='Drag to connect to another node';
+    const hit=svgEl('circle'); hit.setAttribute('r','14'); hit.setAttribute('fill','transparent'); hit.setAttribute('class','fta-port-hit');
+    const ring=svgEl('circle'); ring.setAttribute('r','9'); ring.setAttribute('fill','#1E8E3E'); ring.setAttribute('stroke','#fff'); ring.setAttribute('stroke-width','2'); ring.setAttribute('pointer-events','none');
+    const arrow=svgEl('text'); arrow.setAttribute('x','0'); arrow.setAttribute('y','1'); arrow.setAttribute('text-anchor','middle'); arrow.setAttribute('dominant-baseline','middle'); arrow.setAttribute('font-size','11'); arrow.setAttribute('font-weight','700'); arrow.setAttribute('fill','#fff'); arrow.setAttribute('pointer-events','none'); arrow.textContent='⇣';
+    g.appendChild(title); g.appendChild(hit); g.appendChild(ring); g.appendChild(arrow);
     return g;
   }
 
@@ -891,10 +949,16 @@ export async function renderFTA(container, { project, item, system, parentType, 
     return g;
   }
 
-  // Wire hover show/hide for the add-child button on a node group
-  function wireAddBtnHover(nodeG, addBtnG) {
-    nodeG.addEventListener('mouseenter', () => { addBtnG.style.opacity='1'; }, false);
-    nodeG.addEventListener('mouseleave', () => { addBtnG.style.opacity='0'; }, false);
+  // Wire hover show/hide for port + add-child button on a node group
+  function wireAddBtnHover(nodeG, addBtnG, portG) {
+    nodeG.addEventListener('mouseenter', () => {
+      addBtnG.style.opacity='1';
+      if (portG) portG.style.opacity='1';
+    }, false);
+    nodeG.addEventListener('mouseleave', () => {
+      addBtnG.style.opacity='0';
+      if (portG) portG.style.opacity='0';
+    }, false);
   }
 
   // ── Pending connection ──────────────────────────────────────────────────────
@@ -948,6 +1012,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
     q('fta-btn-sreqs-panel').addEventListener('click', () => toggleSreqsPanel());
     wireMCSBar();
     wireSreqsBar();
+    wireFFCBar();
 
     // Prop panel toggle
     q('fta-prop-toggle').addEventListener('click',()=>{
@@ -1054,6 +1119,37 @@ export async function renderFTA(container, { project, item, system, parentType, 
   function wireCanvas() {
     const wrap=container.querySelector('#fta-cw');
     const svg =container.querySelector('#fta-svg');
+
+    // ── Drop from FFC panel ──────────────────────────────────────────────────
+    wrap.addEventListener('dragover', e => {
+      if (e.dataTransfer.types.includes('application/fta-ffc')) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    });
+    wrap.addEventListener('drop', async e => {
+      const raw = e.dataTransfer.getData('application/fta-ffc');
+      if (!raw) return;
+      e.preventDefault();
+      const { label, code } = JSON.parse(raw);
+      // Convert drop position to canvas coordinates
+      const rect = wrap.getBoundingClientRect();
+      const cx   = (e.clientX - rect.left - _pan.x) / _zoom;
+      const cy   = (e.clientY - rect.top  - _pan.y) / _zoom;
+      const nodeCode = nextCode('basic');
+      const { data, error } = await sb.from('fta_nodes').insert({
+        parent_type: parentType, parent_id: parentId, project_id: project.id,
+        hazard_id: _activeHazardId === UNLINKED_ID ? null : _activeHazardId,
+        type: 'basic', label, component: code, fta_code: nodeCode,
+        x: cx, y: cy, sort_order: _nodes.length, color: '',
+      }).select().single();
+      if (error) { toast('Error inserting node.', 'error'); return; }
+      _nodes.push(data);
+      _selSet.clear(); _selSet.add(data.id);
+      recomputeMCS(); render();
+      refreshFFCPanelIfOpen();
+      toast(`Added basic event: ${nodeCode}`, 'success');
+    });
 
     wrap.addEventListener('wheel',e=>{
       e.preventDefault();
@@ -1231,9 +1327,14 @@ export async function renderFTA(container, { project, item, system, parentType, 
   async function createConn(parentId,childId) {
     if (isDescendant(parentId,childId)) { toast('Cycle detected — not connected.','error'); return; }
     const child=byId(childId); if(!child) return;
+    // If child already has a parent, sever the old connection first
+    const oldParentId = child.parent_node_id;
     pushUndo(`Connect ${byId(parentId)?.fta_code||'?'} → ${child.fta_code||'?'}`);
     child.parent_node_id=parentId;
     await autosave(childId,{parent_node_id:parentId});
+    // Re-balance the new parent's children and the old parent if it changed
+    await redistributeChildren(parentId);
+    if (oldParentId && oldParentId !== parentId) await redistributeChildren(oldParentId);
     recomputeMCS(); render();
     syncAndGateReq(parentId);
   }
@@ -1650,6 +1751,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       if (byId(pid)) await redistributeChildren(pid);
     }
     _selSet.clear(); recomputeMCS(); render();
+    refreshFFCPanelIfOpen();
     // Sync requirements for any AND gate parents that lost children
     for (const pid of parentsToRedist) { syncAndGateReq(pid); }
   }
@@ -2111,7 +2213,7 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const reqCode  = `REQ-${pfx}-${projAbbr}-${String((reqCount||0)+1).padStart(3,'0')}`;
       const { data: inserted, error } = await sb.from('requirements').insert({
         req_code: reqCode, title, description,
-        type: 'safety', priority: 'high', status: 'draft',
+        type: 'safety-independency', priority: 'high', status: 'draft',
         parent_type: parentType, parent_id: parentId, project_id: project.id,
         source: gateSource,
       }).select('id, req_code, title, status, source').single();
@@ -2127,20 +2229,37 @@ export async function renderFTA(container, { project, item, system, parentType, 
     const { data: existing } = await sb.from('nav_pages')
       .select('id').eq('parent_type', parentType).eq('parent_id', parentId)
       .ilike('name', SAFETY_REQ_PAGE_NAME).maybeSingle();
-    if (existing) return;
     const { data: anyPages } = await sb.from('nav_pages')
       .select('domain').eq('parent_type', parentType).eq('parent_id', parentId)
       .order('sort_order').limit(1);
     const domain = anyPages?.[0]?.domain || (parentType === 'system' ? 'system' : 'item');
-    const { count: pgCount } = await sb.from('nav_pages')
-      .select('*', { count: 'exact', head: true })
-      .eq('parent_type', parentType).eq('parent_id', parentId)
-      .eq('domain', domain).eq('phase', 'requirements');
-    await sb.from('nav_pages').insert({
-      parent_type: parentType, parent_id: parentId,
-      domain, phase: 'requirements',
-      name: SAFETY_REQ_PAGE_NAME, sort_order: pgCount || 0,
-    });
+    if (!existing) {
+      const { count: pgCount } = await sb.from('nav_pages')
+        .select('*', { count: 'exact', head: true })
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .eq('domain', domain).eq('phase', 'requirements');
+      await sb.from('nav_pages').insert({
+        parent_type: parentType, parent_id: parentId,
+        domain, phase: 'requirements',
+        name: SAFETY_REQ_PAGE_NAME, sort_order: pgCount || 0,
+      });
+    }
+    // Also ensure DFA nav page exists (sibling of Safety Requirements)
+    const { data: dfaPage } = await sb.from('nav_pages')
+      .select('id').eq('parent_type', parentType).eq('parent_id', parentId)
+      .ilike('name', 'DFA').maybeSingle();
+    if (!dfaPage) {
+      const { count: pgCount2 } = await sb.from('nav_pages')
+        .select('*', { count: 'exact', head: true })
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .eq('domain', domain).eq('phase', 'safety');
+      await sb.from('nav_pages').insert({
+        parent_type: parentType, parent_id: parentId,
+        domain, phase: 'safety',
+        name: 'DFA', sort_order: pgCount2 || 0,
+        analysis_type: 'DFA',
+      });
+    }
   }
 
   // ── Floating SPF annotation panels ────────────────────────────────────────────
@@ -2158,15 +2277,15 @@ export async function renderFTA(container, { project, item, system, parentType, 
       // Migrate or reset old state that lacks relY (pre-v0.2.2 format)
       if (_spfAnnotState[n.id]?.relY == null) delete _spfAnnotState[n.id];
       const existing = _spfAnnotState[n.id] || {};
-      const dw = existing.w || 210;
+      if (!existing.w) existing.w = 210;
+      if (!existing.h) existing.h = 0; // 0 = auto (no min-height override)
       if (existing.relY == null) existing.relY = 20; // default: 20 canvas-px below visual bottom
       if (!existing.userMoved) {
-        existing.cx = n.x - dw / (2 * _zoom);  // horizontally centred on node
+        existing.cx = n.x - existing.w / (2 * _zoom);  // horizontally centred on node
       }
       _spfAnnotState[n.id] = existing;
 
       const state = _spfAnnotState[n.id];
-      // cy tracks the TRUE visual bottom (including indicator shapes + ext fields) + relY
       const nodeBtm = nodeVisualBottom(n);
       const cy = nodeBtm + state.relY;
 
@@ -2176,11 +2295,12 @@ export async function renderFTA(container, { project, item, system, parentType, 
       const statIcon  = accepted ? '✓' : rejected ? '✕' : '!';
 
       const { left, top } = canvasToScreen(state.cx, cy);
+      const minHStyle = state.h > 0 ? `min-height:${state.h}px;` : '';
 
       const panel = document.createElement('div');
       panel.className = 'fta-spf-float';
       panel.dataset.nid = n.id;
-      panel.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${state.w}px;` +
+      panel.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${state.w}px;${minHStyle}` +
         `transform:scale(${_zoom});transform-origin:top left;` +
         `background:#fff;border:2px solid ${bdColor};border-radius:6px;` +
         `box-shadow:2px 4px 12px rgba(0,0,0,.18);z-index:100;font-family:inherit;font-size:11px;overflow:visible;`;
@@ -2273,8 +2393,9 @@ export async function renderFTA(container, { project, item, system, parentType, 
       e.preventDefault(); e.stopPropagation();
       const startX = e.clientX, startY = e.clientY;
       const startW = panel.offsetWidth, startH = panel.offsetHeight;
+      // Derive actual canvas coords from the panel's current screen position (state only has relY, not cy)
       const startCX = _spfAnnotState[nid]?.cx || 0;
-      const startCY = _spfAnnotState[nid]?.cy || 0;
+      const { cy: startCY } = screenToCanvas(parseFloat(panel.style.left) || 0, parseFloat(panel.style.top) || 0);
       const onMove = ev => {
         // Deltas are screen px; divide by _zoom to get DOM px (panel dims stored at zoom=1)
         const dx = (ev.clientX - startX) / _zoom, dy = (ev.clientY - startY) / _zoom;
@@ -2285,7 +2406,11 @@ export async function renderFTA(container, { project, item, system, parentType, 
         if (cls.includes('w')) { nw2 = Math.max(140, startW - dx); ncx = startCX + (startW - nw2); }
         // North: shrink from top — anchor moves down in canvas space
         if (cls.includes('n')) { nh2 = Math.max(60,  startH - dy); ncy = startCY + (startH - nh2); }
-        _spfAnnotState[nid] = { ..._spfAnnotState[nid], cx: ncx, cy: ncy, w: nw2, h: nh2 };
+        // Keep relY in sync so the panel re-renders correctly on layout changes
+        const n = byId(nid);
+        const nodeBtm = n ? nodeVisualBottom(n) : 0;
+        const newRelY = ncy - nodeBtm;
+        _spfAnnotState[nid] = { ..._spfAnnotState[nid], cx: ncx, relY: newRelY, w: nw2, h: nh2, userMoved: true };
         const { left, top } = canvasToScreen(ncx, ncy);
         panel.style.left      = left + 'px';
         panel.style.top       = top  + 'px';
@@ -2401,27 +2526,245 @@ export async function renderFTA(container, { project, item, system, parentType, 
     highlightAndGateInSreqs(null);
   }
 
+  // ── Functional Failure Conditions panel (Features > Use Cases > Functions > FFCs) ──
+  const _ffc = { loaded: false, selFeatId: null, selUCId: null, selFnId: null,
+                 features: [], useCases: [], functions: [], ffcs: [] };
+
+  function wireFFCBar() {
+    const bar = container.querySelector('#fta-ffc-bar');
+    if (!bar) return;
+    wireBottomPanel(bar, {
+      key: `fta_ffc_h_${parentType}_${parentId}`,
+      defaultH: 200,
+      onExpand: () => loadFFCFeatures(),
+    });
+  }
+
+  async function loadFFCFeatures() {
+    const body = container.querySelector('#fta-ffc-body');
+    if (!body) return;
+    if (_ffc.loaded) { renderFFCCols(); return; }
+    body.innerHTML = '<div class="fta-ffc-loading">Loading…</div>';
+    const { data: feats } = await sb.from('features')
+      .select('*').eq('parent_type', parentType).eq('parent_id', parentId)
+      .order('sort_order').order('created_at');
+    _ffc.features = feats || [];
+    _ffc.loaded = true;
+    renderFFCCols();
+  }
+
+  function renderFFCCols() {
+    const body = container.querySelector('#fta-ffc-body');
+    if (!body) return;
+    body.innerHTML = `<div class="fta-ffc-cols" id="fta-ffc-cols">
+      ${ffcFeatColHTML()}${ffcUCColHTML()}${ffcFnColHTML()}${ffcFFCColHTML()}
+    </div>`;
+    wireFFCCols();
+  }
+
+  function ffcFeatColHTML() {
+    const feats = _ffc.features;
+    const rows = feats.length
+      ? feats.map(f => {
+          const sel = _ffc.selFeatId === f.id;
+          return `<div class="fuf-row fta-ffc-row${sel ? ' selected' : ''}" data-id="${esc(f.id)}" data-ffc-type="feat">
+            <div class="fuf-row-main">
+              <span class="fuf-icon feat-icon">◈</span>
+              <div class="fuf-row-text">
+                <span class="fuf-code">${esc(f.feat_code || '')}</span>
+                <span class="fuf-name">${esc(f.name)}</span>
+              </div>
+            </div>
+          </div>`;
+        }).join('')
+      : '<div class="fuf-empty">No features</div>';
+    return `<div class="fuf-col fta-ffc-col" id="fta-ffc-col-feat">
+      <div class="fuf-col-header"><span class="fuf-col-icon feat-icon">◈</span><span class="fuf-col-title">Features</span></div>
+      <div class="fuf-col-body">${rows}</div>
+    </div>`;
+  }
+
+  function ffcUCColHTML() {
+    const ucs = _ffc.useCases;
+    const empty = !_ffc.selFeatId
+      ? '<div class="fuf-empty fuf-hint">← Select a Feature</div>'
+      : '<div class="fuf-empty">No use cases</div>';
+    const rows = ucs.length
+      ? ucs.map(u => {
+          const sel = _ffc.selUCId === u.id;
+          return `<div class="fuf-row fta-ffc-row${sel ? ' selected' : ''}" data-id="${esc(u.id)}" data-ffc-type="uc">
+            <div class="fuf-row-main">
+              <span class="fuf-icon uc-icon">◇</span>
+              <div class="fuf-row-text">
+                <span class="fuf-code">${esc(u.uc_code || '')}</span>
+                <span class="fuf-name">${esc(u.name)}</span>
+              </div>
+            </div>
+          </div>`;
+        }).join('')
+      : empty;
+    return `<div class="fuf-col fta-ffc-col" id="fta-ffc-col-uc">
+      <div class="fuf-col-header"><span class="fuf-col-icon uc-icon">◇</span><span class="fuf-col-title">Use Cases</span></div>
+      <div class="fuf-col-body">${rows}</div>
+    </div>`;
+  }
+
+  function ffcFnColHTML() {
+    const fns = _ffc.functions;
+    const empty = !_ffc.selUCId
+      ? '<div class="fuf-empty fuf-hint">← Select a Use Case</div>'
+      : '<div class="fuf-empty">No functions</div>';
+    const rows = fns.length
+      ? fns.map(fn => {
+          const sel = _ffc.selFnId === fn.id;
+          return `<div class="fuf-row fta-ffc-row${sel ? ' selected' : ''}" data-id="${esc(fn.id)}" data-ffc-type="fn">
+            <div class="fuf-row-main">
+              <span class="fuf-icon fun-icon">⚙</span>
+              <div class="fuf-row-text">
+                <span class="fuf-code">${esc(fn.func_code || fn.fn_code || '')}</span>
+                <span class="fuf-name">${esc(fn.name)}</span>
+              </div>
+            </div>
+          </div>`;
+        }).join('')
+      : empty;
+    return `<div class="fuf-col fta-ffc-col" id="fta-ffc-col-fn">
+      <div class="fuf-col-header"><span class="fuf-col-icon fun-icon">⚙</span><span class="fuf-col-title">Functions</span></div>
+      <div class="fuf-col-body">${rows}</div>
+    </div>`;
+  }
+
+  function ffcFFCColHTML() {
+    const ffcs = _ffc.ffcs;
+    const insertedCodes = new Set(_nodes.map(n => n.component).filter(Boolean));
+    const empty = !_ffc.selFnId
+      ? '<div class="fuf-empty fuf-hint">← Select a Function</div>'
+      : '<div class="fuf-empty">No FFCs for this function</div>';
+    const rows = ffcs.length
+      ? ffcs.map(h => {
+          const label    = h.data?.failure_condition || h.data?.functional_failure_condition || '(no label)';
+          const code     = h.haz_code || '';
+          const inserted = insertedCodes.has(code);
+          return `<div class="fuf-row fta-ffc-row fta-ffc-ffc-row${inserted ? ' fta-ffc-ffc--inserted' : ''}"
+                    draggable="true"
+                    data-id="${esc(h.id)}" data-ffc-type="ffc"
+                    data-label="${esc(label)}" data-code="${esc(code)}"
+                    title="${inserted ? '✔ Already in diagram' : 'Drag to FTA canvas as Basic Event'} · ${esc(code)}">
+                    <div class="fuf-row-main">
+                      <span class="fuf-icon" style="font-size:13px">${inserted ? '✔' : '○'}</span>
+                      <div class="fuf-row-text">
+                        <span class="fuf-code">${esc(code)}</span>
+                        <span class="fuf-name">${esc(label)}</span>
+                      </div>
+                    </div>
+                  </div>`;
+        }).join('')
+      : empty;
+    const hint = ffcs.length ? '<div class="fta-ffc-drag-hint">Drag a row to the FTA canvas to insert as Basic Event</div>' : '';
+    return `<div class="fuf-col fta-ffc-col fta-ffc-col--ffc" id="fta-ffc-col-ffc">
+      <div class="fuf-col-header"><span class="fuf-col-icon" style="font-size:14px">⚡</span><span class="fuf-col-title">Functional Failure Conditions</span></div>
+      ${hint}
+      <div class="fuf-col-body">${rows}</div>
+    </div>`;
+  }
+
+  function wireFFCCols() {
+    const cols = container.querySelector('#fta-ffc-cols');
+    if (!cols) return;
+
+    // Row click — navigate feat → uc → fn
+    cols.addEventListener('click', async e => {
+      const row = e.target.closest('.fta-ffc-row[data-ffc-type]');
+      if (!row) return;
+      const { id, ffcType } = row.dataset;
+      if (ffcType === 'feat') {
+        if (_ffc.selFeatId === id) return;
+        _ffc.selFeatId = id; _ffc.selUCId = null; _ffc.selFnId = null;
+        _ffc.useCases = []; _ffc.functions = []; _ffc.ffcs = [];
+        renderFFCCols();
+        const { data } = await sb.from('use_cases').select('*')
+          .eq('feature_id', id).order('sort_order').order('created_at');
+        _ffc.useCases = data || [];
+        renderFFCCols();
+      } else if (ffcType === 'uc') {
+        if (_ffc.selUCId === id) return;
+        _ffc.selUCId = id; _ffc.selFnId = null;
+        _ffc.functions = []; _ffc.ffcs = [];
+        renderFFCCols();
+        const { data } = await sb.from('functions').select('*')
+          .eq('use_case_id', id).order('sort_order').order('created_at');
+        _ffc.functions = data || [];
+        renderFFCCols();
+      } else if (ffcType === 'fn') {
+        if (_ffc.selFnId === id) return;
+        _ffc.selFnId = id; _ffc.ffcs = [];
+        renderFFCCols();
+        const { data } = await sb.from('hazards').select('id, haz_code, data')
+          .eq('analysis_type', 'FHA')
+          .eq('function_id', id)
+          .order('sort_order').order('created_at');
+        _ffc.ffcs = data || [];
+        renderFFCCols();
+      }
+    });
+
+    // Drag from FFC rows
+    cols.querySelectorAll('.fta-ffc-ffc-row[draggable]').forEach(row => {
+      row.addEventListener('dragstart', e => {
+        e.dataTransfer.effectAllowed = 'copy';
+        e.dataTransfer.setData('application/fta-ffc', JSON.stringify({
+          label: row.dataset.label,
+          code:  row.dataset.code,
+          hazId: row.dataset.id,
+        }));
+      });
+    });
+  }
+
+  // Refresh FFC column (inserted badges) when nodes change, without reloading data
+  function refreshFFCPanelIfOpen() {
+    const bar = container.querySelector('#fta-ffc-bar');
+    if (!bar || bar.classList.contains('bp-collapsed')) return;
+    // Just re-render the FFC column in place to update inserted badges
+    const ffcCol = container.querySelector('#fta-ffc-col-ffc');
+    if (ffcCol) {
+      ffcCol.outerHTML = ffcFFCColHTML();
+      // Re-wire drag on the new column
+      const newCol = container.querySelector('#fta-ffc-col-ffc');
+      if (newCol) {
+        newCol.querySelectorAll('.fta-ffc-ffc-row[draggable]').forEach(row => {
+          row.addEventListener('dragstart', e => {
+            e.dataTransfer.effectAllowed = 'copy';
+            e.dataTransfer.setData('application/fta-ffc', JSON.stringify({
+              label: row.dataset.label,
+              code:  row.dataset.code,
+              hazId: row.dataset.id,
+            }));
+          });
+        });
+      }
+    }
+  }
+
   // ── Safety Requirements panel ───────────────────────────────────────────────
   function wireSreqsBar() {
-    const hdr  = container.querySelector('#fta-sreqs-hdr');
-    const bar  = container.querySelector('#fta-sreqs-bar');
-    const tog  = container.querySelector('#fta-sreqs-toggle');
-    if (!hdr || bar?.dataset?.wired) return;
-    bar.dataset.wired = '1';
-    hdr.addEventListener('click', () => {
-      const collapsed = bar.classList.toggle('fta-sreqs-collapsed');
-      tog.textContent = collapsed ? '▲' : '▼';
-      if (!collapsed) loadSafetyReqs();
+    const bar = container.querySelector('#fta-sreqs-bar');
+    if (!bar) return;
+    wireBottomPanel(bar, {
+      key: `fta_sreqs_h_${parentType}_${parentId}`,
+      defaultH: 200,
+      onExpand: () => loadSafetyReqs(),
     });
   }
 
   function toggleSreqsPanel() {
     const bar = container.querySelector('#fta-sreqs-bar');
-    const tog = container.querySelector('#fta-sreqs-toggle');
     if (!bar) return;
-    const collapsed = bar.classList.toggle('fta-sreqs-collapsed');
-    if (tog) tog.textContent = collapsed ? '▲' : '▼';
-    if (!collapsed) loadSafetyReqs();
+    if (bar.classList.contains('bp-collapsed')) {
+      bar._bp?.expand();
+    } else {
+      bar._bp?.collapse();
+    }
   }
 
   async function loadSafetyReqs() {
@@ -2513,50 +2856,14 @@ export async function renderFTA(container, { project, item, system, parentType, 
     });
   }
 
-  // Wire MCS bar toggle in init (after HTML is set)
+  // Wire MCS bar
   function wireMCSBar() {
-    const hdr = container.querySelector('#fta-mcs-hdr');
     const bar = container.querySelector('#fta-mcs-bar');
-    const tog = container.querySelector('#fta-mcs-toggle');
-    const rh  = container.querySelector('#fta-mcs-rh');
-    if (!hdr || bar?.dataset?.wired) return;
-    bar.dataset.wired = '1';
-
-    // Restore saved height
-    const MCS_H_KEY = `fta_mcs_h_${parentType}_${parentId}`;
-    const savedH = parseInt(localStorage.getItem(MCS_H_KEY)) || 220;
-    bar.style.setProperty('--mcs-h', savedH + 'px');
-
-    hdr.addEventListener('click', () => {
-      const collapsed = bar.classList.toggle('fta-mcs-collapsed');
-      tog.textContent = collapsed ? '▲' : '▼';
+    if (!bar) return;
+    wireBottomPanel(bar, {
+      key: `fta_mcs_h_${parentType}_${parentId}`,
+      defaultH: 220,
     });
-
-    // Resize drag on top handle
-    if (rh) {
-      rh.addEventListener('mousedown', e => {
-        if (e.button !== 0) return;
-        e.preventDefault(); e.stopPropagation();
-        const startY   = e.clientY;
-        const startH   = bar.offsetHeight;
-        const onMove = ev => {
-          const newH = Math.max(60, Math.min(window.innerHeight * 0.7, startH - (ev.clientY - startY)));
-          bar.style.setProperty('--mcs-h', newH + 'px');
-          if (bar.classList.contains('fta-mcs-collapsed')) {
-            bar.classList.remove('fta-mcs-collapsed');
-            tog.textContent = '▼';
-          }
-        };
-        const onUp = () => {
-          localStorage.setItem(MCS_H_KEY, parseInt(bar.style.getPropertyValue('--mcs-h')) || savedH);
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
-        };
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-      });
-    }
-
     const lvlSel = container.querySelector('#fta-mcs-lvl');
     if (lvlSel) {
       lvlSel.addEventListener('change', () => {

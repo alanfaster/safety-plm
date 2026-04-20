@@ -69,7 +69,9 @@
 }
 .bp-body {
   overflow-y: auto;
+  overflow-x: hidden;
   flex: 1;
+  min-height: 0;   /* prevents flex children from ignoring overflow */
 }
 
 :root {
@@ -2088,7 +2090,7 @@ input, select, textarea { font-family: var(--font); }
 .dfmea-panel-hdr{display:flex;align-items:center;gap:10px;padding:3px 12px;border-bottom:1px solid var(--color-border);flex-shrink:0;background:var(--color-bg)}
 .dfmea-panel-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-text-muted)}
 .dfmea-panel-hint{font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--color-text-muted);font-style:italic;flex:1}
-.dfmea-chain-body{flex:1;overflow-y:auto;padding:10px 14px}
+.dfmea-chain-body{flex:1;overflow-y:auto;overflow-x:hidden;min-height:0;padding:10px 14px}
 
 /* 3-column chain layout */
 .dfmea-chain{display:grid;grid-template-columns:1fr 20px 1fr 20px 1fr;gap:0;height:100%}
@@ -2337,15 +2339,7 @@ td:hover .dfmea-del-inline{display:inline-block}
 .fta-info-value{font-size:11px;color:var(--color-text);line-height:1.3}
 
 /* ── FTA MCS bottom bar ─────────────────────────────────────────────────── */
-.fta-mcs-bar{flex-shrink:0;border-top:2px solid var(--color-border);background:#fff;display:flex;flex-direction:column;height:36px;min-height:36px;max-height:70vh;overflow:hidden;position:relative}
-.fta-mcs-bar:not(.fta-mcs-collapsed){height:var(--mcs-h,220px)}
-.fta-mcs-bar.fta-mcs-collapsed{height:36px!important;min-height:36px}
-.fta-mcs-resize-handle{position:absolute;top:-4px;left:0;right:0;height:8px;cursor:ns-resize;z-index:10;background:transparent}
-.fta-mcs-resize-handle:hover{background:rgba(26,115,232,.12)}
-.fta-mcs-hdr{display:flex;align-items:center;gap:8px;padding:0 12px;height:36px;cursor:pointer;user-select:none;flex-shrink:0;background:#f9fafb;border-bottom:1px solid var(--color-border)}
-.fta-mcs-hdr-title{font-size:11px;font-weight:700;color:var(--color-text);flex:1}
-.fta-mcs-toggle{font-size:10px;color:var(--color-text-muted);margin-left:auto}
-.fta-mcs-body{overflow-y:auto;flex:1;padding:6px 12px}
+.fta-mcs-body{padding:6px 12px}
 .fta-mcs-empty{font-size:12px;color:var(--color-text-muted);padding:8px 0;font-style:italic}
 .fta-mcs-table{width:100%;border-collapse:collapse;font-size:11px}
 .fta-mcs-table th{text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);padding:4px 8px 3px;border-bottom:1px solid var(--color-border)}
@@ -2355,14 +2349,31 @@ td:hover .dfmea-del-inline{display:inline-block}
 .fta-mcs-order{font-weight:700;font-size:10px;color:var(--color-text-muted)}
 .fta-mcs-codes{font-family:monospace;font-size:10px;color:#172B4D}
 
+/* ── FTA Functional Failure Conditions panel ────────────────────────────── */
+.fta-ffc-bar { background:#fffdf4; border-top-color:#F9AB00; }
+.fta-ffc-bar .bp-title { color:#b06000; }
+.fta-ffc-body-wrap { padding:0 !important; overflow:hidden !important; display:flex; flex-direction:column; min-height:0; }
+.fta-ffc-loading { font-size:12px; color:#999; padding:12px 16px; }
+.fta-ffc-cols { display:flex; flex:1; min-height:0; overflow:hidden; }
+.fta-ffc-col { flex:1; min-width:150px; border-right:1px solid #e8d97a; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+.fta-ffc-col--ffc { flex:1.6; min-width:220px; border-right:none; }
+.fta-ffc-col .fuf-col-header { background:#f8f4e8; border-bottom:1px solid #e8d97a; padding:0 10px; height:28px; display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.fta-ffc-col .fuf-col-title { font-size:11px; font-weight:700; color:#7b5800; }
+.fta-ffc-col .fuf-col-body { overflow-y:auto; flex:1; min-height:0; }
+.fta-ffc-row { cursor:pointer; }
+.fta-ffc-row:hover { background:#fffbe6; }
+.fta-ffc-row.selected { background:#fff3c4; border-left:3px solid #F9AB00; }
+.fta-ffc-ffc-row { cursor:grab; }
+.fta-ffc-ffc-row:active { cursor:grabbing; }
+.fta-ffc-ffc--inserted { background:#f0faf4 !important; }
+.fta-ffc-ffc--inserted .fuf-icon { color:#1e8e3e !important; }
+.fta-ffc-ffc--inserted .fuf-code { color:#1e5c2e; }
+.fta-ffc-drag-hint { font-size:10px; color:#aaa; padding:3px 10px; font-style:italic; flex-shrink:0; border-bottom:1px solid #f0e8c0; background:#fffdf4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
 /* ── FTA Safety Requirements bottom bar ─────────────────────────────────── */
-.fta-sreqs-bar{flex-shrink:0;border-top:2px solid var(--color-border);background:#fff;display:flex;flex-direction:column;height:36px;min-height:36px;max-height:50vh;overflow:hidden;position:relative}
-.fta-sreqs-bar:not(.fta-sreqs-collapsed){height:200px}
-.fta-sreqs-bar.fta-sreqs-collapsed{height:36px!important;min-height:36px}
-.fta-sreqs-hdr{display:flex;align-items:center;gap:8px;padding:0 12px;height:36px;cursor:pointer;user-select:none;flex-shrink:0;background:#f4f8ff;border-bottom:1px solid var(--color-border)}
-.fta-sreqs-hdr-title{font-size:11px;font-weight:700;color:#1A73E8;flex:1}
-.fta-sreqs-toggle{font-size:10px;color:var(--color-text-muted);margin-left:auto}
-.fta-sreqs-body{overflow-y:auto;flex:1;padding:6px 12px}
+.fta-sreqs-bar .bp-hdr { background:#f4f8ff; }
+.fta-sreqs-hdr-title { color:#1A73E8; }
+.fta-sreqs-body { padding:6px 12px; }
 .fta-sreqs-empty{font-size:12px;color:var(--color-text-muted);padding:8px 0;font-style:italic}
 .fta-sreqs-table{width:100%;border-collapse:collapse;font-size:11px}
 .fta-sreqs-table th{text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);padding:4px 8px 3px;border-bottom:1px solid var(--color-border)}
@@ -2377,7 +2388,7 @@ td:hover .dfmea-del-inline{display:inline-block}
 .fta-sreqs-status-review{background:#e8f0fe;color:#1A73E8;border:1px solid #a8c4f8}
 
 /* ── DFMEA Structure Map panel ───────────────────────────────────────────── */
-.dfmea-map-body{flex:1;overflow:auto;background:#F4F5F7;padding:12px 16px}
+.dfmea-map-body{flex:1;overflow:auto;min-height:0;background:#F4F5F7;padding:12px 16px}
 
 /* Tree wrapper */
 .dmap-tree-wrap{display:flex;flex-direction:column;gap:0}
@@ -2481,3 +2492,59 @@ td:hover .dfmea-del-inline{display:inline-block}
 /* Inline editing inputs inside map */
 .dmap-inline-input{font-size:11px;padding:2px 5px;border:1px solid var(--color-primary);border-radius:3px;outline:none;min-width:80px;max-width:220px;background:#fff}
 .dmap-inline-num{font-size:11px;padding:2px 3px;border:1px solid var(--color-primary);border-radius:3px;outline:none;text-align:center;background:#fff}
+
+/* ============================================================
+   DFA — Dependent Failure Analysis
+   ============================================================ */
+.dfa-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden;background:#F7F8FA}
+.dfa-topbar{padding:14px 24px 10px;border-bottom:1px solid var(--color-border);background:#fff;flex-shrink:0}
+.dfa-title{margin:0 0 2px;font-size:18px;font-weight:700;color:var(--color-text)}
+.dfa-subtitle{font-size:12px;color:var(--color-text-muted)}
+.dfa-body{flex:1;overflow-y:auto;padding:16px 24px;display:flex;flex-direction:column;gap:12px}
+.dfa-loading,.dfa-empty{padding:40px;text-align:center;color:var(--color-text-muted)}
+.dfa-empty-icon{font-size:40px;margin-bottom:12px}
+.dfa-empty-title{font-size:16px;font-weight:600;margin-bottom:8px;color:var(--color-text)}
+.dfa-empty-sub{font-size:13px;line-height:1.6;max-width:540px;margin:0 auto}
+
+/* Cards */
+.dfa-card{background:#fff;border:1px solid var(--color-border);border-radius:8px;overflow:hidden}
+.dfa-card-hdr{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;user-select:none;background:#fff;border-bottom:1px solid transparent;transition:background 0.1s}
+.dfa-card-hdr:hover{background:#F1F3F4}
+.dfa-card:not(.dfa-card-collapsed) .dfa-card-hdr{border-bottom-color:var(--color-border)}
+.dfa-card-code{font-size:11px;font-weight:700;font-family:var(--font-mono);color:var(--color-primary);flex-shrink:0;background:#EAF1FB;padding:2px 6px;border-radius:4px}
+.dfa-card-title{flex:1;font-size:12px;font-weight:600;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dfa-card-conclusion{font-size:11px;font-weight:700;flex-shrink:0}
+.dfa-card-toggle{font-size:10px;color:var(--color-text-muted);flex-shrink:0;transition:transform 0.2s}
+.dfa-card-collapsed .dfa-card-toggle{transform:rotate(-90deg)}
+.dfa-card-body{padding:0 16px 16px;display:block}
+.dfa-card-collapsed .dfa-card-body{display:none}
+.dfa-req-desc{font-size:11px;color:var(--color-text-muted);padding:10px 0 6px;border-bottom:1px dashed var(--color-border);margin-bottom:12px;line-height:1.5}
+
+/* Sections */
+.dfa-section{margin-bottom:14px}
+.dfa-section-title{font-size:11px;font-weight:700;color:var(--color-text);text-transform:uppercase;letter-spacing:.06em;padding:0 0 6px;border-bottom:2px solid #E8EAED;margin-bottom:10px}
+.dfa-section-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* Fields */
+.dfa-field{display:flex;flex-direction:column;gap:3px}
+.dfa-field-full{grid-column:1/-1}
+.dfa-field-label{font-size:11px;font-weight:600;color:var(--color-text-muted)}
+.dfa-field-input,.dfa-field-select{font-size:12px;padding:5px 8px;border:1px solid #D0D7DE;border-radius:5px;outline:none;transition:border-color 0.15s;background:#fff;color:var(--color-text)}
+.dfa-field-input:focus,.dfa-field-select:focus{border-color:var(--color-primary)}
+.dfa-field-textarea{font-size:12px;padding:5px 8px;border:1px solid #D0D7DE;border-radius:5px;outline:none;resize:vertical;line-height:1.5;font-family:inherit;color:var(--color-text);background:#fff;transition:border-color 0.15s}
+.dfa-field-textarea:focus{border-color:var(--color-primary)}
+
+/* Checkbox groups */
+.dfa-check-group{display:flex;flex-direction:column;gap:5px;padding:4px 0}
+.dfa-check-label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text);cursor:pointer}
+.dfa-check-label input[type=checkbox]{accent-color:var(--color-primary);width:13px;height:13px}
+
+/* Badges */
+.dfa-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;flex-shrink:0}
+.dfa-badge-open{background:#FEF3C7;color:#92400E}
+.dfa-badge-closed{background:#D1FAE5;color:#065F46}
+.dfa-badge-na{background:#F1F3F4;color:#80868B}
+
+/* Footer */
+.dfa-card-footer{display:flex;align-items:center;gap:10px;padding-top:12px;border-top:1px solid var(--color-border);margin-top:4px}
+.dfa-save-status{font-size:11px;font-weight:600}
