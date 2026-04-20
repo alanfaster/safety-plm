@@ -372,7 +372,11 @@ function wireDetailForm(body, req, ana, analysisByReqId, parentType, parentId, p
       const { error } = await sb.from('dfa_analyses')
         .update({ data, updated_at: new Date().toISOString() })
         .eq('id', currentAnaId);
-      if (error) { statusEl.textContent = '✗ Error'; statusEl.style.color = '#d93025'; return; }
+      if (error) {
+        console.error('DFA update error:', error);
+        statusEl.textContent = '✗ ' + (error.message || error.code || 'Error saving');
+        statusEl.style.color = '#d93025'; return;
+      }
       analysisByReqId[req.id] = { ...analysisByReqId[req.id], data };
     } else {
       const { data: inserted, error } = await sb.from('dfa_analyses').insert({
@@ -383,7 +387,11 @@ function wireDetailForm(body, req, ana, analysisByReqId, parentType, parentId, p
         parent_id: parentId,
         data,
       }).select('id').single();
-      if (error) { statusEl.textContent = '✗ Error'; statusEl.style.color = '#d93025'; return; }
+      if (error) {
+        console.error('DFA insert error:', error);
+        statusEl.textContent = '✗ ' + (error.message || error.code || 'Error saving');
+        statusEl.style.color = '#d93025'; return;
+      }
       analysisByReqId[req.id] = { id: inserted.id, data };
     }
 
