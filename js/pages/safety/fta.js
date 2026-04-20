@@ -885,8 +885,9 @@ export async function renderFTA(container, { project, item, system, parentType, 
     if (sel) shape.setAttribute('filter','drop-shadow(0 0 8px rgba(26,115,232,.6))');
     g.appendChild(shape);
 
+    const hasCode = !!(n.fta_code);
     const lbl=svgEl('text');
-    lbl.setAttribute('x',0); lbl.setAttribute('y',2);
+    lbl.setAttribute('x',0); lbl.setAttribute('y', hasCode ? -5 : 2);
     lbl.setAttribute('text-anchor','middle'); lbl.setAttribute('dominant-baseline','middle');
     lbl.setAttribute('font-size','13'); lbl.setAttribute('font-weight','700');
     lbl.setAttribute('fill',stroke);
@@ -894,6 +895,17 @@ export async function renderFTA(container, { project, item, system, parentType, 
     lbl.setAttribute('pointer-events','none');
     lbl.textContent=n.label||t.label;
     g.appendChild(lbl);
+    if (hasCode) {
+      const codeLbl=svgEl('text');
+      codeLbl.setAttribute('x',0); codeLbl.setAttribute('y',10);
+      codeLbl.setAttribute('text-anchor','middle'); codeLbl.setAttribute('dominant-baseline','middle');
+      codeLbl.setAttribute('font-size','9'); codeLbl.setAttribute('font-weight','600');
+      codeLbl.setAttribute('fill',stroke); codeLbl.setAttribute('opacity','0.75');
+      codeLbl.setAttribute('font-family','-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif');
+      codeLbl.setAttribute('pointer-events','none');
+      codeLbl.textContent=n.fta_code;
+      g.appendChild(codeLbl);
+    }
 
     // Computed P below gate shape (outside, left-aligned)
     let gBelowY = hh + 8;
