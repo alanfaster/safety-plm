@@ -74,7 +74,7 @@ async function loadRequirements(project, parentType, parentId, typeFilter = null
     .order('created_at', { ascending: true });
   if (Array.isArray(typeFilter) && typeFilter.length) q = q.in('type', typeFilter);
   else if (typeFilter) q = q.eq('type', typeFilter);
-  else if (excludeInterface) q = q.neq('type', 'interface');
+  else if (excludeInterface) q = q.not('type', 'in', '("interface","safety-independency")');
   const { data, error } = await q;
 
   const body = document.getElementById('req-body');
