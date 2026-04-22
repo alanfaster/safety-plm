@@ -117,7 +117,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
         </div>
         <div class="vme-toolbar-right">
           <div class="vme-legend">
-            <span class="vme-legend-trace">↔ Traceability</span>
+            <span class="vme-legend-trace">↔ Bidirectional traceability</span>
           </div>
           <button class="btn btn-primary btn-sm" id="vme-save">Save</button>
         </div>
@@ -273,7 +273,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
 
     menu.innerHTML = `
       <div class="vme-menu-title">${node.label}</div>
-      <button class="vme-menu-item vme-menu-trace" data-action="trace">↔ Add Traceability link</button>
+      <button class="vme-menu-item vme-menu-trace" data-action="trace">↔ Add Bidirectional traceability link</button>
       <div class="vme-menu-sep"></div>
       <button class="vme-menu-item vme-menu-del"   data-action="del">✕ Delete node</button>
     `;
@@ -283,7 +283,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     menu.querySelector('[data-action="trace"]').addEventListener('click', e => {
       e.stopPropagation(); closePopover();
       _connectFrom = node.id; _connectType = 'trace';
-      setHint(`<span style="color:#1A73E8">↔ Traceability</span> from <strong>${node.label}</strong> — click the target node · Esc to cancel`);
+      setHint(`<span style="color:#1A73E8">↔ Bidirectional traceability</span> from <strong>${node.label}</strong> — click the target node · Esc to cancel`);
       renderNodes(); renderSVG();
     });
     menu.querySelector('[data-action="del"]').addEventListener('click', e => {
@@ -301,7 +301,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     menu.style.left = x + 'px';
     menu.style.top  = y + 'px';
     menu.innerHTML = `
-      <div class="vme-menu-title" style="color:#1A73E8">↔ Traceability link</div>
+      <div class="vme-menu-title" style="color:#1A73E8">↔ Bidirectional traceability link</div>
       <button class="vme-menu-item vme-menu-del" data-action="del">✕ Delete link</button>
     `;
     canvas.appendChild(menu);
@@ -333,16 +333,31 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     renderRubberBand();
   }
 
-  function drawLink(link, a, b) {
-    const isTrace = (link.type || 'trace') === 'trace';
+  // Clip line endpoint to rectangle border so arrows sit outside the node box
+  function clipToRect(cx, cy, tx, ty, hw, hh) {
+    const dx = tx - cx, dy = ty - cy;
+    if (dx === 0 && dy === 0) return { x: cx, y: cy };
+    const scaleX = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+    const scaleY = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+    const t = Math.min(scaleX, scaleY);
+    return { x: cx + dx * t, y: cy + dy * t };
+  }
 
-    const ax = a.x + NODE_W / 2, ay = a.y + NODE_H / 2;
-    const bx = b.x + NODE_W / 2, by = b.y + NODE_H / 2;
-    const mx = (ax + bx) / 2,    my = (ay + by) / 2;
+  function drawLink(link, a, b) {
+    const acx = a.x + NODE_W / 2, acy = a.y + NODE_H / 2;
+    const bcx = b.x + NODE_W / 2, bcy = b.y + NODE_H / 2;
+    const mx = (acx + bcx) / 2, my = (acy + bcy) / 2;
 
     // Control point — straight by default; drag the bend handle to curve
     const cpx = mx + (link.bend?.x || 0);
     const cpy = my + (link.bend?.y || 0);
+
+    // Clip start/end to node borders so arrows are visible
+    const pa = clipToRect(acx, acy, cpx, cpy, NODE_W / 2 + 2, NODE_H / 2 + 2);
+    const pb = clipToRect(bcx, bcy, cpx, cpy, NODE_W / 2 + 2, NODE_H / 2 + 2);
+    const ax = pa.x, ay = pa.y;
+    const bx = pb.x, by = pb.y;
+
     const d = `M${ax},${ay} Q${cpx},${cpy} ${bx},${by}`;
 
     // Visual midpoint of quadratic bezier (t=0.5)
@@ -350,7 +365,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     const vmy = (ay + 2 * cpy + by) / 4;
 
     const stroke = '#1A73E8';
-    const dash   = '7 4';
+    const dash   = 'none';
     const mEnd   = 'url(#arr-trace)';
     const mStart = 'url(#arr-trace-start)';
     const op     = '0.8';
