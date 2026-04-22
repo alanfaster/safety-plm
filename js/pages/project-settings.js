@@ -183,7 +183,10 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
           <div id="funtypes-list">
             ${functionTypes.map((ft, i) => renderFunTypeRow(ft, i)).join('')}
           </div>
-          <button class="btn btn-secondary btn-sm" id="btn-add-funtype" style="margin-top:12px">＋ Add Function Type</button>
+          <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" id="btn-add-funtype">＋ Add Function Type</button>
+            <button class="btn btn-ghost btn-sm" id="btn-load-funtype-defaults" title="Adds typical system function types with classic HAZOP failure conditions — keeps existing types">↺ Load typical defaults</button>
+          </div>
           <div style="margin-top:16px">
             <button class="btn btn-primary" id="btn-save-funtypes">Save Function Types</button>
           </div>
@@ -809,6 +812,103 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
 
   document.getElementById('btn-add-funtype').onclick = () => {
     _funTypes.push({ id: crypto.randomUUID(), name: 'New Type', failure_conditions: [] });
+    refreshFunTypesList();
+  };
+
+  const DEFAULT_FUNCTION_TYPES = [
+    {
+      name: 'Communication',
+      failure_conditions: [
+        'No communication', 'Delayed communication', 'Erroneous communication',
+        'Unintended communication', 'Interrupted communication'
+      ]
+    },
+    {
+      name: 'Control',
+      failure_conditions: [
+        'No control output', 'Delayed control output', 'Erroneous control output',
+        'Unintended control output', 'Control output out of range', 'Stuck control output'
+      ]
+    },
+    {
+      name: 'Sensing / Measurement',
+      failure_conditions: [
+        'No signal', 'Signal too high', 'Signal too low', 'Intermittent signal',
+        'Erroneous signal', 'Delayed signal', 'Signal drift'
+      ]
+    },
+    {
+      name: 'Actuation',
+      failure_conditions: [
+        'No actuation', 'Unintended actuation', 'Delayed actuation',
+        'Actuation out of range', 'Stuck in active state', 'Stuck in inactive state'
+      ]
+    },
+    {
+      name: 'Power Supply',
+      failure_conditions: [
+        'No power', 'Undervoltage', 'Overvoltage', 'Power interruption',
+        'Reverse polarity', 'Excessive ripple'
+      ]
+    },
+    {
+      name: 'Processing / Computation',
+      failure_conditions: [
+        'No output', 'Erroneous output', 'Delayed output',
+        'Unexpected output', 'Processing freeze / hang', 'Data corruption'
+      ]
+    },
+    {
+      name: 'Memory / Storage',
+      failure_conditions: [
+        'Data loss', 'Data corruption', 'Read failure', 'Write failure',
+        'Unintended data modification', 'Memory overflow'
+      ]
+    },
+    {
+      name: 'Monitoring / Diagnostics',
+      failure_conditions: [
+        'No detection of fault', 'False positive detection', 'Delayed fault detection',
+        'Incorrect fault classification', 'Monitoring disabled unintentionally'
+      ]
+    },
+    {
+      name: 'Protection / Safety Function',
+      failure_conditions: [
+        'Failure to activate', 'Unintended activation', 'Delayed activation',
+        'Partial activation', 'Protection disabled'
+      ]
+    },
+    {
+      name: 'Interlocking / Inhibit',
+      failure_conditions: [
+        'Interlock not triggered', 'Interlock triggered incorrectly',
+        'Interlock delayed', 'Interlock stuck active', 'Interlock stuck inactive'
+      ]
+    },
+    {
+      name: 'Mechanical Function',
+      failure_conditions: [
+        'No movement', 'Movement in wrong direction', 'Movement out of range',
+        'Stuck', 'Excessive vibration', 'Mechanical failure / fracture'
+      ]
+    },
+    {
+      name: 'Thermal Management',
+      failure_conditions: [
+        'Overheating', 'Undercooling', 'Thermal runaway',
+        'Cooling failure', 'Uneven temperature distribution'
+      ]
+    },
+  ];
+
+  document.getElementById('btn-load-funtype-defaults').onclick = () => {
+    const existingNames = new Set(_funTypes.map(ft => ft.name.toLowerCase().trim()));
+    DEFAULT_FUNCTION_TYPES.forEach(def => {
+      if (!existingNames.has(def.name.toLowerCase().trim())) {
+        _funTypes.push({ id: crypto.randomUUID(), name: def.name, failure_conditions: [...def.failure_conditions] });
+      }
+    });
     refreshFunTypesList();
   };
 
