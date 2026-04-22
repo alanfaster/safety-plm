@@ -4350,6 +4350,37 @@ th.col-th-dragging * { pointer-events: none; }
 .ts-row:hover td { background: var(--color-hover); }
 .ts-row--selected td { background: #EEF4FF !important; }
 
+/* Requirement traceability tags */
+.req-trace-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 24px;
+  padding: 4px 0;
+}
+.req-trace-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #E8F0FE;
+  color: #1A73E8;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.req-trace-tag-rm {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #1A73E8;
+  opacity: 0.6;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+}
+.req-trace-tag-rm:hover { opacity: 1; }
+
 /* Last modified + autosave indicator */
 .ts-last-modified {
   font-size: 11px;

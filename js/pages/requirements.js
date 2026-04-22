@@ -5,6 +5,7 @@ import { toast } from '../toast.js';
 import { navigate } from '../router.js';
 import { loadColConfig, saveColConfig, wireColMgr } from '../components/col-mgr.js';
 import { copyElementLink, scrollToAnchor } from '../deep-link.js';
+import { VMODEL_NODES, PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
 
 const REQ_TYPES      = ['functional','performance','safety','safety-independency','interface','constraint'];
 const REQ_STATUSES   = ['draft','review','approved','deprecated'];
@@ -26,14 +27,16 @@ const REQ_BUILTIN_COLS = [
 ];
 
 // ── Module-level state ────────────────────────────────────────────────────────
-let _ctx      = null;  // { project, item, system, parentType, parentId, typeFilter, pageId }
-let _data     = [];    // all rows in order (requirements + title/info structural)
-let _cols     = [];
-let _builtins = REQ_BUILTIN_COLS;
-let _collapsed = new Set();
-let _colKey   = '';
-let _showAsil = false;
-let _showDal  = false;
+let _ctx        = null;  // { project, item, system, parentType, parentId, typeFilter, pageId, domain }
+let _data       = [];    // all rows in order (requirements + title/info structural)
+let _cols       = [];
+let _builtins   = REQ_BUILTIN_COLS;
+let _collapsed  = new Set();
+let _colKey     = '';
+let _showAsil   = false;
+let _showDal    = false;
+let _traceFields = [];   // derived from vmodel_links for this node
+let _traceData   = {};   // { [nodeId]: [{code, label}] } — cached lookup data
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -54,10 +57,19 @@ export async function renderRequirements(container, { project, item, system, par
   // item-level pages use 'item'
   const domainKey = parentType === 'system' ? (domain || 'system') : 'item';
   _ctx = { project, item, system, parentType, parentId, typeFilter, pageId, domain: domainKey };
-  _data      = [];
-  _collapsed = new Set(JSON.parse(sessionStorage.getItem(`req_collapsed_${parentId}`) || '[]'));
-  _showAsil  = project.type === 'automotive';
-  _showDal   = project.type === 'aerospace' || project.type === 'military';
+  _data        = [];
+  _traceFields = [];
+  _traceData   = {};
+  _collapsed   = new Set(JSON.parse(sessionStorage.getItem(`req_collapsed_${parentId}`) || '[]'));
+  _showAsil    = project.type === 'automotive';
+  _showDal     = project.type === 'aerospace' || project.type === 'military';
+
+  // Load vmodel config and derive traceability fields for this node
+  const { data: pcRow } = await sb.from('project_config')
+    .select('config').eq('project_id', project.id).maybeSingle();
+  const vmodelLinks = pcRow?.config?.vmodel_links || [];
+  _traceFields = deriveReqTraceFields(domainKey, vmodelLinks);
+  await loadReqTraceSourceData(item, system);
 
   document.getElementById('req-insert-pill')?.remove();
 
@@ -1161,13 +1173,18 @@ function reqTd(c, r) {
         ${ftaLinked ? '<span title="Linked to FTA AND gate" style="margin-left:4px;font-size:10px;color:#1A73E8">⚡</span>' : ''}
       </td>`;
     }
-    case 'title':
+    case 'title': {
+      const traceCount = _traceFields.reduce((sum, f) => sum + ((r.traceability?.[f.id]?.length) || 0), 0);
       return `<td data-col="title">
-        <div class="req-editable req-title-cell" data-rid="${r.id}" data-field="title" title="Click to edit">${esc(r.title)}</div>
+        <div style="display:flex;align-items:baseline;gap:6px">
+          <div class="req-editable req-title-cell" data-rid="${r.id}" data-field="title" title="Click to edit">${esc(r.title)}</div>
+          ${traceCount ? `<span title="${traceCount} trace link(s)" style="font-size:10px;background:#E8F0FE;color:#1A73E8;border-radius:3px;padding:1px 5px;white-space:nowrap">🔗 ${traceCount}</span>` : ''}
+        </div>
         ${r.description
           ? `<div class="text-muted req-editable req-desc-cell" data-rid="${r.id}" data-field="description" title="Click to edit" style="font-size:12px;margin-top:2px">${esc(r.description.slice(0,80))}${r.description.length>80?'…':''}</div>`
           : `<div class="text-muted req-editable req-desc-cell" data-rid="${r.id}" data-field="description" title="Click to add description" style="font-size:11px;color:#aaa">+ description</div>`}
       </td>`;
+    }
     case 'type':
       return `<td data-col="type">${sel('type', REQ_TYPES, r.type, false)}</td>`;
     case 'priority':
@@ -1213,6 +1230,166 @@ function reqTd(c, r) {
       </td>`;
       return '';
   }
+}
+
+// ── V-Model traceability helpers ──────────────────────────────────────────────
+
+function deriveReqTraceFields(domainKey, vmodelLinks) {
+  const myNodeId = VMODEL_NODES.find(n => n.domain === domainKey && n.phase === 'requirements')?.id;
+  if (!myNodeId || !vmodelLinks.length) return [];
+  const fields = [];
+  for (const link of vmodelLinks) {
+    if (link.type && link.type !== 'trace') continue;
+    const otherNodeId = link.from === myNodeId ? link.to : link.to === myNodeId ? link.from : null;
+    if (!otherNodeId) continue;
+    const node = VMODEL_NODES.find(n => n.id === otherNodeId);
+    if (!node) continue;
+    const source = PHASE_DB_SOURCE[node.phase] || 'free_text';
+    fields.push({ id: otherNodeId, label: node.label, source, node });
+  }
+  return fields;
+}
+
+async function loadReqTraceSourceData(item, system) {
+  const { project } = _ctx;
+  for (const field of _traceFields) {
+    if (_traceData[field.id]) continue;
+    const node = field.node;
+    if (!node) continue;
+
+    // All sub-domains of a system share the same parentId (the system)
+    const isItemDomain = node.domain === 'item';
+    const parentType   = isItemDomain ? 'item' : 'system';
+    const parentId     = isItemDomain ? item?.id : system?.id;
+    if (!parentId) { _traceData[field.id] = []; continue; }
+
+    const dbSource = PHASE_DB_SOURCE[node.phase];
+    if (dbSource === 'requirements') {
+      const q = sb.from('requirements').select('req_code, title')
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .eq('domain', node.domain)
+        .not('type', 'in', '("title","info")')
+        .order('sort_order', { ascending: true });
+      const { data } = await q;
+      _traceData[field.id] = (data || []).map(r => ({ code: r.req_code, label: r.title || '' }));
+
+    } else if (dbSource === 'arch_spec_items') {
+      const { data } = await sb.from('arch_spec_items').select('spec_code, title')
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .eq('domain', node.domain)
+        .neq('type', 'section')
+        .order('sort_order', { ascending: true });
+      _traceData[field.id] = (data || []).map(r => ({ code: r.spec_code || r.id, label: r.title || '' }));
+
+    } else if (dbSource === 'test_specs') {
+      const { data } = await sb.from('test_specs').select('test_code, name')
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .eq('domain', node.domain).eq('phase', node.phase)
+        .order('sort_order', { ascending: true });
+      _traceData[field.id] = (data || []).map(r => ({ code: r.test_code, label: r.name || '' }));
+
+    } else {
+      _traceData[field.id] = [];
+    }
+  }
+}
+
+function buildTraceHTML(existingTraceability) {
+  if (!_traceFields.length) return '';
+  const traceability = existingTraceability || {};
+  return `
+    <div class="form-group full" style="margin-top:8px;border-top:1px solid var(--color-border);padding-top:12px">
+      <label class="form-label" style="font-weight:600;color:var(--color-text)">Traceability Links</label>
+      <p style="font-size:12px;color:var(--color-text-muted);margin-bottom:10px">
+        Links configured in the V-Model. Select all applicable items.
+      </p>
+      ${_traceFields.map(field => {
+        const selected = traceability[field.id] || [];
+        const options  = _traceData[field.id] || [];
+        return `
+          <div style="margin-bottom:12px">
+            <label class="form-label" style="font-size:12px;color:var(--color-text-muted)">${esc(field.label)}</label>
+            ${options.length === 0 ? `
+              <p style="font-size:12px;color:var(--color-text-muted);font-style:italic">No items found in this node.</p>
+            ` : `
+              <div class="req-trace-tags" id="trace-tags-${field.id}">
+                ${selected.map(code => {
+                  const opt = options.find(o => o.code === code);
+                  return `<span class="req-trace-tag" data-code="${esc(code)}">
+                    ${esc(code)}${opt ? ` — ${esc(opt.label.slice(0,40))}` : ''}
+                    <button class="req-trace-tag-rm" data-field="${field.id}" data-code="${esc(code)}" title="Remove">✕</button>
+                  </span>`;
+                }).join('')}
+              </div>
+              <div style="display:flex;gap:6px;margin-top:4px">
+                <select class="form-input form-select req-trace-picker" id="trace-pick-${field.id}"
+                  style="font-size:12px;height:28px;flex:1">
+                  <option value="">— add link —</option>
+                  ${options.filter(o => !selected.includes(o.code)).map(o =>
+                    `<option value="${esc(o.code)}">${esc(o.code)} — ${esc(o.label.slice(0,50))}</option>`
+                  ).join('')}
+                </select>
+              </div>
+            `}
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function wireTraceModal() {
+  // Add button via select change
+  _traceFields.forEach(field => {
+    const picker = document.getElementById(`trace-pick-${field.id}`);
+    if (!picker) return;
+    picker.addEventListener('change', () => {
+      const code = picker.value;
+      if (!code) return;
+      picker.value = '';
+      // Add tag
+      const tagsEl = document.getElementById(`trace-tags-${field.id}`);
+      if (!tagsEl) return;
+      const options = _traceData[field.id] || [];
+      const opt = options.find(o => o.code === code);
+      const tag = document.createElement('span');
+      tag.className = 'req-trace-tag';
+      tag.dataset.code = code;
+      tag.innerHTML = `${esc(code)}${opt ? ` — ${esc(opt.label.slice(0,40))}` : ''}
+        <button class="req-trace-tag-rm" data-field="${field.id}" data-code="${esc(code)}" title="Remove">✕</button>`;
+      tagsEl.appendChild(tag);
+      // Remove from picker
+      const opt2 = picker.querySelector(`option[value="${CSS.escape(code)}"]`);
+      opt2?.remove();
+      // Wire remove on new tag
+      tag.querySelector('.req-trace-tag-rm').addEventListener('click', () => removeTraceTag(field.id, code, picker));
+    });
+    // Wire existing remove buttons
+    document.querySelectorAll(`.req-trace-tag-rm[data-field="${field.id}"]`).forEach(btn => {
+      btn.addEventListener('click', () => removeTraceTag(field.id, btn.dataset.code, picker));
+    });
+  });
+}
+
+function removeTraceTag(fieldId, code, picker) {
+  const tagsEl = document.getElementById(`trace-tags-${fieldId}`);
+  tagsEl?.querySelector(`span[data-code="${CSS.escape(code)}"]`)?.remove();
+  // Re-add to picker
+  const options = _traceData[fieldId] || [];
+  const opt = options.find(o => o.code === code);
+  const optEl = document.createElement('option');
+  optEl.value = code;
+  optEl.textContent = `${code}${opt ? ` — ${opt.label.slice(0,50)}` : ''}`;
+  picker?.appendChild(optEl);
+}
+
+function collectTraceability() {
+  const traceability = {};
+  _traceFields.forEach(field => {
+    const tagsEl = document.getElementById(`trace-tags-${field.id}`);
+    if (!tagsEl) return;
+    traceability[field.id] = Array.from(tagsEl.querySelectorAll('.req-trace-tag[data-code]'))
+      .map(tag => tag.dataset.code);
+  });
+  return traceability;
 }
 
 // ── Requirement modal (create / edit) ─────────────────────────────────────────
@@ -1275,25 +1452,28 @@ function openReqModal({ project, parentType, parentId, projectType, existing, de
             ${DAL_LEVELS.map(v => `<option value="${v}" ${r.dal===v?'selected':''}>${v}</option>`).join('')}
           </select>
         </div>` : ''}
+        ${buildTraceHTML(r.traceability)}
       </div>`,
     footer: `
       <button class="btn btn-secondary" id="m-cancel">${t('common.cancel')}</button>
       <button class="btn btn-primary"   id="m-save">${isEdit ? t('common.save') : t('req.create')}</button>`,
   });
 
+  wireTraceModal();
   document.getElementById('m-cancel').onclick = hideModal;
   document.getElementById('m-save').onclick = async () => {
     const title = document.getElementById('r-title').value.trim();
     if (!title) { document.getElementById('r-title').focus(); return; }
     const payload = {
       title,
-      description: document.getElementById('r-desc').value.trim(),
-      type:     document.getElementById('r-type').value,
-      priority: document.getElementById('r-priority').value,
-      status:   document.getElementById('r-status').value,
-      source:   document.getElementById('r-source').value.trim(),
-      asil: showAsil ? (document.getElementById('r-asil')?.value || null) : null,
-      dal:  showDal  ? (document.getElementById('r-dal')?.value  || null) : null,
+      description:  document.getElementById('r-desc').value.trim(),
+      type:         document.getElementById('r-type').value,
+      priority:     document.getElementById('r-priority').value,
+      status:       document.getElementById('r-status').value,
+      source:       document.getElementById('r-source').value.trim(),
+      asil:         showAsil ? (document.getElementById('r-asil')?.value || null) : null,
+      dal:          showDal  ? (document.getElementById('r-dal')?.value  || null) : null,
+      traceability: collectTraceability(),
     };
     const btn = document.getElementById('m-save');
     btn.disabled = true;
