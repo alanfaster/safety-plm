@@ -240,24 +240,34 @@ export async function renderWiki(container, { project, item, system, pageId }) {
 
     // ── Check for internal deep-link URL (plain text paste of a copied element link)
     const plainText = e.clipboardData.getData('text/plain').trim();
-    const deepLinkMatch = plainText.match(/\|\|anchor:(req|fha)-([0-9a-f-]+)$/i);
+    const deepLinkMatch = extractDeepLink(plainText);
     if (deepLinkMatch) {
-      // Async: fetch element details then insert a card
-      insertElementCard(editor, plainText, deepLinkMatch[1], deepLinkMatch[2])
-        .then(() => { schedSave(); recalcIndex(); updateCounts(); });
+      // Save cursor position, show choice popup while fetching element in background
+      const savedRange = window.getSelection()?.getRangeAt(0)?.cloneRange() || null;
+      showPasteModePopup(e, plainText, deepLinkMatch, savedRange);
       return;
     }
 
     const html = e.clipboardData.getData('text/html');
     if (html) {
+      // Check if the HTML is just a single anchor wrapping a deep-link URL
+      const tmp0 = document.createElement('div');
+      tmp0.innerHTML = html;
+      const singleA = tmp0.querySelector('a');
+      if (singleA) {
+        const href = singleA.getAttribute('href') || '';
+        const dlm = extractDeepLink(href) || extractDeepLink(singleA.textContent.trim());
+        if (dlm) {
+          const savedRange = window.getSelection()?.getRangeAt(0)?.cloneRange() || null;
+          showPasteModePopup(e, href || singleA.textContent.trim(), dlm, savedRange);
+          return;
+        }
+      }
+
       // Parse into a temporary container so we can sanitize
       const tmp = document.createElement('div');
       tmp.innerHTML = html;
-
-      // Remove dangerous / noisy elements
       tmp.querySelectorAll('script, style, meta, link, head, iframe, object, embed').forEach(el => el.remove());
-
-      // Strip all event handlers and dangerous attributes; keep structural ones
       const KEEP_ATTRS = new Set([
         'href','src','alt','title','colspan','rowspan','span',
         'width','height','align','valign','border','cellpadding','cellspacing',
@@ -267,26 +277,10 @@ export async function renderWiki(container, { project, item, system, pageId }) {
         for (const attr of [...el.attributes]) {
           if (!KEEP_ATTRS.has(attr.name)) el.removeAttribute(attr.name);
         }
-        // Unwrap <font>, <span> with no remaining attrs — keep tag-less content
         if ((el.tagName === 'FONT' || el.tagName === 'SPAN') && el.attributes.length === 0) {
           el.replaceWith(...el.childNodes);
         }
       });
-
-      // Check if the HTML is just a single anchor wrapping a deep-link URL
-      const singleA = tmp.querySelector('a');
-      if (singleA && tmp.children.length === 1) {
-        const href = singleA.getAttribute('href') || '';
-        const dlm = href.match(/\|\|anchor:(req|fha)-([0-9a-f-]+)$/i)
-                 || singleA.textContent.trim().match(/\|\|anchor:(req|fha)-([0-9a-f-]+)$/i);
-        if (dlm) {
-          insertElementCard(editor, href || singleA.textContent.trim(), dlm[1], dlm[2])
-            .then(() => { schedSave(); recalcIndex(); updateCounts(); });
-          return;
-        }
-      }
-
-      // Insert the sanitized HTML at the cursor
       const sel = window.getSelection();
       if (sel && sel.rangeCount) {
         const range = sel.getRangeAt(0);
@@ -307,30 +301,153 @@ export async function renderWiki(container, { project, item, system, pageId }) {
     updateCounts();
   });
 
-  // ── Element card insertion ────────────────────────────────────────────────
-  async function insertElementCard(targetEditor, fullUrl, type, id) {
-    // Fetch element label from DB
-    let code = '', title = '', icon = '📋';
+  // ── Deep-link detection ───────────────────────────────────────────────────
+  function extractDeepLink(text) {
+    const m = (text || '').match(/\|\|anchor:(req|fha)-([0-9a-f-]+)$/i);
+    return m ? { type: m[1].toLowerCase(), id: m[2] } : null;
+  }
+
+  // ── Paste-mode popup (Jira-style) ─────────────────────────────────────────
+  function showPasteModePopup(pasteEvent, fullUrl, { type, id }, savedRange) {
+    // Remove any existing popup
+    document.querySelector('.plm-paste-popup')?.remove();
+
+    // Position near cursor
+    const rect = window.getSelection()?.getRangeAt(0)?.getBoundingClientRect?.()
+               || { bottom: 100, left: 100 };
+
+    const popup = document.createElement('div');
+    popup.className = 'plm-paste-popup';
+    popup.style.cssText = `position:fixed;top:${rect.bottom + 6}px;left:${Math.max(8, rect.left)}px;z-index:9999`;
+    popup.innerHTML = `
+      <div class="plm-pp-title">Paste as…</div>
+      <button class="plm-pp-btn" data-mode="card" autofocus>
+        <span class="plm-pp-btn-icon">🔗</span>
+        <span>
+          <strong>Link only</strong>
+          <span class="plm-pp-hint">Inline badge with title</span>
+        </span>
+      </button>
+      <button class="plm-pp-btn" data-mode="detail">
+        <span class="plm-pp-btn-icon">📄</span>
+        <span>
+          <strong>Link + details</strong>
+          <span class="plm-pp-hint">Badge + full element block</span>
+        </span>
+      </button>`;
+    document.body.appendChild(popup);
+
+    // Fetch element data in parallel while the popup is visible
+    const dataPromise = fetchElementData(type, id);
+
+    const dismiss = () => popup.remove();
+
+    popup.querySelectorAll('.plm-pp-btn').forEach(btn => {
+      btn.onclick = async () => {
+        dismiss();
+        const elData = await dataPromise;
+        // Restore cursor
+        if (savedRange) {
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(savedRange);
+        }
+        if (btn.dataset.mode === 'card') {
+          insertCard(fullUrl, elData);
+        } else {
+          insertCardWithDetails(fullUrl, elData, type);
+        }
+        schedSave(); recalcIndex(); updateCounts();
+      };
+    });
+
+    // Dismiss on outside click or Escape
+    setTimeout(() => {
+      const outside = ev => { if (!popup.contains(ev.target)) { dismiss(); document.removeEventListener('mousedown', outside); } };
+      document.addEventListener('mousedown', outside);
+      document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { dismiss(); } }, { once: true });
+    }, 0);
+  }
+
+  // ── Fetch element data from DB ────────────────────────────────────────────
+  async function fetchElementData(type, id) {
     try {
       if (type === 'req') {
-        const { data } = await sb.from('requirements').select('req_code,title').eq('id', id).maybeSingle();
-        if (data) { code = data.req_code; title = data.title; icon = '📋'; }
+        const { data } = await sb.from('requirements')
+          .select('req_code,title,description,type,status,priority,asil,dal,verification_type')
+          .eq('id', id).maybeSingle();
+        return data ? { ...data, _icon: '📋', _type: 'req' } : null;
       } else if (type === 'fha') {
-        const { data } = await sb.from('hazards').select('haz_code,data').eq('id', id).maybeSingle();
-        if (data) { code = data.haz_code; title = (data.data?.description || data.data?.hazard || ''); icon = '⚠️'; }
+        const { data } = await sb.from('hazards')
+          .select('haz_code,data,status')
+          .eq('id', id).maybeSingle();
+        return data ? { haz_code: data.haz_code, ...data.data, status: data.status, _icon: '⚠️', _type: 'fha' } : null;
       }
-    } catch (_) { /* silently ignore fetch errors */ }
+    } catch (_) {}
+    return null;
+  }
 
-    const label = code ? (title ? `${code} — ${title}` : code) : (title || 'Element');
-    // Build the internal hash link (strip origin + pathname, keep from # onwards)
-    const hashIdx = fullUrl.indexOf('#/');
-    const internalHref = hashIdx >= 0 ? fullUrl.slice(hashIdx) : fullUrl;
+  // ── Build & insert link card ──────────────────────────────────────────────
+  function insertCard(fullUrl, elData) {
+    const { internalHref, label, icon } = cardParts(fullUrl, elData);
+    const html = `<span class="plm-link-card" contenteditable="false"
+      ><span class="plm-link-card-icon">${icon}</span
+      ><a class="plm-link-card-label" href="${escHtml(internalHref)}">${escHtml(label)}</a
+      ><a class="plm-link-card-ext" href="${escHtml(fullUrl)}" target="_blank" title="Open in new tab">↗</a
+    ></span>`;
+    document.execCommand('insertHTML', false, html);
+  }
+
+  // ── Build & insert card + detail block ───────────────────────────────────
+  function insertCardWithDetails(fullUrl, elData, type) {
+    const { internalHref, label, icon } = cardParts(fullUrl, elData);
     const cardHtml = `<span class="plm-link-card" contenteditable="false"
       ><span class="plm-link-card-icon">${icon}</span
       ><a class="plm-link-card-label" href="${escHtml(internalHref)}">${escHtml(label)}</a
       ><a class="plm-link-card-ext" href="${escHtml(fullUrl)}" target="_blank" title="Open in new tab">↗</a
     ></span>`;
-    document.execCommand('insertHTML', false, cardHtml);
+
+    let detailRows = '';
+    if (elData) {
+      if (type === 'req') {
+        const fields = [
+          ['Type',         elData.type],
+          ['Status',       elData.status],
+          ['Priority',     elData.priority],
+          ['ASIL',         elData.asil],
+          ['DAL',          elData.dal],
+          ['Verification', elData.verification_type],
+        ].filter(([, v]) => v);
+        detailRows = fields.map(([k, v]) =>
+          `<tr><td class="plm-detail-key">${escHtml(k)}</td><td class="plm-detail-val">${escHtml(v)}</td></tr>`
+        ).join('');
+        if (elData.description) {
+          detailRows += `<tr><td class="plm-detail-key">Description</td><td class="plm-detail-val">${escHtml(elData.description)}</td></tr>`;
+        }
+      } else if (type === 'fha') {
+        const skip = new Set(['_icon','_type']);
+        detailRows = Object.entries(elData)
+          .filter(([k, v]) => !skip.has(k) && k !== 'haz_code' && v)
+          .map(([k, v]) => `<tr><td class="plm-detail-key">${escHtml(k)}</td><td class="plm-detail-val">${escHtml(String(v))}</td></tr>`)
+          .join('');
+      }
+    }
+
+    const blockHtml = `<div class="plm-detail-block">
+      <div class="plm-detail-header">${cardHtml}</div>
+      ${detailRows ? `<table class="plm-detail-table"><tbody>${detailRows}</tbody></table>` : ''}
+    </div>`;
+    document.execCommand('insertHTML', false, blockHtml);
+  }
+
+  function cardParts(fullUrl, elData) {
+    const icon  = elData?._icon || '📋';
+    const code  = elData?.req_code || elData?.haz_code || '';
+    const title = elData?.title || elData?.description || elData?.hazard || '';
+    const label = code ? (title ? `${code} — ${title}` : code) : (title || 'Element');
+    const hashIdx = fullUrl.indexOf('#/');
+    const internalHref = hashIdx >= 0 ? fullUrl.slice(hashIdx) : fullUrl;
+    return { internalHref, label, icon };
   }
 
   // ── Internal link navigation ──────────────────────────────────────────────

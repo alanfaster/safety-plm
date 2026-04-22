@@ -3429,6 +3429,78 @@ th.col-th-dragging * { pointer-events: none; }
 }
 .plm-link-card-ext:hover { background: var(--color-primary); color: #fff; }
 
+/* ── Paste-mode popup ────────────────────────────────────────────────────────── */
+.plm-paste-popup {
+  background: #fff;
+  border: 1px solid #D0D7DE;
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.16);
+  padding: 6px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.plm-pp-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--color-text-muted);
+  padding: 2px 8px 4px;
+}
+.plm-pp-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.plm-pp-btn:hover { background: #F6F8FA; border-color: #D0D7DE; }
+.plm-pp-btn:focus { outline: none; background: #EEF4FF; border-color: var(--color-primary); }
+.plm-pp-btn strong { display: block; font-size: 13px; color: var(--color-text); }
+.plm-pp-hint { display: block; font-size: 11px; color: var(--color-text-muted); margin-top: 1px; }
+.plm-pp-btn-icon { font-size: 18px; flex-shrink: 0; }
+
+/* ── Element detail block ────────────────────────────────────────────────────── */
+.plm-detail-block {
+  display: block;
+  border: 1px solid #C3D9FF;
+  border-radius: 8px;
+  background: #F4F8FF;
+  margin: 8px 0;
+  overflow: hidden;
+}
+.plm-detail-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid #C3D9FF;
+  background: #E8F0FE;
+}
+.plm-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.plm-detail-key {
+  padding: 4px 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  width: 110px;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.plm-detail-val {
+  padding: 4px 12px 4px 0;
+  color: var(--color-text);
+  vertical-align: top;
+}
+.plm-detail-table tr:not(:last-child) td { border-bottom: 1px solid #D8E8FF; }
+
 /* ── Deep-link anchor highlight ─────────────────────────────────────────────── */
 @keyframes plm-anchor-flash {
   0%   { background: #FFF3CD; box-shadow: 0 0 0 3px #F5A623; }
