@@ -118,7 +118,6 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
         <div class="vme-toolbar-right">
           <div class="vme-legend">
             <span class="vme-legend-trace">↔ Traceability</span>
-            <span class="vme-legend-seq">↔ Sequential</span>
           </div>
           <button class="btn btn-primary btn-sm" id="vme-save">Save</button>
         </div>
@@ -275,7 +274,6 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     menu.innerHTML = `
       <div class="vme-menu-title">${node.label}</div>
       <button class="vme-menu-item vme-menu-trace" data-action="trace">↔ Add Traceability link</button>
-      <button class="vme-menu-item vme-menu-seq"   data-action="seq">↔ Add Sequential link</button>
       <div class="vme-menu-sep"></div>
       <button class="vme-menu-item vme-menu-del"   data-action="del">✕ Delete node</button>
     `;
@@ -286,12 +284,6 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       e.stopPropagation(); closePopover();
       _connectFrom = node.id; _connectType = 'trace';
       setHint(`<span style="color:#1A73E8">↔ Traceability</span> from <strong>${node.label}</strong> — click the target node · Esc to cancel`);
-      renderNodes(); renderSVG();
-    });
-    menu.querySelector('[data-action="seq"]').addEventListener('click', e => {
-      e.stopPropagation(); closePopover();
-      _connectFrom = node.id; _connectType = 'sequential';
-      setHint(`<span style="color:#666">↔ Sequential</span> from <strong>${node.label}</strong> — click the target node · Esc to cancel`);
       renderNodes(); renderSVG();
     });
     menu.querySelector('[data-action="del"]').addEventListener('click', e => {
@@ -308,9 +300,8 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     menu.className = 'vme-menu';
     menu.style.left = x + 'px';
     menu.style.top  = y + 'px';
-    const isTrace = link.type === 'trace';
     menu.innerHTML = `
-      <div class="vme-menu-title" style="color:${isTrace?'#1A73E8':'#666'}">${isTrace ? '↔ Traceability link' : '↔ Sequential link'}</div>
+      <div class="vme-menu-title" style="color:#1A73E8">↔ Traceability link</div>
       <button class="vme-menu-item vme-menu-del" data-action="del">✕ Delete link</button>
     `;
     canvas.appendChild(menu);
@@ -358,11 +349,11 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     const vmx = (ax + 2 * cpx + bx) / 4;
     const vmy = (ay + 2 * cpy + by) / 4;
 
-    const stroke = isTrace ? '#1A73E8' : '#888';
-    const dash   = isTrace ? '7 4' : 'none';
-    const mEnd   = isTrace ? 'url(#arr-trace)'     : 'url(#arr-seq)';
-    const mStart = isTrace ? 'url(#arr-trace-start)' : 'url(#arr-seq-start)';
-    const op     = isTrace ? '0.8' : '0.55';
+    const stroke = '#1A73E8';
+    const dash   = '7 4';
+    const mEnd   = 'url(#arr-trace)';
+    const mStart = 'url(#arr-trace-start)';
+    const op     = '0.8';
 
     // Wide hit area for clicking
     const hit = mkSVG('path');
