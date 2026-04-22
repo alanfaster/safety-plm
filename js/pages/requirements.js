@@ -1362,9 +1362,9 @@ async function loadReverseLinks(reqCode) {
 
 function buildNodeCardHTML({ field, linked, revLinked }, arrowDir) {
   const nodeIcon = { system: '⬡', sw: '◧', hw: '◨', mech: '◎', item: '⬡' };
-  const node    = field.node;
-  const options = _traceData[field.id] || [];
-  const icon    = nodeIcon[node.domain] || '◈';
+  const node       = field.node;
+  const options    = _traceData[field.id] || [];
+  const icon       = nodeIcon[node.domain] || '◈';
   const totalLinks = linked.length + revLinked.length;
 
   const linkedItems = linked.map(code => {
@@ -1392,6 +1392,13 @@ function buildNodeCardHTML({ field, linked, revLinked }, arrowDir) {
     </div>`).join('');
 
   const unlinked = options.filter(o => !linked.includes(o.code));
+  const fieldId  = field.id;
+
+  // Collapse body when there are many items — show first 4, rest behind toggle
+  const SHOW_LIMIT = 4;
+  const allItems   = linked.length + revLinked.length;
+  const bodyCollapsible = allItems > SHOW_LIMIT;
+  const hiddenCount     = allItems - SHOW_LIMIT;
 
   return `
     <div class="rtrace-node rtrace-node--${arrowDir}">
@@ -1399,20 +1406,35 @@ function buildNodeCardHTML({ field, linked, revLinked }, arrowDir) {
         <span class="rtrace-node-icon">${icon}</span>
         <span class="rtrace-node-name">${esc(field.label)}</span>
         <span class="rtrace-node-count ${totalLinks ? 'has-links' : ''}">${totalLinks}</span>
+        ${bodyCollapsible
+          ? `<button class="rtrace-show-more" data-field="${fieldId}" data-expanded="0"
+               title="Show all">＋${hiddenCount} more</button>`
+          : ''}
       </div>
-      <div class="rtrace-node-body">
+      <div class="rtrace-node-body ${bodyCollapsible ? 'rtrace-node-body--collapsed' : ''}"
+           id="rtrace-nbody-${fieldId}">
         ${linkedItems}${revItems}
         ${!linkedItems && !revItems ? `<div class="rtrace-empty">No links yet</div>` : ''}
       </div>
-      ${unlinked.length ? `
-        <div class="rtrace-add-row">
-          <select class="rtrace-add-sel" data-field="${field.id}">
-            <option value="">＋ add link…</option>
+      <div class="rtrace-add-row" id="rtrace-add-${fieldId}">
+        <div class="rtrace-search-wrap">
+          <input type="text" class="rtrace-search-inp" data-field="${fieldId}"
+            placeholder="＋ Search to add link…"
+            autocomplete="off"/>
+          <div class="rtrace-search-list" id="rtrace-sl-${fieldId}" style="display:none">
             ${unlinked.map(o =>
-              `<option value="${esc(o.code)}">${esc(o.code)} — ${esc(o.label.slice(0,38))}</option>`
+              `<div class="rtrace-search-opt" data-field="${fieldId}" data-code="${esc(o.code)}"
+                data-label="${esc(o.label)}">
+                <span class="rtrace-search-opt-code">${esc(o.code)}</span>
+                <span class="rtrace-search-opt-label">${esc(o.label.slice(0,50))}</span>
+              </div>`
             ).join('')}
-          </select>
-        </div>` : ''}
+            ${!unlinked.length
+              ? `<div class="rtrace-search-empty">All items linked</div>`
+              : ''}
+          </div>
+        </div>
+      </div>
     </div>`;
 }
 
@@ -1543,28 +1565,77 @@ function wireTracePanelLinks(body, req) {
     });
   });
 
-  // Add link via select
-  body.querySelectorAll('.rtrace-add-sel').forEach(sel => {
-    sel.addEventListener('change', async () => {
-      const code    = sel.value;
-      const fieldId = sel.dataset.field;
-      if (!code) return;
-      sel.value = '';
+  // Show-more toggle
+  body.querySelectorAll('.rtrace-show-more').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fieldId  = btn.dataset.field;
+      const expanded = btn.dataset.expanded === '1';
+      const nbody    = document.getElementById(`rtrace-nbody-${fieldId}`);
+      if (!nbody) return;
+      if (expanded) {
+        nbody.classList.add('rtrace-node-body--collapsed');
+        btn.dataset.expanded = '0';
+        const hidden = parseInt(btn.title.match(/\d+/) || [0]) || 0;
+        btn.textContent = `＋${btn.dataset.hidden || ''} more`;
+      } else {
+        nbody.classList.remove('rtrace-node-body--collapsed');
+        btn.dataset.expanded = '1';
+        btn.textContent = '▲ less';
+      }
+    });
+    // Store hidden count for toggle label
+    const allItems = parseInt(btn.textContent.match(/\d+/)?.[0] || '0');
+    btn.dataset.hidden = allItems;
+  });
 
-      const updated = { ...(req.traceability || {}) };
-      updated[fieldId] = [...(updated[fieldId] || []), code];
+  // Searchable add-link
+  body.querySelectorAll('.rtrace-search-inp').forEach(inp => {
+    const fieldId = inp.dataset.field;
+    const list    = document.getElementById(`rtrace-sl-${fieldId}`);
+    if (!list) return;
 
-      const { error } = await sb.from('requirements')
-        .update({ traceability: updated }).eq('id', req.id);
-      if (error) { toast('Save failed', 'error'); return; }
+    const allOpts = Array.from(list.querySelectorAll('.rtrace-search-opt'));
 
-      req.traceability = updated;
-      const r = _data.find(d => d.id === req.id);
-      if (r) r.traceability = updated;
+    inp.addEventListener('focus', () => { list.style.display = 'block'; });
+    inp.addEventListener('input', () => {
+      const q = inp.value.toLowerCase();
+      allOpts.forEach(opt => {
+        const match = opt.dataset.code.toLowerCase().includes(q)
+                   || opt.dataset.label.toLowerCase().includes(q);
+        opt.style.display = match ? '' : 'none';
+      });
+    });
 
-      // Refresh panel
-      openTracePanel(req.id);
-      refreshTraceBadge(req.id);
+    // Close on outside click
+    document.addEventListener('mousedown', function hide(e) {
+      if (!inp.closest('.rtrace-search-wrap').contains(e.target)) {
+        list.style.display = 'none';
+        inp.value = '';
+        allOpts.forEach(o => o.style.display = '');
+        document.removeEventListener('mousedown', hide);
+      }
+    });
+
+    // Pick option
+    list.querySelectorAll('.rtrace-search-opt').forEach(opt => {
+      opt.addEventListener('mousedown', async (e) => {
+        e.preventDefault(); // prevent blur before click
+        const code    = opt.dataset.code;
+        list.style.display = 'none';
+        inp.value = '';
+        allOpts.forEach(o => o.style.display = '');
+
+        const updated = { ...(req.traceability || {}) };
+        updated[fieldId] = [...(updated[fieldId] || []), code];
+        const { error } = await sb.from('requirements')
+          .update({ traceability: updated }).eq('id', req.id);
+        if (error) { toast('Save failed', 'error'); return; }
+        req.traceability = updated;
+        const r = _data.find(d => d.id === req.id);
+        if (r) r.traceability = updated;
+        openTracePanel(req.id);
+        refreshTraceBadge(req.id);
+      });
     });
   });
 
