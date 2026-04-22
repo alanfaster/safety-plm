@@ -1418,6 +1418,7 @@ function buildNodeCardHTML({ field, linked, revLinked }, arrowDir) {
 
 function buildChainHTML(req, myNode, devFields, testFields) {
   const nodeIcon = { system: '⬡', sw: '◧', hw: '◨', mech: '◎', item: '⬡' };
+  const currentCode = myNode?.id || '';
 
   // Top row: current node (left) ←→ test nodes (right)
   const testColumn = testFields.length
@@ -1425,12 +1426,24 @@ function buildChainHTML(req, myNode, devFields, testFields) {
         `<div class="rtrace-v-spacer"></div>`)
     : '';
 
-  // Dev column: nodes going down
+  // Dev column: nodes going down.
+  // Every node in devFields has a DIRECT V-model link from the current node.
+  // Between consecutive nodes there's also a chain link (e.g. sys_arch → sw_req).
+  // For i > 0, show BOTH arrows: chain (from previous) + direct (from current req).
   const devColumn = devFields.length
-    ? devFields.map((entry, i) => `
-        ${i > 0 ? `<div class="rtrace-down-arrow">↓ <span>trace</span></div>` : ''}
-        ${buildNodeCardHTML(entry, 'down')}
-      `).join('')
+    ? devFields.map((entry, i) => {
+        const prevLabel = i > 0 ? esc(devFields[i - 1].field.label) : '';
+        const connector = i === 0 ? '' : `
+          <div class="rtrace-dual-arrow">
+            <div class="rtrace-down-arrow rtrace-down-arrow--chain">
+              ↓ <span>${prevLabel} → ${esc(entry.field.label)}</span>
+            </div>
+            <div class="rtrace-down-arrow rtrace-down-arrow--direct">
+              ↓ <span>${esc(req.req_code)} → ${esc(entry.field.label)}</span>
+            </div>
+          </div>`;
+        return connector + buildNodeCardHTML(entry, 'down');
+      }).join('')
     : '';
 
   return `
