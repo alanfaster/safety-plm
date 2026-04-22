@@ -1291,15 +1291,16 @@ async function openTracePanel(reqId) {
   // Also load reverse links: other requirements/items that link TO this req
   const reverseLinks = await loadReverseLinks(req.req_code);
 
-  // Build V-model chain HTML
-  // Separate fields into: upstream (if they reference this node as downstream) vs downstream
-  // We determine direction by checking if myNode appears as link.to (upstream) or link.from (downstream)
-  const upstream   = [];
-  const downstream = [];
+  // Split fields: test phases → right arm of V; development/arch/design → left arm
+  const TEST_PHASES = new Set(['unit_testing', 'integration_testing', 'system_testing']);
+  const testFields = [];
+  const devFields  = [];
   for (const field of _traceFields) {
-    const linked = traceability[field.id] || [];
+    const linked    = traceability[field.id] || [];
     const revLinked = reverseLinks[field.id] || [];
-    downstream.push({ field, linked, revLinked });
+    const entry = { field, linked, revLinked };
+    if (TEST_PHASES.has(field.node.phase)) testFields.push(entry);
+    else                                   devFields.push(entry);
   }
 
   body.innerHTML = `
@@ -1310,8 +1311,7 @@ async function openTracePanel(reqId) {
           <p style="margin-top:4px">Go to <strong>Project Settings → V-Model</strong> to define connections.</p>
         </div>
       ` : ''}
-
-      ${buildChainHTML(req, myNode, downstream)}
+      ${buildChainHTML(req, myNode, devFields, testFields)}
     </div>
   `;
 
@@ -1353,71 +1353,104 @@ async function loadReverseLinks(reqCode) {
   return result;
 }
 
-function buildChainHTML(req, myNode, chainItems) {
+function buildNodeCardHTML({ field, linked, revLinked }, arrowDir) {
   const nodeIcon = { system: '⬡', sw: '◧', hw: '◨', mech: '◎', item: '⬡' };
+  const node    = field.node;
+  const options = _traceData[field.id] || [];
+  const icon    = nodeIcon[node.domain] || '◈';
+  const totalLinks = linked.length + revLinked.length;
 
-  const chainSections = chainItems.map(({ field, linked, revLinked }) => {
-    const node    = field.node;
-    const options = _traceData[field.id] || [];
-    const icon    = nodeIcon[node.domain] || '◈';
-
-    const linkedItems = linked.map(code => {
-      const opt = options.find(o => o.code === code);
-      return `<div class="rtrace-item rtrace-item--linked" data-code="${esc(code)}" data-field="${field.id}">
-        <span class="rtrace-item-code">${esc(code)}</span>
-        <span class="rtrace-item-label">${esc((opt?.label || '').slice(0,60))}</span>
-        <button class="rtrace-unlink" data-code="${esc(code)}" data-field="${field.id}" title="Remove link">✕</button>
-      </div>`;
-    }).join('');
-
-    const revItems = revLinked.map(item => `
-      <div class="rtrace-item rtrace-item--reverse">
-        <span class="rtrace-item-code">${esc(item.code)}</span>
-        <span class="rtrace-item-label">${esc(item.label.slice(0,60))}</span>
-        <span class="rtrace-item-badge">↩ links here</span>
-      </div>`).join('');
-
-    const unlinkedOptions = options.filter(o => !linked.includes(o.code));
-
-    return `
-      <div class="rtrace-connector">
-        <span class="rtrace-connector-line"></span>
-        <span class="rtrace-connector-label">trace ↕</span>
-        <span class="rtrace-connector-line"></span>
-      </div>
-      <div class="rtrace-node">
-        <div class="rtrace-node-hdr">
-          <span class="rtrace-node-icon">${icon}</span>
-          <span class="rtrace-node-name">${esc(field.label)}</span>
-          <span class="rtrace-node-count ${linked.length ? 'has-links' : ''}">${linked.length + revLinked.length}</span>
-        </div>
-        <div class="rtrace-node-body" id="rtrace-body-${field.id}">
-          ${linkedItems}
-          ${revItems}
-          ${!linkedItems && !revItems ? `<div class="rtrace-empty">No links yet</div>` : ''}
-        </div>
-        ${unlinkedOptions.length ? `
-          <div class="rtrace-add-row">
-            <select class="rtrace-add-sel" data-field="${field.id}">
-              <option value="">＋ link to ${esc(field.label.split(' ')[0])}…</option>
-              ${unlinkedOptions.map(o =>
-                `<option value="${esc(o.code)}">${esc(o.code)} — ${esc(o.label.slice(0,40))}</option>`
-              ).join('')}
-            </select>
-          </div>` : ''}
-      </div>`;
+  const linkedItems = linked.map(code => {
+    const opt = options.find(o => o.code === code);
+    return `<div class="rtrace-item rtrace-item--linked" data-code="${esc(code)}" data-field="${field.id}">
+      <span class="rtrace-item-code">${esc(code)}</span>
+      <span class="rtrace-item-label">${esc((opt?.label || '').slice(0,50))}</span>
+      <button class="rtrace-unlink" data-code="${esc(code)}" data-field="${field.id}" title="Remove link">✕</button>
+    </div>`;
   }).join('');
 
+  const revItems = revLinked.map(item => `
+    <div class="rtrace-item rtrace-item--reverse">
+      <span class="rtrace-item-code">${esc(item.code)}</span>
+      <span class="rtrace-item-label">${esc(item.label.slice(0,50))}</span>
+      <span class="rtrace-item-badge">↩</span>
+    </div>`).join('');
+
+  const unlinked = options.filter(o => !linked.includes(o.code));
+
   return `
-    <div class="rtrace-current">
-      <div class="rtrace-current-icon">${nodeIcon[myNode?.domain] || '◈'}</div>
-      <div class="rtrace-current-body">
-        <div class="rtrace-current-code">${esc(req.req_code)}</div>
-        <div class="rtrace-current-title">${esc(req.title)}</div>
-        ${req.type ? `<span class="rtrace-current-type">${esc(req.type)}</span>` : ''}
+    <div class="rtrace-node rtrace-node--${arrowDir}">
+      <div class="rtrace-node-hdr">
+        <span class="rtrace-node-icon">${icon}</span>
+        <span class="rtrace-node-name">${esc(field.label)}</span>
+        <span class="rtrace-node-count ${totalLinks ? 'has-links' : ''}">${totalLinks}</span>
       </div>
+      <div class="rtrace-node-body">
+        ${linkedItems}${revItems}
+        ${!linkedItems && !revItems ? `<div class="rtrace-empty">No links yet</div>` : ''}
+      </div>
+      ${unlinked.length ? `
+        <div class="rtrace-add-row">
+          <select class="rtrace-add-sel" data-field="${field.id}">
+            <option value="">＋ add link…</option>
+            ${unlinked.map(o =>
+              `<option value="${esc(o.code)}">${esc(o.code)} — ${esc(o.label.slice(0,38))}</option>`
+            ).join('')}
+          </select>
+        </div>` : ''}
+    </div>`;
+}
+
+function buildChainHTML(req, myNode, devFields, testFields) {
+  const nodeIcon = { system: '⬡', sw: '◧', hw: '◨', mech: '◎', item: '⬡' };
+
+  // Top row: current node (left) ←→ test nodes (right)
+  const testColumn = testFields.length
+    ? testFields.map(entry => buildNodeCardHTML(entry, 'right')).join(
+        `<div class="rtrace-v-spacer"></div>`)
+    : '';
+
+  // Dev column: nodes going down
+  const devColumn = devFields.length
+    ? devFields.map((entry, i) => `
+        ${i > 0 ? `<div class="rtrace-down-arrow">↓ <span>trace</span></div>` : ''}
+        ${buildNodeCardHTML(entry, 'down')}
+      `).join('')
+    : '';
+
+  return `
+    <div class="rtrace-v-layout">
+
+      <!-- TOP ROW: current ←→ test -->
+      <div class="rtrace-top-row">
+        <div class="rtrace-top-left">
+          <div class="rtrace-current">
+            <div class="rtrace-current-icon">${nodeIcon[myNode?.domain] || '◈'}</div>
+            <div class="rtrace-current-body">
+              <div class="rtrace-current-code">${esc(req.req_code)}</div>
+              <div class="rtrace-current-title">${esc(req.title)}</div>
+              ${req.type ? `<span class="rtrace-current-type">${esc(req.type)}</span>` : ''}
+            </div>
+          </div>
+          ${devFields.length ? `<div class="rtrace-down-arrow">↓ <span>trace</span></div>` : ''}
+        </div>
+
+        ${testColumn ? `
+        <div class="rtrace-top-right">
+          <div class="rtrace-horiz-arrow">
+            <span class="rtrace-horiz-line"></span>
+            <span class="rtrace-horiz-label">↔ test</span>
+          </div>
+          <div class="rtrace-test-stack">
+            ${testColumn}
+          </div>
+        </div>` : ''}
+      </div>
+
+      <!-- BOTTOM: dev chain going down -->
+      ${devColumn ? `<div class="rtrace-dev-chain">${devColumn}</div>` : ''}
+
     </div>
-    ${chainSections}
   `;
 }
 

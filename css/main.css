@@ -4363,8 +4363,8 @@ th.col-th-dragging * { pointer-events: none; }
   flex-shrink: 0;
 }
 .req-trace-panel.open {
-  width: 320px;
-  min-width: 320px;
+  width: 420px;
+  min-width: 420px;
 }
 .req-trace-panel-hdr {
   display: flex;
@@ -4388,176 +4388,168 @@ th.col-th-dragging * { pointer-events: none; }
   padding: 12px;
 }
 
-/* V-Model chain in panel */
+/* V-Model chain layout in trace panel */
 .rtrace-chain { display: flex; flex-direction: column; gap: 0; }
 
+/* Overall V-model layout */
+.rtrace-v-layout { display: flex; flex-direction: column; gap: 0; }
+
+/* Top row: current node + horizontal test arm */
+.rtrace-top-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+.rtrace-top-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+.rtrace-top-right {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0;
+  flex-shrink: 0;
+}
+
+/* Current requirement box */
 .rtrace-current {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px 12px;
   background: #EEF4FF;
   border: 2px solid #1A73E8;
   border-radius: 8px;
-  margin-bottom: 2px;
+  width: 100%;
+  box-sizing: border-box;
 }
-.rtrace-current-icon {
-  font-size: 20px;
-  line-height: 1;
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-.rtrace-current-code {
-  font-size: 11px;
-  font-weight: 700;
-  color: #1A73E8;
-  letter-spacing: 0.3px;
-}
-.rtrace-current-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text);
-  margin-top: 2px;
-  line-height: 1.4;
-}
+.rtrace-current-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.rtrace-current-code { font-size: 11px; font-weight: 700; color: #1A73E8; }
+.rtrace-current-title { font-size: 12px; font-weight: 500; color: var(--color-text); margin-top: 2px; line-height: 1.4; }
 .rtrace-current-type {
-  display: inline-block;
-  margin-top: 4px;
-  font-size: 10px;
-  background: var(--color-border);
-  color: var(--color-text-muted);
-  border-radius: 3px;
-  padding: 1px 6px;
+  display: inline-block; margin-top: 4px; font-size: 10px;
+  background: var(--color-border); color: var(--color-text-muted);
+  border-radius: 3px; padding: 1px 6px;
 }
 
-.rtrace-connector {
+/* Downward arrow between dev nodes */
+.rtrace-down-arrow {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 14px;
+  padding: 3px 0;
+  font-size: 14px;
+  color: var(--color-text-muted);
+  align-self: center;
 }
-.rtrace-connector-line {
-  flex: 1;
-  height: 1px;
+.rtrace-down-arrow span { font-size: 10px; }
+
+/* Horizontal arrow connecting to test arm */
+.rtrace-horiz-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 18px 4px 0;
+  gap: 2px;
+  width: 44px;
+  flex-shrink: 0;
+}
+.rtrace-horiz-line {
+  width: 1px;
+  height: 28px;
   background: var(--color-border);
 }
-.rtrace-connector-label {
-  font-size: 10px;
+.rtrace-horiz-label {
+  font-size: 9px;
   color: var(--color-text-muted);
   white-space: nowrap;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  letter-spacing: 0.5px;
 }
 
+/* Test node stack */
+.rtrace-test-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  padding-top: 6px;
+}
+.rtrace-v-spacer { height: 4px; }
+
+/* Dev chain going down */
+.rtrace-dev-chain {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding-left: 0;
+}
+
+/* Node card */
 .rtrace-node {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+}
+.rtrace-node--right {
+  border-color: #C5DCF5;
+  background: #FAFCFF;
 }
 .rtrace-node-hdr {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 7px 10px;
   background: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
 }
-.rtrace-node-icon { font-size: 14px; }
-.rtrace-node-name {
-  flex: 1;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text);
-}
+.rtrace-node--right .rtrace-node-hdr { background: #EFF6FF; border-color: #C5DCF5; }
+.rtrace-node-icon { font-size: 13px; }
+.rtrace-node-name { flex: 1; font-size: 11px; font-weight: 600; color: var(--color-text); }
 .rtrace-node-count {
-  font-size: 11px;
-  background: var(--color-border);
-  color: var(--color-text-muted);
-  border-radius: 10px;
-  padding: 1px 7px;
-  font-weight: 600;
+  font-size: 10px; background: var(--color-border); color: var(--color-text-muted);
+  border-radius: 10px; padding: 1px 6px; font-weight: 600;
 }
-.rtrace-node-count.has-links {
-  background: #E8F0FE;
-  color: #1A73E8;
-}
-.rtrace-node-body { padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
-.rtrace-empty {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  font-style: italic;
-  padding: 4px 4px;
-}
+.rtrace-node-count.has-links { background: #E8F0FE; color: #1A73E8; }
+.rtrace-node-body { padding: 5px 6px; display: flex; flex-direction: column; gap: 3px; }
+.rtrace-empty { font-size: 11px; color: var(--color-text-muted); font-style: italic; padding: 3px 4px; }
 
+/* Items inside node */
 .rtrace-item {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 5px 8px;
-  border-radius: 5px;
-  font-size: 12px;
+  display: flex; align-items: baseline; gap: 5px;
+  padding: 4px 6px; border-radius: 4px; font-size: 11px;
 }
-.rtrace-item--linked {
-  background: #F0F7FF;
-  border: 1px solid #C5DCF5;
-}
-.rtrace-item--reverse {
-  background: #F6F0FF;
-  border: 1px solid #D9C5F5;
-}
-.rtrace-item-code {
-  font-weight: 700;
-  color: #1A73E8;
-  white-space: nowrap;
-  font-size: 11px;
-}
+.rtrace-item--linked { background: #F0F7FF; border: 1px solid #C5DCF5; }
+.rtrace-item--reverse { background: #F6F0FF; border: 1px solid #D9C5F5; }
+.rtrace-item-code { font-weight: 700; color: #1A73E8; white-space: nowrap; font-size: 10px; }
 .rtrace-item--reverse .rtrace-item-code { color: #7B2FBE; }
-.rtrace-item-label {
-  flex: 1;
-  color: var(--color-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rtrace-item-badge {
-  font-size: 10px;
-  color: #7B2FBE;
-  white-space: nowrap;
-  opacity: 0.8;
-}
+.rtrace-item-label { flex: 1; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rtrace-item-badge { font-size: 10px; color: #7B2FBE; white-space: nowrap; opacity: 0.7; }
 .rtrace-unlink {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--color-text-muted);
-  font-size: 10px;
-  padding: 0 2px;
-  opacity: 0.5;
-  flex-shrink: 0;
+  background: none; border: none; cursor: pointer; color: var(--color-text-muted);
+  font-size: 10px; padding: 0 2px; opacity: 0.4; flex-shrink: 0;
 }
 .rtrace-unlink:hover { opacity: 1; color: var(--color-danger); }
 
 .rtrace-add-row {
-  padding: 6px 8px;
-  border-top: 1px solid var(--color-border);
-  background: var(--color-bg);
+  padding: 5px 6px; border-top: 1px solid var(--color-border); background: var(--color-bg);
 }
 .rtrace-add-sel {
-  width: 100%;
-  font-size: 11px;
-  padding: 3px 6px;
-  height: 26px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
+  width: 100%; font-size: 11px; padding: 2px 5px; height: 24px;
+  border: 1px solid var(--color-border); border-radius: 4px;
+  background: var(--color-surface); color: var(--color-text); cursor: pointer;
 }
 .rtrace-no-config {
-  padding: 16px;
-  font-size: 12px;
-  color: var(--color-text-muted);
-  background: var(--color-bg);
-  border-radius: 6px;
-  line-height: 1.5;
+  padding: 16px; font-size: 12px; color: var(--color-text-muted);
+  background: var(--color-bg); border-radius: 6px; line-height: 1.5;
 }
 
 /* Highlighted row when trace panel is open */
