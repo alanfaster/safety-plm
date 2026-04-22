@@ -303,23 +303,30 @@ function renderTable(body) {
     return;
   }
 
-  const customCols = _cols.filter(c => c.custom && c.visible);
+  // Build thead in _cols order (only visible cols)
+  const TH_META = {
+    drag:        { style: 'width:18px;padding:0', label: '' },
+    id:          { style: 'width:88px',            label: 'ID' },
+    description: { style: '',                      label: 'Description' },
+    system:      { style: 'width:120px',           label: 'System',  managed: true },
+    type:        { style: 'width:130px',           label: 'Type',    managed: true },
+    status:      { style: 'width:120px',           label: 'Status',  managed: true },
+    actions:     { style: 'width:120px',           label: '' },
+  };
+  const visibleCols = _cols.filter(c => c.visible);
+  const theadHtml = visibleCols.map(c => {
+    const meta = TH_META[c.id] || { style: '', label: esc(c.name), managed: true };
+    const managed = (meta.managed || c.custom) ? ' class="col-managed"' : '';
+    const style   = meta.style ? ` style="${meta.style}"` : '';
+    return `<th data-col="${esc(c.id)}"${style}${managed}>${c.custom ? esc(c.name) : meta.label}</th>`;
+  }).join('');
 
   body.innerHTML = `
     <div class="card">
       <div class="table-wrap">
         <table class="data-table spec-table" id="spec-table">
           <thead>
-            <tr id="spec-thead-row">
-              <th data-col="drag"        style="width:18px;padding:0"></th>
-              <th data-col="id"          style="width:88px">ID</th>
-              <th data-col="description">Description</th>
-              <th data-col="system"      style="width:120px" class="col-managed">System</th>
-              <th data-col="type"        style="width:130px" class="col-managed">Type</th>
-              <th data-col="status"      style="width:120px" class="col-managed">Status</th>
-              ${customCols.map(c => `<th data-col="${esc(c.id)}" class="col-managed">${esc(c.name)}</th>`).join('')}
-              <th data-col="actions"     style="width:120px"></th>
-            </tr>
+            <tr id="spec-thead-row">${theadHtml}</tr>
           </thead>
           <tbody id="spec-tbody"></tbody>
         </table>
@@ -393,48 +400,51 @@ function sectionRowHTML(it) {
 }
 
 function rowHTML(it) {
-  const customCols = _cols.filter(c => c.custom && c.visible);
-  return `
-    <td data-col="drag"        class="req-drag-handle spec-drag-handle" title="Drag to reorder">⠿</td>
-    <td data-col="id"          class="spec-id-cell code-cell">${esc(it.spec_code)}</td>
-
-    <td data-col="description" class="spec-desc-cell">
-      ${it.component_ref_id ? '<span class="spec-auto-badge" title="Name synced from Architecture Concept (read-only)">AUTO</span>' : ''}
-      <div class="spec-text-view" title="${it.component_ref_id ? 'Name synced from Architecture Concept — read only' : 'Double-click to edit'}"
-        >${esc(it.title || '')}<span class="spec-placeholder ${it.title ? 'hidden' : ''}">Double-click to add description…</span></div>
-      <div class="spec-uml-area" id="uml-area-${it.id}">
-        ${umlAreaPreviewHTML(it)}
-      </div>
-    </td>
-
-    <td data-col="system" style="font-size:12px;color:var(--color-text-muted);white-space:nowrap">
-      ${esc(it.system_name || '—')}
-    </td>
-
-    <td data-col="type">
-      <select class="form-input form-select spec-type-sel" data-field="type">
-        ${SPEC_TYPES.map(v => `<option value="${v}" ${it.type === v ? 'selected' : ''}>${v}</option>`).join('')}
-      </select>
-    </td>
-    <td data-col="status">
-      <select class="form-input form-select spec-status-sel" data-field="status">
-        ${SPEC_STATUSES.map(v => `<option value="${v}" ${it.status === v ? 'selected' : ''}>${v}</option>`).join('')}
-      </select>
-    </td>
-
-    ${customCols.map(c => `
-      <td data-col="${esc(c.id)}" class="spec-custom-cell" data-item-id="${it.id}" data-custom-col="${esc(c.id)}"
-        title="Click to edit" style="cursor:text;font-size:12px;color:#444;min-width:80px">
-        ${esc((it.custom_fields || {})[c.id] || '')}
-      </td>`).join('')}
-
-    <td data-col="actions" class="spec-row-actions">
-      <button class="btn btn-ghost btn-xs spec-move-up"   title="Move up">↑</button>
-      <button class="btn btn-ghost btn-xs spec-move-dn"   title="Move down">↓</button>
-      <button class="btn btn-ghost btn-xs spec-add-below" title="Add row below">+</button>
-      <button class="btn btn-ghost btn-xs spec-del-btn"   title="Delete row" style="color:var(--color-danger)">✕</button>
-    </td>
-  `;
+  const visibleCols = _cols.filter(c => c.visible);
+  return visibleCols.map(c => {
+    switch (c.id) {
+      case 'drag':
+        return `<td data-col="drag" class="req-drag-handle spec-drag-handle" title="Drag to reorder">⠿</td>`;
+      case 'id':
+        return `<td data-col="id" class="spec-id-cell code-cell">${esc(it.spec_code)}</td>`;
+      case 'description':
+        return `<td data-col="description" class="spec-desc-cell">
+          ${it.component_ref_id ? '<span class="spec-auto-badge" title="Name synced from Architecture Concept (read-only)">AUTO</span>' : ''}
+          <div class="spec-text-view" title="${it.component_ref_id ? 'Name synced from Architecture Concept — read only' : 'Double-click to edit'}"
+            >${esc(it.title || '')}<span class="spec-placeholder ${it.title ? 'hidden' : ''}">Double-click to add description…</span></div>
+          <div class="spec-uml-area" id="uml-area-${it.id}">${umlAreaPreviewHTML(it)}</div>
+        </td>`;
+      case 'system':
+        return `<td data-col="system" style="font-size:12px;color:var(--color-text-muted);white-space:nowrap">${esc(it.system_name || '—')}</td>`;
+      case 'type':
+        return `<td data-col="type">
+          <select class="form-input form-select spec-type-sel" data-field="type">
+            ${SPEC_TYPES.map(v => `<option value="${v}" ${it.type === v ? 'selected' : ''}>${v}</option>`).join('')}
+          </select>
+        </td>`;
+      case 'status':
+        return `<td data-col="status">
+          <select class="form-input form-select spec-status-sel" data-field="status">
+            ${SPEC_STATUSES.map(v => `<option value="${v}" ${it.status === v ? 'selected' : ''}>${v}</option>`).join('')}
+          </select>
+        </td>`;
+      case 'actions':
+        return `<td data-col="actions" class="spec-row-actions">
+          <button class="btn btn-ghost btn-xs spec-move-up"   title="Move up">↑</button>
+          <button class="btn btn-ghost btn-xs spec-move-dn"   title="Move down">↓</button>
+          <button class="btn btn-ghost btn-xs spec-add-below" title="Add row below">+</button>
+          <button class="btn btn-ghost btn-xs spec-del-btn"   title="Delete row" style="color:var(--color-danger)">✕</button>
+        </td>`;
+      default:
+        if (c.custom) {
+          return `<td data-col="${esc(c.id)}" class="spec-custom-cell" data-item-id="${it.id}" data-custom-col="${esc(c.id)}"
+            title="Click to edit" style="cursor:text;font-size:12px;color:#444;min-width:80px">
+            ${esc((it.custom_fields || {})[c.id] || '')}
+          </td>`;
+        }
+        return '';
+    }
+  }).join('');
 }
 
 function umlAreaPreviewHTML(it) {
