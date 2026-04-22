@@ -1758,8 +1758,10 @@ function propseFunSection(c) {
               <input type="checkbox" class="pf-safe" data-fid="${f.id}" ${f.is_safety_related?'checked':''}/>
               <span style="font-size:11px;color:#C5221F">⚠</span>
             </label>
-            <span class="arch-props-fun-name" id="pfn-${f.id}">${escH(f.name)}</span>
-            <button class="btn-icon pf-ren" data-fid="${f.id}">✎</button>
+            <span class="arch-props-fun-name" id="pfn-${f.id}"
+              title="${f.function_ref_id ? 'Name managed in Item Definition' : ''}"
+            >${escH(f.name)}</span>
+            ${f.function_ref_id ? '' : `<button class="btn-icon pf-ren" data-fid="${f.id}" title="Rename">✎</button>`}
             <button class="btn-icon pf-del" data-fid="${f.id}">✕</button>
           </div>`).join('')}
       </div>
