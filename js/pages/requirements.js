@@ -35,8 +35,9 @@ let _collapsed  = new Set();
 let _colKey     = '';
 let _showAsil   = false;
 let _showDal    = false;
-let _traceFields = [];   // derived from vmodel_links for this node
-let _traceData   = {};   // { [nodeId]: [{code, label}] } — cached lookup data
+let _traceFields   = [];   // derived from vmodel_links for this node
+let _traceData     = {};   // { [nodeId]: [{code, label}] } — cached lookup data
+let _tracePanelId  = null; // currently open req id in trace panel
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -57,9 +58,10 @@ export async function renderRequirements(container, { project, item, system, par
   // item-level pages use 'item'
   const domainKey = parentType === 'system' ? (domain || 'system') : 'item';
   _ctx = { project, item, system, parentType, parentId, typeFilter, pageId, domain: domainKey };
-  _data        = [];
-  _traceFields = [];
-  _traceData   = {};
+  _data          = [];
+  _traceFields   = [];
+  _traceData     = {};
+  _tracePanelId  = null;
   _collapsed   = new Set(JSON.parse(sessionStorage.getItem(`req_collapsed_${parentId}`) || '[]'));
   _showAsil    = project.type === 'automotive';
   _showDal     = project.type === 'aerospace' || project.type === 'military';
@@ -107,6 +109,17 @@ export async function renderRequirements(container, { project, item, system, par
       <div class="spec-content" id="req-body">
         <div class="content-loading"><div class="spinner"></div></div>
       </div>
+      <aside class="req-trace-panel" id="req-trace-panel">
+        <div class="req-trace-panel-hdr">
+          <span class="req-trace-panel-title">Traceability</span>
+          <button class="btn-icon" id="req-trace-panel-close" title="Close">✕</button>
+        </div>
+        <div class="req-trace-panel-body" id="req-trace-panel-body">
+          <p style="padding:16px;font-size:13px;color:var(--color-text-muted)">
+            Click 🔗 on any requirement to view its V-Model trace links.
+          </p>
+        </div>
+      </aside>
     </div>
     <div class="spec-fab" id="req-fab">
       <button class="btn btn-primary"   id="btn-new-req">＋ ${t('req.new')}</button>
@@ -117,9 +130,10 @@ export async function renderRequirements(container, { project, item, system, par
   document.getElementById('btn-new-req').onclick = () =>
     openReqModal({ project, parentType, parentId, projectType: project.type,
       defaultType: Array.isArray(typeFilter) ? typeFilter[0] : undefined });
-  document.getElementById('btn-new-section').onclick = () => addReqSection(null);
-  document.getElementById('req-nav-close').onclick   = () => toggleReqNav(false);
-  document.getElementById('req-nav-expand').onclick  = () => toggleReqNav(true);
+  document.getElementById('btn-new-section').onclick    = () => addReqSection(null);
+  document.getElementById('req-nav-close').onclick      = () => toggleReqNav(false);
+  document.getElementById('req-nav-expand').onclick     = () => toggleReqNav(true);
+  document.getElementById('req-trace-panel-close').onclick = () => closeTracePanel();
 
   if (!typeFilter) {
     container.querySelectorAll('.page-tab').forEach(tab => {
@@ -425,6 +439,11 @@ function wireAllRows(tbody) {
       const dir = btn.classList.contains('btn-move-up') ? -1 : 1;
       moveReq(btn.dataset.id, dir, tbody);
     });
+  });
+
+  // Traceability panel
+  tbody.querySelectorAll('.btn-trace-req').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); openTracePanel(btn.dataset.id); };
   });
 
   // Detail/view modal
@@ -887,6 +906,9 @@ function wireNewRow(tr, req, tbody) {
       if (r) await handleReqDelete(r);
     };
   });
+  tr.querySelectorAll('.btn-trace-req').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); openTracePanel(btn.dataset.id); };
+  });
   tr.querySelectorAll('.btn-view-req').forEach(btn => {
     btn.onclick = () => openReqModal({ project, parentType, parentId,
       projectType: project.type, existing: req });
@@ -1219,6 +1241,7 @@ function reqTd(c, r) {
       return `<td data-col="actions" class="actions-cell">
         <button class="btn btn-ghost btn-xs btn-move-up"   data-id="${r.id}" title="Move up">↑</button>
         <button class="btn btn-ghost btn-xs btn-move-dn"   data-id="${r.id}" title="Move down">↓</button>
+        <button class="btn btn-ghost btn-xs btn-trace-req" data-id="${r.id}" title="Traceability" style="${_traceFields.length ? '' : 'opacity:0.35'}">⛓</button>
         <button class="btn btn-ghost btn-xs btn-view-req"  data-id="${r.id}" title="View detail">👁</button>
         <button class="btn btn-ghost btn-xs btn-copy-link" data-id="${r.id}" title="Copy link">🔗</button>
         <button class="btn btn-ghost btn-xs btn-del-req"   data-id="${r.id}" data-title="${esc(r.title)}" style="color:var(--color-danger)" title="Delete">✕</button>
@@ -1229,6 +1252,243 @@ function reqTd(c, r) {
         ${esc((r.custom_fields || {})[c.id] || '')}
       </td>`;
       return '';
+  }
+}
+
+// ── Trace panel ───────────────────────────────────────────────────────────────
+
+function closeTracePanel() {
+  const panel = document.getElementById('req-trace-panel');
+  panel?.classList.remove('open');
+  _tracePanelId = null;
+  document.querySelectorAll('.req-row-trace-active').forEach(r => r.classList.remove('req-row-trace-active'));
+}
+
+async function openTracePanel(reqId) {
+  const panel    = document.getElementById('req-trace-panel');
+  const body     = document.getElementById('req-trace-panel-body');
+  if (!panel || !body) return;
+
+  // Toggle off if same req
+  if (_tracePanelId === reqId) { closeTracePanel(); return; }
+  _tracePanelId = reqId;
+
+  // Highlight row
+  document.querySelectorAll('.req-row-trace-active').forEach(r => r.classList.remove('req-row-trace-active'));
+  document.querySelector(`tr[data-rid="${reqId}"]`)?.classList.add('req-row-trace-active');
+
+  panel.classList.add('open');
+  body.innerHTML = '<div class="content-loading"><div class="spinner"></div></div>';
+
+  const req = _data.find(r => r.id === reqId);
+  if (!req) { body.innerHTML = '<p style="padding:16px">Not found.</p>'; return; }
+
+  // Get current node info
+  const { item, system } = _ctx;
+  const myNode = VMODEL_NODES.find(n => n.domain === _ctx.domain && n.phase === 'requirements');
+  const traceability = req.traceability || {};
+
+  // Also load reverse links: other requirements/items that link TO this req
+  const reverseLinks = await loadReverseLinks(req.req_code);
+
+  // Build V-model chain HTML
+  // Separate fields into: upstream (if they reference this node as downstream) vs downstream
+  // We determine direction by checking if myNode appears as link.to (upstream) or link.from (downstream)
+  const upstream   = [];
+  const downstream = [];
+  for (const field of _traceFields) {
+    const linked = traceability[field.id] || [];
+    const revLinked = reverseLinks[field.id] || [];
+    downstream.push({ field, linked, revLinked });
+  }
+
+  body.innerHTML = `
+    <div class="rtrace-chain">
+      ${!_traceFields.length ? `
+        <div class="rtrace-no-config">
+          <p>No V-Model links configured for this node.</p>
+          <p style="margin-top:4px">Go to <strong>Project Settings → V-Model</strong> to define connections.</p>
+        </div>
+      ` : ''}
+
+      ${buildChainHTML(req, myNode, downstream)}
+    </div>
+  `;
+
+  // Wire add/remove links inline in panel
+  wireTracePanelLinks(body, req);
+}
+
+async function loadReverseLinks(reqCode) {
+  // Find other requirements that link TO this req code
+  // We check: which field IDs in _traceFields could have a reverse link?
+  // A reverse link means: a req in another node has this req's code in its traceability
+  const result = {};
+  if (!reqCode) return result;
+
+  // Query requirements where traceability contains this code
+  // Using Supabase JSONB: we look for any requirement that has our code in any trace field
+  const { item, system } = _ctx;
+  for (const field of _traceFields) {
+    const node = field.node;
+    if (!node || field.source !== 'requirements') { result[field.id] = []; continue; }
+    const isItemDomain = node.domain === 'item';
+    const parentType   = isItemDomain ? 'item' : 'system';
+    const parentId     = isItemDomain ? item?.id : system?.id;
+    if (!parentId) { result[field.id] = []; continue; }
+
+    // Find reqs in the other node that link back to this req_code
+    const { data } = await sb.from('requirements')
+      .select('req_code, title, traceability')
+      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .eq('domain', node.domain)
+      .not('type', 'in', '("title","info")');
+
+    const myNodeId = VMODEL_NODES.find(n => n.domain === _ctx.domain && n.phase === 'requirements')?.id;
+    result[field.id] = (data || []).filter(r => {
+      const t = r.traceability || {};
+      return myNodeId && Array.isArray(t[myNodeId]) && t[myNodeId].includes(reqCode);
+    }).map(r => ({ code: r.req_code, label: r.title || '' }));
+  }
+  return result;
+}
+
+function buildChainHTML(req, myNode, chainItems) {
+  const nodeIcon = { system: '⬡', sw: '◧', hw: '◨', mech: '◎', item: '⬡' };
+
+  const chainSections = chainItems.map(({ field, linked, revLinked }) => {
+    const node    = field.node;
+    const options = _traceData[field.id] || [];
+    const icon    = nodeIcon[node.domain] || '◈';
+
+    const linkedItems = linked.map(code => {
+      const opt = options.find(o => o.code === code);
+      return `<div class="rtrace-item rtrace-item--linked" data-code="${esc(code)}" data-field="${field.id}">
+        <span class="rtrace-item-code">${esc(code)}</span>
+        <span class="rtrace-item-label">${esc((opt?.label || '').slice(0,60))}</span>
+        <button class="rtrace-unlink" data-code="${esc(code)}" data-field="${field.id}" title="Remove link">✕</button>
+      </div>`;
+    }).join('');
+
+    const revItems = revLinked.map(item => `
+      <div class="rtrace-item rtrace-item--reverse">
+        <span class="rtrace-item-code">${esc(item.code)}</span>
+        <span class="rtrace-item-label">${esc(item.label.slice(0,60))}</span>
+        <span class="rtrace-item-badge">↩ links here</span>
+      </div>`).join('');
+
+    const unlinkedOptions = options.filter(o => !linked.includes(o.code));
+
+    return `
+      <div class="rtrace-connector">
+        <span class="rtrace-connector-line"></span>
+        <span class="rtrace-connector-label">trace ↕</span>
+        <span class="rtrace-connector-line"></span>
+      </div>
+      <div class="rtrace-node">
+        <div class="rtrace-node-hdr">
+          <span class="rtrace-node-icon">${icon}</span>
+          <span class="rtrace-node-name">${esc(field.label)}</span>
+          <span class="rtrace-node-count ${linked.length ? 'has-links' : ''}">${linked.length + revLinked.length}</span>
+        </div>
+        <div class="rtrace-node-body" id="rtrace-body-${field.id}">
+          ${linkedItems}
+          ${revItems}
+          ${!linkedItems && !revItems ? `<div class="rtrace-empty">No links yet</div>` : ''}
+        </div>
+        ${unlinkedOptions.length ? `
+          <div class="rtrace-add-row">
+            <select class="rtrace-add-sel" data-field="${field.id}">
+              <option value="">＋ link to ${esc(field.label.split(' ')[0])}…</option>
+              ${unlinkedOptions.map(o =>
+                `<option value="${esc(o.code)}">${esc(o.code)} — ${esc(o.label.slice(0,40))}</option>`
+              ).join('')}
+            </select>
+          </div>` : ''}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="rtrace-current">
+      <div class="rtrace-current-icon">${nodeIcon[myNode?.domain] || '◈'}</div>
+      <div class="rtrace-current-body">
+        <div class="rtrace-current-code">${esc(req.req_code)}</div>
+        <div class="rtrace-current-title">${esc(req.title)}</div>
+        ${req.type ? `<span class="rtrace-current-type">${esc(req.type)}</span>` : ''}
+      </div>
+    </div>
+    ${chainSections}
+  `;
+}
+
+function wireTracePanelLinks(body, req) {
+  // Add link via select
+  body.querySelectorAll('.rtrace-add-sel').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const code    = sel.value;
+      const fieldId = sel.dataset.field;
+      if (!code) return;
+      sel.value = '';
+
+      const updated = { ...(req.traceability || {}) };
+      updated[fieldId] = [...(updated[fieldId] || []), code];
+
+      const { error } = await sb.from('requirements')
+        .update({ traceability: updated }).eq('id', req.id);
+      if (error) { toast('Save failed', 'error'); return; }
+
+      req.traceability = updated;
+      const r = _data.find(d => d.id === req.id);
+      if (r) r.traceability = updated;
+
+      // Refresh panel
+      openTracePanel(req.id);
+      refreshTraceBadge(req.id);
+    });
+  });
+
+  // Remove link
+  body.querySelectorAll('.rtrace-unlink').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const code    = btn.dataset.code;
+      const fieldId = btn.dataset.field;
+
+      const updated = { ...(req.traceability || {}) };
+      updated[fieldId] = (updated[fieldId] || []).filter(c => c !== code);
+
+      const { error } = await sb.from('requirements')
+        .update({ traceability: updated }).eq('id', req.id);
+      if (error) { toast('Save failed', 'error'); return; }
+
+      req.traceability = updated;
+      const r = _data.find(d => d.id === req.id);
+      if (r) r.traceability = updated;
+
+      openTracePanel(req.id);
+      refreshTraceBadge(req.id);
+    });
+  });
+}
+
+function refreshTraceBadge(reqId) {
+  const r = _data.find(d => d.id === reqId);
+  if (!r) return;
+  const tr = document.querySelector(`tr[data-rid="${reqId}"]`);
+  if (!tr) return;
+  const count = _traceFields.reduce((s, f) => s + ((r.traceability?.[f.id]?.length) || 0), 0);
+  const badgeEl = tr.querySelector('[title$="trace link(s)"]');
+  if (count && !badgeEl) {
+    const titleDiv = tr.querySelector('.req-title-cell')?.closest('div');
+    if (titleDiv) {
+      const badge = document.createElement('span');
+      badge.title = `${count} trace link(s)`;
+      badge.style.cssText = 'font-size:10px;background:#E8F0FE;color:#1A73E8;border-radius:3px;padding:1px 5px;white-space:nowrap';
+      badge.textContent = `🔗 ${count}`;
+      titleDiv.appendChild(badge);
+    }
+  } else if (badgeEl) {
+    if (count) badgeEl.textContent = `🔗 ${count}`;
+    else       badgeEl.remove();
   }
 }
 
