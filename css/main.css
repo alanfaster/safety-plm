@@ -3071,9 +3071,8 @@ th.col-th-dragging * { pointer-events: none; }
 .wiki-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
   padding: 0 !important;
-  overflow: hidden;
+  /* No overflow:hidden — let #content scroll naturally */
 }
 
 /* ── Topbar (sticky toolbar) ─────────────────────────────────────────────────── */
@@ -3173,9 +3172,8 @@ th.col-th-dragging * { pointer-events: none; }
 /* ── Main layout row (TOC + scroll area) ─────────────────────────────────────── */
 .wiki-layout {
   display: flex;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+  align-items: flex-start;  /* children size to their own content */
+  /* No overflow:hidden — #content scrolls */
 }
 
 /* ── TOC panel ───────────────────────────────────────────────────────────────── */
@@ -3188,6 +3186,11 @@ th.col-th-dragging * { pointer-events: none; }
   flex-direction: column;
   overflow: hidden;
   transition: width .2s ease;
+  /* Stick below the topbar as #content scrolls */
+  position: sticky;
+  top: 42px;            /* height of wiki-topbar */
+  max-height: calc(100vh - 42px - 42px); /* viewport minus topbar and app chrome */
+  overflow-y: auto;
 }
 .wiki-toc.wiki-toc-hidden {
   width: 0;
@@ -3287,12 +3290,13 @@ th.col-th-dragging * { pointer-events: none; }
 /* ── Scroll area + paper ─────────────────────────────────────────────────────── */
 .wiki-scroll {
   flex: 1;
-  overflow-y: auto;
+  /* No overflow — #content is the scroll container */
   background: #E8EAED;
   padding: 32px 24px 80px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-height: calc(100vh - 42px); /* fill at least the viewport below topbar */
 }
 .wiki-paper {
   background: #fff;
@@ -3368,8 +3372,6 @@ th.col-th-dragging * { pointer-events: none; }
 
 /* ── Status bar ──────────────────────────────────────────────────────────────── */
 .wiki-statusbar {
-  position: sticky;
-  bottom: 0;
   background: #F6F8FA;
   border-top: 1px solid #D8DDE4;
   display: flex;
@@ -3379,7 +3381,6 @@ th.col-th-dragging * { pointer-events: none; }
   font-size: 11px;
   color: var(--color-text-muted);
   flex-shrink: 0;
-  z-index: 10;
 }
 .wiki-statusbar span { white-space: nowrap; }
 
