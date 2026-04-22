@@ -420,7 +420,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
         linkId:  link.id,
         startMX: e.clientX, startMY: e.clientY,
         startBX: link.bend?.x || 0,
-        startBY: link.bend?.y !== undefined ? link.bend.y : defBY,
+        startBY: link.bend?.y || 0,
       };
     };
     ring.addEventListener('mousedown', startBend);
