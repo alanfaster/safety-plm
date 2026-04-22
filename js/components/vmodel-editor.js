@@ -388,7 +388,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     const path = mkSVG('path');
     path.setAttribute('d', d);
     path.setAttribute('stroke', stroke);
-    path.setAttribute('stroke-width', isTrace ? '2' : '1.5');
+    path.setAttribute('stroke-width', '2');
     path.setAttribute('stroke-dasharray', dash);
     path.setAttribute('fill', 'none');
     path.setAttribute('opacity', op);
