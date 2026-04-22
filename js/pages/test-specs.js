@@ -28,24 +28,23 @@ const LEVELS       = [
 const ENVIRONMENTS = ['simulation', 'lab', 'field'];
 const RESULTS      = ['pass', 'fail', 'blocked'];
 
-// ISO 26262 test methods (Part 6 SW + Part 4 System)
-const ISO_METHODS = [
-  { id: 'req_based',           label: 'Requirements-based testing' },
-  { id: 'equivalence',         label: 'Equivalence class partitioning' },
-  { id: 'boundary',            label: 'Boundary value analysis' },
-  { id: 'error_guessing',      label: 'Error guessing' },
-  { id: 'state_based',         label: 'State-based testing' },
-  { id: 'decision_table',      label: 'Decision table testing' },
-  { id: 'structural_stmt',     label: 'Structural coverage — Statement' },
-  { id: 'structural_branch',   label: 'Structural coverage — Branch' },
-  { id: 'structural_mcdc',     label: 'Structural coverage — MC/DC' },
-  { id: 'back_to_back',        label: 'Back-to-back testing' },
-  { id: 'fault_injection',     label: 'Fault injection testing' },
-  { id: 'interface_testing',   label: 'Interface testing' },
-  { id: 'performance',         label: 'Performance testing' },
-  { id: 'regression',          label: 'Regression testing' },
-  { id: 'inspection',          label: 'Inspection' },
-  { id: 'walkthrough',         label: 'Walk-through / Review' },
+const TEST_METHODS = [
+  { id: 'req_based',         label: 'Requirements-based' },
+  { id: 'equivalence',       label: 'Equivalence class' },
+  { id: 'boundary',          label: 'Boundary value' },
+  { id: 'error_guessing',    label: 'Error guessing' },
+  { id: 'state_based',       label: 'State-based' },
+  { id: 'decision_table',    label: 'Decision table' },
+  { id: 'structural_stmt',   label: 'Coverage — Statement' },
+  { id: 'structural_branch', label: 'Coverage — Branch' },
+  { id: 'structural_mcdc',   label: 'Coverage — MC/DC' },
+  { id: 'back_to_back',      label: 'Back-to-back' },
+  { id: 'fault_injection',   label: 'Fault injection' },
+  { id: 'interface_testing', label: 'Interface' },
+  { id: 'performance',       label: 'Performance' },
+  { id: 'regression',        label: 'Regression' },
+  { id: 'inspection',        label: 'Inspection' },
+  { id: 'walkthrough',       label: 'Walk-through / Review' },
 ];
 
 const STATUS_COLORS = {
@@ -336,9 +335,9 @@ function buildDetailHTML(t) {
               </select>
             </div>
             <div class="ts-field">
-              <label>Method (ISO 26262) — select all that apply</label>
+              <label>Method — select all that apply</label>
               <div class="ts-method-grid" id="ts-method-grid">
-                ${ISO_METHODS.map(m => `
+                ${TEST_METHODS.map(m => `
                   <label class="ts-method-item">
                     <input type="checkbox" class="ts-method-chk" value="${m.id}"
                       ${methods.includes(m.id) ? 'checked' : ''}/>

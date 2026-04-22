@@ -3935,6 +3935,32 @@ th.col-th-dragging * { pointer-events: none; }
   letter-spacing: 0.04em;
 }
 
+/* Method checkboxes grid */
+.ts-method-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px 12px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+}
+.ts-method-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text);
+  cursor: pointer;
+  padding: 3px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ts-method-item:hover { background: var(--color-hover); }
+.ts-method-item input[type="checkbox"] { flex-shrink: 0; cursor: pointer; }
+
 /* Requirement tags */
 .ts-req-tags {
   display: flex;
@@ -4085,3 +4111,14 @@ th.col-th-dragging * { pointer-events: none; }
 /* Table row hover & selected */
 .ts-row:hover td { background: var(--color-hover); }
 .ts-row--selected td { background: #EEF4FF !important; }
+
+/* Last modified + autosave indicator */
+.ts-last-modified {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+}
+.ts-autosave-indicator {
+  margin-left: 6px;
+  font-size: 11px;
+}
