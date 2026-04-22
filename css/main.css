@@ -1396,31 +1396,60 @@ tr.req-title-row td { cursor: default; }
   border-right: 4px solid #888;
 }
 
-/* Mode buttons */
-.vme-mode-group {
-  display: flex;
-  gap: 2px;
-  background: var(--color-bg);
+/* Context menus (node / link floating popover) */
+.vme-menu {
+  position: absolute;
+  z-index: 200;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  padding: 2px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  min-width: 180px;
+  padding: 4px 0;
+  font-size: 13px;
 }
-.vme-mode-btn {
-  padding: 4px 12px;
-  font-size: 12px;
+.vme-menu-title {
+  padding: 6px 14px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.vme-menu-sep {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 4px 0;
+}
+.vme-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 14px;
   border: none;
   background: transparent;
-  border-radius: 4px;
-  cursor: pointer;
-  color: var(--color-text-muted);
   font-family: inherit;
-  transition: background 0.1s, color 0.1s;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
 }
-.vme-mode-btn:hover  { background: var(--color-hover); color: var(--color-text); }
-.vme-mode-btn.active { background: var(--color-primary); color: #fff; font-weight: 600; }
-.vme-mode-btn.vme-mode-trace.active { background: #1A73E8; }
-.vme-mode-btn.vme-mode-seq.active   { background: #555; }
-.vme-mode-btn.vme-mode-del.active   { background: #EA4335; }
+.vme-menu-item:hover { background: var(--color-hover); }
+.vme-menu-item.danger { color: #EA4335; }
+.vme-menu-item.danger:hover { background: #fce8e6; }
+
+/* Node state hints during connect mode */
+.vme-node--target-hint {
+  outline: 3px dashed #1A73E8;
+  outline-offset: 3px;
+  cursor: crosshair !important;
+}
+.vme-node--source {
+  outline: 3px solid #F29900;
+  outline-offset: 2px;
+}
 
 /* Body: palette + canvas */
 .vme-body {
@@ -1522,7 +1551,6 @@ tr.req-title-row td { cursor: default; }
 }
 .vme-node:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.18); }
 .vme-node--dragging { opacity: 0.85; box-shadow: 0 6px 20px rgba(0,0,0,0.22); z-index: 10; }
-.vme-node--source   { outline: 3px solid #F29900; outline-offset: 2px; }
 .vme-node--deletable:hover { outline: 3px solid #EA4335; outline-offset: 2px; box-shadow: 0 0 0 4px #fce8e680; }
 
 /* Domain colours (nodes + palette items) */
