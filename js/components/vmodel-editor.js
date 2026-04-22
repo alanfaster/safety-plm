@@ -59,24 +59,13 @@ const ASPICE_NODES = [
   { nodeId: 'sys_qt',     x: 770, y: 20  },
 ];
 
+// ASPICE default: traceability links only (V-connections)
 const ASPICE_LINKS = [
-  // ── Traceability (horizontal V-connections) ──
   { from: 'sys_req',   to: 'sys_qt',  type: 'trace' },
   { from: 'sys_arch',  to: 'sys_it',  type: 'trace' },
   { from: 'sw_req',    to: 'sw_qt',   type: 'trace' },
   { from: 'sw_arch',   to: 'sw_it',   type: 'trace' },
   { from: 'sw_design', to: 'sw_ut',   type: 'trace' },
-  // ── Sequential (development flow) ──
-  { from: 'sys_req',   to: 'sys_arch',  type: 'sequential' },
-  { from: 'sys_arch',  to: 'sw_req',    type: 'sequential' },
-  { from: 'sw_req',    to: 'sw_arch',   type: 'sequential' },
-  { from: 'sw_arch',   to: 'sw_design', type: 'sequential' },
-  { from: 'sw_design', to: 'sw_impl',   type: 'sequential' },
-  { from: 'sw_impl',   to: 'sw_ut',     type: 'sequential' },
-  { from: 'sw_ut',     to: 'sw_it',     type: 'sequential' },
-  { from: 'sw_it',     to: 'sw_qt',     type: 'sequential' },
-  { from: 'sw_qt',     to: 'sys_it',    type: 'sequential' },
-  { from: 'sys_it',    to: 'sys_qt',    type: 'sequential' },
 ];
 
 // ── Node dimensions ───────────────────────────────────────────────────────────
@@ -93,7 +82,8 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
   let _links       = [];
   let _mode        = 'select';   // 'select' | 'connect-trace' | 'connect-seq' | 'delete'
   let _connectFrom = null;
-  let _drag        = null;
+  let _drag        = null;       // node drag
+  let _bendDrag    = null;       // { linkId, startMX, startMY, startBX, startBY }
   let _dirty       = false;
 
   // Init from saved state
@@ -295,10 +285,11 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
 
   // ── SVG connections ───────────────────────────────────────────────────────
   function renderSVG() {
-    svg.querySelectorAll('.vme-link, .vme-link-hit').forEach(el => el.remove());
+    svg.querySelectorAll('.vme-link, .vme-link-hit, .vme-bend-handle').forEach(el => el.remove());
 
     const nodeMap = Object.fromEntries(_nodes.map(n => [n.id, n]));
     const isDel   = _mode === 'delete';
+    const isSel   = _mode === 'select';
 
     _links.forEach(link => {
       const a = nodeMap[link.from];
@@ -307,48 +298,43 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
 
       const isTrace = (link.type || 'trace') === 'trace';
 
-      // Centre points
+      // Node centre points
       const ax = a.x + NODE_W / 2, ay = a.y + NODE_H / 2;
       const bx = b.x + NODE_W / 2, by = b.y + NODE_H / 2;
+      const mx = (ax + bx) / 2,    my = (ay + by) / 2;
 
-      // Bezier — horizontal bend for trace links, diagonal follow for sequential
-      const dx   = bx - ax, dy = by - ay;
-      const dist = Math.hypot(dx, dy);
-      let d;
-      if (isTrace) {
-        // Arch outward so horizontal links don't overlap sequential ones
-        const mid = { x: (ax + bx) / 2, y: (ay + by) / 2 };
-        const bend = Math.max(40, Math.abs(dy) * 0.5);
-        const sign = ay <= by ? -1 : 1;  // arch upward
-        d = `M${ax},${ay} Q${mid.x},${mid.y + sign * bend} ${bx},${by}`;
-      } else {
-        // Sequential: gentle cubic following the arm direction
-        const bend = Math.min(dist * 0.35, 80);
-        const normX = dx / (dist || 1), normY = dy / (dist || 1);
-        const c1x = ax + normX * bend, c1y = ay + normY * bend;
-        const c2x = bx - normX * bend, c2y = by - normY * bend;
-        d = `M${ax},${ay} C${c1x},${c1y} ${c2x},${c2y} ${bx},${by}`;
+      // Quadratic bezier control point = midpoint + user bend + default arch
+      let defBX = 0, defBY = 0;
+      if (isTrace && !link.bend) {
+        // Default arch perpendicular upward so trace links don't overlap sequential
+        const sign = ay <= by ? -1 : 1;
+        defBY = sign * Math.max(45, Math.abs(by - ay) * 0.45);
       }
+      const userBX = link.bend?.x || 0, userBY = link.bend?.y || 0;
+      const cpx = mx + defBX + userBX;
+      const cpy = my + defBY + userBY;
 
-      // Choose colours / markers
-      let stroke, strokeDash, markerEnd, markerStart, strokeW;
+      const d = `M${ax},${ay} Q${cpx},${cpy} ${bx},${by}`;
+
+      // Visual midpoint of quadratic bezier at t=0.5
+      const vmx = (ax + 2 * cpx + bx) / 4;
+      const vmy = (ay + 2 * cpy + by) / 4;
+
+      // Colour / markers
+      let stroke, strokeDash, markerEnd, markerStart, strokeW, opacity;
       if (isDel) {
         stroke = '#EA4335'; strokeDash = isTrace ? '7 4' : 'none';
-        strokeW = 2.5;
-        markerEnd   = 'url(#arr-del)';
-        markerStart = 'url(#arr-del-start)';  // both types get start arrow in delete mode
+        strokeW = 2.5; opacity = 1;
+        markerEnd = 'url(#arr-del)'; markerStart = 'url(#arr-del-start)';
       } else if (isTrace) {
-        stroke = '#1A73E8'; strokeDash = '7 4'; strokeW = 2;
-        markerEnd   = 'url(#arr-trace)';
-        markerStart = 'url(#arr-trace-start)';
+        stroke = '#1A73E8'; strokeDash = '7 4'; strokeW = 2; opacity = 0.8;
+        markerEnd = 'url(#arr-trace)'; markerStart = 'url(#arr-trace-start)';
       } else {
-        // Sequential is also bidirectional — arrows on both ends
-        stroke = '#888'; strokeDash = 'none'; strokeW = 1.5;
-        markerEnd   = 'url(#arr-seq)';
-        markerStart = 'url(#arr-seq-start)';
+        stroke = '#888'; strokeDash = 'none'; strokeW = 1.5; opacity = 0.55;
+        markerEnd = 'url(#arr-seq)'; markerStart = 'url(#arr-seq-start)';
       }
 
-      // Hit area (wide, transparent)
+      // Wide transparent hit area
       const hit = mkSVG('path');
       hit.setAttribute('d', d);
       hit.setAttribute('stroke', 'transparent');
@@ -357,10 +343,8 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       hit.classList.add('vme-link-hit');
       if (isDel) {
         hit.style.cursor = 'pointer';
-        hit.addEventListener('click', () => {
-          _links = _links.filter(l => l.id !== link.id);
-          _dirty = true; render();
-        });
+        const delLink = () => { _links = _links.filter(l => l.id !== link.id); _dirty = true; render(); };
+        hit.addEventListener('click', delLink);
       }
 
       // Visible path
@@ -370,20 +354,57 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       path.setAttribute('stroke-width', strokeW);
       path.setAttribute('stroke-dasharray', strokeDash);
       path.setAttribute('fill', 'none');
-      path.setAttribute('opacity', isDel ? '1' : isTrace ? '0.8' : '0.55');
-      if (markerEnd   !== 'none') path.setAttribute('marker-end',   markerEnd);
-      if (markerStart !== 'none') path.setAttribute('marker-start', markerStart);
+      path.setAttribute('opacity', opacity);
+      path.setAttribute('marker-end', markerEnd);
+      path.setAttribute('marker-start', markerStart);
       path.classList.add('vme-link');
       if (isDel) {
         path.style.cursor = 'pointer';
-        path.addEventListener('click', () => {
-          _links = _links.filter(l => l.id !== link.id);
-          _dirty = true; render();
-        });
+        path.addEventListener('click', () => { _links = _links.filter(l => l.id !== link.id); _dirty = true; render(); });
       }
 
       svg.appendChild(hit);
       svg.appendChild(path);
+
+      // ── Bend handle (select mode only) ─────────────────────────────────
+      if (isSel) {
+        const hColor = isTrace ? '#1A73E8' : '#888';
+
+        // Outer ring (hover target)
+        const ring = mkSVG('circle');
+        ring.setAttribute('cx', vmx); ring.setAttribute('cy', vmy); ring.setAttribute('r', '9');
+        ring.setAttribute('fill', 'transparent');
+        ring.setAttribute('stroke', hColor);
+        ring.setAttribute('stroke-width', '1.5');
+        ring.setAttribute('opacity', '0.4');
+        ring.style.cursor = 'move';
+        ring.style.pointerEvents = 'all';
+        ring.classList.add('vme-bend-handle');
+
+        // Inner dot
+        const dot = mkSVG('circle');
+        dot.setAttribute('cx', vmx); dot.setAttribute('cy', vmy); dot.setAttribute('r', '4');
+        dot.setAttribute('fill', hColor);
+        dot.setAttribute('opacity', '0.6');
+        dot.style.cursor = 'move';
+        dot.style.pointerEvents = 'all';
+        dot.classList.add('vme-bend-handle');
+
+        const startBendDrag = e => {
+          e.stopPropagation(); e.preventDefault();
+          _bendDrag = {
+            linkId:  link.id,
+            startMX: e.clientX, startMY: e.clientY,
+            startBX: link.bend?.x || 0,
+            startBY: (link.bend?.y !== undefined ? link.bend.y : defBY),
+          };
+        };
+        ring.addEventListener('mousedown', startBendDrag);
+        dot.addEventListener('mousedown', startBendDrag);
+
+        svg.appendChild(ring);
+        svg.appendChild(dot);
+      }
     });
   }
 
@@ -392,6 +413,19 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
   window.addEventListener('mouseup',   onMouseUp);
 
   function onMouseMove(e) {
+    if (_bendDrag) {
+      const link = _links.find(l => l.id === _bendDrag.linkId);
+      if (link) {
+        link.bend = {
+          x: _bendDrag.startBX + (e.clientX - _bendDrag.startMX),
+          y: _bendDrag.startBY + (e.clientY - _bendDrag.startMY),
+        };
+        renderSVG();
+        _dirty = true;
+      }
+      return; // don't process node drag simultaneously
+    }
+
     if (!_drag) return;
     const rect = canvas.getBoundingClientRect();
     const node = _nodes.find(n => n.id === _drag.nodeId);
@@ -405,6 +439,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
   }
 
   function onMouseUp() {
+    if (_bendDrag) { _bendDrag = null; return; }
     if (_drag) {
       const div = canvas.querySelector(`[data-nid="${_drag.nodeId}"]`);
       if (div) { div.style.cursor = 'grab'; div.classList.remove('vme-node--dragging'); }

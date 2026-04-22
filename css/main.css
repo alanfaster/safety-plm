@@ -1494,8 +1494,11 @@ tr.req-title-row td { cursor: default; }
   pointer-events: none;
   overflow: visible;
 }
-.vme-svg .vme-link-hit { pointer-events: stroke; }
-.vme-svg .vme-link     { pointer-events: stroke; }
+.vme-svg .vme-link-hit   { pointer-events: stroke; }
+.vme-svg .vme-link       { pointer-events: stroke; }
+.vme-svg .vme-bend-handle { pointer-events: all; }
+.vme-bend-handle:hover circle,
+.vme-bend-handle:hover { opacity: 1 !important; }
 
 /* Nodes on canvas */
 .vme-node {
