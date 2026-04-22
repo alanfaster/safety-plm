@@ -241,6 +241,30 @@ export async function renderArchitecture(container, { project, item, system, dom
     ...c, functions: funs.filter(f => f.component_id === c.id),
   }));
 
+  // ── Single source of truth: reconcile group_id from geometry ─────────────
+  // Any non-Group component whose center is inside a Group's bounds must have
+  // data.group_id pointing to that group.  Components outside every group get
+  // data.group_id = null.  This fixes stale/missing group_id values so that
+  // the tree and the canvas always agree on membership.
+  {
+    const groups   = components.filter(c => c.comp_type === 'Group');
+    const nonGroups = components.filter(c => c.comp_type !== 'Group');
+    const now = new Date().toISOString();
+    for (const c of nonGroups) {
+      const inside = groups.find(g =>
+        c.x + c.width  / 2 > g.x && c.x + c.width  / 2 < g.x + g.width &&
+        c.y + c.height / 2 > g.y && c.y + c.height / 2 < g.y + g.height
+      );
+      const correctGid = inside?.id || null;
+      const storedGid  = c.data?.group_id || null;
+      if (correctGid !== storedGid) {
+        c.data = { ...(c.data || {}), group_id: correctGid };
+        // Fire-and-forget — update DB silently
+        sb.from('arch_components').update({ data: c.data, updated_at: now }).eq('id', c.id);
+      }
+    }
+  }
+
   _s = {
     container, project, item, system,
     parentType, parentId,
@@ -1061,15 +1085,10 @@ function wireGroup(id) {
     captureUndo();
     selectComp(id);
     const pos = canvasPos(e);
-    // Include all non-group components that either:
-    //   a) already have group_id pointing to this group, OR
-    //   b) are geometrically inside this group's bounds (orphaned / never individually moved)
+    // Include all non-group components whose group_id points to this group.
+    // group_id is kept in sync with geometry at load time (single source of truth).
     const childrenForDrag = _s.components.filter(c =>
-      c.comp_type !== 'Group' && (
-        c.data?.group_id === id ||
-        (c.x + c.width/2  > g.x && c.x + c.width/2  < g.x + g.width &&
-         c.y + c.height/2 > g.y && c.y + c.height/2 < g.y + g.height)
-      )
+      c.comp_type !== 'Group' && c.data?.group_id === id
     );
     _s.dragging = { id, startX:pos.x, startY:pos.y, origX:g.x, origY:g.y, isGroup:true,
       childOffsets: childrenForDrag.map(c => ({ id:c.id, dx:c.x-g.x, dy:c.y-g.y }))
