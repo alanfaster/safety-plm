@@ -26,14 +26,16 @@ export async function renderProjectSettings(container, ctx) {
     .select('*').eq('project_id', project.id).maybeSingle();
 
   const config = pcRow?.config || {};
-  const phaOverrides   = config.pha_fields    || {};
-  const fhaOverrides   = config.fha_fields    || {};
-  const functionTypes  = config.function_types || [];
+  const phaOverrides   = config.pha_fields      || {};
+  const fhaOverrides   = config.fha_fields      || {};
+  const functionTypes  = config.function_types  || [];
+  const reqCustomCols      = config.req_custom_cols       || [];
+  const archSpecCustomCols = config.arch_spec_custom_cols || [];
 
-  render(container, project, phaOverrides, fhaOverrides, functionTypes, pcRow?.id, config);
+  render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, pcRow?.id, config);
 }
 
-function render(container, project, phaOverrides, fhaOverrides, functionTypes, configId, fullConfig = {}) {
+function render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, configId, fullConfig = {}) {
   const fields    = DEFAULT_PHA_FIELDS.map(f => ({ ...f, ...(phaOverrides[f.key] || {}) }));
   const fhaFields = DEFAULT_FHA_FIELDS.map(f => ({ ...f, ...(fhaOverrides[f.key] || {}) }));
 
@@ -52,6 +54,8 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, c
         <button class="settings-tab active" data-tab="pha">PHA Fields</button>
         <button class="settings-tab" data-tab="fha">FHA Fields</button>
         <button class="settings-tab" data-tab="funtypes">Function Types</button>
+        <button class="settings-tab" data-tab="reqcols">Req Columns</button>
+        <button class="settings-tab" data-tab="archspeccols">Arch Spec Columns</button>
         <button class="settings-tab" data-tab="members">Members <span class="badge-soon">soon</span></button>
       </div>
 
@@ -156,6 +160,70 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, c
           <button class="btn btn-secondary btn-sm" id="btn-add-funtype" style="margin-top:12px">＋ Add Function Type</button>
           <div style="margin-top:16px">
             <button class="btn btn-primary" id="btn-save-funtypes">Save Function Types</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-reqcols" class="settings-tab-panel" style="display:none">
+        <div class="settings-section">
+          <p class="settings-section-desc">
+            Define custom columns that appear in <strong>all requirements pages</strong> of this project.
+            Built-in columns (Code, Title, Type, Priority, Status, ASIL/DAL, Verification) are always available.
+            Visibility and order can be adjusted per subpage from the requirements table itself.
+          </p>
+          <table class="settings-table" id="reqcols-table">
+            <thead>
+              <tr>
+                <th>Column Name</th>
+                <th style="width:140px">Type</th>
+                <th style="width:60px;text-align:center">Delete</th>
+              </tr>
+            </thead>
+            <tbody id="reqcols-tbody">
+            </tbody>
+          </table>
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="reqcols-new-name" placeholder="New column name…" style="max-width:220px"/>
+            <select class="form-input form-select" id="reqcols-new-type" style="width:120px">
+              <option value="text">Text</option>
+              <option value="number">Number</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" id="btn-add-reqcol">＋ Add Column</button>
+          </div>
+          <div style="margin-top:16px">
+            <button class="btn btn-primary" id="btn-save-reqcols">Save Columns</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-archspeccols" class="settings-tab-panel" style="display:none">
+        <div class="settings-section">
+          <p class="settings-section-desc">
+            Define custom columns that appear in the <strong>Architecture Specification</strong> table for this project.
+            Built-in columns (ID, Description, System, Type, Status) are always available.
+            Visibility and order can be adjusted from the table itself.
+          </p>
+          <table class="settings-table" id="archspeccols-table">
+            <thead>
+              <tr>
+                <th>Column Name</th>
+                <th style="width:140px">Type</th>
+                <th style="width:60px;text-align:center">Delete</th>
+              </tr>
+            </thead>
+            <tbody id="archspeccols-tbody">
+            </tbody>
+          </table>
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="archspeccols-new-name" placeholder="New column name…" style="max-width:220px"/>
+            <select class="form-input form-select" id="archspeccols-new-type" style="width:120px">
+              <option value="text">Text</option>
+              <option value="number">Number</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" id="btn-add-archspeccol">＋ Add Column</button>
+          </div>
+          <div style="margin-top:16px">
+            <button class="btn btn-primary" id="btn-save-archspeccols">Save Columns</button>
           </div>
         </div>
       </div>
@@ -267,6 +335,162 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, c
     container.querySelectorAll('.fha-field-visible-check').forEach((el, i) => {
       el.checked = DEFAULT_FHA_FIELDS[i]?.visible ?? true;
     });
+  };
+
+  // ── Req Columns tab ────────────────────────────────────────────────────────
+  let _reqCols = reqCustomCols.map(c => ({ ...c }));
+
+  function renderReqColsTable() {
+    const tbody = document.getElementById('reqcols-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = _reqCols.length
+      ? _reqCols.map((c, i) => `
+          <tr data-rc-idx="${i}">
+            <td>
+              <input class="form-input rc-name-input" data-idx="${i}" value="${escHtml(c.name)}"
+                placeholder="Column name" style="max-width:300px"/>
+            </td>
+            <td>
+              <select class="form-input form-select rc-type-sel" data-idx="${i}">
+                <option value="text"   ${c.type === 'text'   ? 'selected' : ''}>Text</option>
+                <option value="number" ${c.type === 'number' ? 'selected' : ''}>Number</option>
+              </select>
+            </td>
+            <td style="text-align:center">
+              <button class="btn btn-ghost btn-sm btn-del-reqcol" data-idx="${i}"
+                style="color:var(--color-danger)" title="Delete column">✕</button>
+            </td>
+          </tr>`).join('')
+      : `<tr><td colspan="3" style="color:var(--color-text-muted);font-size:13px;padding:12px 8px">No custom columns defined yet.</td></tr>`;
+
+    // Wire inputs
+    tbody.querySelectorAll('.rc-name-input').forEach(inp => {
+      inp.oninput = () => { _reqCols[parseInt(inp.dataset.idx)].name = inp.value; };
+    });
+    tbody.querySelectorAll('.rc-type-sel').forEach(sel => {
+      sel.onchange = () => { _reqCols[parseInt(sel.dataset.idx)].type = sel.value; };
+    });
+    tbody.querySelectorAll('.btn-del-reqcol').forEach(btn => {
+      btn.onclick = () => {
+        _reqCols.splice(parseInt(btn.dataset.idx), 1);
+        renderReqColsTable();
+      };
+    });
+  }
+
+  renderReqColsTable();
+
+  document.getElementById('btn-add-reqcol').onclick = () => {
+    const nameEl = document.getElementById('reqcols-new-name');
+    const typeEl = document.getElementById('reqcols-new-type');
+    const name   = nameEl.value.trim();
+    if (!name) { nameEl.focus(); return; }
+    _reqCols.push({ id: 'custom_' + Date.now(), name, type: typeEl.value || 'text' });
+    nameEl.value = '';
+    renderReqColsTable();
+  };
+  document.getElementById('reqcols-new-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-add-reqcol').click(); }
+  });
+
+  document.getElementById('btn-save-reqcols').onclick = async () => {
+    const btn = document.getElementById('btn-save-reqcols');
+    btn.disabled = true;
+
+    // Read any unsaved name inputs
+    document.querySelectorAll('.rc-name-input').forEach(inp => {
+      const i = parseInt(inp.dataset.idx);
+      if (_reqCols[i]) _reqCols[i].name = inp.value.trim() || _reqCols[i].name;
+    });
+
+    const newConfig = { ...fullConfig, req_custom_cols: _reqCols };
+    let error;
+    if (configId) {
+      ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));
+    } else {
+      ({ error } = await sb.from('project_config').insert({ project_id: project.id, config: newConfig }));
+    }
+    btn.disabled = false;
+    if (error) { toast(t('common.error'), 'error'); return; }
+    fullConfig = newConfig;
+    toast('Requirement columns saved.', 'success');
+  };
+
+  // ── Arch Spec Columns tab ─────────────────────────────────────────────────
+  let _archSpecCols = archSpecCustomCols.map(c => ({ ...c }));
+
+  function renderArchSpecColsTable() {
+    const tbody = document.getElementById('archspeccols-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = _archSpecCols.length
+      ? _archSpecCols.map((c, i) => `
+          <tr data-asc-idx="${i}">
+            <td>
+              <input class="form-input asc-name-input" data-idx="${i}" value="${escHtml(c.name)}"
+                placeholder="Column name" style="max-width:300px"/>
+            </td>
+            <td>
+              <select class="form-input form-select asc-type-sel" data-idx="${i}">
+                <option value="text"   ${c.type === 'text'   ? 'selected' : ''}>Text</option>
+                <option value="number" ${c.type === 'number' ? 'selected' : ''}>Number</option>
+              </select>
+            </td>
+            <td style="text-align:center">
+              <button class="btn btn-ghost btn-sm btn-del-archspeccol" data-idx="${i}"
+                style="color:var(--color-danger)" title="Delete column">✕</button>
+            </td>
+          </tr>`).join('')
+      : `<tr><td colspan="3" style="color:var(--color-text-muted);font-size:13px;padding:12px 8px">No custom columns defined yet.</td></tr>`;
+
+    tbody.querySelectorAll('.asc-name-input').forEach(inp => {
+      inp.oninput = () => { _archSpecCols[parseInt(inp.dataset.idx)].name = inp.value; };
+    });
+    tbody.querySelectorAll('.asc-type-sel').forEach(sel => {
+      sel.onchange = () => { _archSpecCols[parseInt(sel.dataset.idx)].type = sel.value; };
+    });
+    tbody.querySelectorAll('.btn-del-archspeccol').forEach(btn => {
+      btn.onclick = () => {
+        _archSpecCols.splice(parseInt(btn.dataset.idx), 1);
+        renderArchSpecColsTable();
+      };
+    });
+  }
+
+  renderArchSpecColsTable();
+
+  document.getElementById('btn-add-archspeccol').onclick = () => {
+    const nameEl = document.getElementById('archspeccols-new-name');
+    const typeEl = document.getElementById('archspeccols-new-type');
+    const name   = nameEl.value.trim();
+    if (!name) { nameEl.focus(); return; }
+    _archSpecCols.push({ id: 'custom_' + Date.now(), name, type: typeEl.value || 'text' });
+    nameEl.value = '';
+    renderArchSpecColsTable();
+  };
+  document.getElementById('archspeccols-new-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-add-archspeccol').click(); }
+  });
+
+  document.getElementById('btn-save-archspeccols').onclick = async () => {
+    const btn = document.getElementById('btn-save-archspeccols');
+    btn.disabled = true;
+
+    document.querySelectorAll('.asc-name-input').forEach(inp => {
+      const i = parseInt(inp.dataset.idx);
+      if (_archSpecCols[i]) _archSpecCols[i].name = inp.value.trim() || _archSpecCols[i].name;
+    });
+
+    const newConfig = { ...fullConfig, arch_spec_custom_cols: _archSpecCols };
+    let error;
+    if (configId) {
+      ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));
+    } else {
+      ({ error } = await sb.from('project_config').insert({ project_id: project.id, config: newConfig }));
+    }
+    btn.disabled = false;
+    if (error) { toast(t('common.error'), 'error'); return; }
+    fullConfig = newConfig;
+    toast('Arch spec columns saved.', 'success');
   };
 
   // ── Function Types tab ─────────────────────────────────────────────────────

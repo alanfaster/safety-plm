@@ -13,22 +13,42 @@
 
 import { sb, buildCode, nextIndex } from '../config.js';
 import { toast } from '../toast.js';
+import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr } from '../components/col-mgr.js';
 
 const SPEC_STATUSES = ['draft', 'review', 'approved'];
 const SPEC_TYPES    = ['overview', 'component', 'interface', 'behavior', 'deployment', 'info'];
 const UML_TYPES     = ['none', 'component', 'state', 'usecase', 'class'];
 
+const SPEC_BUILTIN_COLS = [
+  { id: 'drag',        name: '',            fixed: true,  visible: true },
+  { id: 'id',          name: 'ID',          fixed: true,  visible: true },
+  { id: 'description', name: 'Description', fixed: true,  visible: true },
+  { id: 'system',      name: 'System',      visible: true },
+  { id: 'type',        name: 'Type',        visible: true },
+  { id: 'status',      name: 'Status',      visible: true },
+  { id: 'actions',     name: '',            fixed: true,  visible: true },
+];
+
 // Module-level state
-let _ctx   = null;   // { project, parentType, parentId }
-let _items = [];     // ordered array of spec items (in-memory cache)
-let _umlOpenId = null; // id of item whose UML editor is currently open
+let _ctx       = null;   // { project, parentType, parentId }
+let _items     = [];     // ordered array of spec items (in-memory cache)
+let _umlOpenId = null;   // id of item whose UML editor is currently open
+let _cols      = [];     // active column config
+let _builtins  = SPEC_BUILTIN_COLS; // builtins + project custom cols
+let _collapsed = new Set(); // collapsed section ids
 
 // ── Entry Point ───────────────────────────────────────────────────────────────
 
 export async function renderArchSpec(container, { project, item, system, parentType, parentId }) {
-  _ctx  = { project, parentType, parentId };
-  _items = [];
+  _ctx       = { project, parentType, parentId };
+  _items     = [];
   _umlOpenId = null;
+  _builtins  = SPEC_BUILTIN_COLS; // will be updated in loadSpec after project_config fetch
+  _cols      = loadColConfig(`spec_${parentId}`, _builtins);
+  _collapsed = new Set();
+
+  // Remove any leftover insert pill from a previous render
+  document.getElementById('spec-insert-pill')?.remove();
 
   const parentName = system?.name || item?.name;
 
@@ -39,21 +59,148 @@ export async function renderArchSpec(container, { project, item, system, parentT
           <h1>Architecture Specification</h1>
           <p class="text-muted">${esc(parentName)}</p>
         </div>
-        <button class="btn btn-primary" id="btn-new-spec">＋ New Item</button>
+        <div></div>
       </div>
     </div>
-    <div class="page-body" id="spec-body">
-      <div class="content-loading"><div class="spinner"></div></div>
+    <div class="page-body spec-page-body" id="spec-outer">
+      <nav class="spec-nav" id="spec-nav">
+        <button class="spec-nav-expand" id="spec-nav-expand" title="Open navigation">
+          <span>❯</span>
+          <span class="spec-nav-rail-label">Contents</span>
+        </button>
+        <div class="spec-nav-hdr">
+          <span class="spec-nav-title">Contents</span>
+          <button class="btn-icon spec-nav-close" id="spec-nav-close" title="Close">✕</button>
+        </div>
+        <div class="spec-nav-tree" id="spec-nav-tree"></div>
+      </nav>
+      <div class="spec-content" id="spec-body">
+        <div class="content-loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+    <div class="spec-fab" id="spec-fab">
+      <button class="btn btn-primary"   id="btn-new-spec">＋ New Item</button>
+      <button class="btn btn-secondary" id="btn-new-spec-section">＋ Section</button>
     </div>
   `;
 
-  document.getElementById('btn-new-spec').onclick = () => addRow(null); // null = append at end
+  document.getElementById('btn-new-spec').onclick         = () => addRow(null);
+  document.getElementById('btn-new-spec-section').onclick  = () => addSection(null);
+  document.getElementById('spec-nav-close').onclick        = () => toggleNav(false);
+  document.getElementById('spec-nav-expand').onclick       = () => toggleNav(true);
+
   await loadSpec();
+}
+
+// ── Sync component spec items from architecture canvas ────────────────────────
+// Called every time the arch-spec page opens so data stays fresh without needing
+// to open the architecture canvas first.
+
+async function syncComponentSpecItems() {
+  const { parentType, parentId, project } = _ctx;
+
+  // Fetch all components for this parent (include position columns for group reconciliation)
+  const { data: components } = await sb.from('arch_components')
+    .select('id,name,comp_type,data,x,y,width,height')
+    .eq('parent_type', parentType)
+    .eq('parent_id',   parentId);
+  if (!components?.length) return;
+
+  const specComponents = components.filter(c =>
+    c.comp_type === 'HW' || c.comp_type === 'SW' || c.comp_type === 'Mechanical'
+  );
+  if (!specComponents.length) return;
+
+  // Reconcile group membership from geometry (same logic as architecture canvas)
+  const groups = components.filter(c => c.comp_type === 'Group');
+  for (const c of components.filter(c => c.comp_type !== 'Group')) {
+    const inside = groups.find(g =>
+      c.x + c.width  / 2 > g.x && c.x + c.width  / 2 < g.x + g.width &&
+      c.y + c.height / 2 > g.y && c.y + c.height / 2 < g.y + g.height
+    );
+    const correctGid = inside?.id || null;
+    if ((c.data?.group_id || null) !== correctGid) {
+      c.data = { ...(c.data || {}), group_id: correctGid };
+    }
+  }
+
+  // Fetch systems linked to this item (for system name resolution)
+  const itemId = parentType === 'item' ? parentId : null;
+  const { data: systems } = itemId
+    ? await sb.from('systems').select('id,name').eq('item_id', itemId)
+    : { data: [] };
+  const sysMap = Object.fromEntries((systems || []).map(s => [s.id, s]));
+
+  // Existing spec items with component_ref_id
+  const { data: existingSpec } = await sb.from('arch_spec_items')
+    .select('id,title,system_name,component_ref_id,sort_order')
+    .eq('parent_type', parentType)
+    .eq('parent_id',   parentId)
+    .not('component_ref_id', 'is', null);
+  const specByCompId = Object.fromEntries((existingSpec || []).map(s => [s.component_ref_id, s]));
+
+  // Find the "Architecture Components" section sort_order to place new items after it
+  const compSection = _items.find(it => it.type === 'section' && it.custom_fields?.is_arch_components_section);
+  let nextSortOrder = compSection ? (compSection.sort_order + 1) : _items.length;
+
+  for (const c of specComponents) {
+    const grp       = c.data?.group_id ? components.find(g => g.id === c.data.group_id) : null;
+    const linkedSys = grp?.data?.system_id ? sysMap[grp.data.system_id] : null;
+    const sysName   = linkedSys?.name || grp?.name || '';
+
+    const existing = specByCompId[c.id];
+    if (existing) {
+      const patch = {};
+      if (existing.title       !== c.name)  patch.title       = c.name;
+      if (existing.system_name !== sysName) patch.system_name = sysName;
+      if (Object.keys(patch).length) {
+        await sb.from('arch_spec_items').update(patch).eq('id', existing.id);
+        // Patch in _items memory so renderTable shows fresh data
+        const mem = _items.find(it => it.id === existing.id);
+        if (mem) Object.assign(mem, patch);
+      }
+    } else {
+      const code = buildCode('AS', {
+        domain:      parentType === 'item' ? 'ITEM' : 'SYS',
+        projectName: project.name,
+        index:       nextSortOrder,
+      });
+      const { data: newSpec } = await sb.from('arch_spec_items').insert({
+        spec_code:        code,
+        title:            c.name,
+        type:             'component',
+        status:           'draft',
+        sort_order:       nextSortOrder++,
+        parent_type:      parentType,
+        parent_id:        parentId,
+        project_id:       project.id,
+        component_ref_id: c.id,
+        system_name:      sysName,
+        custom_fields:    {},
+      }).select().single();
+      if (newSpec) specByCompId[c.id] = newSpec;
+    }
+  }
 }
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 
 async function loadSpec() {
+  // Load project custom column definitions from project_config
+  const { data: pcRow } = await sb.from('project_config')
+    .select('config').eq('project_id', _ctx.project.id).maybeSingle();
+  const archSpecCustomCols = (pcRow?.config?.arch_spec_custom_cols || []).map(c => ({
+    id: c.id, name: c.name, type: c.type || 'text', custom: true, visible: true,
+  }));
+  // Rebuild builtins with custom cols appended (before the fixed 'actions' column)
+  const actionCol = SPEC_BUILTIN_COLS.find(c => c.id === 'actions');
+  _builtins = [
+    ...SPEC_BUILTIN_COLS.filter(c => c.id !== 'actions'),
+    ...archSpecCustomCols,
+    ...(actionCol ? [actionCol] : []),
+  ];
+  _cols = loadColConfig(`spec_${_ctx.parentId}`, _builtins);
+
   const { data, error } = await sb.from('arch_spec_items')
     .select('*')
     .eq('parent_type', _ctx.parentType)
@@ -81,7 +228,65 @@ async function loadSpec() {
   }
 
   _items = data || [];
+
+  // Sync component spec items from architecture canvas (upserts missing/stale rows)
+  await syncComponentSpecItems();
+
+  // Re-fetch after sync so newly created component rows appear
+  const { data: refreshed } = await sb.from('arch_spec_items')
+    .select('*')
+    .eq('parent_type', _ctx.parentType)
+    .eq('parent_id',   _ctx.parentId)
+    .order('sort_order', { ascending: true })
+    .order('created_at',  { ascending: true });
+  _items = refreshed || _items;
+
+  // Auto-create "Architecture Components" section if missing
+  const hasCompSection = _items.some(it =>
+    it.type === 'section' && (it.custom_fields?.is_arch_components_section === true)
+  );
+  if (!hasCompSection) {
+    const compItems = _items.filter(it => it.component_ref_id);
+    const insertIdx = compItems.length ? _items.findIndex(it => it.id === compItems[0].id) : _items.length;
+    const { data: sec } = await sb.from('arch_spec_items').insert({
+      spec_code:   'SEC',
+      title:       'Architecture Components',
+      type:        'section',
+      status:      'draft',
+      sort_order:  insertIdx,
+      parent_type: _ctx.parentType,
+      parent_id:   _ctx.parentId,
+      project_id:  _ctx.project.id,
+      custom_fields: { section_level: 1, is_arch_components_section: true },
+    }).select().single();
+    if (sec) {
+      _items.splice(insertIdx, 0, sec);
+      // Re-assign sort_orders
+      _items.forEach((it, i) => { it.sort_order = i; });
+      await Promise.all(_items.map(it =>
+        sb.from('arch_spec_items').update({ sort_order: it.sort_order }).eq('id', it.id)
+      ));
+    }
+  }
+
   renderTable(body);
+  buildNavTree();
+}
+
+// ── Section numbering ─────────────────────────────────────────────────────────
+
+function computeSectionNumbers() {
+  const counters = [0, 0, 0]; // H1, H2, H3
+  const map = {};
+  for (const it of _items) {
+    if (it.type !== 'section') continue;
+    const lvl = (it.custom_fields?.section_level || 1) - 1; // 0-based
+    counters[lvl]++;
+    // Reset deeper levels
+    for (let i = lvl + 1; i < 3; i++) counters[i] = 0;
+    map[it.id] = counters.slice(0, lvl + 1).join('.');
+  }
+  return map;
 }
 
 // ── Table ─────────────────────────────────────────────────────────────────────
@@ -98,17 +303,22 @@ function renderTable(body) {
     return;
   }
 
+  const customCols = _cols.filter(c => c.custom && c.visible);
+
   body.innerHTML = `
     <div class="card">
       <div class="table-wrap">
-        <table class="data-table spec-table">
+        <table class="data-table spec-table" id="spec-table">
           <thead>
-            <tr>
-              <th style="width:88px">ID</th>
-              <th>Description</th>
-              <th style="width:130px">Type</th>
-              <th style="width:120px">Status</th>
-              <th style="width:120px"></th>
+            <tr id="spec-thead-row">
+              <th data-col="drag"        style="width:18px;padding:0"></th>
+              <th data-col="id"          style="width:88px">ID</th>
+              <th data-col="description">Description</th>
+              <th data-col="system"      style="width:120px" class="col-managed">System</th>
+              <th data-col="type"        style="width:130px" class="col-managed">Type</th>
+              <th data-col="status"      style="width:120px" class="col-managed">Status</th>
+              ${customCols.map(c => `<th data-col="${esc(c.id)}" class="col-managed">${esc(c.name)}</th>`).join('')}
+              <th data-col="actions"     style="width:120px"></th>
             </tr>
           </thead>
           <tbody id="spec-tbody"></tbody>
@@ -117,8 +327,22 @@ function renderTable(body) {
     </div>
   `;
 
-  const tbody = document.getElementById('spec-tbody');
+  const tbody   = document.getElementById('spec-tbody');
+  const tableEl = document.getElementById('spec-table');
+  const theadRow = document.getElementById('spec-thead-row');
   _items.forEach(it => appendRowToTbody(tbody, it));
+  applyCollapsed();
+  wireSpecDragDrop(tbody);
+
+  if (tableEl && theadRow) {
+    applyColVisibility(tableEl, _cols);
+    wireColMgr(theadRow, tableEl, `spec_${_ctx.parentId}`, _cols, (updatedCols) => {
+      _cols = updatedCols;
+      renderTable(body);
+    });
+  }
+  wireSpecCustomCols(tbody);
+  wireInsertHover(tbody);
 }
 
 function appendRowToTbody(tbody, it) {
@@ -129,36 +353,82 @@ function appendRowToTbody(tbody, it) {
 
 function buildRowEl(it) {
   const tr = document.createElement('tr');
-  tr.dataset.id  = it.id;
-  tr.className   = 'spec-row';
-  tr.innerHTML   = rowHTML(it);
+  tr.dataset.id    = it.id;
+  tr.dataset.order = it.sort_order ?? 0;
+  if (it.type === 'section') {
+    tr.className = 'spec-section-row';
+    tr.draggable = false;
+    tr.innerHTML = sectionRowHTML(it);
+  } else {
+    tr.className = 'spec-row';
+    tr.draggable = true;
+    tr.innerHTML = rowHTML(it);
+  }
   return tr;
 }
 
-function rowHTML(it) {
+function sectionRowHTML(it) {
+  const level     = it.custom_fields?.section_level || 1;
+  const collapsed = _collapsed.has(it.id);
+  const nums      = computeSectionNumbers();
+  const num       = nums[it.id] || '';
   return `
-    <td class="spec-id-cell code-cell">${esc(it.spec_code)}</td>
+    <td class="spec-section-cell" colspan="20">
+      <div class="spec-section-inner spec-section-inner--l${level}">
+        <button class="spec-section-toggle${collapsed ? ' collapsed' : ''}" title="Expand/Collapse">▼</button>
+        <span class="spec-section-num spec-section-num--l${level}">${esc(num)}</span>
+        <input class="spec-section-title spec-section-title--l${level}" value="${esc(it.title || '')}" placeholder="Section title…" />
+        <div class="spec-section-actions">
+          <button class="btn btn-ghost btn-xs spec-sec-level-up"   title="Promote to H${Math.max(level-1,1)}">◀</button>
+          <button class="btn btn-ghost btn-xs spec-sec-level-down" title="Demote to H${Math.min(level+1,3)}">▶</button>
+          <span style="width:1px;height:14px;background:var(--color-border);display:inline-block;margin:0 2px"></span>
+          <button class="btn btn-ghost btn-xs spec-sec-move-up"    title="Move section up (with contents)">↑</button>
+          <button class="btn btn-ghost btn-xs spec-sec-move-dn"    title="Move section down (with contents)">↓</button>
+          <button class="btn btn-ghost btn-xs spec-sec-add-below"  title="Add section below">+</button>
+          <button class="btn btn-ghost btn-xs spec-sec-del"        title="Delete section" style="color:var(--color-danger)">✕</button>
+        </div>
+      </div>
+    </td>
+  `;
+}
 
-    <td class="spec-desc-cell">
-      <div class="spec-text-view" title="Double-click to edit"
+function rowHTML(it) {
+  const customCols = _cols.filter(c => c.custom && c.visible);
+  return `
+    <td data-col="drag"        class="req-drag-handle spec-drag-handle" title="Drag to reorder">⠿</td>
+    <td data-col="id"          class="spec-id-cell code-cell">${esc(it.spec_code)}</td>
+
+    <td data-col="description" class="spec-desc-cell">
+      ${it.component_ref_id ? '<span class="spec-auto-badge" title="Name synced from Architecture Concept (read-only)">AUTO</span>' : ''}
+      <div class="spec-text-view" title="${it.component_ref_id ? 'Name synced from Architecture Concept — read only' : 'Double-click to edit'}"
         >${esc(it.title || '')}<span class="spec-placeholder ${it.title ? 'hidden' : ''}">Double-click to add description…</span></div>
       <div class="spec-uml-area" id="uml-area-${it.id}">
         ${umlAreaPreviewHTML(it)}
       </div>
     </td>
 
-    <td>
+    <td data-col="system" style="font-size:12px;color:var(--color-text-muted);white-space:nowrap">
+      ${esc(it.system_name || '—')}
+    </td>
+
+    <td data-col="type">
       <select class="form-input form-select spec-type-sel" data-field="type">
         ${SPEC_TYPES.map(v => `<option value="${v}" ${it.type === v ? 'selected' : ''}>${v}</option>`).join('')}
       </select>
     </td>
-    <td>
+    <td data-col="status">
       <select class="form-input form-select spec-status-sel" data-field="status">
         ${SPEC_STATUSES.map(v => `<option value="${v}" ${it.status === v ? 'selected' : ''}>${v}</option>`).join('')}
       </select>
     </td>
 
-    <td class="spec-row-actions">
+    ${customCols.map(c => `
+      <td data-col="${esc(c.id)}" class="spec-custom-cell" data-item-id="${it.id}" data-custom-col="${esc(c.id)}"
+        title="Click to edit" style="cursor:text;font-size:12px;color:#444;min-width:80px">
+        ${esc((it.custom_fields || {})[c.id] || '')}
+      </td>`).join('')}
+
+    <td data-col="actions" class="spec-row-actions">
       <button class="btn btn-ghost btn-xs spec-move-up"   title="Move up">↑</button>
       <button class="btn btn-ghost btn-xs spec-move-dn"   title="Move down">↓</button>
       <button class="btn btn-ghost btn-xs spec-add-below" title="Add row below">+</button>
@@ -187,11 +457,14 @@ function umlAreaPreviewHTML(it) {
 // ── Row Wiring ────────────────────────────────────────────────────────────────
 
 function wireRow(tr, it) {
+  if (it.type === 'section') { wireSectionRow(tr, it); return; }
+
   // ── Text description: double-click to edit, blur to save ─────────────────
   const textView = tr.querySelector('.spec-text-view');
   const placeholder = tr.querySelector('.spec-placeholder');
 
   textView.addEventListener('dblclick', () => {
+    if (it.component_ref_id) return; // read-only: name comes from architecture
     textView.contentEditable = 'true';
     textView.classList.add('editing');
     if (placeholder) placeholder.classList.add('hidden');
@@ -243,6 +516,236 @@ function wireRow(tr, it) {
   tr.querySelector('.spec-move-dn').addEventListener('click',   () => moveRow(it.id,  1));
   tr.querySelector('.spec-add-below').addEventListener('click', () => addRow(it.id));
   tr.querySelector('.spec-del-btn').addEventListener('click',   () => deleteRow(it));
+}
+
+// ── Section row wiring ────────────────────────────────────────────────────────
+
+function wireSectionRow(tr, it) {
+  const toggle = tr.querySelector('.spec-section-toggle');
+  toggle.addEventListener('click', () => {
+    const isCollapsed = _collapsed.has(it.id);
+    if (isCollapsed) _collapsed.delete(it.id); else _collapsed.add(it.id);
+    toggle.classList.toggle('collapsed', !isCollapsed);
+    applyCollapsed();
+  });
+
+  const titleInput = tr.querySelector('.spec-section-title');
+  titleInput.addEventListener('change', async () => {
+    const val = titleInput.value.trim();
+    if (val === (it.title || '')) return;
+    it.title = val;
+    await autosave(it.id, { title: val });
+    buildNavTree();
+  });
+  titleInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); titleInput.blur(); }
+    if (e.key === 'Escape') { titleInput.value = it.title || ''; titleInput.blur(); }
+  });
+
+  const levelUp = tr.querySelector('.spec-sec-level-up');
+  const levelDown = tr.querySelector('.spec-sec-level-down');
+
+  levelUp.addEventListener('click', async () => {
+    const level = it.custom_fields?.section_level || 1;
+    if (level <= 1) return;
+    it.custom_fields = { ...(it.custom_fields || {}), section_level: level - 1 };
+    await autosave(it.id, { custom_fields: it.custom_fields });
+    refreshAllSectionRows();
+    buildNavTree();
+  });
+
+  levelDown.addEventListener('click', async () => {
+    const level = it.custom_fields?.section_level || 1;
+    if (level >= 3) return;
+    it.custom_fields = { ...(it.custom_fields || {}), section_level: level + 1 };
+    await autosave(it.id, { custom_fields: it.custom_fields });
+    refreshAllSectionRows();
+    buildNavTree();
+  });
+
+  tr.querySelector('.spec-sec-move-up').addEventListener('click', () => moveSectionBlock(it.id, -1));
+  tr.querySelector('.spec-sec-move-dn').addEventListener('click', () => moveSectionBlock(it.id,  1));
+  tr.querySelector('.spec-sec-add-below').addEventListener('click', () => addSection(it.id));
+  tr.querySelector('.spec-sec-del').addEventListener('click', () => deleteRow(it));
+}
+
+function applyCollapsed() {
+  const tbody = document.getElementById('spec-tbody');
+  if (!tbody) return;
+  let currentSectionCollapsed = false;
+  _items.forEach(it => {
+    const tr = tbody.querySelector(`[data-id="${it.id}"]`);
+    if (!tr) return;
+    if (it.type === 'section') {
+      currentSectionCollapsed = _collapsed.has(it.id);
+      tr.classList.remove('spec-row--hidden');
+    } else {
+      tr.classList.toggle('spec-row--hidden', currentSectionCollapsed);
+    }
+  });
+}
+
+// Re-render all section rows in place (refreshes indices after level/order change)
+function refreshAllSectionRows() {
+  const tbody = document.getElementById('spec-tbody');
+  if (!tbody) return;
+  _items.filter(it => it.type === 'section').forEach(it => {
+    const tr = tbody.querySelector(`[data-id="${it.id}"]`);
+    if (!tr) return;
+    tr.innerHTML = sectionRowHTML(it);
+    wireSectionRow(tr, it);
+  });
+}
+
+// ── Section block move (section + all its children together) ──────────────────
+
+async function moveSectionBlock(sectionId, dir) {
+  const secIdx = _items.findIndex(it => it.id === sectionId);
+  if (secIdx < 0) return;
+
+  // Collect this block: section + following non-section items
+  let blockEnd = secIdx + 1;
+  while (blockEnd < _items.length && _items[blockEnd].type !== 'section') blockEnd++;
+  const blockSize = blockEnd - secIdx; // items in this block
+
+  if (dir === -1) {
+    // Move up: find start of previous block
+    if (secIdx === 0) return; // already first
+    let prevSecIdx = secIdx - 1;
+    while (prevSecIdx > 0 && _items[prevSecIdx].type !== 'section') prevSecIdx--;
+    // If prevSecIdx is not a section, items above are headerless — swap block one position up
+    if (_items[prevSecIdx].type !== 'section') {
+      if (secIdx === 0) return;
+      const block = _items.splice(secIdx, blockSize);
+      _items.splice(Math.max(0, secIdx - 1), 0, ...block);
+    } else {
+      // prevSecIdx is a section — swap this block with the previous block
+      const prevBlockSize = secIdx - prevSecIdx;
+      const thisBlock = _items.splice(secIdx, blockSize);
+      const prevBlock = _items.splice(prevSecIdx, prevBlockSize);
+      _items.splice(prevSecIdx,              0, ...thisBlock);
+      _items.splice(prevSecIdx + blockSize,  0, ...prevBlock);
+    }
+  } else {
+    // Move down: swap with the next block
+    if (blockEnd >= _items.length) return; // already last block
+    let nextBlockEnd = blockEnd + 1;
+    while (nextBlockEnd < _items.length && _items[nextBlockEnd].type !== 'section') nextBlockEnd++;
+    const nextBlockSize = nextBlockEnd - blockEnd;
+
+    const thisBlock = _items.splice(secIdx, blockSize);
+    const nextBlock = _items.splice(secIdx, nextBlockSize); // indices shifted after splice
+    _items.splice(secIdx,              0, ...nextBlock);
+    _items.splice(secIdx + nextBlockSize, 0, ...thisBlock);
+  }
+
+  // Re-assign sort_orders
+  _items.forEach((it, i) => { it.sort_order = i; });
+  await Promise.all(_items.map(it =>
+    sb.from('arch_spec_items').update({ sort_order: it.sort_order }).eq('id', it.id)
+  ));
+
+  // Rebuild DOM
+  const tbody = document.getElementById('spec-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  _items.forEach(it => appendRowToTbody(tbody, it));
+  applyCollapsed();
+  buildNavTree();
+}
+
+// ── Nav Tree ──────────────────────────────────────────────────────────────────
+
+function buildNavTree() {
+  const tree = document.getElementById('spec-nav-tree');
+  if (!tree) return;
+  const sections = _items.filter(it => it.type === 'section');
+  if (!sections.length) {
+    tree.innerHTML = '<div style="padding:10px 12px;font-size:12px;color:var(--color-text-muted);font-style:italic">No sections</div>';
+    return;
+  }
+  const nums = computeSectionNumbers();
+  tree.innerHTML = sections.map(sec => {
+    const level = sec.custom_fields?.section_level || 1;
+    const num   = nums[sec.id] || '';
+    return `<div class="spec-nav-item spec-nav-item--l${level}" data-sec-id="${sec.id}">
+      <span class="spec-nav-num">${esc(num)}</span> ${esc(sec.title || 'Untitled section')}
+    </div>`;
+  }).join('');
+
+  tree.querySelectorAll('.spec-nav-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const tr = document.querySelector(`[data-id="${el.dataset.secId}"]`);
+      if (!tr) return;
+      tr.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      tr.style.outline = '2px solid var(--color-primary)';
+      setTimeout(() => { tr.style.outline = ''; }, 1800);
+    });
+  });
+}
+
+function toggleNav(force) {
+  const nav = document.getElementById('spec-nav');
+  if (!nav) return;
+  const makeVisible = force !== undefined ? force : nav.classList.contains('spec-nav--hidden');
+  nav.classList.toggle('spec-nav--hidden', !makeVisible);
+}
+
+// ── Add Section ───────────────────────────────────────────────────────────────
+
+async function addSection(afterId) {
+  let sortOrder;
+  if (afterId === null) {
+    sortOrder = _items.length;
+  } else {
+    const pos = _items.findIndex(it => it.id === afterId);
+    sortOrder = pos >= 0 ? pos + 1 : _items.length;
+    await Promise.all(
+      _items.slice(sortOrder).map((it, i) =>
+        sb.from('arch_spec_items').update({ sort_order: sortOrder + 1 + i }).eq('id', it.id)
+      )
+    );
+  }
+
+  const { data: newSec, error } = await sb.from('arch_spec_items').insert({
+    spec_code:     'SEC',
+    title:         'New Section',
+    type:          'section',
+    status:        'draft',
+    sort_order:    sortOrder,
+    parent_type:   _ctx.parentType,
+    parent_id:     _ctx.parentId,
+    project_id:    _ctx.project.id,
+    custom_fields: { section_level: 1 },
+  }).select().single();
+
+  if (error) { toast('Error creating section.', 'error'); return; }
+
+  if (afterId === null) {
+    _items.push(newSec);
+  } else {
+    const pos = _items.findIndex(it => it.id === afterId);
+    _items.splice(pos >= 0 ? pos + 1 : _items.length, 0, newSec);
+  }
+
+  if (!document.getElementById('spec-tbody')) {
+    renderTable(document.getElementById('spec-body'));
+    return;
+  }
+
+  const tbody = document.getElementById('spec-tbody');
+  const tr = buildRowEl(newSec);
+  if (afterId === null) {
+    tbody.appendChild(tr);
+  } else {
+    const refRow = tbody.querySelector(`[data-id="${afterId}"]`);
+    refRow ? refRow.after(tr) : tbody.appendChild(tr);
+  }
+  wireRow(tr, newSec);
+  buildNavTree();
+
+  // Focus the title input so user can rename immediately
+  tr.querySelector('.spec-section-title')?.select();
 }
 
 // ── UML Area wiring (preview ↔ editor) ───────────────────────────────────────
@@ -491,10 +994,13 @@ async function moveRow(id, dir) {
   // Rebuild tbody content from _items order
   tbody.innerHTML = '';
   _items.forEach(it => appendRowToTbody(tbody, it));
+  applyCollapsed();
+  buildNavTree();
 }
 
 async function deleteRow(it) {
-  if (!confirm(`Delete specification item "${it.spec_code}"?`)) return;
+  const label = it.type === 'section' ? `section "${it.title || 'Untitled'}"` : `item "${it.spec_code}"`;
+  if (!confirm(`Delete ${label}?`)) return;
 
   // Close UML editor if open
   if (_umlOpenId === it.id) closeUmlEditor(it.id);
@@ -503,9 +1009,13 @@ async function deleteRow(it) {
   if (error) { toast('Error deleting.', 'error'); return; }
 
   _items = _items.filter(i => i.id !== it.id);
+  if (it.type === 'section') _collapsed.delete(it.id);
 
-  // Remove row from DOM
-  document.querySelector(`tr.spec-row[data-id="${it.id}"]`)?.remove();
+  // Remove row from DOM (section rows and regular rows have different classes)
+  document.querySelector(`[data-id="${it.id}"]`)?.remove();
+  applyCollapsed();
+
+  if (it.type === 'section') buildNavTree();
 
   // Show empty state if no items left
   if (!_items.length) {
@@ -522,6 +1032,195 @@ async function autosave(id, fields) {
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error) toast('Autosave failed.', 'error');
+}
+
+// ── Custom column inline editing ─────────────────────────────────────────────
+
+function wireSpecCustomCols(tbody) {
+  tbody.querySelectorAll('.spec-custom-cell').forEach(cell => {
+    cell.addEventListener('click', () => {
+      if (cell.querySelector('input')) return;
+      const itemId  = cell.dataset.itemId;
+      const colId   = cell.dataset.customCol;
+      const it      = _items.find(i => i.id === itemId);
+      const current = (it?.custom_fields || {})[colId] || '';
+
+      const inp = document.createElement('input');
+      inp.value = current;
+      inp.style.cssText = 'width:100%;box-sizing:border-box;border:none;outline:2px solid #1A73E8;border-radius:3px;padding:2px 4px;font-size:12px;font-family:inherit;background:#EEF4FF';
+      cell.innerHTML = '';
+      cell.appendChild(inp);
+      inp.focus(); inp.select();
+
+      const commit = async () => {
+        const val = inp.value.trim();
+        cell.textContent = val;
+        if (!it) return;
+        const fields = { ...(it.custom_fields || {}), [colId]: val };
+        it.custom_fields = fields;
+        await autosave(itemId, { custom_fields: fields });
+      };
+
+      inp.addEventListener('blur',    commit);
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter')  { e.preventDefault(); inp.blur(); }
+        if (e.key === 'Escape') { cell.textContent = current; }
+      });
+    });
+  });
+}
+
+// ── Hover insert button ───────────────────────────────────────────────────────
+
+function wireInsertHover(tbody) {
+  // Single floating pill reused across all rows
+  let pill = document.getElementById('spec-insert-pill');
+  if (!pill) {
+    pill = document.createElement('div');
+    pill.id        = 'spec-insert-pill';
+    pill.className = 'spec-insert-pill';
+    pill.innerHTML = `
+      <span class="spec-insert-line"></span>
+      <button class="spec-insert-plus spec-insert-item" tabindex="-1" title="Add specification item here">＋ Item</button>
+      <button class="spec-insert-plus spec-insert-section" tabindex="-1" title="Add section here">＋ Section</button>
+      <span class="spec-insert-line"></span>`;
+    document.body.appendChild(pill);
+  }
+
+  let afterId   = null;
+  let afterType = null;
+  let hideTimer = null;
+
+  function showPill(tr) {
+    const it = _items.find(i => i.id === tr.dataset.id);
+    if (!it) return;
+    afterId   = it.id;
+    afterType = it.type === 'section' ? 'section' : 'item';
+
+    const rect = tr.getBoundingClientRect();
+    pill.style.top   = (rect.bottom - 9) + 'px';
+    pill.style.left  = rect.left + 'px';
+    pill.style.width = rect.width + 'px';
+    pill.setAttribute('data-type', afterType);
+    pill.style.display = 'flex';
+    clearTimeout(hideTimer);
+  }
+
+  function hidePill() {
+    hideTimer = setTimeout(() => { pill.style.display = 'none'; afterId = null; }, 120);
+  }
+
+  tbody.addEventListener('mousemove', e => {
+    const tr = e.target.closest('tr');
+    if (!tr || tr.classList.contains('spec-row--hidden')) { hidePill(); return; }
+    const rect = tr.getBoundingClientRect();
+    // Only activate in the bottom 35% of the row
+    if (e.clientY > rect.bottom - rect.height * 0.35) {
+      showPill(tr);
+    } else {
+      hidePill();
+    }
+  });
+
+  tbody.addEventListener('mouseleave', hidePill);
+
+  // Keep pill alive when hovering over it
+  pill.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+  pill.addEventListener('mouseleave', hidePill);
+
+  pill.querySelector('.spec-insert-item').addEventListener('click', () => {
+    pill.style.display = 'none';
+    if (afterId) addRow(afterId);
+  });
+  pill.querySelector('.spec-insert-section').addEventListener('click', () => {
+    pill.style.display = 'none';
+    if (afterId) addSection(afterId);
+  });
+}
+
+// ── Drag-and-drop reorder ─────────────────────────────────────────────────────
+
+function wireSpecDragDrop(tbody) {
+  let dragId = null;
+  let dragTr = null;
+
+  function clearLines() {
+    tbody.querySelectorAll('.req-drop-above, .req-drop-below').forEach(el =>
+      el.classList.remove('req-drop-above', 'req-drop-below')
+    );
+  }
+
+  tbody.querySelectorAll('tr.spec-row').forEach(tr => {
+    tr.addEventListener('dragstart', e => {
+      if (!e.target.closest('.spec-drag-handle') && e.target !== tr) {
+        e.preventDefault(); return;
+      }
+      dragId = tr.dataset.id;
+      dragTr = tr;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragId);
+      setTimeout(() => tr.classList.add('req-row-dragging'), 0);
+    });
+
+    tr.addEventListener('dragend', () => {
+      tr.classList.remove('req-row-dragging');
+      clearLines();
+      dragId = null; dragTr = null;
+    });
+  });
+
+  tbody.addEventListener('dragover', e => {
+    if (!dragId) return;
+    const tr = e.target.closest('tr.spec-row');
+    if (!tr || tr.dataset.id === dragId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    clearLines();
+    const rect = tr.getBoundingClientRect();
+    tr.classList.add(e.clientY < rect.top + rect.height / 2 ? 'req-drop-above' : 'req-drop-below');
+  });
+
+  tbody.addEventListener('dragleave', e => {
+    const tr = e.target.closest('tr.spec-row');
+    if (tr && !tr.contains(e.relatedTarget)) {
+      tr.classList.remove('req-drop-above', 'req-drop-below');
+    }
+  });
+
+  tbody.addEventListener('drop', async e => {
+    const tr = e.target.closest('tr.spec-row');
+    if (!tr || !dragId || !dragTr) return;
+    e.preventDefault();
+    clearLines();
+
+    const targetId = tr.dataset.id;
+    if (targetId === dragId) return;
+
+    const capturedDragId = dragId;
+
+    const rect   = tr.getBoundingClientRect();
+    const before = e.clientY < rect.top + rect.height / 2;
+
+    const fromIdx = _items.findIndex(it => it.id === capturedDragId);
+    const [moved] = _items.splice(fromIdx, 1);
+    let toIdx = _items.findIndex(it => it.id === targetId);
+    if (!before) toIdx += 1;
+    _items.splice(toIdx, 0, moved);
+
+    _items.forEach((it, i) => { it.sort_order = i; });
+
+    await Promise.all(_items.map(it =>
+      sb.from('arch_spec_items').update({ sort_order: it.sort_order }).eq('id', it.id)
+    ));
+
+    // Reorder DOM
+    _items.forEach(it => {
+      const row = tbody.querySelector(`[data-id="${it.id}"]`);
+      if (row) tbody.appendChild(row);
+    });
+    applyCollapsed();
+    buildNavTree();
+  });
 }
 
 // ── UML Preview SVG ───────────────────────────────────────────────────────────
