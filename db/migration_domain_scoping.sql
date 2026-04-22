@@ -2,6 +2,7 @@
 -- then normalise all existing records so each domain within a system is independent.
 
 -- 1. Add domain column where missing
+ALTER TABLE requirements    ADD COLUMN IF NOT EXISTS domain text;
 ALTER TABLE arch_spec_items ADD COLUMN IF NOT EXISTS domain text;
 ALTER TABLE test_specs      ADD COLUMN IF NOT EXISTS domain text;
 
