@@ -39,8 +39,9 @@ let _collapsed = new Set(); // collapsed section ids
 
 // ── Entry Point ───────────────────────────────────────────────────────────────
 
-export async function renderArchSpec(container, { project, item, system, parentType, parentId }) {
-  _ctx       = { project, parentType, parentId };
+export async function renderArchSpec(container, { project, item, system, parentType, parentId, domain = null }) {
+  const domainKey = parentType === 'system' ? (domain || 'system') : 'item';
+  _ctx       = { project, parentType, parentId, domain: domainKey };
   _items     = [];
   _umlOpenId = null;
   _builtins  = SPEC_BUILTIN_COLS; // will be updated in loadSpec after project_config fetch
@@ -161,7 +162,7 @@ async function syncComponentSpecItems() {
       }
     } else {
       const code = buildCode('AS', {
-        domain:      parentType === 'item' ? 'ITEM' : 'SYS',
+        domain: _ctx.domain,
         projectName: project.name,
         index:       nextSortOrder,
       });
@@ -201,10 +202,12 @@ async function loadSpec() {
   ];
   _cols = loadColConfig(`spec_${_ctx.parentId}`, _builtins);
 
-  const { data, error } = await sb.from('arch_spec_items')
+  let specQ = sb.from('arch_spec_items')
     .select('*')
     .eq('parent_type', _ctx.parentType)
-    .eq('parent_id',   _ctx.parentId)
+    .eq('parent_id',   _ctx.parentId);
+  if (_ctx.parentType === 'system') specQ = specQ.eq('domain', _ctx.domain);
+  const { data, error } = await specQ
     .order('sort_order', { ascending: true })
     .order('created_at',  { ascending: true });
 
@@ -910,7 +913,7 @@ function restoreUmlPreview(it) {
 async function addRow(afterId) {
   const idx  = await nextIndex('arch_spec_items', { parent_id: _ctx.parentId });
   const code = buildCode('AS', {
-    domain:      _ctx.parentType === 'item' ? 'ITEM' : 'SYS',
+    domain: _ctx.domain,
     projectName: _ctx.project.name,
     index:       idx,
   });

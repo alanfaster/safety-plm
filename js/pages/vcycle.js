@@ -35,7 +35,7 @@ export async function renderVcycle(container, { project, item, system, phase, do
       if (pg?.name?.toLowerCase().includes('specification')) {
         const parentType = system ? 'system' : 'item';
         const parentId   = system ? system.id : item.id;
-        await renderArchSpec(container, { project, item, system, parentType, parentId, pageId });
+        await renderArchSpec(container, { project, item, system, parentType, parentId, domain, pageId });
         return;
       }
     }

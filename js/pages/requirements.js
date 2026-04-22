@@ -37,7 +37,7 @@ let _showDal  = false;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-export async function renderRequirements(container, { project, item, system, parentType, parentId, pageId = null }) {
+export async function renderRequirements(container, { project, item, system, parentType, parentId, domain = null, pageId = null }) {
   // Resolve sub-page filter
   let typeFilter = null;
   let subPageName = null;
@@ -50,7 +50,10 @@ export async function renderRequirements(container, { project, item, system, par
     }
   }
 
-  _ctx = { project, item, system, parentType, parentId, typeFilter, pageId };
+  // Normalise domain key: system-level pages use the actual domain ('system','sw','hw','mech')
+  // item-level pages use 'item'
+  const domainKey = parentType === 'system' ? (domain || 'system') : 'item';
+  _ctx = { project, item, system, parentType, parentId, typeFilter, pageId, domain: domainKey };
   _data      = [];
   _collapsed = new Set(JSON.parse(sessionStorage.getItem(`req_collapsed_${parentId}`) || '[]'));
   _showAsil  = project.type === 'automotive';
@@ -172,11 +175,15 @@ function computeReqSectionNumbers() {
 // ── Data load & render ────────────────────────────────────────────────────────
 
 async function loadData() {
-  const { project, item, system, parentType, parentId, typeFilter, pageId } = _ctx;
+  const { project, item, system, parentType, parentId, typeFilter, pageId, domain: domainKey } = _ctx;
   const excludeInterface = typeFilter == null;
 
-  const base = () => sb.from('requirements').select('*')
-    .eq('parent_type', parentType).eq('parent_id', parentId);
+  const base = () => {
+    let q = sb.from('requirements').select('*')
+      .eq('parent_type', parentType).eq('parent_id', parentId);
+    if (parentType === 'system') q = q.eq('domain', domainKey);
+    return q;
+  };
 
   let contentQ = base();
   if (Array.isArray(typeFilter) && typeFilter.length) contentQ = contentQ.in('type', typeFilter);
@@ -792,7 +799,7 @@ function showInlineInsertForm(afterRid, tbody) {
 
     const reqIdx  = await nextIndex('requirements', { parent_id: parentId });
     const reqCode = buildCode('REQ', {
-      domain:      parentType === 'item' ? 'ITEM' : 'SYS',
+      domain: _ctx.domain,
       projectName: project.name,
       index:       reqIdx,
     });
@@ -901,7 +908,7 @@ async function addReqSection(afterRid) {
 
   const reqIdx  = await nextIndex('requirements', { parent_id: parentId });
   const reqCode = buildCode('REQ', {
-    domain: parentType === 'item' ? 'ITEM' : 'SYS',
+    domain: _ctx.domain,
     projectName: project.name,
     index: reqIdx,
   });
@@ -1296,7 +1303,7 @@ function openReqModal({ project, parentType, parentId, projectType, existing, de
     } else {
       const reqIdx  = await nextIndex('requirements', { parent_id: parentId });
       const reqCode = buildCode('REQ', {
-        domain:      parentType === 'item' ? 'ITEM' : 'SYS',
+        domain: _ctx.domain,
         projectName: project.name,
         systemName:  parentType === 'system' ? (project.item_name || '') : undefined,
         index:       reqIdx,

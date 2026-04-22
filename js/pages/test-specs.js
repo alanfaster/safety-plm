@@ -75,7 +75,8 @@ export async function renderTestSpecs(container, { project, item, system, phase,
   const parentId   = system ? system.id : item.id;
   const parentName = system?.name || item?.name;
 
-  _ctx          = { project, item, system, phase, domain, parentType, parentId, meta };
+  const domainKey = parentType === 'system' ? (domain || 'system') : 'item';
+  _ctx          = { project, item, system, phase, domain: domainKey, parentType, parentId, meta };
   _tests        = [];
   _selectedId   = null;
   _saveTimer    = null;
@@ -202,10 +203,12 @@ async function loadTraceSourceData(item, system) {
 // ── Load & render table ───────────────────────────────────────────────────────
 
 async function loadTests() {
-  const { parentType, parentId, phase } = _ctx;
-  const { data, error } = await sb.from('test_specs')
+  const { parentType, parentId, phase, domain } = _ctx;
+  let q = sb.from('test_specs')
     .select('*')
-    .eq('parent_type', parentType).eq('parent_id', parentId).eq('phase', phase)
+    .eq('parent_type', parentType).eq('parent_id', parentId).eq('phase', phase);
+  if (parentType === 'system') q = q.eq('domain', domain);
+  const { data, error } = await q
     .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
 
   const pane = document.getElementById('ts-list-pane');
@@ -932,16 +935,16 @@ function collectPatch(test) {
 // ── Create & duplicate ────────────────────────────────────────────────────────
 
 async function createTest() {
-  const { project, parentType, parentId, phase, meta } = _ctx;
+  const { project, parentType, parentId, phase, domain, meta } = _ctx;
   const count     = _tests.length + 1;
-  const domain    = parentType === 'item' ? 'ITEM' : 'SYS';
+  const domainCode = domain.toUpperCase().slice(0, 3);
   const proj      = project.name.replace(/\s+/g, '').slice(0, 2).toUpperCase();
-  const testCode  = `${meta.prefix}-${domain}-${proj}-${String(count).padStart(3, '0')}`;
+  const testCode  = `${meta.prefix}-${domainCode}-${proj}-${String(count).padStart(3, '0')}`;
   const defType   = _testTypes[0] || 'test';
 
   const { data: newTest, error } = await sb.from('test_specs').insert({
     project_id:   project.id, parent_type: parentType, parent_id: parentId,
-    phase, test_code: testCode, name: 'New Test',
+    phase, domain, test_code: testCode, name: 'New Test',
     type: defType, level: 'unit_test', status: 'draft',
     method: [], environment: 'lab', sort_order: _tests.length,
     steps: [], linked_requirements: [], evidence: [],
@@ -956,14 +959,14 @@ async function createTest() {
 }
 
 async function duplicateTest(test) {
-  const { project, parentType, parentId, phase, meta } = _ctx;
+  const { project, parentType, parentId, phase, domain, meta } = _ctx;
   const count    = _tests.length + 1;
-  const domain   = parentType === 'item' ? 'ITEM' : 'SYS';
+  const domainCode = domain.toUpperCase().slice(0, 3);
   const proj     = project.name.replace(/\s+/g, '').slice(0, 2).toUpperCase();
-  const testCode = `${meta.prefix}-${domain}-${proj}-${String(count).padStart(3, '0')}`;
+  const testCode = `${meta.prefix}-${domainCode}-${proj}-${String(count).padStart(3, '0')}`;
 
   const { data: newTest, error } = await sb.from('test_specs').insert({
-    ...test, id: undefined, test_code: testCode,
+    ...test, id: undefined, test_code: testCode, domain,
     name: test.name + ' (copy)', result: null,
     execution_date: null, executor: null, notes: null, evidence: [],
     sort_order: _tests.length, created_at: undefined, updated_at: undefined,
