@@ -10,6 +10,7 @@ import { sb } from '../config.js';
 import { toast } from '../toast.js';
 import { setBreadcrumb } from '../components/topbar.js';
 import { renderSidebar } from '../components/sidebar.js';
+import { VMODEL_NODES, PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -65,35 +66,6 @@ let _traceData    = {};   // { [fieldId]: [{code, label}] } — cached lookup da
 let _saveTimer    = null;
 let _currentUser  = null; // { email }
 
-// DB source per phase — determines how to fetch options for a traceability field
-const PHASE_DB_SOURCE = {
-  requirements:        'requirements',
-  architecture:        'arch_spec_items',
-  unit_testing:        'test_specs',
-  integration_testing: 'test_specs',
-  system_testing:      'test_specs',
-};
-
-// All V-model node definitions (must match project-settings.js)
-const VMODEL_NODES = [
-  { id: 'sys_req',     domain: 'system', phase: 'requirements',        label: 'System Requirements' },
-  { id: 'sys_arch',    domain: 'system', phase: 'architecture',        label: 'System Architecture' },
-  { id: 'sys_it',      domain: 'system', phase: 'integration_testing', label: 'System Integration Test' },
-  { id: 'sys_qt',      domain: 'system', phase: 'system_testing',      label: 'System Qualification Test' },
-  { id: 'sw_req',      domain: 'sw',     phase: 'requirements',        label: 'SW Requirements' },
-  { id: 'sw_arch',     domain: 'sw',     phase: 'architecture',        label: 'SW Architecture' },
-  { id: 'sw_design',   domain: 'sw',     phase: 'design',              label: 'SW Detailed Design' },
-  { id: 'sw_impl',     domain: 'sw',     phase: 'implementation',      label: 'SW Units' },
-  { id: 'sw_ut',       domain: 'sw',     phase: 'unit_testing',        label: 'Unit Test Specification' },
-  { id: 'sw_it',       domain: 'sw',     phase: 'integration_testing', label: 'SW Integration Test Spec' },
-  { id: 'sw_qt',       domain: 'sw',     phase: 'system_testing',      label: 'SW Qualification Test Spec' },
-  { id: 'hw_req',      domain: 'hw',     phase: 'requirements',        label: 'HW Requirements' },
-  { id: 'hw_arch',     domain: 'hw',     phase: 'architecture',        label: 'HW Architecture' },
-  { id: 'hw_design',   domain: 'hw',     phase: 'design',              label: 'HW Detailed Design' },
-  { id: 'hw_ut',       domain: 'hw',     phase: 'unit_testing',        label: 'HW Test Specification' },
-  { id: 'mech_req',    domain: 'mech',   phase: 'requirements',        label: 'MECH Requirements' },
-  { id: 'mech_design', domain: 'mech',   phase: 'design',              label: 'MECH Detailed Design' },
-];
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
