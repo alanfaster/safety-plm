@@ -216,6 +216,27 @@ export async function renderArchitecture(container, { project, item, system, dom
     funs = data || [];
   }
 
+  // Sync names from Item Definition: any arch_function with a function_ref_id
+  // takes its display name from the live functions table, not the stored snapshot.
+  const refIds = [...new Set(funs.map(f => f.function_ref_id).filter(Boolean))];
+  if (refIds.length) {
+    const { data: liveFns } = await sb.from('functions').select('id,name').in('id', refIds);
+    if (liveFns?.length) {
+      const nameMap = Object.fromEntries(liveFns.map(f => [f.id, f.name]));
+      funs.forEach(f => {
+        if (f.function_ref_id && nameMap[f.function_ref_id] !== undefined) {
+          f.name = nameMap[f.function_ref_id];
+        }
+      });
+      // Persist updated names back to DB in one go (fire-and-forget)
+      for (const f of funs) {
+        if (f.function_ref_id && nameMap[f.function_ref_id] !== undefined) {
+          sb.from('arch_functions').update({ name: nameMap[f.function_ref_id] }).eq('id', f.id);
+        }
+      }
+    }
+  }
+
   const components = compList.map(c => ({
     ...c, functions: funs.filter(f => f.component_id === c.id),
   }));
