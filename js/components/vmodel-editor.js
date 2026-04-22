@@ -418,7 +418,6 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     dot.style.pointerEvents = 'all';
     dot.classList.add('vme-bend-handle');
 
-    const isTrace2 = isTrace; // capture for closure
     const startBend = e => {
       e.stopPropagation(); e.preventDefault();
       closePopover();
