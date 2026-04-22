@@ -23,20 +23,38 @@ export async function renderProjectSettings(container, ctx) {
 
   container.innerHTML = '<div class="content-loading"><div class="spinner"></div></div>';
 
-  // Load project config
-  const { data: pcRow } = await sb.from('project_config')
-    .select('*').eq('project_id', project.id).maybeSingle();
+  // Load project config + function types from DB
+  const [{ data: pcRow }, { data: ftRows }, { data: fcRows }] = await Promise.all([
+    sb.from('project_config').select('*').eq('project_id', project.id).maybeSingle(),
+    sb.from('function_types').select('*').eq('project_id', project.id).order('sort_order'),
+    sb.from('function_type_fcs').select('*').order('sort_order'),
+  ]);
 
   const config = pcRow?.config || {};
   const phaOverrides   = config.pha_fields      || {};
   const fhaOverrides   = config.fha_fields      || {};
-  const functionTypes  = config.function_types?.length ? config.function_types : DEFAULT_FUNCTION_TYPES.map(d => ({ id: crypto.randomUUID(), ...d, failure_conditions: [...d.failure_conditions] }));
   const reqCustomCols      = config.req_custom_cols       || [];
   const archSpecCustomCols = config.arch_spec_custom_cols || [];
   const testTypes           = config.test_types            || [];
   const traceFields         = config.traceability_fields   || [];
   const vmodelLinks         = config.vmodel_links          || [];
   const vmodelCanvasNodes   = config.vmodel_canvas_nodes   || [];
+
+  // Build function types from DB rows (or defaults if none saved yet)
+  let functionTypes;
+  if (ftRows?.length) {
+    functionTypes = ftRows.map(ft => ({
+      id: ft.id,
+      name: ft.name,
+      sort_order: ft.sort_order,
+      failure_conditions: (fcRows || []).filter(fc => fc.function_type_id === ft.id).sort((a,b) => a.sort_order - b.sort_order).map(fc => ({ id: fc.id, label: fc.label })),
+    }));
+  } else {
+    functionTypes = DEFAULT_FUNCTION_TYPES.map((d, i) => ({
+      id: null, name: d.name, sort_order: i,
+      failure_conditions: d.failure_conditions.map((label, j) => ({ id: null, label, sort_order: j })),
+    }));
+  }
 
   render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, vmodelLinks, vmodelCanvasNodes, pcRow?.id, config);
 }
@@ -772,50 +790,57 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
   };
 
   // ── Function Types tab ─────────────────────────────────────────────────────
-  let _funTypes = functionTypes.map(ft => ({ ...ft, failure_conditions: [...(ft.failure_conditions || [])] }));
+  let _funTypes = functionTypes.map(ft => ({
+    id: ft.id,
+    name: ft.name,
+    sort_order: ft.sort_order ?? 0,
+    failure_conditions: (ft.failure_conditions || []).map(fc =>
+      typeof fc === 'string' ? { id: null, label: fc } : { ...fc }
+    ),
+    _deleted: false,
+  }));
 
   function refreshFunTypesList() {
     document.getElementById('funtypes-list').innerHTML =
-      _funTypes.map((ft, i) => renderFunTypeRow(ft, i)).join('');
+      _funTypes.filter(ft => !ft._deleted).map((ft, i) => renderFunTypeRow(ft, i)).join('');
     wireFunTypeRows();
   }
 
   function wireFunTypeRows() {
-    // Delete type
     container.querySelectorAll('.btn-del-funtype').forEach(btn => {
       btn.onclick = () => {
         const idx = parseInt(btn.dataset.idx);
-        _funTypes.splice(idx, 1);
+        const visible = _funTypes.filter(ft => !ft._deleted);
+        visible[idx]._deleted = true;
         refreshFunTypesList();
       };
     });
-    // Add failure condition
     container.querySelectorAll('.btn-add-fc').forEach(btn => {
       btn.onclick = () => {
         const idx = parseInt(btn.dataset.idx);
         const inputEl = container.querySelector(`.fc-new-input[data-idx="${idx}"]`);
         const val = inputEl?.value.trim();
         if (!val) return;
-        _funTypes[idx].failure_conditions.push(val);
+        const visible = _funTypes.filter(ft => !ft._deleted);
+        visible[idx].failure_conditions.push({ id: null, label: val });
         inputEl.value = '';
         refreshFunTypesList();
       };
     });
-    // Delete failure condition
     container.querySelectorAll('.btn-del-fc').forEach(btn => {
       btn.onclick = () => {
         const { idx, fc } = btn.dataset;
-        _funTypes[idx].failure_conditions = _funTypes[idx].failure_conditions.filter((_, i) => i !== parseInt(fc));
+        const visible = _funTypes.filter(ft => !ft._deleted);
+        visible[idx].failure_conditions.splice(parseInt(fc), 1);
         refreshFunTypesList();
       };
     });
-    // Name input live update
     container.querySelectorAll('.funtype-name-input').forEach(inp => {
       inp.oninput = () => {
-        _funTypes[parseInt(inp.dataset.idx)].name = inp.value;
+        const visible = _funTypes.filter(ft => !ft._deleted);
+        visible[parseInt(inp.dataset.idx)].name = inp.value;
       };
     });
-    // FC new input enter key
     container.querySelectorAll('.fc-new-input').forEach(inp => {
       inp.onkeydown = (e) => {
         if (e.key === 'Enter') { e.preventDefault(); container.querySelector(`.btn-add-fc[data-idx="${inp.dataset.idx}"]`)?.click(); }
@@ -826,13 +851,17 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
   wireFunTypeRows();
 
   document.getElementById('btn-add-funtype').onclick = () => {
-    _funTypes.push({ id: crypto.randomUUID(), name: 'New Type', failure_conditions: [] });
+    _funTypes.push({ id: null, name: 'New Type', sort_order: _funTypes.length, failure_conditions: [], _deleted: false });
     refreshFunTypesList();
   };
 
   document.getElementById('btn-load-funtype-defaults').onclick = () => {
     if (!confirm('Reset all function types to defaults? This will discard your current configuration.')) return;
-    _funTypes = DEFAULT_FUNCTION_TYPES.map(d => ({ id: crypto.randomUUID(), name: d.name, failure_conditions: [...d.failure_conditions] }));
+    _funTypes.forEach(ft => ft._deleted = true); // mark existing for deletion on save
+    DEFAULT_FUNCTION_TYPES.forEach((d, i) => _funTypes.push({
+      id: null, name: d.name, sort_order: i, _deleted: false,
+      failure_conditions: d.failure_conditions.map(label => ({ id: null, label })),
+    }));
     refreshFunTypesList();
   };
 
@@ -840,29 +869,69 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     const btn = document.getElementById('btn-save-funtypes');
     btn.disabled = true;
 
-    // Read current name inputs
+    // Flush name inputs
     container.querySelectorAll('.funtype-name-input').forEach(inp => {
-      _funTypes[parseInt(inp.dataset.idx)].name = inp.value.trim() || 'Unnamed';
+      const visible = _funTypes.filter(ft => !ft._deleted);
+      const ft = visible[parseInt(inp.dataset.idx)];
+      if (ft) ft.name = inp.value.trim() || 'Unnamed';
     });
 
-    const newConfig = { ...fullConfig, function_types: _funTypes };
-    let error;
-    if (configId) {
-      ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));
-    } else {
-      ({ error } = await sb.from('project_config').insert({ project_id: project.id, config: newConfig }));
+    try {
+      // Delete removed types (cascades to FCs)
+      const toDelete = _funTypes.filter(ft => ft._deleted && ft.id);
+      if (toDelete.length) {
+        const { error } = await sb.from('function_types').delete().in('id', toDelete.map(ft => ft.id));
+        if (error) throw error;
+      }
+
+      // Upsert remaining types and their FCs
+      const active = _funTypes.filter(ft => !ft._deleted);
+      for (let i = 0; i < active.length; i++) {
+        const ft = active[i];
+        ft.sort_order = i;
+
+        let typeId = ft.id;
+        if (!typeId) {
+          // Insert new type
+          const { data, error } = await sb.from('function_types')
+            .insert({ project_id: project.id, name: ft.name, sort_order: i })
+            .select('id').single();
+          if (error) throw error;
+          typeId = data.id;
+          ft.id = typeId;
+        } else {
+          const { error } = await sb.from('function_types')
+            .update({ name: ft.name, sort_order: i })
+            .eq('id', typeId);
+          if (error) throw error;
+        }
+
+        // Replace all FCs for this type
+        await sb.from('function_type_fcs').delete().eq('function_type_id', typeId);
+        if (ft.failure_conditions.length) {
+          const { error } = await sb.from('function_type_fcs').insert(
+            ft.failure_conditions.map((fc, j) => ({ function_type_id: typeId, label: fc.label, sort_order: j }))
+          );
+          if (error) throw error;
+        }
+      }
+
+      btn.disabled = false;
+      toast('Function types saved.', 'success');
+      // Refresh IDs (FCs got new UUIDs)
+      _funTypes = _funTypes.filter(ft => !ft._deleted);
+    } catch (err) {
+      btn.disabled = false;
+      toast(t('common.error'), 'error');
+      console.error(err);
     }
-    btn.disabled = false;
-    if (error) { toast(t('common.error'), 'error'); return; }
-    fullConfig = newConfig;
-    toast('Function types saved.', 'success');
   };
 }
 
 function renderFunTypeRow(ft, i) {
   const fcList = (ft.failure_conditions || []).map((fc, fi) => `
     <div class="fc-item">
-      <span class="fc-text">${escHtml(fc)}</span>
+      <span class="fc-text">${escHtml(fc.label ?? fc)}</span>
       <button class="btn-icon btn-del-fc" data-idx="${i}" data-fc="${fi}" title="Remove">✕</button>
     </div>`).join('');
 
