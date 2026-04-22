@@ -20,6 +20,7 @@
  */
 import { sb } from '../config.js';
 import { setBreadcrumb } from '../components/topbar.js';
+import { navigate } from '../router.js';
 
 export async function renderWiki(container, { project, item, system, pageId }) {
   const { data: pg, error } = await sb.from('nav_pages')
@@ -283,6 +284,35 @@ export async function renderWiki(container, { project, item, system, pageId }) {
     schedSave();
     recalcIndex();
     updateCounts();
+  });
+
+  // ── Internal link navigation ──────────────────────────────────────────────
+  // When clicking a link inside the wiki editor (or its rendered view) that
+  // points to an internal app URL (contains #/ or the same origin), intercept
+  // and use the SPA router instead of letting the browser do a full reload.
+  editor.addEventListener('click', e => {
+    const anchor = e.target.closest('a[href]');
+    if (!anchor) return;
+    const href = anchor.getAttribute('href');
+    if (!href) return;
+
+    // Internal app link: href starts with #/ or is an absolute URL to this origin
+    let internalPath = null;
+    if (href.startsWith('#/')) {
+      internalPath = href.slice(1); // strip leading #
+    } else {
+      try {
+        const url = new URL(href, window.location.href);
+        if (url.origin === window.location.origin && url.hash.startsWith('#/')) {
+          internalPath = url.hash.slice(1);
+        }
+      } catch (_) { /* not a valid URL — ignore */ }
+    }
+
+    if (internalPath) {
+      e.preventDefault();
+      navigate(internalPath);
+    }
   });
 
   // Highlight active toolbar buttons on selection change

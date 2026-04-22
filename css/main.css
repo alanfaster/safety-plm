@@ -3384,6 +3384,17 @@ th.col-th-dragging * { pointer-events: none; }
 }
 .wiki-statusbar span { white-space: nowrap; }
 
+/* ── Deep-link anchor highlight ─────────────────────────────────────────────── */
+@keyframes plm-anchor-flash {
+  0%   { background: #FFF3CD; box-shadow: 0 0 0 3px #F5A623; }
+  60%  { background: #FFF3CD; box-shadow: 0 0 0 3px #F5A623; }
+  100% { background: transparent; box-shadow: none; }
+}
+.plm-anchor-flash {
+  animation: plm-anchor-flash 2.2s ease-out forwards;
+  border-radius: 4px;
+}
+
 /* ── Insert panel labels ─────────────────────────────────────────────────────── */
 .wiki-ins-label {
   display: block;

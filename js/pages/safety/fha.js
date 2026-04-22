@@ -13,6 +13,7 @@ import { t } from '../../i18n/index.js';
 import { confirmDialog } from '../../components/modal.js';
 import { toast } from '../../toast.js';
 import { navigate } from '../../router.js';
+import { copyElementLink, scrollToAnchor } from '../../deep-link.js';
 import { exportFHApdf } from '../../utils/export-pdf.js';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -74,7 +75,6 @@ function paint(scope) {
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <button class="btn btn-secondary btn-sm" id="btn-fha-pdf" title="Export to PDF">📄 PDF</button>
-            <button class="btn btn-secondary btn-sm" id="btn-fha-cfg">⚙ Configure</button>
           </div>
         </div>
         ${allHazards.length ? summaryBar(allHazards, clsField) : ''}
@@ -91,7 +91,6 @@ function paint(scope) {
     </div>
   `;
 
-  container.querySelector('#btn-fha-cfg').onclick = () => navigate(settingsPath);
   const _pdfTitle = `${project.name}${(scope.item?.name || scope.system?.name) ? ' — ' + (scope.item?.name || scope.system?.name) : ''}`;
   container.querySelector('#btn-fha-pdf').onclick = () => exportFHApdf(container, _pdfTitle);
   wireRows(container, scope, hazByFun);
@@ -251,12 +250,13 @@ function hazRow(h, cols, scope) {
   };
 
   return `
-    <tr class="fha-haz-row" data-haz-id="${h.id}" title="Double-click to edit">
+    <tr id="fha-${h.id}" class="fha-haz-row" data-haz-id="${h.id}" title="Double-click to edit">
       <td class="fha-td-code"><span class="pha-mono">${esc(h.haz_code)}</span></td>
       ${cols.map(f => `<td class="fha-td-${f.key}">${cellContent(f)}</td>`).join('')}
       <td class="fha-td-status"><span class="pha-status-chip" style="background:${sc}20;color:${sc}">${esc(h.status)}</span></td>
       <td class="fha-td-actions">
         <button class="btn-icon btn-edit-fha" data-id="${h.id}" title="Edit">✎</button>
+        <button class="btn-icon btn-copy-link-fha" data-id="${h.id}" title="Copy link">🔗</button>
         <button class="btn-icon btn-del-fha"  data-id="${h.id}" title="Delete">✕</button>
       </td>
     </tr>`;
@@ -322,6 +322,11 @@ function wireRows(container, scope, hazByFun) {
       const haz = scope.allHazards.find(h => h.id === tr.dataset.hazId);
       if (haz && !tr.classList.contains('fha-row-editing')) openEditRow(haz, scope);
     });
+  });
+
+  // Copy link
+  container.querySelectorAll('.btn-copy-link-fha').forEach(btn => {
+    btn.onclick = e => { e.stopPropagation(); copyElementLink(`fha-${btn.dataset.id}`); };
   });
 
   // Delete
@@ -865,6 +870,9 @@ function wireFTAPanel(container, scope) {
     }
     navigate(ftaPath(scope));
   });
+
+  // Deep-link: scroll to anchor if navigated via a copied link
+  scrollToAnchor();
 }
 
 // ── Reload ────────────────────────────────────────────────────────────────────

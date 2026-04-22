@@ -22,6 +22,17 @@ function getCurrentPath() {
 }
 
 function dispatch(path) {
+  // Strip deep-link anchor suffix ("||anchor:ELEMENT_ID") before route matching
+  const sepIdx = path.indexOf('||');
+  if (sepIdx !== -1) {
+    const suffix = path.slice(sepIdx + 2); // e.g. "anchor:req-UUID"
+    const anchorMatch = suffix.match(/^anchor:(.+)$/);
+    window.__plmAnchor = anchorMatch ? anchorMatch[1] : null;
+    path = path.slice(0, sepIdx);
+  } else {
+    window.__plmAnchor = null;
+  }
+
   for (const { regex, handler } of routes) {
     const match = path.match(regex);
     if (match) {
