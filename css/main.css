@@ -2115,38 +2115,6 @@ tr.req-title-row td { cursor: default; }
 .arch-palette-resize-handle:hover{background:var(--color-primary-light)}
 .arch-palette{position:relative}
 
-/* ── Architecture Frame panel ── */
-.arch-frame-panel{border-top:2px solid var(--color-primary);background:var(--color-surface);height:220px;display:flex;flex-direction:column;flex-shrink:0}
-.arch-frame-hdr{display:flex;align-items:center;justify-content:space-between;padding:5px 12px;border-bottom:1px solid var(--color-border);flex-shrink:0;background:var(--color-bg)}
-.arch-frame-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--color-text-muted)}
-.arch-frame-body{flex:1;overflow:auto;padding:8px 12px}
-
-/* ── Frame tree ── */
-.ft-details{margin:0}
-.ft-details summary{list-style:none}
-.ft-details summary::-webkit-details-marker{display:none}
-.ft-details>summary::before{content:'▸';font-size:9px;color:var(--color-text-muted);width:12px;display:inline-block;flex-shrink:0;transition:transform 0.15s}
-.ft-details[open]>summary::before{content:'▾'}
-.ft-details--group{margin-bottom:4px}
-.ft-row{display:flex;align-items:center;gap:5px;padding:2px 4px;border-radius:3px;font-size:11px;cursor:default;user-select:none}
-.ft-row:hover{background:var(--color-hover)}
-.ft-group{font-weight:700;color:var(--color-text)}
-.ft-block{font-weight:600}
-.ft-port{margin-left:16px;color:var(--color-text-muted)}
-.ft-fun{margin-left:16px;color:var(--color-text-muted)}
-.ft-fun--safe{color:#C5221F}
-.ft-empty{margin-left:16px;color:var(--color-text-muted);font-style:italic;font-size:10px}
-.ft-icon{font-size:10px;width:14px;text-align:center;flex-shrink:0}
-.ft-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ft-label--group{font-size:12px}
-.ft-label--block{font-size:11px}
-.ft-muted{font-size:9px;color:var(--color-text-muted);flex-shrink:0}
-.ft-badge{font-size:8px;font-weight:800;padding:1px 4px;border-radius:2px;flex-shrink:0;text-transform:uppercase}
-.ft-badge--hw{background:#E8F0FE;color:#1A73E8}
-.ft-badge--sw{background:#E6F4EA;color:#1E8E3E}
-.ft-badge--mechanical{background:#FEF3E2;color:#E37400}
-.ft-safe-tag{font-size:8px;font-weight:800;padding:1px 4px;border-radius:2px;background:#C5221F1A;color:#C5221F;flex-shrink:0}
-.ft-children{padding-left:12px}
 
 /* ── Item Definition bottom panel ── */
 .arch-idef-panel{background:var(--color-surface);height:200px;display:flex;flex-direction:column;flex-shrink:0;border-top:2px solid var(--color-border)}

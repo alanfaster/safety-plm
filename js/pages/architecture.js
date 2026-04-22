@@ -279,8 +279,6 @@ function buildShell(container, title) {
         <div class="arch-topbar-right">
           <div class="arch-sep"></div>
           <button class="arch-tb-btn" id="btn-arch-tree" title="Toggle component tree">🌳 Tree</button>
-          <div class="arch-sep"></div>
-          <button class="arch-tb-btn" id="btn-arch-frame" title="Architecture Frame tree">🗂 Frame</button>
         </div>
       </div>
       <div class="arch-workspace">
@@ -377,14 +375,6 @@ function buildShell(container, title) {
       <div class="arch-conn-popover" id="arch-sys-pop" style="display:none"></div>
       <div class="arch-fun-tooltip" id="arch-fun-tooltip" style="display:none"></div>
 
-      <!-- Frame tree panel -->
-      <div class="arch-frame-panel" id="arch-frame-panel" style="display:none">
-        <div class="arch-frame-hdr">
-          <span class="arch-frame-title">🗂 Architecture Frame</span>
-          <button class="arch-tb-btn" id="arch-frame-close">✕</button>
-        </div>
-        <div class="arch-frame-body" id="arch-frame-body"></div>
-      </div>
 
       <!-- Interface Requirements panel (bottom) -->
       <div class="bp-bar bp-collapsed arch-bp-ifreqs" id="arch-ifreqs-panel">
@@ -826,18 +816,6 @@ function wireCanvas() {
     document.getElementById('btn-arch-tree')?.classList.remove('arch-tb-active');
   });
 
-  // Frame tree toggle
-  document.getElementById('btn-arch-frame')?.addEventListener('click', () => {
-    const panel = document.getElementById('arch-frame-panel');
-    if (!panel) return;
-    const open = panel.style.display !== 'none';
-    panel.style.display = open ? 'none' : '';
-    if (!open) renderFrameTree();
-  });
-  document.getElementById('arch-frame-close')?.addEventListener('click', () => {
-    const panel = document.getElementById('arch-frame-panel');
-    if (panel) panel.style.display = 'none';
-  });
 
   // Interface Requirements panel — bp-bar (lazy load on first expand)
   wireBottomPanel(document.getElementById('arch-ifreqs-panel'), {
@@ -2360,76 +2338,6 @@ function refreshArchTree() {
   if (panel?.classList.contains('arch-tree-open')) renderArchTree();
 }
 
-// ── Architecture Frame Tree ───────────────────────────────────────────────────
-
-function renderFrameTree() {
-  const body = document.getElementById('arch-frame-body'); if (!body) return;
-  const groups    = _s.components.filter(c => c.comp_type === 'Group');
-  const allBlocks = _s.components.filter(c => c.comp_type !== 'Group' && c.comp_type !== 'Port');
-  const ports     = _s.components.filter(c => c.comp_type === 'Port');
-  const typeIcon  = { HW:'🔧', SW:'💾', Mechanical:'⚙' };
-
-  function blockTree(blk) {
-    const blkPorts = ports.filter(p => p.data?.parent_block_id === blk.id);
-    const funs = blk.functions || [];
-    const safeTag = blk.is_safety_critical ? `<span class="ft-safe-tag">SC</span>` : '';
-    const portItems = blkPorts.map(p => `
-      <div class="ft-row ft-port">
-        <span class="ft-icon">■</span>
-        <span class="ft-label">${escH(p.name)}</span>
-        <span class="ft-muted">${{in:'▶',out:'◀',inout:'◆'}[p.data?.port_dir||'inout']||'◆'}</span>
-      </div>`).join('');
-    const funItems = funs.map(f => `
-      <div class="ft-row ft-fun ${f.is_safety_related?'ft-fun--safe':''}">
-        <span class="ft-icon">${f.is_safety_related?'⚠':'⬥'}</span>
-        <span class="ft-label">${escH(f.name)}</span>
-      </div>`).join('');
-    const hasChildren = funs.length || blkPorts.length;
-    return `
-      <details class="ft-details" open>
-        <summary class="ft-row ft-block">
-          <span class="ft-icon">${typeIcon[blk.comp_type]||'□'}</span>
-          <span class="ft-label ft-label--block">${escH(blk.name)}</span>
-          <span class="ft-badge ft-badge--${blk.comp_type.toLowerCase()}">${blk.comp_type}</span>
-          ${safeTag}
-        </summary>
-        <div class="ft-children">
-          ${portItems}${funItems}
-          ${!hasChildren?'<div class="ft-row ft-empty">no functions</div>':''}
-        </div>
-      </details>`;
-  }
-
-  const groupSections = groups.map(g => {
-    const linkedSys = g.data?.system_id ? _s.projectSystems.find(s=>s.id===g.data.system_id) : null;
-    const children  = allBlocks.filter(b => b.data?.group_id === g.id);
-    return `
-      <details class="ft-details ft-details--group" open>
-        <summary class="ft-row ft-group">
-          <span class="ft-icon">⬡</span>
-          <span class="ft-label ft-label--group">${escH(g.name)}</span>
-          ${linkedSys ? `<span class="ft-muted">🔗 ${escH(linkedSys.system_code)}</span>` : ''}
-        </summary>
-        <div class="ft-children">
-          ${children.length ? children.map(blockTree).join('') : '<div class="ft-row ft-empty">empty group</div>'}
-        </div>
-      </details>`;
-  }).join('');
-
-  const groupIds = new Set(groups.map(g => g.id));
-  const ungrouped = allBlocks.filter(b => !b.data?.group_id || !groupIds.has(b.data.group_id));
-  const ungroupedSection = ungrouped.length ? `
-    <details class="ft-details ft-details--loose" open>
-      <summary class="ft-row ft-group">
-        <span class="ft-icon">◌</span>
-        <span class="ft-label ft-label--group" style="color:var(--color-text-muted)">Ungrouped</span>
-      </summary>
-      <div class="ft-children">${ungrouped.map(blockTree).join('')}</div>
-    </details>` : '';
-
-  body.innerHTML = (groupSections + ungroupedSection) ||
-    `<div style="padding:12px;color:var(--color-text-muted);font-size:var(--text-sm)">No components yet.</div>`;
-}
 
 function compById(id) { return _s.components.find(c=>c.id===id); }
 function escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
