@@ -56,7 +56,7 @@ export async function renderProjectSettings(container, ctx) {
     }));
   }
 
-  render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, vmodelLinks, vmodelCanvasNodes, pcRow?.id, config);
+  render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, vmodelLinks, vmodelCanvasNodes, pcRow?.id, config, !ftRows?.length);
 }
 
 
@@ -92,7 +92,7 @@ const DEFAULT_FUNCTION_TYPES = [
   { name: 'Thermal Management',       failure_conditions: ['Overheating', 'Undercooling', 'Thermal runaway', 'Cooling failure', 'Uneven temperature distribution'] },
 ];
 
-function render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, vmodelLinks, vmodelCanvasNodes, configId, fullConfig = {}) {
+function render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, vmodelLinks, vmodelCanvasNodes, configId, fullConfig = {}, ftFirstLoad = false) {
   const fields    = DEFAULT_PHA_FIELDS.map(f => ({ ...f, ...(phaOverrides[f.key] || {}) }));
   const fhaFields = DEFAULT_FHA_FIELDS.map(f => ({ ...f, ...(fhaOverrides[f.key] || {}) }));
 
@@ -216,12 +216,10 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
           <div id="funtypes-list">
             ${functionTypes.map((ft, i) => renderFunTypeRow(ft, i)).join('')}
           </div>
-          <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+          <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; align-items:center">
             <button class="btn btn-secondary btn-sm" id="btn-add-funtype">＋ Add Function Type</button>
             <button class="btn btn-ghost btn-sm" id="btn-load-funtype-defaults">↺ Reset to defaults</button>
-          </div>
-          <div style="margin-top:16px">
-            <button class="btn btn-primary" id="btn-save-funtypes">Save Function Types</button>
+            <span id="funtypes-autosave-indicator" style="font-size:var(--text-xs);color:var(--color-text-muted);margin-left:4px"></span>
           </div>
         </div>
       </div>
@@ -800,6 +798,57 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     _deleted: false,
   }));
 
+  let _ftSaveTimer = null;
+  const _ftIndicator = () => document.getElementById('funtypes-autosave-indicator');
+
+  async function saveFunTypes() {
+    const ind = _ftIndicator();
+    if (ind) ind.textContent = 'Saving…';
+    try {
+      const toDelete = _funTypes.filter(ft => ft._deleted && ft.id);
+      if (toDelete.length) {
+        const { error } = await sb.from('function_types').delete().in('id', toDelete.map(ft => ft.id));
+        if (error) throw error;
+      }
+
+      const active = _funTypes.filter(ft => !ft._deleted);
+      for (let i = 0; i < active.length; i++) {
+        const ft = active[i];
+        ft.sort_order = i;
+        let typeId = ft.id;
+        if (!typeId) {
+          const { data, error } = await sb.from('function_types')
+            .insert({ project_id: project.id, name: ft.name, sort_order: i })
+            .select('id').single();
+          if (error) throw error;
+          typeId = data.id;
+          ft.id = typeId;
+        } else {
+          const { error } = await sb.from('function_types')
+            .update({ name: ft.name, sort_order: i }).eq('id', typeId);
+          if (error) throw error;
+        }
+        await sb.from('function_type_fcs').delete().eq('function_type_id', typeId);
+        if (ft.failure_conditions.length) {
+          const { error } = await sb.from('function_type_fcs').insert(
+            ft.failure_conditions.map((fc, j) => ({ function_type_id: typeId, label: fc.label, sort_order: j }))
+          );
+          if (error) throw error;
+        }
+      }
+      _funTypes = _funTypes.filter(ft => !ft._deleted);
+      if (ind) { ind.textContent = 'Saved'; setTimeout(() => { if (_ftIndicator()) _ftIndicator().textContent = ''; }, 1500); }
+    } catch (err) {
+      if (ind) ind.textContent = 'Error saving';
+      console.error(err);
+    }
+  }
+
+  function scheduleSave() {
+    clearTimeout(_ftSaveTimer);
+    _ftSaveTimer = setTimeout(saveFunTypes, 600);
+  }
+
   function refreshFunTypesList() {
     document.getElementById('funtypes-list').innerHTML =
       _funTypes.filter(ft => !ft._deleted).map((ft, i) => renderFunTypeRow(ft, i)).join('');
@@ -809,10 +858,10 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
   function wireFunTypeRows() {
     container.querySelectorAll('.btn-del-funtype').forEach(btn => {
       btn.onclick = () => {
-        const idx = parseInt(btn.dataset.idx);
         const visible = _funTypes.filter(ft => !ft._deleted);
-        visible[idx]._deleted = true;
+        visible[parseInt(btn.dataset.idx)]._deleted = true;
         refreshFunTypesList();
+        scheduleSave();
       };
     });
     container.querySelectorAll('.btn-add-fc').forEach(btn => {
@@ -825,6 +874,7 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         visible[idx].failure_conditions.push({ id: null, label: val });
         inputEl.value = '';
         refreshFunTypesList();
+        scheduleSave();
       };
     });
     container.querySelectorAll('.btn-del-fc').forEach(btn => {
@@ -833,12 +883,14 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         const visible = _funTypes.filter(ft => !ft._deleted);
         visible[idx].failure_conditions.splice(parseInt(fc), 1);
         refreshFunTypesList();
+        scheduleSave();
       };
     });
     container.querySelectorAll('.funtype-name-input').forEach(inp => {
       inp.oninput = () => {
         const visible = _funTypes.filter(ft => !ft._deleted);
         visible[parseInt(inp.dataset.idx)].name = inp.value;
+        scheduleSave();
       };
     });
     container.querySelectorAll('.fc-new-input').forEach(inp => {
@@ -848,83 +900,26 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     });
   }
 
+  // Auto-save defaults on first load (no DB records yet)
+  if (ftFirstLoad) scheduleSave();
+
   wireFunTypeRows();
 
   document.getElementById('btn-add-funtype').onclick = () => {
     _funTypes.push({ id: null, name: 'New Type', sort_order: _funTypes.length, failure_conditions: [], _deleted: false });
     refreshFunTypesList();
+    scheduleSave();
   };
 
   document.getElementById('btn-load-funtype-defaults').onclick = () => {
     if (!confirm('Reset all function types to defaults? This will discard your current configuration.')) return;
-    _funTypes.forEach(ft => ft._deleted = true); // mark existing for deletion on save
+    _funTypes.forEach(ft => ft._deleted = true);
     DEFAULT_FUNCTION_TYPES.forEach((d, i) => _funTypes.push({
       id: null, name: d.name, sort_order: i, _deleted: false,
       failure_conditions: d.failure_conditions.map(label => ({ id: null, label })),
     }));
     refreshFunTypesList();
-  };
-
-  document.getElementById('btn-save-funtypes').onclick = async () => {
-    const btn = document.getElementById('btn-save-funtypes');
-    btn.disabled = true;
-
-    // Flush name inputs
-    container.querySelectorAll('.funtype-name-input').forEach(inp => {
-      const visible = _funTypes.filter(ft => !ft._deleted);
-      const ft = visible[parseInt(inp.dataset.idx)];
-      if (ft) ft.name = inp.value.trim() || 'Unnamed';
-    });
-
-    try {
-      // Delete removed types (cascades to FCs)
-      const toDelete = _funTypes.filter(ft => ft._deleted && ft.id);
-      if (toDelete.length) {
-        const { error } = await sb.from('function_types').delete().in('id', toDelete.map(ft => ft.id));
-        if (error) throw error;
-      }
-
-      // Upsert remaining types and their FCs
-      const active = _funTypes.filter(ft => !ft._deleted);
-      for (let i = 0; i < active.length; i++) {
-        const ft = active[i];
-        ft.sort_order = i;
-
-        let typeId = ft.id;
-        if (!typeId) {
-          // Insert new type
-          const { data, error } = await sb.from('function_types')
-            .insert({ project_id: project.id, name: ft.name, sort_order: i })
-            .select('id').single();
-          if (error) throw error;
-          typeId = data.id;
-          ft.id = typeId;
-        } else {
-          const { error } = await sb.from('function_types')
-            .update({ name: ft.name, sort_order: i })
-            .eq('id', typeId);
-          if (error) throw error;
-        }
-
-        // Replace all FCs for this type
-        await sb.from('function_type_fcs').delete().eq('function_type_id', typeId);
-        if (ft.failure_conditions.length) {
-          const { error } = await sb.from('function_type_fcs').insert(
-            ft.failure_conditions.map((fc, j) => ({ function_type_id: typeId, label: fc.label, sort_order: j }))
-          );
-          if (error) throw error;
-        }
-      }
-
-      btn.disabled = false;
-      toast('Function types saved.', 'success');
-      // Refresh IDs (FCs got new UUIDs)
-      _funTypes = _funTypes.filter(ft => !ft._deleted);
-    } catch (err) {
-      btn.disabled = false;
-      toast(t('common.error'), 'error');
-      console.error(err);
-    }
+    scheduleSave();
   };
 }
 
