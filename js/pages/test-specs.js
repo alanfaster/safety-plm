@@ -1,9 +1,9 @@
 /**
  * Test Specifications — unit_testing, integration_testing, system_testing
  *
- * Layout: table on left + sliding detail panel on right.
- * Detail panel sections: Basic Info · Traceability · Definition · Preconditions
- *                        Test Steps · Criteria · Execution
+ * Layout  : table (left) + sliding detail panel (right)
+ * Sections: Basic Info · Test Definition · Test Steps · Criteria · Traceability · Execution
+ * Auto-save on every field change (1.5 s debounce)
  */
 
 import { sb } from '../config.js';
@@ -20,36 +20,67 @@ const PHASE_META = {
 };
 
 const STATUSES     = ['draft', 'review', 'approved', 'active', 'deprecated'];
-const TYPES        = ['verification', 'validation'];
-const LEVELS       = ['system', 'subsystem', 'component'];
-const METHODS      = ['test', 'analysis', 'inspection', 'demonstration'];
+const LEVELS       = [
+  { value: 'unit_test',        label: 'Unit Test' },
+  { value: 'integration_test', label: 'Integration Test' },
+  { value: 'item_test',        label: 'Item Test' },
+];
 const ENVIRONMENTS = ['simulation', 'lab', 'field'];
 const RESULTS      = ['pass', 'fail', 'blocked'];
+
+// ISO 26262 test methods (Part 6 SW + Part 4 System)
+const ISO_METHODS = [
+  { id: 'req_based',           label: 'Requirements-based testing' },
+  { id: 'equivalence',         label: 'Equivalence class partitioning' },
+  { id: 'boundary',            label: 'Boundary value analysis' },
+  { id: 'error_guessing',      label: 'Error guessing' },
+  { id: 'state_based',         label: 'State-based testing' },
+  { id: 'decision_table',      label: 'Decision table testing' },
+  { id: 'structural_stmt',     label: 'Structural coverage — Statement' },
+  { id: 'structural_branch',   label: 'Structural coverage — Branch' },
+  { id: 'structural_mcdc',     label: 'Structural coverage — MC/DC' },
+  { id: 'back_to_back',        label: 'Back-to-back testing' },
+  { id: 'fault_injection',     label: 'Fault injection testing' },
+  { id: 'interface_testing',   label: 'Interface testing' },
+  { id: 'performance',         label: 'Performance testing' },
+  { id: 'regression',          label: 'Regression testing' },
+  { id: 'inspection',          label: 'Inspection' },
+  { id: 'walkthrough',         label: 'Walk-through / Review' },
+];
 
 const STATUS_COLORS = {
   draft: '#9AA0A6', review: '#F29900', approved: '#34A853',
   active: '#1A73E8', deprecated: '#EA4335',
 };
 const RESULT_COLORS = { pass: '#34A853', fail: '#EA4335', blocked: '#F29900' };
+const RESULT_LABELS = { pass: '✓ PASS', fail: '✗ FAIL', blocked: '⊘ BLOCKED' };
 
 // ── Module state ──────────────────────────────────────────────────────────────
 
-let _ctx        = null;   // { project, item, system, phase, parentType, parentId }
+let _ctx        = null;
 let _tests      = [];
 let _selectedId = null;
-let _reqs       = [];     // cached requirements for autocomplete
+let _reqs       = [];
+let _testTypes  = [];    // from project_config.test_types
+let _saveTimer  = null;
+let _currentUser = null; // { email }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 export async function renderTestSpecs(container, { project, item, system, phase, domain, pageId }) {
-  const meta = PHASE_META[phase] || { label: phase, prefix: 'TS' };
+  const meta       = PHASE_META[phase] || { label: phase, prefix: 'TS' };
   const parentType = system ? 'system' : 'item';
   const parentId   = system ? system.id : item.id;
   const parentName = system?.name || item?.name;
 
-  _ctx = { project, item, system, phase, parentType, parentId, meta };
-  _tests      = [];
-  _selectedId = null;
+  _ctx         = { project, item, system, phase, parentType, parentId, meta };
+  _tests       = [];
+  _selectedId  = null;
+  _saveTimer   = null;
+
+  // Get current user for last-modified tracking
+  const { data: { user } } = await sb.auth.getUser();
+  _currentUser = user;
 
   setBreadcrumb([
     { label: 'Projects', path: '/projects' },
@@ -58,6 +89,11 @@ export async function renderTestSpecs(container, { project, item, system, phase,
     { label: meta.label },
   ]);
   renderSidebar({ view: 'item', project, item, system, activePage: phase });
+
+  // Load project config for custom test types
+  const { data: pcRow } = await sb.from('project_config')
+    .select('config').eq('project_id', project.id).maybeSingle();
+  _testTypes = pcRow?.config?.test_types || ['test', 'inspection', 'analysis', 'demonstration'];
 
   container.innerHTML = `
     <div class="page-header">
@@ -82,7 +118,7 @@ export async function renderTestSpecs(container, { project, item, system, phase,
 
   document.getElementById('btn-new-test').onclick = () => createTest();
 
-  // Cache requirements for traceability autocomplete
+  // Cache requirements
   const { data: reqs } = await sb.from('requirements')
     .select('id, req_code, title, type')
     .eq('parent_type', parentType).eq('parent_id', parentId)
@@ -99,26 +135,18 @@ async function loadTests() {
   const { parentType, parentId, phase } = _ctx;
   const { data, error } = await sb.from('test_specs')
     .select('*')
-    .eq('parent_type', parentType)
-    .eq('parent_id', parentId)
-    .eq('phase', phase)
-    .order('sort_order', { ascending: true })
-    .order('created_at',  { ascending: true });
+    .eq('parent_type', parentType).eq('parent_id', parentId).eq('phase', phase)
+    .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
 
   const pane = document.getElementById('ts-list-pane');
   if (!pane) return;
-  if (error) { pane.innerHTML = `<p class="text-muted">Error loading tests: ${esc(error.message)}</p>`; return; }
+  if (error) { pane.innerHTML = `<p class="text-muted">Error: ${esc(error.message)}</p>`; return; }
 
   _tests = data || [];
   renderTestTable(pane);
 
-  // Re-open selected test if any
-  if (_selectedId && _tests.find(t => t.id === _selectedId)) {
-    openDetail(_selectedId);
-  } else {
-    _selectedId = null;
-    closeDetail();
-  }
+  if (_selectedId && _tests.find(t => t.id === _selectedId)) openDetail(_selectedId);
+  else { _selectedId = null; closeDetail(); }
 }
 
 function renderTestTable(pane) {
@@ -127,7 +155,7 @@ function renderTestTable(pane) {
       <div class="empty-state">
         <div class="empty-state-icon">🧪</div>
         <h3>No test specifications yet</h3>
-        <p>Click <strong>＋ New Test</strong> to create the first test specification.</p>
+        <p>Click <strong>＋ New Test</strong> to create the first specification.</p>
       </div>`;
     return;
   }
@@ -140,13 +168,12 @@ function renderTestTable(pane) {
             <tr>
               <th style="width:110px">ID</th>
               <th>Name</th>
-              <th style="width:110px">Type</th>
-              <th style="width:100px">Level</th>
-              <th style="width:100px">Method</th>
-              <th style="width:120px">Requirement(s)</th>
-              <th style="width:90px">Status</th>
-              <th style="width:80px">Result</th>
-              <th style="width:60px"></th>
+              <th style="width:100px">Type</th>
+              <th style="width:110px">Level</th>
+              <th style="width:130px">Requirement(s)</th>
+              <th style="width:90px">Spec Status</th>
+              <th style="width:90px">Result</th>
+              <th style="width:40px"></th>
             </tr>
           </thead>
           <tbody id="ts-tbody">
@@ -164,35 +191,35 @@ function renderTestTable(pane) {
     });
     tr.querySelector('.ts-row-del')?.addEventListener('click', async e => {
       e.stopPropagation();
-      if (!confirm(`Delete test "${_tests.find(t => t.id === tr.dataset.id)?.name || tr.dataset.id}"?`)) return;
+      const t = _tests.find(t => t.id === tr.dataset.id);
+      if (!confirm(`Delete "${t?.name || 'this test'}"?`)) return;
       await sb.from('test_specs').delete().eq('id', tr.dataset.id);
       if (_selectedId === tr.dataset.id) closeDetail();
       _tests.splice(_tests.findIndex(t => t.id === tr.dataset.id), 1);
-      tr.remove();
-      if (!_tests.length) renderTestTable(document.getElementById('ts-list-pane'));
-      toast('Test deleted.', 'success');
+      renderTestTable(document.getElementById('ts-list-pane'));
+      toast('Deleted.', 'success');
     });
   });
 }
 
 function testRowHTML(t) {
-  const reqs  = (t.linked_requirements || []).slice(0, 3).join(', ') + (t.linked_requirements?.length > 3 ? '…' : '');
-  const sColor = STATUS_COLORS[t.status]  || '#9AA0A6';
-  const rColor = RESULT_COLORS[t.result] || '';
-  const isSelected = t.id === _selectedId;
+  const reqs    = (t.linked_requirements || []).slice(0, 2).join(', ') + (t.linked_requirements?.length > 2 ? '…' : '');
+  const sColor  = STATUS_COLORS[t.status] || '#9AA0A6';
+  const rColor  = RESULT_COLORS[t.result] || '';
+  const lvlLabel = LEVELS.find(l => l.value === t.level)?.label || t.level || '—';
+  const sel     = t.id === _selectedId;
   return `
-    <tr data-id="${t.id}" class="ts-row${isSelected ? ' ts-row--selected' : ''}" style="cursor:pointer">
+    <tr data-id="${t.id}" class="ts-row${sel ? ' ts-row--selected' : ''}" style="cursor:pointer">
       <td class="code-cell" style="white-space:nowrap">${esc(t.test_code || '—')}</td>
       <td><strong style="font-size:13px">${esc(t.name || 'Untitled')}</strong></td>
       <td><span class="ts-badge ts-badge--type">${esc(t.type || '—')}</span></td>
-      <td style="font-size:12px;color:var(--color-text-muted)">${esc(t.level || '—')}</td>
-      <td style="font-size:12px">${esc(t.method || '—')}</td>
-      <td style="font-size:11px;color:var(--color-text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(reqs || '—')}</td>
+      <td style="font-size:12px;color:var(--color-text-muted)">${esc(lvlLabel)}</td>
+      <td style="font-size:11px;color:var(--color-text-muted);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(reqs || '—')}</td>
       <td><span class="ts-badge" style="background:${sColor}20;color:${sColor};border:1px solid ${sColor}40">${esc(t.status || 'draft')}</span></td>
-      <td>${t.result ? `<span class="ts-badge ts-badge--result ts-result--${t.result}">${t.result.toUpperCase()}</span>` : '<span style="color:#ccc;font-size:11px">—</span>'}</td>
-      <td style="text-align:center">
-        <button class="btn btn-ghost btn-xs ts-row-del" style="color:var(--color-danger)" title="Delete">✕</button>
-      </td>
+      <td>${t.result
+        ? `<span class="ts-badge ts-result--${t.result}">${RESULT_LABELS[t.result] || t.result}</span>`
+        : '<span style="color:#ccc;font-size:11px">not run</span>'}</td>
+      <td><button class="btn btn-ghost btn-xs ts-row-del" style="color:var(--color-danger)" title="Delete">✕</button></td>
     </tr>`;
 }
 
@@ -200,10 +227,9 @@ function testRowHTML(t) {
 
 function openDetail(testId) {
   _selectedId = testId;
-  const test = _tests.find(t => t.id === testId);
+  const test  = _tests.find(t => t.id === testId);
   if (!test) return;
 
-  // Highlight selected row
   document.querySelectorAll('.ts-row').forEach(tr =>
     tr.classList.toggle('ts-row--selected', tr.dataset.id === testId));
 
@@ -211,31 +237,41 @@ function openDetail(testId) {
   panel.classList.add('open');
   panel.innerHTML = buildDetailHTML(test);
   wireDetail(test);
-
-  // Narrow the list pane
   document.getElementById('ts-list-pane').classList.add('ts-list-pane--narrow');
 }
 
 function closeDetail() {
+  clearTimeout(_saveTimer);
   _selectedId = null;
   document.querySelectorAll('.ts-row').forEach(tr => tr.classList.remove('ts-row--selected'));
-  const panel = document.getElementById('ts-detail-pane');
-  panel.classList.remove('open');
-  panel.innerHTML = '';
+  document.getElementById('ts-detail-pane')?.classList.remove('open');
+  if (document.getElementById('ts-detail-pane')) document.getElementById('ts-detail-pane').innerHTML = '';
   document.getElementById('ts-list-pane')?.classList.remove('ts-list-pane--narrow');
 }
 
 function buildDetailHTML(t) {
-  const steps = t.steps || [];
-  const linkedReqs = (t.linked_requirements || []).join(', ');
+  const steps    = t.steps || [];
+  const methods  = Array.isArray(t.method) ? t.method : (t.method ? [t.method] : []);
+  const lvlLabel = LEVELS.find(l => l.value === t.level)?.label || t.level || '—';
+  const sColor   = STATUS_COLORS[t.status] || '#9AA0A6';
+  const modDate  = t.updated_at ? new Date(t.updated_at).toLocaleString() : '—';
+  const modBy    = t.last_modified_by || '—';
 
   return `
     <div class="ts-detail-inner">
       <!-- Header -->
       <div class="ts-detail-header">
-        <div>
-          <div class="ts-detail-code">${esc(t.test_code || '—')}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span class="ts-detail-code">${esc(t.test_code || '—')}</span>
+            <span class="ts-badge" style="background:${sColor}20;color:${sColor};border:1px solid ${sColor}40;font-size:10px">${esc(t.status)}</span>
+            ${t.result ? `<span class="ts-badge ts-result--${t.result}" style="font-size:10px">${RESULT_LABELS[t.result]}</span>` : ''}
+          </div>
           <input class="ts-detail-title-inp" id="td-name" value="${esc(t.name || '')}" placeholder="Test name…"/>
+          <div class="ts-last-modified">
+            Last modified: <strong>${esc(modDate)}</strong> by <strong>${esc(modBy)}</strong>
+            <span class="ts-autosave-indicator" id="ts-autosave-ind"></span>
+          </div>
         </div>
         <button class="btn-icon ts-detail-close" id="ts-close-btn" title="Close">✕</button>
       </div>
@@ -256,92 +292,58 @@ function buildDetailHTML(t) {
               <div class="ts-field">
                 <label>Type</label>
                 <select id="td-type" class="form-input form-select">
-                  ${TYPES.map(v => `<option value="${v}" ${t.type===v?'selected':''}>${cap(v)}</option>`).join('')}
+                  ${_testTypes.map(v => `<option value="${esc(v)}" ${t.type===v?'selected':''}>${esc(v)}</option>`).join('')}
                 </select>
               </div>
               <div class="ts-field">
                 <label>Level</label>
                 <select id="td-level" class="form-input form-select">
-                  ${LEVELS.map(v => `<option value="${v}" ${t.level===v?'selected':''}>${cap(v)}</option>`).join('')}
+                  ${LEVELS.map(l => `<option value="${l.value}" ${t.level===l.value?'selected':''}>${l.label}</option>`).join('')}
                 </select>
               </div>
               <div class="ts-field">
-                <label>Status</label>
+                <label>Spec Status</label>
                 <select id="td-status" class="form-input form-select">
                   ${STATUSES.map(v => `<option value="${v}" ${t.status===v?'selected':''}>${cap(v)}</option>`).join('')}
                 </select>
               </div>
               <div class="ts-field" style="max-width:80px">
                 <label>Version</label>
-                <input id="td-version" class="form-input" value="${esc(t.version || '1.0')}" placeholder="1.0"/>
+                <input id="td-version" class="form-input" value="${esc(t.version || '1.0')}"/>
               </div>
+            </div>
+            <div class="ts-field">
+              <label>Implementation Ticket</label>
+              <input id="td-impl-ticket" class="form-input"
+                value="${esc(t.implementation_ticket || '')}"
+                placeholder="e.g. JIRA-123 or GitHub #456"/>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- ② Traceability -->
-      <div class="ts-section">
-        <div class="ts-section-hdr" data-sec="trace">
-          <span class="ts-section-chevron">▶</span> Traceability
-        </div>
-        <div class="ts-section-body" id="sec-trace" style="display:none">
-          <div class="ts-field-grid">
-            <div class="ts-field">
-              <label>Linked Requirements <span style="color:var(--color-danger)">*</span></label>
-              <div class="ts-req-tags" id="ts-req-tags">
-                ${(t.linked_requirements || []).map(rc => reqTagHTML(rc)).join('')}
-              </div>
-              <div style="display:flex;gap:6px;margin-top:6px">
-                <input id="ts-req-inp" class="form-input" placeholder="Type req code and press Enter…"
-                  style="flex:1;font-size:12px"
-                  list="ts-req-datalist"/>
-                <datalist id="ts-req-datalist">
-                  ${_reqs.map(r => `<option value="${esc(r.req_code)}">${esc(r.req_code)} — ${esc(r.title || '')}</option>`).join('')}
-                </datalist>
-              </div>
-            </div>
-            <div class="ts-field">
-              <label>Linked Functions (optional)</label>
-              <input id="td-linked-functions" class="form-input"
-                value="${esc((t.linked_functions || []).join(', '))}"
-                placeholder="Function names, comma-separated"/>
-            </div>
-            <div class="ts-field">
-              <label>Linked Components (optional)</label>
-              <input id="td-linked-components" class="form-input"
-                value="${esc((t.linked_components || []).join(', '))}"
-                placeholder="Component names, comma-separated"/>
-            </div>
-            <div class="ts-field">
-              <label>Linked Safety Items (FHA/FMEA, optional)</label>
-              <input id="td-linked-safety" class="form-input"
-                value="${esc((t.linked_safety || []).join(', '))}"
-                placeholder="Safety item codes, comma-separated"/>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ③ Test Definition -->
+      <!-- ② Test Definition -->
       <div class="ts-section">
         <div class="ts-section-hdr" data-sec="defn">
           <span class="ts-section-chevron">▶</span> Test Definition
         </div>
         <div class="ts-section-body" id="sec-defn" style="display:none">
           <div class="ts-field-grid">
-            <div class="ts-field-row">
-              <div class="ts-field">
-                <label>Method</label>
-                <select id="td-method" class="form-input form-select">
-                  ${METHODS.map(v => `<option value="${v}" ${t.method===v?'selected':''}>${cap(v)}</option>`).join('')}
-                </select>
-              </div>
-              <div class="ts-field">
-                <label>Environment</label>
-                <select id="td-environment" class="form-input form-select">
-                  ${ENVIRONMENTS.map(v => `<option value="${v}" ${t.environment===v?'selected':''}>${cap(v)}</option>`).join('')}
-                </select>
+            <div class="ts-field">
+              <label>Environment</label>
+              <select id="td-environment" class="form-input form-select" style="max-width:200px">
+                ${ENVIRONMENTS.map(v => `<option value="${v}" ${t.environment===v?'selected':''}>${cap(v)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="ts-field">
+              <label>Method (ISO 26262) — select all that apply</label>
+              <div class="ts-method-grid" id="ts-method-grid">
+                ${ISO_METHODS.map(m => `
+                  <label class="ts-method-item">
+                    <input type="checkbox" class="ts-method-chk" value="${m.id}"
+                      ${methods.includes(m.id) ? 'checked' : ''}/>
+                    <span>${esc(m.label)}</span>
+                  </label>`).join('')}
               </div>
             </div>
             <div class="ts-field">
@@ -353,7 +355,7 @@ function buildDetailHTML(t) {
         </div>
       </div>
 
-      <!-- ④ Test Steps -->
+      <!-- ③ Test Steps -->
       <div class="ts-section">
         <div class="ts-section-hdr" data-sec="steps">
           <span class="ts-section-chevron">▶</span> Test Steps
@@ -363,11 +365,11 @@ function buildDetailHTML(t) {
             <thead>
               <tr>
                 <th style="width:18px"></th>
-                <th style="width:36px">#</th>
+                <th style="width:30px">#</th>
                 <th>Action</th>
                 <th>Input / Data</th>
                 <th>Expected Result</th>
-                <th style="width:30px"></th>
+                <th style="width:52px"></th>
               </tr>
             </thead>
             <tbody id="ts-steps-tbody">
@@ -378,7 +380,7 @@ function buildDetailHTML(t) {
         </div>
       </div>
 
-      <!-- ⑤ Expected Results & Acceptance Criteria -->
+      <!-- ④ Expected Results & Acceptance Criteria -->
       <div class="ts-section">
         <div class="ts-section-hdr" data-sec="criteria">
           <span class="ts-section-chevron">▶</span> Results &amp; Acceptance Criteria
@@ -388,12 +390,51 @@ function buildDetailHTML(t) {
             <div class="ts-field">
               <label>Expected Results <span style="color:var(--color-text-muted);font-size:11px">(per-step summary)</span></label>
               <textarea id="td-expected-results" class="form-input form-textarea" rows="3"
-                placeholder="Summarise the expected system behaviour after all steps are executed.">${esc(t.expected_results || '')}</textarea>
+                placeholder="Summarise the expected system behaviour after all steps.">${esc(t.expected_results || '')}</textarea>
             </div>
             <div class="ts-field">
               <label>Acceptance Criteria <span style="color:var(--color-text-muted);font-size:11px">(global Pass/Fail definition)</span></label>
               <textarea id="td-acceptance-criteria" class="form-input form-textarea" rows="4"
-                placeholder="• Metric A ≥ threshold X&#10;• No errors of type Y during execution&#10;• Response time &lt; Z ms">${esc(t.acceptance_criteria || '')}</textarea>
+                placeholder="• Metric A ≥ threshold X&#10;• No errors of type Y&#10;• Response time &lt; Z ms">${esc(t.acceptance_criteria || '')}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ⑤ Traceability -->
+      <div class="ts-section">
+        <div class="ts-section-hdr" data-sec="trace">
+          <span class="ts-section-chevron">▶</span> Traceability
+        </div>
+        <div class="ts-section-body" id="sec-trace" style="display:none">
+          <div class="ts-field-grid">
+            <div class="ts-field">
+              <label>Linked Requirements</label>
+              <div class="ts-req-tags" id="ts-req-tags">
+                ${(t.linked_requirements || []).map(rc => reqTagHTML(rc)).join('')}
+              </div>
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <input id="ts-req-inp" class="form-input" placeholder="Type req code + Enter…"
+                  style="flex:1;font-size:12px" list="ts-req-datalist"/>
+                <datalist id="ts-req-datalist">
+                  ${_reqs.map(r => `<option value="${esc(r.req_code)}">${esc(r.req_code)} — ${esc(r.title || '')}</option>`).join('')}
+                </datalist>
+              </div>
+            </div>
+            <div class="ts-field">
+              <label>Linked Functions</label>
+              <input id="td-linked-functions" class="form-input"
+                value="${esc((t.linked_functions || []).join(', '))}" placeholder="Comma-separated"/>
+            </div>
+            <div class="ts-field">
+              <label>Linked Components</label>
+              <input id="td-linked-components" class="form-input"
+                value="${esc((t.linked_components || []).join(', '))}" placeholder="Comma-separated"/>
+            </div>
+            <div class="ts-field">
+              <label>Linked Safety Items (FHA/FMEA)</label>
+              <input id="td-linked-safety" class="form-input"
+                value="${esc((t.linked_safety || []).join(', '))}" placeholder="Comma-separated"/>
             </div>
           </div>
         </div>
@@ -406,16 +447,14 @@ function buildDetailHTML(t) {
         </div>
         <div class="ts-section-body" id="sec-exec" style="display:none">
           <div class="ts-field-grid">
-            <div class="ts-field-row" style="align-items:center;gap:10px">
-              <div class="ts-field">
-                <label>Result</label>
-                <div class="ts-result-btns" id="ts-result-btns">
-                  ${RESULTS.map(r => `
-                    <button class="ts-result-btn ts-result-btn--${r}${t.result===r?' active':''}" data-result="${r}">
-                      ${r === 'pass' ? '✓' : r === 'fail' ? '✗' : '⊘'} ${r.toUpperCase()}
-                    </button>`).join('')}
-                  <button class="ts-result-btn ts-result-btn--clear${!t.result?' active':''}" data-result="">— Clear</button>
-                </div>
+            <div class="ts-field">
+              <label>Execution Result</label>
+              <div class="ts-result-btns" id="ts-result-btns">
+                ${RESULTS.map(r => `
+                  <button class="ts-result-btn ts-result-btn--${r}${t.result===r?' active':''}" data-result="${r}">
+                    ${r==='pass'?'✓':r==='fail'?'✗':'⊘'} ${r.toUpperCase()}
+                  </button>`).join('')}
+                <button class="ts-result-btn ts-result-btn--clear${!t.result?' active':''}" data-result="">— Not run</button>
               </div>
             </div>
             <div class="ts-field-row">
@@ -441,7 +480,7 @@ function buildDetailHTML(t) {
               </div>
               <div style="display:flex;gap:6px;margin-top:6px">
                 <input id="ts-evidence-name" class="form-input" placeholder="Description" style="flex:1;font-size:12px"/>
-                <input id="ts-evidence-url"  class="form-input" placeholder="URL or path" style="flex:2;font-size:12px"/>
+                <input id="ts-evidence-url"  class="form-input" placeholder="URL or path"  style="flex:2;font-size:12px"/>
                 <button class="btn btn-secondary btn-sm" id="ts-add-evidence">＋ Add</button>
               </div>
             </div>
@@ -449,10 +488,10 @@ function buildDetailHTML(t) {
         </div>
       </div>
 
-      <!-- Save button -->
+      <!-- Footer: duplicate only (no save — auto-save) -->
       <div class="ts-detail-footer">
-        <button class="btn btn-secondary btn-sm" id="ts-btn-duplicate" title="Duplicate this test">⊕ Duplicate</button>
-        <button class="btn btn-primary" id="ts-btn-save">Save</button>
+        <button class="btn btn-secondary btn-sm" id="ts-btn-duplicate">⊕ Duplicate</button>
+        <span style="font-size:11px;color:var(--color-text-muted)">Auto-saved</span>
       </div>
     </div>
   `;
@@ -463,17 +502,18 @@ function stepRowHTML(s, i) {
     <tr class="ts-step-row" data-step-idx="${i}" draggable="true">
       <td class="ts-step-drag" title="Drag to reorder">⠿</td>
       <td class="ts-step-num" style="text-align:center;color:var(--color-text-muted);font-size:11px">${i + 1}</td>
-      <td><textarea class="ts-step-inp ts-step-action" rows="2" placeholder="Action…">${esc(s.action || '')}</textarea></td>
-      <td><textarea class="ts-step-inp ts-step-input"  rows="2" placeholder="Input / data…">${esc(s.input || '')}</textarea></td>
+      <td><textarea class="ts-step-inp ts-step-action"   rows="2" placeholder="Action…">${esc(s.action || '')}</textarea></td>
+      <td><textarea class="ts-step-inp ts-step-input"    rows="2" placeholder="Input / data…">${esc(s.input || '')}</textarea></td>
       <td><textarea class="ts-step-inp ts-step-expected" rows="2" placeholder="Expected result…">${esc(s.expected_result || '')}</textarea></td>
-      <td style="text-align:center">
-        <button class="btn btn-ghost btn-xs ts-step-del" style="color:var(--color-danger)" title="Remove step">✕</button>
+      <td style="text-align:center;white-space:nowrap">
+        <button class="btn btn-ghost btn-xs ts-step-dup" title="Duplicate step">⊕</button>
+        <button class="btn btn-ghost btn-xs ts-step-del" style="color:var(--color-danger)" title="Remove">✕</button>
       </td>
     </tr>`;
 }
 
 function reqTagHTML(code) {
-  return `<span class="ts-req-tag" data-code="${esc(code)}">${esc(code)}<button class="ts-req-tag-del" data-code="${esc(code)}" title="Remove">×</button></span>`;
+  return `<span class="ts-req-tag" data-code="${esc(code)}">${esc(code)}<button class="ts-req-tag-del" title="Remove">×</button></span>`;
 }
 
 function evidenceItemHTML(e, i) {
@@ -481,17 +521,16 @@ function evidenceItemHTML(e, i) {
     <span class="ts-evidence-icon">📎</span>
     <span class="ts-evidence-name">${esc(e.name || '')}</span>
     ${e.url ? `<a href="${esc(e.url)}" target="_blank" class="ts-evidence-url" title="${esc(e.url)}">↗</a>` : ''}
-    <button class="ts-evidence-del btn btn-ghost btn-xs" data-idx="${i}" style="color:var(--color-danger);margin-left:auto">✕</button>
+    <button class="ts-evidence-del btn btn-ghost btn-xs" style="color:var(--color-danger);margin-left:auto">✕</button>
   </div>`;
 }
 
-// ── Wire detail panel interactions ────────────────────────────────────────────
+// ── Wire detail ───────────────────────────────────────────────────────────────
 
 function wireDetail(test) {
-  // Close
   document.getElementById('ts-close-btn').onclick = () => closeDetail();
 
-  // Section accordion
+  // Accordion sections
   document.querySelectorAll('.ts-section-hdr').forEach(hdr => {
     hdr.addEventListener('click', () => {
       const sec  = document.getElementById(`sec-${hdr.dataset.sec}`);
@@ -503,59 +542,44 @@ function wireDetail(test) {
     });
   });
 
-  // Result buttons
+  // Result buttons — trigger auto-save
   document.getElementById('ts-result-btns').querySelectorAll('.ts-result-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.ts-result-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      scheduleSave(test);
     });
   });
 
-  // Requirement tag input
+  // Requirement tags
   const reqInp  = document.getElementById('ts-req-inp');
   const reqTags = document.getElementById('ts-req-tags');
   const addReqTag = (code) => {
     code = code.trim().toUpperCase();
-    if (!code) return;
-    if (reqTags.querySelector(`[data-code="${code}"]`)) return;
+    if (!code || reqTags.querySelector(`[data-code="${code}"]`)) return;
     const span = document.createElement('span');
-    span.className = 'ts-req-tag';
+    span.className  = 'ts-req-tag';
     span.dataset.code = code;
-    span.innerHTML = `${esc(code)}<button class="ts-req-tag-del" data-code="${esc(code)}" title="Remove">×</button>`;
-    span.querySelector('.ts-req-tag-del').onclick = () => span.remove();
+    span.innerHTML  = `${esc(code)}<button class="ts-req-tag-del" title="Remove">×</button>`;
+    span.querySelector('.ts-req-tag-del').onclick = () => { span.remove(); scheduleSave(test); };
     reqTags.appendChild(span);
+    scheduleSave(test);
   };
   reqTags.querySelectorAll('.ts-req-tag-del').forEach(btn => {
-    btn.onclick = () => btn.closest('.ts-req-tag').remove();
+    btn.onclick = () => { btn.closest('.ts-req-tag').remove(); scheduleSave(test); };
   });
   reqInp.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      addReqTag(reqInp.value);
-      reqInp.value = '';
-    }
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addReqTag(reqInp.value); reqInp.value = ''; }
   });
 
-  // Steps: add
+  // Steps
   document.getElementById('ts-add-step').onclick = () => {
-    const tbody = document.getElementById('ts-steps-tbody');
-    const idx   = tbody.querySelectorAll('.ts-step-row').length;
-    const tr    = document.createElement('tr');
-    tr.className = 'ts-step-row';
-    tr.draggable = true;
-    tr.dataset.stepIdx = idx;
-    tr.innerHTML = stepRowHTML({ action: '', input: '', expected_result: '' }, idx).match(/<tr[^>]*>([\s\S]*)<\/tr>/)?.[1] || '';
-    tbody.appendChild(tr);
-    wireStepRow(tr);
-    renumberSteps();
-    tr.querySelector('.ts-step-action')?.focus();
+    addStep({ action: '', input: '', expected_result: '' }, test);
   };
+  document.querySelectorAll('.ts-step-row').forEach(tr => wireStepRow(tr, test));
+  wireStepsDnD(document.getElementById('ts-steps-tbody'), test);
 
-  // Steps: wire existing rows
-  document.querySelectorAll('.ts-step-row').forEach(tr => wireStepRow(tr));
-  wireStepsDnD(document.getElementById('ts-steps-tbody'));
-
-  // Evidence: add
+  // Evidence
   document.getElementById('ts-add-evidence').onclick = () => {
     const name = document.getElementById('ts-evidence-name').value.trim();
     const url  = document.getElementById('ts-evidence-url').value.trim();
@@ -563,29 +587,83 @@ function wireDetail(test) {
     const list = document.getElementById('ts-evidence-list');
     const idx  = list.querySelectorAll('.ts-evidence-item').length;
     const div  = document.createElement('div');
-    div.className = 'ts-evidence-item';
+    div.className   = 'ts-evidence-item';
     div.dataset.idx = idx;
-    div.innerHTML = evidenceItemHTML({ name, url }, idx).replace(/<div[^>]*>|<\/div>/g, '');
-    div.querySelector('.ts-evidence-del').onclick = () => div.remove();
+    div.innerHTML   = `<span class="ts-evidence-icon">📎</span>
+      <span class="ts-evidence-name">${esc(name)}</span>
+      ${url ? `<a href="${esc(url)}" target="_blank" class="ts-evidence-url">↗</a>` : ''}
+      <button class="ts-evidence-del btn btn-ghost btn-xs" style="color:var(--color-danger);margin-left:auto">✕</button>`;
+    div.querySelector('.ts-evidence-del').onclick = () => { div.remove(); scheduleSave(test); };
     list.appendChild(div);
     document.getElementById('ts-evidence-name').value = '';
     document.getElementById('ts-evidence-url').value  = '';
+    scheduleSave(test);
   };
   document.querySelectorAll('.ts-evidence-del').forEach(btn => {
-    btn.onclick = () => btn.closest('.ts-evidence-item').remove();
+    btn.onclick = () => { btn.closest('.ts-evidence-item').remove(); scheduleSave(test); };
   });
-
-  // Save
-  document.getElementById('ts-btn-save').onclick = () => saveDetail(test);
 
   // Duplicate
   document.getElementById('ts-btn-duplicate').onclick = () => duplicateTest(test);
+
+  // Auto-save on all scalar inputs
+  const autoFields = ['td-name','td-description','td-type','td-level','td-status','td-version',
+    'td-impl-ticket','td-environment','td-preconditions','td-expected-results',
+    'td-acceptance-criteria','td-executor','td-execution-date','td-notes',
+    'td-linked-functions','td-linked-components','td-linked-safety'];
+  autoFields.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input',  () => scheduleSave(test));
+    el.addEventListener('change', () => scheduleSave(test));
+  });
+
+  // Auto-save on method checkboxes
+  document.querySelectorAll('.ts-method-chk').forEach(chk => {
+    chk.addEventListener('change', () => scheduleSave(test));
+  });
 }
 
-function wireStepRow(tr) {
+function addStep(s, test) {
+  const tbody = document.getElementById('ts-steps-tbody');
+  const idx   = tbody.querySelectorAll('.ts-step-row').length;
+  const tr    = document.createElement('tr');
+  tr.className    = 'ts-step-row';
+  tr.draggable    = true;
+  tr.dataset.stepIdx = idx;
+  tr.innerHTML    = stepRowHTML(s, idx).replace(/^<tr[^>]*>/, '').replace(/<\/tr>$/, '');
+  tbody.appendChild(tr);
+  wireStepRow(tr, test);
+  renumberSteps();
+  tr.querySelector('.ts-step-action')?.focus();
+  scheduleSave(test);
+}
+
+function wireStepRow(tr, test) {
+  tr.querySelectorAll('.ts-step-inp').forEach(inp => {
+    inp.addEventListener('input', () => scheduleSave(test));
+  });
   tr.querySelector('.ts-step-del').onclick = () => {
-    tr.remove();
+    tr.remove(); renumberSteps(); scheduleSave(test);
+  };
+  tr.querySelector('.ts-step-dup').onclick = () => {
+    const s = {
+      action:          tr.querySelector('.ts-step-action')?.value  || '',
+      input:           tr.querySelector('.ts-step-input')?.value   || '',
+      expected_result: tr.querySelector('.ts-step-expected')?.value || '',
+    };
+    // Insert duplicate right after this row
+    const tbody = tr.closest('tbody');
+    const idx   = [...tbody.querySelectorAll('.ts-step-row')].indexOf(tr) + 1;
+    const newTr = document.createElement('tr');
+    newTr.className = 'ts-step-row';
+    newTr.draggable = true;
+    newTr.dataset.stepIdx = idx;
+    newTr.innerHTML = stepRowHTML(s, idx).replace(/^<tr[^>]*>/, '').replace(/<\/tr>$/, '');
+    tr.after(newTr);
+    wireStepRow(newTr, test);
     renumberSteps();
+    scheduleSave(test);
   };
 }
 
@@ -597,10 +675,9 @@ function renumberSteps() {
   });
 }
 
-function wireStepsDnD(tbody) {
+function wireStepsDnD(tbody, test) {
   if (!tbody) return;
   let dragTr = null;
-
   tbody.addEventListener('dragstart', e => {
     const tr = e.target.closest('.ts-step-row');
     if (!tr || !e.target.closest('.ts-step-drag')) { e.preventDefault(); return; }
@@ -608,13 +685,11 @@ function wireStepsDnD(tbody) {
     e.dataTransfer.effectAllowed = 'move';
     setTimeout(() => tr.classList.add('ts-step-dragging'), 0);
   });
-
   tbody.addEventListener('dragend', () => {
     dragTr?.classList.remove('ts-step-dragging');
     tbody.querySelectorAll('.ts-step-drop').forEach(t => t.classList.remove('ts-step-drop'));
     dragTr = null;
   });
-
   tbody.addEventListener('dragover', e => {
     if (!dragTr) return;
     const tr = e.target.closest('.ts-step-row');
@@ -623,27 +698,74 @@ function wireStepsDnD(tbody) {
     tbody.querySelectorAll('.ts-step-drop').forEach(t => t.classList.remove('ts-step-drop'));
     tr.classList.add('ts-step-drop');
   });
-
   tbody.addEventListener('drop', e => {
     e.preventDefault();
     if (!dragTr) return;
     const tr = e.target.closest('.ts-step-row');
     if (!tr || tr === dragTr) return;
     tbody.querySelectorAll('.ts-step-drop').forEach(t => t.classList.remove('ts-step-drop'));
-    const rect   = tr.getBoundingClientRect();
-    const before = e.clientY < rect.top + rect.height / 2;
+    const before = e.clientY < tr.getBoundingClientRect().top + tr.getBoundingClientRect().height / 2;
     before ? tr.before(dragTr) : tr.after(dragTr);
     renumberSteps();
+    scheduleSave(test);
   });
 }
 
-// ── Save detail ───────────────────────────────────────────────────────────────
+// ── Auto-save ─────────────────────────────────────────────────────────────────
 
-async function saveDetail(test) {
-  const btn = document.getElementById('ts-btn-save');
-  btn.disabled = true;
+function scheduleSave(test) {
+  const ind = document.getElementById('ts-autosave-ind');
+  if (ind) { ind.textContent = '· saving…'; ind.style.color = 'var(--color-text-muted)'; }
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => doSave(test), 1500);
+}
 
-  // Collect steps
+async function doSave(test) {
+  const patch = collectPatch(test);
+  const { error } = await sb.from('test_specs').update(patch).eq('id', test.id);
+  const ind = document.getElementById('ts-autosave-ind');
+  if (error) {
+    if (ind) { ind.textContent = '· save failed'; ind.style.color = 'var(--color-danger)'; }
+    return;
+  }
+  Object.assign(test, patch);
+  if (ind) { ind.textContent = '· saved'; ind.style.color = '#34A853'; setTimeout(() => { if (ind) ind.textContent = ''; }, 2000); }
+
+  // Refresh table row
+  const tr = document.querySelector(`tr[data-id="${test.id}"]`);
+  if (tr) {
+    const tmp = document.createElement('tbody');
+    tmp.innerHTML = testRowHTML(test);
+    const newTr = tmp.firstElementChild;
+    tr.replaceWith(newTr);
+    newTr.addEventListener('click', e => {
+      if (e.target.closest('.ts-row-del')) return;
+      openDetail(newTr.dataset.id);
+    });
+    newTr.querySelector('.ts-row-del')?.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm(`Delete "${test.name}"?`)) return;
+      await sb.from('test_specs').delete().eq('id', test.id);
+      closeDetail();
+      _tests.splice(_tests.findIndex(t => t.id === test.id), 1);
+      renderTestTable(document.getElementById('ts-list-pane'));
+    });
+  }
+
+  // Update status badges in header
+  const sColor = STATUS_COLORS[test.status] || '#9AA0A6';
+  const statusBadge = document.querySelector('.ts-detail-header .ts-badge');
+  if (statusBadge && !statusBadge.classList.contains('ts-result--pass') &&
+      !statusBadge.classList.contains('ts-result--fail') &&
+      !statusBadge.classList.contains('ts-result--blocked')) {
+    statusBadge.textContent = test.status;
+    statusBadge.style.cssText = `background:${sColor}20;color:${sColor};border:1px solid ${sColor}40;font-size:10px`;
+  }
+}
+
+function collectPatch(test) {
+  const methods = [...document.querySelectorAll('.ts-method-chk:checked')].map(c => c.value);
+
   const steps = [];
   document.querySelectorAll('#ts-steps-tbody .ts-step-row').forEach((tr, i) => {
     steps.push({
@@ -654,97 +776,70 @@ async function saveDetail(test) {
     });
   });
 
-  // Collect req tags
   const linkedRequirements = [...document.querySelectorAll('#ts-req-tags .ts-req-tag')]
     .map(t => t.dataset.code).filter(Boolean);
 
-  // Collect evidence
   const evidence = [];
   document.querySelectorAll('#ts-evidence-list .ts-evidence-item').forEach(div => {
-    const name = div.querySelector('.ts-evidence-name')?.textContent.trim();
-    const url  = div.querySelector('.ts-evidence-url')?.href || '';
-    if (name || url) evidence.push({ name: name || '', url });
+    const name = div.querySelector('.ts-evidence-name')?.textContent.trim() || '';
+    const aEl  = div.querySelector('.ts-evidence-url');
+    const url  = aEl?.href || '';
+    if (name || url) evidence.push({ name, url });
   });
 
-  // Active result button
   const resultBtn = document.querySelector('.ts-result-btn.active');
   const result    = resultBtn?.dataset.result || null;
 
-  const patch = {
-    name:                document.getElementById('td-name')?.value.trim()               || test.name,
-    description:         document.getElementById('td-description')?.value.trim()         || null,
-    type:                document.getElementById('td-type')?.value                       || test.type,
-    level:               document.getElementById('td-level')?.value                      || test.level,
-    status:              document.getElementById('td-status')?.value                     || test.status,
-    version:             document.getElementById('td-version')?.value.trim()             || '1.0',
-    method:              document.getElementById('td-method')?.value                     || test.method,
-    environment:         document.getElementById('td-environment')?.value                || test.environment,
-    preconditions:       document.getElementById('td-preconditions')?.value.trim()       || null,
-    expected_results:    document.getElementById('td-expected-results')?.value.trim()    || null,
-    acceptance_criteria: document.getElementById('td-acceptance-criteria')?.value.trim() || null,
-    executor:            document.getElementById('td-executor')?.value.trim()            || null,
-    execution_date:      document.getElementById('td-execution-date')?.value             || null,
-    notes:               document.getElementById('td-notes')?.value.trim()               || null,
-    linked_requirements: linkedRequirements,
-    linked_functions:    splitCsv(document.getElementById('td-linked-functions')?.value),
-    linked_components:   splitCsv(document.getElementById('td-linked-components')?.value),
-    linked_safety:       splitCsv(document.getElementById('td-linked-safety')?.value),
+  return {
+    name:                 document.getElementById('td-name')?.value.trim()               || test.name,
+    description:          document.getElementById('td-description')?.value.trim()         || null,
+    type:                 document.getElementById('td-type')?.value                       || test.type,
+    level:                document.getElementById('td-level')?.value                      || test.level,
+    status:               document.getElementById('td-status')?.value                     || test.status,
+    version:              document.getElementById('td-version')?.value.trim()             || '1.0',
+    implementation_ticket:document.getElementById('td-impl-ticket')?.value.trim()         || null,
+    method:               methods,
+    environment:          document.getElementById('td-environment')?.value                || test.environment,
+    preconditions:        document.getElementById('td-preconditions')?.value.trim()       || null,
+    expected_results:     document.getElementById('td-expected-results')?.value.trim()    || null,
+    acceptance_criteria:  document.getElementById('td-acceptance-criteria')?.value.trim() || null,
+    executor:             document.getElementById('td-executor')?.value.trim()            || null,
+    execution_date:       document.getElementById('td-execution-date')?.value             || null,
+    notes:                document.getElementById('td-notes')?.value.trim()               || null,
+    linked_requirements:  linkedRequirements,
+    linked_functions:     splitCsv(document.getElementById('td-linked-functions')?.value),
+    linked_components:    splitCsv(document.getElementById('td-linked-components')?.value),
+    linked_safety:        splitCsv(document.getElementById('td-linked-safety')?.value),
     steps,
     evidence,
-    result:              result || null,
-    updated_at:          new Date().toISOString(),
+    result:               result || null,
+    last_modified_by:     _currentUser?.email || _currentUser?.id || null,
+    updated_at:           new Date().toISOString(),
   };
-
-  const { error } = await sb.from('test_specs').update(patch).eq('id', test.id);
-  btn.disabled = false;
-
-  if (error) { toast('Save failed: ' + error.message, 'error'); return; }
-
-  // Update local cache
-  Object.assign(test, patch);
-  // Refresh the table row
-  const tr = document.querySelector(`tr[data-id="${test.id}"]`);
-  if (tr) tr.outerHTML = testRowHTML(test);
-  // Re-highlight
-  document.querySelectorAll('.ts-row').forEach(r =>
-    r.classList.toggle('ts-row--selected', r.dataset.id === test.id));
-
-  toast('Test saved.', 'success');
 }
 
 // ── Create & duplicate ────────────────────────────────────────────────────────
 
 async function createTest() {
   const { project, parentType, parentId, phase, meta } = _ctx;
-
-  const count = _tests.length + 1;
-  const domain = parentType === 'item' ? 'ITEM' : 'SYS';
-  const projShort = project.name.replace(/\s+/g, '').slice(0, 2).toUpperCase();
-  const testCode  = `${meta.prefix}-${domain}-${projShort}-${String(count).padStart(3, '0')}`;
+  const count     = _tests.length + 1;
+  const domain    = parentType === 'item' ? 'ITEM' : 'SYS';
+  const proj      = project.name.replace(/\s+/g, '').slice(0, 2).toUpperCase();
+  const testCode  = `${meta.prefix}-${domain}-${proj}-${String(count).padStart(3, '0')}`;
+  const defType   = _testTypes[0] || 'test';
 
   const { data: newTest, error } = await sb.from('test_specs').insert({
-    project_id:  project.id,
-    parent_type: parentType,
-    parent_id:   parentId,
-    phase,
-    test_code:   testCode,
-    name:        'New Test',
-    type:        'verification',
-    level:       'system',
-    status:      'draft',
-    method:      'test',
-    environment: 'lab',
-    sort_order:  _tests.length,
-    steps:       [],
-    linked_requirements: [],
-    evidence:    [],
+    project_id:   project.id, parent_type: parentType, parent_id: parentId,
+    phase, test_code: testCode, name: 'New Test',
+    type: defType, level: 'unit_test', status: 'draft',
+    method: [], environment: 'lab', sort_order: _tests.length,
+    steps: [], linked_requirements: [], evidence: [],
+    last_modified_by: _currentUser?.email || null,
   }).select().single();
 
   if (error) { toast('Failed to create test: ' + error.message, 'error'); return; }
   _tests.push(newTest);
-
-  const pane = document.getElementById('ts-list-pane');
-  renderTestTable(pane);
+  renderTestTable(document.getElementById('ts-list-pane'));
   openDetail(newTest.id);
   toast(`${testCode} created.`, 'success');
 }
@@ -753,28 +848,20 @@ async function duplicateTest(test) {
   const { project, parentType, parentId, phase, meta } = _ctx;
   const count    = _tests.length + 1;
   const domain   = parentType === 'item' ? 'ITEM' : 'SYS';
-  const projShort = project.name.replace(/\s+/g, '').slice(0, 2).toUpperCase();
-  const testCode  = `${meta.prefix}-${domain}-${projShort}-${String(count).padStart(3, '0')}`;
+  const proj     = project.name.replace(/\s+/g, '').slice(0, 2).toUpperCase();
+  const testCode = `${meta.prefix}-${domain}-${proj}-${String(count).padStart(3, '0')}`;
 
   const { data: newTest, error } = await sb.from('test_specs').insert({
-    ...test,
-    id: undefined,
-    test_code:  testCode,
-    name:       test.name + ' (copy)',
-    result:     null,
-    execution_date: null,
-    executor:   null,
-    notes:      null,
-    evidence:   [],
-    sort_order: _tests.length,
-    created_at: undefined,
-    updated_at: undefined,
+    ...test, id: undefined, test_code: testCode,
+    name: test.name + ' (copy)', result: null,
+    execution_date: null, executor: null, notes: null, evidence: [],
+    sort_order: _tests.length, created_at: undefined, updated_at: undefined,
+    last_modified_by: _currentUser?.email || null,
   }).select().single();
 
   if (error) { toast('Failed to duplicate: ' + error.message, 'error'); return; }
   _tests.push(newTest);
-  const pane = document.getElementById('ts-list-pane');
-  renderTestTable(pane);
+  renderTestTable(document.getElementById('ts-list-pane'));
   openDetail(newTest.id);
   toast(`${testCode} created as duplicate.`, 'success');
 }
@@ -784,11 +871,9 @@ async function duplicateTest(test) {
 function splitCsv(str) {
   return (str || '').split(',').map(s => s.trim()).filter(Boolean);
 }
-
 function cap(str) {
   return str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
 }
-
 function esc(str) {
   return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

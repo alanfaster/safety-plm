@@ -31,11 +31,12 @@ export async function renderProjectSettings(container, ctx) {
   const functionTypes  = config.function_types  || [];
   const reqCustomCols      = config.req_custom_cols       || [];
   const archSpecCustomCols = config.arch_spec_custom_cols || [];
+  const testTypes          = config.test_types            || [];
 
-  render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, pcRow?.id, config);
+  render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, pcRow?.id, config);
 }
 
-function render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, configId, fullConfig = {}) {
+function render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, configId, fullConfig = {}) {
   const fields    = DEFAULT_PHA_FIELDS.map(f => ({ ...f, ...(phaOverrides[f.key] || {}) }));
   const fhaFields = DEFAULT_FHA_FIELDS.map(f => ({ ...f, ...(fhaOverrides[f.key] || {}) }));
 
@@ -56,6 +57,7 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         <button class="settings-tab" data-tab="funtypes">Function Types</button>
         <button class="settings-tab" data-tab="reqcols">Req Columns</button>
         <button class="settings-tab" data-tab="archspeccols">Arch Spec Columns</button>
+        <button class="settings-tab" data-tab="testtypes">Test Types</button>
         <button class="settings-tab" data-tab="members">Members <span class="badge-soon">soon</span></button>
       </div>
 
@@ -224,6 +226,34 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
           </div>
           <div style="margin-top:16px">
             <button class="btn btn-primary" id="btn-save-archspeccols">Save Columns</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-testtypes" class="settings-tab-panel" style="display:none">
+        <div class="settings-section">
+          <p class="settings-section-desc">
+            Define the <strong>Type</strong> options available in Test Specifications for this project.
+            Each type has a label and an optional short key used internally.
+          </p>
+          <table class="settings-table" id="testtypes-table">
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th style="width:160px">Key / ID</th>
+                <th style="width:60px;text-align:center">Delete</th>
+              </tr>
+            </thead>
+            <tbody id="testtypes-tbody">
+            </tbody>
+          </table>
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="testtypes-new-label" placeholder="Label (e.g. Test, Inspection)…" style="max-width:260px"/>
+            <input class="form-input" id="testtypes-new-key" placeholder="Key (optional, e.g. test)…" style="max-width:180px"/>
+            <button class="btn btn-secondary btn-sm" id="btn-add-testtype">＋ Add Type</button>
+          </div>
+          <div style="margin-top:16px">
+            <button class="btn btn-primary" id="btn-save-testtypes">Save Test Types</button>
           </div>
         </div>
       </div>
@@ -491,6 +521,88 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     if (error) { toast(t('common.error'), 'error'); return; }
     fullConfig = newConfig;
     toast('Arch spec columns saved.', 'success');
+  };
+
+  // ── Test Types tab ────────────────────────────────────────────────────────
+  const DEFAULT_TEST_TYPES = [
+    { id: 'test',       label: 'Test' },
+    { id: 'inspection', label: 'Inspection' },
+    { id: 'review',     label: 'Review' },
+    { id: 'analysis',   label: 'Analysis' },
+  ];
+  let _testTypes = testTypes.length ? testTypes.map(t => ({ ...t })) : DEFAULT_TEST_TYPES.map(t => ({ ...t }));
+
+  function renderTestTypesTable() {
+    const tbody = document.getElementById('testtypes-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = _testTypes.length
+      ? _testTypes.map((tt, i) => `
+          <tr data-tt-idx="${i}">
+            <td>
+              <input class="form-input tt-label-input" data-idx="${i}" value="${escHtml(tt.label)}"
+                placeholder="Label" style="max-width:300px"/>
+            </td>
+            <td>
+              <input class="form-input tt-key-input" data-idx="${i}" value="${escHtml(tt.id)}"
+                placeholder="key" style="max-width:140px;font-family:monospace;font-size:12px"/>
+            </td>
+            <td style="text-align:center">
+              <button class="btn btn-ghost btn-sm btn-del-testtype" data-idx="${i}"
+                style="color:var(--color-danger)" title="Delete">✕</button>
+            </td>
+          </tr>`).join('')
+      : `<tr><td colspan="3" style="color:var(--color-text-muted);font-size:13px;padding:12px 8px">No test types defined yet.</td></tr>`;
+
+    tbody.querySelectorAll('.tt-label-input').forEach(inp => {
+      inp.oninput = () => { _testTypes[parseInt(inp.dataset.idx)].label = inp.value; };
+    });
+    tbody.querySelectorAll('.tt-key-input').forEach(inp => {
+      inp.oninput = () => { _testTypes[parseInt(inp.dataset.idx)].id = inp.value.trim().replace(/\s+/g,'_').toLowerCase(); inp.value = _testTypes[parseInt(inp.dataset.idx)].id; };
+    });
+    tbody.querySelectorAll('.btn-del-testtype').forEach(btn => {
+      btn.onclick = () => {
+        _testTypes.splice(parseInt(btn.dataset.idx), 1);
+        renderTestTypesTable();
+      };
+    });
+  }
+
+  renderTestTypesTable();
+
+  document.getElementById('btn-add-testtype').onclick = () => {
+    const labelEl = document.getElementById('testtypes-new-label');
+    const keyEl   = document.getElementById('testtypes-new-key');
+    const label   = labelEl.value.trim();
+    if (!label) { labelEl.focus(); return; }
+    const id = keyEl.value.trim().replace(/\s+/g,'_').toLowerCase() || label.toLowerCase().replace(/\s+/g,'_');
+    _testTypes.push({ id, label });
+    labelEl.value = '';
+    keyEl.value = '';
+    renderTestTypesTable();
+  };
+  document.getElementById('testtypes-new-label').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-add-testtype').click(); }
+  });
+
+  document.getElementById('btn-save-testtypes').onclick = async () => {
+    const btn = document.getElementById('btn-save-testtypes');
+    btn.disabled = true;
+    // flush any unsaved inputs
+    document.querySelectorAll('.tt-label-input').forEach(inp => {
+      const i = parseInt(inp.dataset.idx);
+      if (_testTypes[i]) _testTypes[i].label = inp.value.trim() || _testTypes[i].label;
+    });
+    const newConfig = { ...fullConfig, test_types: _testTypes };
+    let error;
+    if (configId) {
+      ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));
+    } else {
+      ({ error } = await sb.from('project_config').insert({ project_id: project.id, config: newConfig }));
+    }
+    btn.disabled = false;
+    if (error) { toast(t('common.error'), 'error'); return; }
+    fullConfig = newConfig;
+    toast('Test types saved.', 'success');
   };
 
   // ── Function Types tab ─────────────────────────────────────────────────────
