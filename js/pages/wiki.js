@@ -237,6 +237,17 @@ export async function renderWiki(container, { project, item, system, pageId }) {
 
   editor.addEventListener('paste', e => {
     e.preventDefault();
+
+    // ── Check for internal deep-link URL (plain text paste of a copied element link)
+    const plainText = e.clipboardData.getData('text/plain').trim();
+    const deepLinkMatch = plainText.match(/\|\|anchor:(req|fha)-([0-9a-f-]+)$/i);
+    if (deepLinkMatch) {
+      // Async: fetch element details then insert a card
+      insertElementCard(editor, plainText, deepLinkMatch[1], deepLinkMatch[2])
+        .then(() => { schedSave(); recalcIndex(); updateCounts(); });
+      return;
+    }
+
     const html = e.clipboardData.getData('text/html');
     if (html) {
       // Parse into a temporary container so we can sanitize
@@ -262,6 +273,19 @@ export async function renderWiki(container, { project, item, system, pageId }) {
         }
       });
 
+      // Check if the HTML is just a single anchor wrapping a deep-link URL
+      const singleA = tmp.querySelector('a');
+      if (singleA && tmp.children.length === 1) {
+        const href = singleA.getAttribute('href') || '';
+        const dlm = href.match(/\|\|anchor:(req|fha)-([0-9a-f-]+)$/i)
+                 || singleA.textContent.trim().match(/\|\|anchor:(req|fha)-([0-9a-f-]+)$/i);
+        if (dlm) {
+          insertElementCard(editor, href || singleA.textContent.trim(), dlm[1], dlm[2])
+            .then(() => { schedSave(); recalcIndex(); updateCounts(); });
+          return;
+        }
+      }
+
       // Insert the sanitized HTML at the cursor
       const sel = window.getSelection();
       if (sel && sel.rangeCount) {
@@ -269,7 +293,6 @@ export async function renderWiki(container, { project, item, system, pageId }) {
         range.deleteContents();
         const frag = range.createContextualFragment(tmp.innerHTML);
         range.insertNode(frag);
-        // Move cursor to end of inserted content
         range.collapse(false);
         sel.removeAllRanges();
         sel.addRange(range);
@@ -277,14 +300,38 @@ export async function renderWiki(container, { project, item, system, pageId }) {
         document.execCommand('insertHTML', false, tmp.innerHTML);
       }
     } else {
-      // Fallback: plain text preserving line breaks
-      const text = e.clipboardData.getData('text/plain');
-      document.execCommand('insertText', false, text);
+      document.execCommand('insertText', false, plainText);
     }
     schedSave();
     recalcIndex();
     updateCounts();
   });
+
+  // ── Element card insertion ────────────────────────────────────────────────
+  async function insertElementCard(targetEditor, fullUrl, type, id) {
+    // Fetch element label from DB
+    let code = '', title = '', icon = '📋';
+    try {
+      if (type === 'req') {
+        const { data } = await sb.from('requirements').select('req_code,title').eq('id', id).maybeSingle();
+        if (data) { code = data.req_code; title = data.title; icon = '📋'; }
+      } else if (type === 'fha') {
+        const { data } = await sb.from('hazards').select('haz_code,data').eq('id', id).maybeSingle();
+        if (data) { code = data.haz_code; title = (data.data?.description || data.data?.hazard || ''); icon = '⚠️'; }
+      }
+    } catch (_) { /* silently ignore fetch errors */ }
+
+    const label = code ? (title ? `${code} — ${title}` : code) : (title || 'Element');
+    // Build the internal hash link (strip origin + pathname, keep from # onwards)
+    const hashIdx = fullUrl.indexOf('#/');
+    const internalHref = hashIdx >= 0 ? fullUrl.slice(hashIdx) : fullUrl;
+    const cardHtml = `<span class="plm-link-card" contenteditable="false"
+      ><span class="plm-link-card-icon">${icon}</span
+      ><a class="plm-link-card-label" href="${escHtml(internalHref)}">${escHtml(label)}</a
+      ><a class="plm-link-card-ext" href="${escHtml(fullUrl)}" target="_blank" title="Open in new tab">↗</a
+    ></span>`;
+    document.execCommand('insertHTML', false, cardHtml);
+  }
 
   // ── Internal link navigation ──────────────────────────────────────────────
   // When clicking a link inside the wiki editor (or its rendered view) that

@@ -3384,6 +3384,51 @@ th.col-th-dragging * { pointer-events: none; }
 }
 .wiki-statusbar span { white-space: nowrap; }
 
+/* ── Element link card (wiki inline reference) ───────────────────────────────── */
+.plm-link-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #EEF4FF;
+  border: 1px solid #C3D9FF;
+  border-radius: 6px;
+  padding: 2px 8px 2px 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  vertical-align: middle;
+  white-space: nowrap;
+  max-width: 420px;
+  cursor: default;
+}
+.plm-link-card-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.plm-link-card-label {
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 340px;
+}
+.plm-link-card-label:hover { text-decoration: underline; }
+.plm-link-card-ext {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: #C3D9FF;
+  border-radius: 3px;
+  color: var(--color-primary);
+  font-size: 11px;
+  text-decoration: none;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+.plm-link-card-ext:hover { background: var(--color-primary); color: #fff; }
+
 /* ── Deep-link anchor highlight ─────────────────────────────────────────────── */
 @keyframes plm-anchor-flash {
   0%   { background: #FFF3CD; box-shadow: 0 0 0 3px #F5A623; }
