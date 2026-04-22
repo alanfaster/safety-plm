@@ -1656,7 +1656,7 @@ function wireTracePanelLinks(body, req) {
       const r = _data.find(d => d.id === req.id);
       if (r) r.traceability = updated;
 
-      openTracePanel(req.id);
+      openTracePanel(req.id, true);
       refreshTraceBadge(req.id);
     });
   });
