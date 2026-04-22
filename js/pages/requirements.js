@@ -820,6 +820,7 @@ function showInlineInsertForm(afterRid, tbody) {
       req_code: reqCode, title, type,
       parent_type: parentType, parent_id: parentId,
       project_id: project.id,
+      domain: _ctx.domain,
       status: 'draft', priority: 'medium',
       sort_order: sortOrder,
     }).select().single();
@@ -924,6 +925,7 @@ async function addReqSection(afterRid) {
     parent_type: parentType,
     parent_id:   parentId,
     project_id:  project.id,
+    domain:      _ctx.domain,
     page_id:     pageId || null,
   }).select().single();
 
@@ -1311,6 +1313,7 @@ function openReqModal({ project, parentType, parentId, projectType, existing, de
       ({ error } = await sb.from('requirements').insert({
         ...payload, req_code: reqCode,
         parent_type: parentType, parent_id: parentId, project_id: project.id,
+        domain: _ctx.domain,
       }));
     }
     btn.disabled = false;
