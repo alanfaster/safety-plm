@@ -64,6 +64,9 @@ const ASPICE_LINKS = [
   { from: 'sw_req',    to: 'sw_qt',   type: 'trace' },
   { from: 'sw_arch',   to: 'sw_it',   type: 'trace' },
   { from: 'sw_design', to: 'sw_ut',   type: 'trace' },
+  // Cross-level vertical trace links
+  { from: 'sys_req',   to: 'sw_req',    type: 'trace' },
+  { from: 'sw_req',    to: 'sw_impl',   type: 'trace' },
   // Vertical trace links (left arm top → bottom)
   { from: 'sys_req',   to: 'sys_arch',  type: 'trace' },
   { from: 'sys_arch',  to: 'sw_req',    type: 'trace' },
@@ -352,14 +355,9 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     const bx = b.x + NODE_W / 2, by = b.y + NODE_H / 2;
     const mx = (ax + bx) / 2,    my = (ay + by) / 2;
 
-    // Control point
-    let defBY = 0;
-    if (isTrace && !link.bend) {
-      const sign = ay <= by ? -1 : 1;
-      defBY = sign * Math.max(45, Math.abs(by - ay) * 0.45);
-    }
+    // Control point — straight by default; drag the bend handle to curve
     const cpx = mx + (link.bend?.x || 0);
-    const cpy = my + (link.bend?.y !== undefined ? link.bend.y : defBY);
+    const cpy = my + (link.bend?.y || 0);
     const d = `M${ax},${ay} Q${cpx},${cpy} ${bx},${by}`;
 
     // Visual midpoint of quadratic bezier (t=0.5)
