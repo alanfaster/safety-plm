@@ -1264,13 +1264,13 @@ function closeTracePanel() {
   document.querySelectorAll('.req-row-trace-active').forEach(r => r.classList.remove('req-row-trace-active'));
 }
 
-async function openTracePanel(reqId) {
+async function openTracePanel(reqId, force = false) {
   const panel    = document.getElementById('req-trace-panel');
   const body     = document.getElementById('req-trace-panel-body');
   if (!panel || !body) return;
 
-  // Toggle off if same req
-  if (_tracePanelId === reqId) { closeTracePanel(); return; }
+  // Toggle off if same req (unless forced refresh)
+  if (!force && _tracePanelId === reqId) { closeTracePanel(); return; }
   _tracePanelId = reqId;
 
   // Highlight row
@@ -1633,7 +1633,7 @@ function wireTracePanelLinks(body, req) {
         req.traceability = updated;
         const r = _data.find(d => d.id === req.id);
         if (r) r.traceability = updated;
-        openTracePanel(req.id);
+        openTracePanel(req.id, true);
         refreshTraceBadge(req.id);
       });
     });
