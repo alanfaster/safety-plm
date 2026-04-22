@@ -1,8 +1,13 @@
 /**
  * V-Model Graph Editor
- * Visual canvas for defining bidirectional traceability links between project pages.
  *
- * Usage: mountVmodelEditor(container, { links, canvasNodes, configId, fullConfig, project, sb, toast, onSave })
+ * Two link types:
+ *   'trace'      — bidirectional traceability (dashed blue ↔)
+ *                  drives the traceability fields in test-specs / requirements
+ *   'sequential' — development flow (solid gray →)
+ *                  purely visual; documents refinement / decomposition order
+ *
+ * Usage: mountVmodelEditor(container, { links, canvasNodes, … })
  */
 
 // ── Node definitions ──────────────────────────────────────────────────────────
@@ -27,7 +32,6 @@ export const VMODEL_NODES = [
   { id: 'mech_design', domain: 'mech',   phase: 'design',              label: 'MECH Detailed Design' },
 ];
 
-// DB source per phase
 export const PHASE_DB_SOURCE = {
   requirements:        'requirements',
   architecture:        'arch_spec_items',
@@ -36,25 +40,43 @@ export const PHASE_DB_SOURCE = {
   system_testing:      'test_specs',
 };
 
-// ── ASPICE SW default layout ──────────────────────────────────────────────────
+// ── ASPICE SW default ─────────────────────────────────────────────────────────
+// Left arm (top-left → bottom-centre): sys_req → sys_arch → sw_req → sw_arch → sw_design → sw_impl
+// Right arm (bottom-centre → top-right): sw_ut → sw_it → sw_qt → sys_it → sys_qt
+// Horizontal traceability (V-links): sys_req↔sys_qt, sys_arch↔sys_it, sw_req↔sw_qt, sw_arch↔sw_it, sw_design↔sw_ut
 
 const ASPICE_NODES = [
-  { nodeId: 'sys_req',   x: 20,  y: 20  },
-  { nodeId: 'sw_req',    x: 100, y: 110 },
-  { nodeId: 'sw_arch',   x: 180, y: 200 },
-  { nodeId: 'sw_design', x: 260, y: 290 },
-  { nodeId: 'sw_impl',   x: 370, y: 370 },
-  { nodeId: 'sw_ut',     x: 490, y: 290 },
-  { nodeId: 'sw_it',     x: 570, y: 200 },
-  { nodeId: 'sw_qt',     x: 650, y: 110 },
-  { nodeId: 'sys_qt',    x: 730, y: 20  },
+  { nodeId: 'sys_req',    x: 20,  y: 20  },
+  { nodeId: 'sys_arch',   x: 90,  y: 95  },
+  { nodeId: 'sw_req',     x: 160, y: 170 },
+  { nodeId: 'sw_arch',    x: 230, y: 245 },
+  { nodeId: 'sw_design',  x: 300, y: 320 },
+  { nodeId: 'sw_impl',    x: 390, y: 400 },
+  { nodeId: 'sw_ut',      x: 490, y: 320 },
+  { nodeId: 'sw_it',      x: 560, y: 245 },
+  { nodeId: 'sw_qt',      x: 630, y: 170 },
+  { nodeId: 'sys_it',     x: 700, y: 95  },
+  { nodeId: 'sys_qt',     x: 770, y: 20  },
 ];
 
 const ASPICE_LINKS = [
-  { from: 'sys_req',   to: 'sys_qt'   },
-  { from: 'sw_req',    to: 'sw_qt'    },
-  { from: 'sw_arch',   to: 'sw_it'    },
-  { from: 'sw_design', to: 'sw_ut'    },
+  // ── Traceability (horizontal V-connections) ──
+  { from: 'sys_req',   to: 'sys_qt',  type: 'trace' },
+  { from: 'sys_arch',  to: 'sys_it',  type: 'trace' },
+  { from: 'sw_req',    to: 'sw_qt',   type: 'trace' },
+  { from: 'sw_arch',   to: 'sw_it',   type: 'trace' },
+  { from: 'sw_design', to: 'sw_ut',   type: 'trace' },
+  // ── Sequential (development flow) ──
+  { from: 'sys_req',   to: 'sys_arch',  type: 'sequential' },
+  { from: 'sys_arch',  to: 'sw_req',    type: 'sequential' },
+  { from: 'sw_req',    to: 'sw_arch',   type: 'sequential' },
+  { from: 'sw_arch',   to: 'sw_design', type: 'sequential' },
+  { from: 'sw_design', to: 'sw_impl',   type: 'sequential' },
+  { from: 'sw_impl',   to: 'sw_ut',     type: 'sequential' },
+  { from: 'sw_ut',     to: 'sw_it',     type: 'sequential' },
+  { from: 'sw_it',     to: 'sw_qt',     type: 'sequential' },
+  { from: 'sw_qt',     to: 'sys_it',    type: 'sequential' },
+  { from: 'sys_it',    to: 'sys_qt',    type: 'sequential' },
 ];
 
 // ── Node dimensions ───────────────────────────────────────────────────────────
@@ -66,13 +88,13 @@ const NODE_H = 36;
 
 export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], configId, fullConfig, project, sb, toast, onSave }) {
 
-  // ── State ──────────────────────────────────────────────────────────────────
-  let _nodes = [];   // { id, domain, phase, label, x, y }
-  let _links = [];   // { id, from, to }
-  let _mode  = 'select'; // 'select' | 'connect' | 'delete'
+  // ── State ─────────────────────────────────────────────────────────────────
+  let _nodes       = [];
+  let _links       = [];
+  let _mode        = 'select';   // 'select' | 'connect-trace' | 'connect-seq' | 'delete'
   let _connectFrom = null;
-  let _drag  = null;     // { nodeId, offX, offY }
-  let _dirty = false;
+  let _drag        = null;
+  let _dirty       = false;
 
   // Init from saved state
   if (canvasNodes.length) {
@@ -81,39 +103,56 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       return def ? { ...def, x: cn.x, y: cn.y } : null;
     }).filter(Boolean);
   }
-  _links = links.map(l => ({ ...l }));
+  // Backcompat: old links had no `type` — treat as trace
+  _links = links.map(l => ({ ...l, type: l.type || 'trace' }));
 
-  // ── HTML ───────────────────────────────────────────────────────────────────
+  // ── HTML ──────────────────────────────────────────────────────────────────
   wrapper.innerHTML = `
     <div class="vme-wrap">
       <div class="vme-toolbar">
         <div class="vme-toolbar-left">
-          <button class="btn btn-secondary btn-sm" id="vme-load-aspice">↺ Load ASPICE default</button>
-          <button class="btn btn-ghost btn-sm" id="vme-clear">Clear canvas</button>
+          <button class="btn btn-secondary btn-sm" id="vme-load-aspice">↺ ASPICE default</button>
+          <button class="btn btn-ghost btn-sm" id="vme-clear">Clear</button>
         </div>
         <div class="vme-mode-group" id="vme-modes">
-          <button class="vme-mode-btn active" data-mode="select" title="Drag nodes to reposition">↖ Select</button>
-          <button class="vme-mode-btn" data-mode="connect" title="Click a node then another to connect">↝ Connect</button>
-          <button class="vme-mode-btn" data-mode="delete" title="Click a node or link to remove">✕ Delete</button>
+          <button class="vme-mode-btn active" data-mode="select"       title="Drag nodes">↖ Select</button>
+          <button class="vme-mode-btn vme-mode-trace" data-mode="connect-trace" title="Add bidirectional traceability link">↔ Traceability</button>
+          <button class="vme-mode-btn vme-mode-seq"   data-mode="connect-seq"   title="Add sequential development link">→ Sequential</button>
+          <button class="vme-mode-btn vme-mode-del"   data-mode="delete"        title="Remove node or link">✕ Delete</button>
         </div>
         <div class="vme-toolbar-right">
-          <span class="vme-hint" id="vme-hint">Drag from palette · Select mode active</span>
+          <div class="vme-legend">
+            <span class="vme-legend-trace">↔ Traceability</span>
+            <span class="vme-legend-seq">→ Sequential</span>
+          </div>
           <button class="btn btn-primary btn-sm" id="vme-save">Save</button>
         </div>
       </div>
+      <div class="vme-hint-bar" id="vme-hint">
+        Drag nodes from the palette onto the canvas · Select mode active
+      </div>
       <div class="vme-body">
         <div class="vme-palette" id="vme-palette">
-          <div class="vme-palette-title">Available nodes</div>
+          <div class="vme-palette-title">Palette</div>
           <div id="vme-pal-list"></div>
         </div>
         <div class="vme-canvas-scroll">
           <div class="vme-canvas" id="vme-canvas">
             <svg class="vme-svg" id="vme-svg" xmlns="http://www.w3.org/2000/svg">
               <defs>
-                <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-                  <polygon points="0 0, 8 3, 0 6" fill="#1A73E8" opacity="0.7"/>
+                <marker id="arr-trace" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                  <polygon points="0 0, 8 3, 0 6" fill="#1A73E8" opacity="0.8"/>
                 </marker>
-                <marker id="arrowhead-del" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                <marker id="arr-trace-start" markerWidth="8" markerHeight="6" refX="1" refY="3" orient="auto-start-reverse">
+                  <polygon points="0 0, 8 3, 0 6" fill="#1A73E8" opacity="0.8"/>
+                </marker>
+                <marker id="arr-seq" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                  <polygon points="0 0, 8 3, 0 6" fill="#666"/>
+                </marker>
+                <marker id="arr-del" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                  <polygon points="0 0, 8 3, 0 6" fill="#EA4335"/>
+                </marker>
+                <marker id="arr-del-start" markerWidth="8" markerHeight="6" refX="1" refY="3" orient="auto-start-reverse">
                   <polygon points="0 0, 8 3, 0 6" fill="#EA4335"/>
                 </marker>
               </defs>
@@ -128,22 +167,21 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
   const svg    = wrapper.querySelector('#vme-svg');
   const hint   = wrapper.querySelector('#vme-hint');
 
-  // ── Palette ────────────────────────────────────────────────────────────────
+  // ── Palette ───────────────────────────────────────────────────────────────
   function refreshPalette() {
     const placed = new Set(_nodes.map(n => n.id));
     const list   = wrapper.querySelector('#vme-pal-list');
     const avail  = VMODEL_NODES.filter(n => !placed.has(n.id));
 
     if (!avail.length) {
-      list.innerHTML = `<p class="vme-pal-empty">All nodes are on the canvas.</p>`;
+      list.innerHTML = `<p class="vme-pal-empty">All nodes placed.</p>`;
       return;
     }
 
-    // Group by domain
     const groups = {};
-    avail.forEach(n => { (groups[n.domain] = groups[n.domain] || []).push(n); });
-    const domainOrder = ['system','sw','hw','mech'];
-    const domainLabel = { system:'System', sw:'SW', hw:'HW', mech:'MECH' };
+    avail.forEach(n => (groups[n.domain] = groups[n.domain] || []).push(n));
+    const domainOrder = ['system', 'sw', 'hw', 'mech'];
+    const domainLabel = { system: 'System', sw: 'SW', hw: 'HW', mech: 'MECH' };
 
     list.innerHTML = domainOrder.filter(d => groups[d]).map(d => `
       <div class="vme-pal-group">
@@ -162,22 +200,23 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     });
   }
 
-  // ── Canvas drop ────────────────────────────────────────────────────────────
-  canvas.addEventListener('dragover',  e => e.preventDefault());
+  // ── Canvas drop ───────────────────────────────────────────────────────────
+  canvas.addEventListener('dragover', e => e.preventDefault());
   canvas.addEventListener('drop', e => {
     e.preventDefault();
     const nodeId = e.dataTransfer.getData('text/plain');
     const def    = VMODEL_NODES.find(n => n.id === nodeId);
     if (!def) return;
     const rect = canvas.getBoundingClientRect();
-    const x = Math.max(0, e.clientX - rect.left - NODE_W / 2);
-    const y = Math.max(0, e.clientY - rect.top  - NODE_H / 2);
-    _nodes.push({ ...def, x, y });
+    _nodes.push({ ...def,
+      x: Math.max(0, e.clientX - rect.left - NODE_W / 2),
+      y: Math.max(0, e.clientY - rect.top  - NODE_H / 2),
+    });
     _dirty = true;
     render();
   });
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   function render() {
     refreshPalette();
     renderNodes();
@@ -193,15 +232,15 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       div.style.top   = node.y + 'px';
       div.dataset.nid = node.id;
       div.textContent = node.label;
-
       if (_connectFrom === node.id) div.classList.add('vme-node--source');
-
       canvas.appendChild(div);
       wireNode(div, node);
     });
   }
 
   function wireNode(div, node) {
+    const isConnectMode = _mode === 'connect-trace' || _mode === 'connect-seq';
+
     if (_mode === 'select') {
       div.style.cursor = 'grab';
       div.addEventListener('mousedown', e => {
@@ -213,25 +252,27 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
         div.classList.add('vme-node--dragging');
       });
 
-    } else if (_mode === 'connect') {
+    } else if (isConnectMode) {
       div.style.cursor = 'crosshair';
       div.addEventListener('click', e => {
         e.stopPropagation();
         if (!_connectFrom) {
           _connectFrom = node.id;
-          setHint(`Now click the target node to connect to <strong>${node.label}</strong> — or press Esc to cancel`);
+          setHint(`Source: <strong>${node.label}</strong> — now click the target node · Esc to cancel`);
           render();
         } else if (_connectFrom === node.id) {
           _connectFrom = null;
-          setHint('Click source node to start a connection');
+          setHint(connectHint());
           render();
         } else {
+          const linkType = _mode === 'connect-trace' ? 'trace' : 'sequential';
           const from = _connectFrom, to = node.id;
           const dup  = _links.some(l =>
-            (l.from === from && l.to === to) || (l.from === to && l.to === from));
-          if (!dup) { _links.push({ id: uid(), from, to }); _dirty = true; }
+            l.type === linkType &&
+            ((l.from === from && l.to === to) || (l.from === to && l.to === from)));
+          if (!dup) { _links.push({ id: uid(), from, to, type: linkType }); _dirty = true; }
           _connectFrom = null;
-          setHint('Click source node to start a connection');
+          setHint(connectHint());
           render();
         }
       });
@@ -241,90 +282,100 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       div.classList.add('vme-node--deletable');
       div.addEventListener('click', e => {
         e.stopPropagation();
-        _nodes  = _nodes.filter(n => n.id !== node.id);
-        _links  = _links.filter(l => l.from !== node.id && l.to !== node.id);
-        _dirty  = true;
+        _nodes = _nodes.filter(n => n.id !== node.id);
+        _links = _links.filter(l => l.from !== node.id && l.to !== node.id);
+        _dirty = true;
         render();
       });
     }
   }
 
-  // ── SVG connections ────────────────────────────────────────────────────────
+  // ── SVG connections ───────────────────────────────────────────────────────
   function renderSVG() {
-    // Remove old paths + labels (keep defs)
-    svg.querySelectorAll('.vme-link, .vme-link-hit, .vme-link-label').forEach(el => el.remove());
+    svg.querySelectorAll('.vme-link, .vme-link-hit').forEach(el => el.remove());
 
     const nodeMap = Object.fromEntries(_nodes.map(n => [n.id, n]));
+    const isDel   = _mode === 'delete';
 
     _links.forEach(link => {
       const a = nodeMap[link.from];
       const b = nodeMap[link.to];
       if (!a || !b) return;
 
-      // Connection points: center right of a, center left of b (or nearest edge)
+      const isTrace = (link.type || 'trace') === 'trace';
+
+      // Centre points
       const ax = a.x + NODE_W / 2, ay = a.y + NODE_H / 2;
       const bx = b.x + NODE_W / 2, by = b.y + NODE_H / 2;
 
-      // Bezier control points
+      // Bezier — horizontal bend for trace links, diagonal follow for sequential
       const dx   = bx - ax, dy = by - ay;
       const dist = Math.hypot(dx, dy);
-      const bend = Math.min(dist * 0.4, 120);
-      const c1x  = ax + bend * Math.sign(dx || 1);
-      const c1y  = ay;
-      const c2x  = bx - bend * Math.sign(dx || 1);
-      const c2y  = by;
-      const d    = `M${ax},${ay} C${c1x},${c1y} ${c2x},${c2y} ${bx},${by}`;
+      let d;
+      if (isTrace) {
+        // Arch outward so horizontal links don't overlap sequential ones
+        const mid = { x: (ax + bx) / 2, y: (ay + by) / 2 };
+        const bend = Math.max(40, Math.abs(dy) * 0.5);
+        const sign = ay <= by ? -1 : 1;  // arch upward
+        d = `M${ax},${ay} Q${mid.x},${mid.y + sign * bend} ${bx},${by}`;
+      } else {
+        // Sequential: gentle cubic following the arm direction
+        const bend = Math.min(dist * 0.35, 80);
+        const normX = dx / (dist || 1), normY = dy / (dist || 1);
+        const c1x = ax + normX * bend, c1y = ay + normY * bend;
+        const c2x = bx - normX * bend, c2y = by - normY * bend;
+        d = `M${ax},${ay} C${c1x},${c1y} ${c2x},${c2y} ${bx},${by}`;
+      }
 
-      const isDel = _mode === 'delete';
-      const color = isDel ? '#EA4335' : '#1A73E8';
-      const marker = isDel ? 'arrowhead-del' : 'arrowhead';
+      // Choose colours / markers
+      let stroke, strokeDash, markerEnd, markerStart, strokeW;
+      if (isDel) {
+        stroke = '#EA4335'; strokeDash = isTrace ? '7 4' : 'none';
+        strokeW = 2.5;
+        markerEnd   = 'url(#arr-del)';
+        markerStart = isTrace ? 'url(#arr-del-start)' : 'none';
+      } else if (isTrace) {
+        stroke = '#1A73E8'; strokeDash = '7 4'; strokeW = 2;
+        markerEnd   = 'url(#arr-trace)';
+        markerStart = 'url(#arr-trace-start)';
+      } else {
+        stroke = '#888'; strokeDash = 'none'; strokeW = 1.5;
+        markerEnd   = 'url(#arr-seq)';
+        markerStart = 'none';
+      }
 
-      // Visible path
-      const path = mkSVG('path');
-      path.setAttribute('d', d);
-      path.setAttribute('stroke', color);
-      path.setAttribute('stroke-width', isDel ? '3' : '2');
-      path.setAttribute('stroke-dasharray', '7 4');
-      path.setAttribute('fill', 'none');
-      path.setAttribute('opacity', isDel ? '1' : '0.75');
-      path.setAttribute('marker-end', `url(#${marker})`);
-      path.setAttribute('marker-start', `url(#${marker})`);
-      path.classList.add('vme-link');
-
-      // Wider invisible hit area
+      // Hit area (wide, transparent)
       const hit = mkSVG('path');
       hit.setAttribute('d', d);
       hit.setAttribute('stroke', 'transparent');
       hit.setAttribute('stroke-width', '14');
       hit.setAttribute('fill', 'none');
-      hit.style.cursor = isDel ? 'pointer' : 'default';
       hit.classList.add('vme-link-hit');
-
       if (isDel) {
+        hit.style.cursor = 'pointer';
         hit.addEventListener('click', () => {
           _links = _links.filter(l => l.id !== link.id);
-          _dirty = true;
-          render();
-        });
-        path.addEventListener('click', () => {
-          _links = _links.filter(l => l.id !== link.id);
-          _dirty = true;
-          render();
+          _dirty = true; render();
         });
       }
 
-      // Midpoint label for non-select mode
-      const mx   = (ax + bx) / 2, my = (ay + by) / 2;
-      const from = VMODEL_NODES.find(n => n.id === link.from);
-      const to   = VMODEL_NODES.find(n => n.id === link.to);
-      if (from && to) {
-        const lbl = mkSVG('text');
-        lbl.setAttribute('x', mx);
-        lbl.setAttribute('y', my - 6);
-        lbl.setAttribute('text-anchor', 'middle');
-        lbl.setAttribute('font-size', '10');
-        lbl.setAttribute('fill', '#888');
-        lbl.classList.add('vme-link-label');
+      // Visible path
+      const path = mkSVG('path');
+      path.setAttribute('d', d);
+      path.setAttribute('stroke', stroke);
+      path.setAttribute('stroke-width', strokeW);
+      path.setAttribute('stroke-dasharray', strokeDash);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('opacity', isDel ? '1' : isTrace ? '0.8' : '0.55');
+      if (markerEnd   !== 'none') path.setAttribute('marker-end',   markerEnd);
+      if (markerStart !== 'none') path.setAttribute('marker-start', markerStart);
+      path.classList.add('vme-link');
+      if (isDel) {
+        path.style.cursor = 'pointer';
+        path.addEventListener('click', () => {
+          _links = _links.filter(l => l.id !== link.id);
+          _dirty = true; render();
+        });
       }
 
       svg.appendChild(hit);
@@ -332,7 +383,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     });
   }
 
-  // ── Global drag ────────────────────────────────────────────────────────────
+  // ── Global drag ───────────────────────────────────────────────────────────
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup',   onMouseUp);
 
@@ -357,42 +408,46 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     }
   }
 
-  // Click on canvas background cancels connect
+  // Cancel connect on background click or Esc
   canvas.addEventListener('click', e => {
-    if (_mode === 'connect' && e.target === canvas || e.target === svg) {
+    if ((e.target === canvas || e.target === svg) && _connectFrom) {
       _connectFrom = null;
+      setHint(connectHint());
       render();
     }
   });
-
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && _connectFrom) {
       _connectFrom = null;
-      setHint('Click source node to start a connection');
+      setHint(connectHint());
       render();
     }
   });
 
-  // ── Mode buttons ───────────────────────────────────────────────────────────
+  // ── Mode buttons ──────────────────────────────────────────────────────────
   wrapper.querySelectorAll('.vme-mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       _mode = btn.dataset.mode;
       _connectFrom = null;
       wrapper.querySelectorAll('.vme-mode-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      const hints = {
-        select:  'Drag nodes to reposition them on the canvas',
-        connect: 'Click a source node, then click the target node to add a link',
-        delete:  'Click a node or a connection line to remove it',
-      };
-      setHint(hints[_mode]);
+      setHint({
+        'select':        'Drag nodes to reposition them on the canvas',
+        'connect-trace': 'Click source node, then target — creates a bidirectional <strong>traceability</strong> link (dashed blue ↔)',
+        'connect-seq':   'Click source node, then target — creates a <strong>sequential</strong> flow link (solid gray →)',
+        'delete':        'Click a node or a connection line to remove it',
+      }[_mode]);
       render();
     });
   });
 
-  function setHint(html) { if (hint) hint.innerHTML = html; }
+  function connectHint() {
+    if (_mode === 'connect-trace') return 'Click source node to start a <strong>traceability</strong> link';
+    if (_mode === 'connect-seq')   return 'Click source node to start a <strong>sequential</strong> link';
+    return '';
+  }
 
-  // ── Load ASPICE default ────────────────────────────────────────────────────
+  // ── ASPICE default ────────────────────────────────────────────────────────
   wrapper.querySelector('#vme-load-aspice').addEventListener('click', () => {
     if (_nodes.length && !confirm('Replace the current canvas with the ASPICE SW default?')) return;
     _nodes = ASPICE_NODES.map(cn => {
@@ -407,7 +462,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
 
   // ── Clear ─────────────────────────────────────────────────────────────────
   wrapper.querySelector('#vme-clear').addEventListener('click', () => {
-    if (!confirm('Clear all nodes and links from the canvas?')) return;
+    if (!confirm('Clear all nodes and links?')) return;
     _nodes = []; _links = []; _connectFrom = null; _dirty = true;
     render();
   });
@@ -434,14 +489,13 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     if (onSave) onSave(_links, canvasNodesSave);
   });
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  function mkSVG(tag) { return document.createElementNS('http://www.w3.org/2000/svg', tag); }
-  function uid()      { return crypto.randomUUID(); }
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function mkSVG(tag)  { return document.createElementNS('http://www.w3.org/2000/svg', tag); }
+  function uid()       { return crypto.randomUUID(); }
+  function setHint(h)  { if (hint) hint.innerHTML = h; }
 
-  // ── Initial render ─────────────────────────────────────────────────────────
   render();
 
-  // Cleanup listeners when navigating away
   return () => {
     window.removeEventListener('mousemove', onMouseMove);
     window.removeEventListener('mouseup',   onMouseUp);

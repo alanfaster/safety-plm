@@ -141,6 +141,8 @@ function deriveTraceFields(domain, phase, vmodelLinks) {
 
   const fields = [];
   for (const link of vmodelLinks) {
+    // Only traceability links drive fields; sequential links are visual-only
+    if (link.type && link.type !== 'trace') continue;
     const otherNodeId = link.from === myNodeId ? link.to : link.to === myNodeId ? link.from : null;
     if (!otherNodeId) continue;
     const node = VMODEL_NODES.find(n => n.id === otherNodeId);
