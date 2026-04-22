@@ -1302,6 +1302,13 @@ async function openTracePanel(reqId) {
     if (TEST_PHASES.has(field.node.phase)) testFields.push(entry);
     else                                   devFields.push(entry);
   }
+  // Sort dev fields by their position in VMODEL_NODES (V-model order)
+  const nodeOrder = VMODEL_NODES.map(n => n.id);
+  devFields.sort((a, b) => {
+    const ai = nodeOrder.indexOf(a.field.id);
+    const bi = nodeOrder.indexOf(b.field.id);
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+  });
 
   body.innerHTML = `
     <div class="rtrace-chain">
@@ -1363,17 +1370,25 @@ function buildNodeCardHTML({ field, linked, revLinked }, arrowDir) {
   const linkedItems = linked.map(code => {
     const opt = options.find(o => o.code === code);
     return `<div class="rtrace-item rtrace-item--linked" data-code="${esc(code)}" data-field="${field.id}">
-      <span class="rtrace-item-code">${esc(code)}</span>
-      <span class="rtrace-item-label">${esc((opt?.label || '').slice(0,50))}</span>
+      <div class="rtrace-item-main rtrace-item-expandable" data-code="${esc(code)}" data-field="${field.id}" title="Click to expand">
+        <span class="rtrace-item-code">${esc(code)}</span>
+        <span class="rtrace-item-label">${esc((opt?.label || '').slice(0,46))}</span>
+        <span class="rtrace-item-chevron">▶</span>
+      </div>
+      <div class="rtrace-item-detail" id="rtrace-detail-${esc(code)}" style="display:none"></div>
       <button class="rtrace-unlink" data-code="${esc(code)}" data-field="${field.id}" title="Remove link">✕</button>
     </div>`;
   }).join('');
 
   const revItems = revLinked.map(item => `
     <div class="rtrace-item rtrace-item--reverse">
-      <span class="rtrace-item-code">${esc(item.code)}</span>
-      <span class="rtrace-item-label">${esc(item.label.slice(0,50))}</span>
-      <span class="rtrace-item-badge">↩</span>
+      <div class="rtrace-item-main rtrace-item-expandable" data-code="${esc(item.code)}" data-field="${field.id}" title="Click to expand">
+        <span class="rtrace-item-code">${esc(item.code)}</span>
+        <span class="rtrace-item-label">${esc(item.label.slice(0,46))}</span>
+        <span class="rtrace-item-badge">↩</span>
+        <span class="rtrace-item-chevron">▶</span>
+      </div>
+      <div class="rtrace-item-detail" id="rtrace-detail-${esc(item.code)}" style="display:none"></div>
     </div>`).join('');
 
   const unlinked = options.filter(o => !linked.includes(o.code));
@@ -1455,6 +1470,66 @@ function buildChainHTML(req, myNode, devFields, testFields) {
 }
 
 function wireTracePanelLinks(body, req) {
+  // Expand item detail on click
+  body.querySelectorAll('.rtrace-item-expandable').forEach(el => {
+    el.addEventListener('click', async () => {
+      const code    = el.dataset.code;
+      const fieldId = el.dataset.field;
+      const detail  = document.getElementById(`rtrace-detail-${code}`);
+      const chevron = el.querySelector('.rtrace-item-chevron');
+      if (!detail) return;
+
+      if (detail.style.display !== 'none') {
+        detail.style.display = 'none';
+        if (chevron) chevron.textContent = '▶';
+        return;
+      }
+
+      if (chevron) chevron.textContent = '▼';
+      detail.style.display = 'block';
+
+      if (detail.dataset.loaded) return; // already fetched
+      detail.innerHTML = '<span style="font-size:11px;color:var(--color-text-muted)">Loading…</span>';
+      detail.dataset.loaded = '1';
+
+      // Fetch full record based on source type
+      const field  = _traceFields.find(f => f.id === fieldId);
+      if (!field) { detail.innerHTML = ''; return; }
+      const source = field.source;
+
+      let html = '';
+      if (source === 'requirements') {
+        const { data } = await sb.from('requirements')
+          .select('req_code, title, description, type, priority, status')
+          .eq('req_code', code).maybeSingle();
+        if (data) html = buildItemDetailHTML({
+          code: data.req_code, title: data.title, description: data.description,
+          badges: [data.type, data.priority, data.status].filter(Boolean),
+        });
+
+      } else if (source === 'arch_spec_items') {
+        const { data } = await sb.from('arch_spec_items')
+          .select('spec_code, title, description, type, status')
+          .eq('spec_code', code).maybeSingle();
+        if (data) html = buildItemDetailHTML({
+          code: data.spec_code, title: data.title, description: data.description,
+          badges: [data.type, data.status].filter(Boolean),
+        });
+
+      } else if (source === 'test_specs') {
+        const { data } = await sb.from('test_specs')
+          .select('test_code, name, description, type, status, result')
+          .eq('test_code', code).maybeSingle();
+        if (data) html = buildItemDetailHTML({
+          code: data.test_code, title: data.name, description: data.description,
+          badges: [data.type, data.status, data.result].filter(Boolean),
+        });
+      }
+
+      detail.innerHTML = html || '<span style="font-size:11px;color:var(--color-text-muted)">No details available.</span>';
+    });
+  });
+
   // Add link via select
   body.querySelectorAll('.rtrace-add-sel').forEach(sel => {
     sel.addEventListener('change', async () => {
@@ -1501,6 +1576,17 @@ function wireTracePanelLinks(body, req) {
       refreshTraceBadge(req.id);
     });
   });
+}
+
+function buildItemDetailHTML({ code, title, description, badges }) {
+  return `
+    <div class="rtrace-detail-card">
+      ${badges.length ? `<div class="rtrace-detail-badges">${badges.map(b =>
+        `<span class="rtrace-detail-badge">${esc(b)}</span>`).join('')}</div>` : ''}
+      ${description
+        ? `<div class="rtrace-detail-desc">${esc(description)}</div>`
+        : `<div class="rtrace-detail-desc rtrace-detail-desc--empty">No description</div>`}
+    </div>`;
 }
 
 function refreshTraceBadge(reqId) {
