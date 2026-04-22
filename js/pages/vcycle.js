@@ -10,8 +10,20 @@ import { renderRequirements }   from './requirements.js';
 import { renderItemDefinition } from './item-definition.js';
 import { renderArchitecture }   from './architecture.js';
 import { renderArchSpec }       from './arch-spec.js';
+import { renderWiki }           from './wiki.js';
+import { renderTestSpecs }      from './test-specs.js';
 
 export async function renderVcycle(container, { project, item, system, phase, domain = 'default', pageId = null }) {
+  // Wiki pages short-circuit any phase renderer
+  if (pageId) {
+    const { data: pgType } = await sb.from('nav_pages')
+      .select('page_type').eq('id', pageId).maybeSingle();
+    if (pgType?.page_type === 'wiki') {
+      await renderWiki(container, { project, item, system, pageId });
+      return;
+    }
+  }
+
   if (phase === 'item_definition') {
     await renderItemDefinition(container, { project, item, system, domain, pageId });
     return;
@@ -28,6 +40,11 @@ export async function renderVcycle(container, { project, item, system, phase, do
       }
     }
     await renderArchitecture(container, { project, item, system, domain, pageId });
+    return;
+  }
+
+  if (['unit_testing', 'integration_testing', 'system_testing'].includes(phase)) {
+    await renderTestSpecs(container, { project, item, system, phase, domain, pageId });
     return;
   }
 
