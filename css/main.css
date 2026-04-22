@@ -1391,7 +1391,9 @@ tr.req-title-row td { cursor: default; }
   display: inline-block;
   width: 24px;
   height: 2px;
-  background: #888;
+  background: linear-gradient(90deg, #888 0%, #888 100%);
+  border-left:  4px solid #888;
+  border-right: 4px solid #888;
 }
 
 /* Mode buttons */

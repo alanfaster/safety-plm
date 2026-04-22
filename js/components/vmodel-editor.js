@@ -111,19 +111,19 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     <div class="vme-wrap">
       <div class="vme-toolbar">
         <div class="vme-toolbar-left">
-          <button class="btn btn-secondary btn-sm" id="vme-load-aspice">↺ ASPICE default</button>
+          <button class="btn btn-secondary btn-sm" id="vme-load-aspice" title="Adds ASPICE SW nodes and links — keeps your existing content">↺ Add ASPICE base</button>
           <button class="btn btn-ghost btn-sm" id="vme-clear">Clear</button>
         </div>
         <div class="vme-mode-group" id="vme-modes">
           <button class="vme-mode-btn active" data-mode="select"       title="Drag nodes">↖ Select</button>
           <button class="vme-mode-btn vme-mode-trace" data-mode="connect-trace" title="Add bidirectional traceability link">↔ Traceability</button>
-          <button class="vme-mode-btn vme-mode-seq"   data-mode="connect-seq"   title="Add sequential development link">→ Sequential</button>
+          <button class="vme-mode-btn vme-mode-seq"   data-mode="connect-seq"   title="Add bidirectional sequential link">↔ Sequential</button>
           <button class="vme-mode-btn vme-mode-del"   data-mode="delete"        title="Remove node or link">✕ Delete</button>
         </div>
         <div class="vme-toolbar-right">
           <div class="vme-legend">
             <span class="vme-legend-trace">↔ Traceability</span>
-            <span class="vme-legend-seq">→ Sequential</span>
+            <span class="vme-legend-seq">↔ Sequential</span>
           </div>
           <button class="btn btn-primary btn-sm" id="vme-save">Save</button>
         </div>
@@ -147,6 +147,9 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
                   <polygon points="0 0, 8 3, 0 6" fill="#1A73E8" opacity="0.8"/>
                 </marker>
                 <marker id="arr-seq" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                  <polygon points="0 0, 8 3, 0 6" fill="#666"/>
+                </marker>
+                <marker id="arr-seq-start" markerWidth="8" markerHeight="6" refX="1" refY="3" orient="auto-start-reverse">
                   <polygon points="0 0, 8 3, 0 6" fill="#666"/>
                 </marker>
                 <marker id="arr-del" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
@@ -333,15 +336,16 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
         stroke = '#EA4335'; strokeDash = isTrace ? '7 4' : 'none';
         strokeW = 2.5;
         markerEnd   = 'url(#arr-del)';
-        markerStart = isTrace ? 'url(#arr-del-start)' : 'none';
+        markerStart = 'url(#arr-del-start)';  // both types get start arrow in delete mode
       } else if (isTrace) {
         stroke = '#1A73E8'; strokeDash = '7 4'; strokeW = 2;
         markerEnd   = 'url(#arr-trace)';
         markerStart = 'url(#arr-trace-start)';
       } else {
+        // Sequential is also bidirectional — arrows on both ends
         stroke = '#888'; strokeDash = 'none'; strokeW = 1.5;
         markerEnd   = 'url(#arr-seq)';
-        markerStart = 'none';
+        markerStart = 'url(#arr-seq-start)';
       }
 
       // Hit area (wide, transparent)
@@ -447,14 +451,26 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     return '';
   }
 
-  // ── ASPICE default ────────────────────────────────────────────────────────
+  // ── ASPICE default — merge (add missing nodes/links, keep existing custom ones) ──
   wrapper.querySelector('#vme-load-aspice').addEventListener('click', () => {
-    if (_nodes.length && !confirm('Replace the current canvas with the ASPICE SW default?')) return;
-    _nodes = ASPICE_NODES.map(cn => {
-      const def = VMODEL_NODES.find(n => n.id === cn.nodeId);
-      return def ? { ...def, x: cn.x, y: cn.y } : null;
-    }).filter(Boolean);
-    _links = ASPICE_LINKS.map(l => ({ id: uid(), ...l }));
+    const placedIds = new Set(_nodes.map(n => n.id));
+
+    // Add missing ASPICE nodes (keep positions of already-placed ones)
+    ASPICE_NODES.forEach(cn => {
+      if (!placedIds.has(cn.nodeId)) {
+        const def = VMODEL_NODES.find(n => n.id === cn.nodeId);
+        if (def) _nodes.push({ ...def, x: cn.x, y: cn.y });
+      }
+    });
+
+    // Add missing ASPICE links (skip duplicates regardless of direction)
+    ASPICE_LINKS.forEach(al => {
+      const dup = _links.some(l =>
+        l.type === al.type &&
+        ((l.from === al.from && l.to === al.to) || (l.from === al.to && l.to === al.from)));
+      if (!dup) _links.push({ id: uid(), ...al });
+    });
+
     _connectFrom = null;
     _dirty = true;
     render();
