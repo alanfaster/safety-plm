@@ -179,10 +179,9 @@ async function loadData() {
   const excludeInterface = typeFilter == null;
 
   const base = () => {
-    let q = sb.from('requirements').select('*')
-      .eq('parent_type', parentType).eq('parent_id', parentId);
-    if (parentType === 'system') q = q.eq('domain', domainKey);
-    return q;
+    return sb.from('requirements').select('*')
+      .eq('parent_type', parentType).eq('parent_id', parentId)
+      .eq('domain', domainKey);
   };
 
   let contentQ = base();

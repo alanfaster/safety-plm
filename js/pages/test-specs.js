@@ -207,7 +207,7 @@ async function loadTests() {
   let q = sb.from('test_specs')
     .select('*')
     .eq('parent_type', parentType).eq('parent_id', parentId).eq('phase', phase);
-  if (parentType === 'system') q = q.eq('domain', domain);
+  q = q.eq('domain', domain);
   const { data, error } = await q
     .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
 

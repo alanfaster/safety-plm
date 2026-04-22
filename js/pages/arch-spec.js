@@ -175,6 +175,7 @@ async function syncComponentSpecItems() {
         parent_type:      parentType,
         parent_id:        parentId,
         project_id:       project.id,
+        domain:           _ctx.domain,
         component_ref_id: c.id,
         system_name:      sysName,
         custom_fields:    {},
@@ -206,7 +207,7 @@ async function loadSpec() {
     .select('*')
     .eq('parent_type', _ctx.parentType)
     .eq('parent_id',   _ctx.parentId);
-  if (_ctx.parentType === 'system') specQ = specQ.eq('domain', _ctx.domain);
+  specQ = specQ.eq('domain', _ctx.domain);
   const { data, error } = await specQ
     .order('sort_order', { ascending: true })
     .order('created_at',  { ascending: true });
@@ -260,6 +261,7 @@ async function loadSpec() {
       parent_type: _ctx.parentType,
       parent_id:   _ctx.parentId,
       project_id:  _ctx.project.id,
+      domain:      _ctx.domain,
       custom_fields: { section_level: 1, is_arch_components_section: true },
     }).select().single();
     if (sec) {
@@ -727,6 +729,7 @@ async function addSection(afterId) {
     parent_type:   _ctx.parentType,
     parent_id:     _ctx.parentId,
     project_id:    _ctx.project.id,
+    domain:        _ctx.domain,
     custom_fields: { section_level: 1 },
   }).select().single();
 
@@ -942,6 +945,7 @@ async function addRow(afterId) {
     parent_type: _ctx.parentType,
     parent_id:   _ctx.parentId,
     project_id:  _ctx.project.id,
+    domain:      _ctx.domain,
   }).select().single();
 
   if (error) { toast('Error creating item.', 'error'); return; }
