@@ -8,8 +8,6 @@
 
 import { sb } from '../config.js';
 import { toast } from '../toast.js';
-import { setBreadcrumb } from '../components/topbar.js';
-import { renderSidebar } from '../components/sidebar.js';
 import { VMODEL_NODES, PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -85,14 +83,6 @@ export async function renderTestSpecs(container, { project, item, system, phase,
   // Get current user for last-modified tracking
   const { data: { user } } = await sb.auth.getUser();
   _currentUser = user;
-
-  setBreadcrumb([
-    { label: 'Projects', path: '/projects' },
-    { label: project.name, path: `/project/${project.id}` },
-    { label: parentName },
-    { label: meta.label },
-  ]);
-  renderSidebar({ view: 'item', project, item, system, activePage: phase });
 
   // Load project config
   const { data: pcRow } = await sb.from('project_config')
