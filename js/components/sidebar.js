@@ -81,10 +81,20 @@ export async function renderSidebar(ctx) {
   const parentType  = systemId ? 'system' : 'item';
   const parentId    = systemId || itemId;
 
-  // Collect all parent IDs to fetch nav data for
-  const allParentIds = [{ type: parentType, id: parentId }];
-  if (!systemId && systems.length > 0) {
+  // Collect all parent IDs to fetch nav data for.
+  // Always include the item itself so item-level helpers are correct
+  // even when navigating inside a system.
+  const allParentIds = [];
+  if (systems.length > 0 || systemId) {
+    allParentIds.push({ type: 'item', id: itemId });
+  }
+  if (systemId) {
+    allParentIds.push({ type: 'system', id: systemId });
+  } else if (systems.length > 0) {
     systems.forEach(s => allParentIds.push({ type: 'system', id: s.id }));
+  }
+  if (!allParentIds.length) {
+    allParentIds.push({ type: parentType, id: parentId });
   }
 
   // Fetch nav_pages + nav_phase_config for all relevant parents in parallel
@@ -122,18 +132,22 @@ export async function renderSidebar(ctx) {
       },
       phaseHidden:  (domain, phaseKey) => cfg.find(c => c.domain === domain && c.phase === phaseKey)?.is_hidden || false,
       domainHidden: (domain)           => cfg.find(c => c.domain === domain && c.phase === '__domain__')?.is_hidden || false,
-      subPages:     (domain, phaseKey) => pages.filter(p => p.domain === domain && p.phase === phaseKey),
+      subPages:     (domain, phaseKey) => pages.filter(p => p.domain === domain && p.phase === phaseKey && !p.parent_page_id),
+      childPages:   (parentPageId)     => pages.filter(p => p.parent_page_id === parentPageId),
     };
   }
 
-  const helpers = makeHelpers(parentId, parentType);
+  // Item-level helpers always use itemId so the item section is never
+  // overwritten by system-level nav config when navigating inside a system.
+  const itemHelpers   = makeHelpers(itemId, 'item');
+  const helpers       = systemId ? makeHelpers(systemId, 'system') : itemHelpers;
 
   // Always show the full tree.
   // Never collapse into a system-only sidebar when navigating into a system.
   if (systems.length > 0) {
     container.innerHTML = buildMultiSystemSidebar({
       projectId, itemId, itemName, activePage, activePageId,
-      safetyItems, systems, makeHelpers, ...helpers,
+      safetyItems, systems, makeHelpers, ...itemHelpers,
     });
   } else {
     container.innerHTML = buildSingleSystemSidebar({
@@ -163,7 +177,7 @@ function buildProjectsNav(activePage) {
   </button>`;
 }
 
-function buildSingleSystemSidebar({ projectId, itemId, itemName, activePage, activePageId, safetyItems, phaseName, phaseHidden, domainHidden, subPages }) {
+function buildSingleSystemSidebar({ projectId, itemId, itemName, activePage, activePageId, safetyItems, phaseName, phaseHidden, domainHidden, subPages, childPages }) {
   const base = `/project/${projectId}/item/${itemId}`;
   let html = entityHeader(itemName, base, projectId);
 
@@ -181,7 +195,7 @@ function buildSingleSystemSidebar({ projectId, itemId, itemName, activePage, act
       phases: domain.phases,
       getPath: (ph) => `${base}/domain/${domain.key}/vcycle/${ph}`,
       activePage, activePageId, activeDomainPrefix: `domain:${domain.key}:`,
-      phaseName, phaseHidden, subPages,
+      phaseName, phaseHidden, subPages, childPages,
       parentType: 'item', parentId: itemId,
     });
   }
@@ -191,7 +205,7 @@ function buildSingleSystemSidebar({ projectId, itemId, itemName, activePage, act
   return html;
 }
 
-function buildMultiSystemSidebar({ projectId, itemId, itemName, activePage, activePageId, safetyItems, systems, phaseName, phaseHidden, domainHidden, subPages, makeHelpers }) {
+function buildMultiSystemSidebar({ projectId, itemId, itemName, activePage, activePageId, safetyItems, systems, phaseName, phaseHidden, domainHidden, subPages, childPages, makeHelpers }) {
   const base = `/project/${projectId}/item/${itemId}`;
   let html = entityHeader(itemName, base, projectId);
 
@@ -202,7 +216,7 @@ function buildMultiSystemSidebar({ projectId, itemId, itemName, activePage, acti
     phases: ALL_PHASES,
     getPath: (ph) => `${base}/vcycle/${ph}`,
     activePage, activePageId, activeDomainPrefix: '',
-    phaseName, phaseHidden, subPages,
+    phaseName, phaseHidden, subPages, childPages,
     parentType: 'item', parentId: itemId,
   });
 
@@ -219,14 +233,14 @@ function buildMultiSystemSidebar({ projectId, itemId, itemName, activePage, acti
   } else {
     for (let i = 0; i < systems.length; i++) {
       const s = systems[i];
-      const h = makeHelpers ? makeHelpers(s.id, 'system') : { phaseName, phaseHidden, domainHidden, subPages };
+      const h = makeHelpers ? makeHelpers(s.id, 'system') : { phaseName, phaseHidden, domainHidden, subPages, childPages };
       html += systemBlock({ s, i, total: systems.length, projectId, itemId, activePage, activePageId, safetyItems, ...h });
     }
   }
   return html;
 }
 
-function buildSystemSidebar({ projectId, itemId, systemId, systemName, activePage, activePageId, safetyItems, phaseName, phaseHidden, domainHidden, subPages }) {
+function buildSystemSidebar({ projectId, itemId, systemId, systemName, activePage, activePageId, safetyItems, phaseName, phaseHidden, domainHidden, subPages, childPages }) {
   const base = `/project/${projectId}/item/${itemId}/system/${systemId}`;
   let html = `<button class="sb-back" data-nav="/project/${projectId}/item/${itemId}/vcycle/item_definition">◀ Item</button>`;
   html += entityHeader(systemName, null, null);
@@ -242,7 +256,7 @@ function buildSystemSidebar({ projectId, itemId, systemId, systemName, activePag
       phases: domain.phases,
       getPath: (ph) => `${base}/domain/${domain.key}/vcycle/${ph}`,
       activePage, activePageId, activeDomainPrefix: `domain:${domain.key}:`,
-      phaseName, phaseHidden, subPages,
+      phaseName, phaseHidden, subPages, childPages,
     });
   }
 
@@ -250,7 +264,7 @@ function buildSystemSidebar({ projectId, itemId, systemId, systemName, activePag
   return html;
 }
 
-function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId, safetyItems, phaseName, phaseHidden, domainHidden, subPages }) {
+function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId, safetyItems, phaseName, phaseHidden, domainHidden, subPages, childPages }) {
   const base     = `/project/${projectId}/item/${itemId}/system/${s.id}`;
   const blockKey = `sys-block-${s.id}`;
   const open     = isOpen(blockKey, true); // default expanded
@@ -264,7 +278,7 @@ function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId,
       phases: domain.phases,
       getPath: (ph) => `${base}/domain/${domain.key}/vcycle/${ph}`,
       activePage, activePageId, activeDomainPrefix: `sys:${s.id}:domain:${domain.key}:`,
-      phaseName, phaseHidden, subPages,
+      phaseName, phaseHidden, subPages, childPages,
       parentType: 'system', parentId: s.id,
     });
   }
@@ -293,19 +307,63 @@ function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId,
 
 // ── Group builders ────────────────────────────────────────────────────────────
 
-function buildDomainGroup({ groupKey, domain, icon, phases, getPath, activePage, activePageId, activeDomainPrefix, phaseName, phaseHidden, subPages, parentType, parentId }) {
+function buildDomainGroup({ groupKey, domain, icon, phases, getPath, activePage, activePageId, activeDomainPrefix, phaseName, phaseHidden, subPages, childPages, parentType, parentId }) {
+  const safeChildPages = childPages || (() => []);
   const visiblePhases = phases.filter(p => !phaseHidden(domain, p.key));
   const anyActive = visiblePhases.some(p => {
     const key = `${activeDomainPrefix}${p.key}`;
-    return activePage === key || subPages(domain, p.key).some(sp => sp.id === activePageId);
+    const allSubs = subPages(domain, p.key);
+    const anySubActive = allSubs.some(sp => sp.id === activePageId ||
+      safeChildPages(sp.id).some(c => c.id === activePageId));
+    return activePage === key || anySubActive;
   });
   const open = anyActive ? true : isOpen(groupKey, false);
   const domainLabel = domain === 'item' ? t('vcycle.title') : t(`domain.${domain}`);
 
+  function renderSubpageRow(sp, getPath, phaseKey, depth = 1) {
+    const isSpAct    = activePageId === sp.id;
+    const indent     = depth * 12;
+    const kids       = safeChildPages(sp.id).filter(c => !c.is_folder);
+    const folderOpen = isOpen(`folder-${sp.id}`, false);
+    return `
+      <div class="sb-subpage-row" draggable="true"
+        data-subpage-id="${sp.id}"
+        data-sort-order="${sp.sort_order ?? 0}"
+        data-domain="${domain}"
+        data-phase="${phaseKey}"
+        data-parent-page-id="${sp.parent_page_id || ''}"
+        data-parent-type="${parentType}"
+        data-parent-id="${parentId}"
+        data-is-folder="${sp.is_folder ? '1' : ''}">
+        ${sp.is_folder ? `
+          <button class="sb-subitem sb-folder-toggle ${folderOpen ? 'folder-open' : ''}" data-folder-id="${sp.id}">
+            <span class="sb-item-icon" style="opacity:0.6;padding-left:${indent}px">${folderOpen ? '📂' : '📁'}</span>
+            <span class="sb-item-label">${escHtml(sp.name)}</span>
+          </button>` : `
+          <button class="sb-subitem ${isSpAct ? 'active' : ''}" data-nav="${getPath(phaseKey)}/page/${sp.id}">
+            <span class="sb-item-icon" style="opacity:0.4;padding-left:${indent}px">${sp.page_type === 'wiki' ? '📄' : '╰'}</span>
+            <span class="sb-item-label">${escHtml(sp.name)}</span>
+          </button>`}
+        <span class="sb-phase-actions">
+          <button class="sb-act-btn btn-up-subpage"   data-id="${sp.id}" title="Move up">▲</button>
+          <button class="sb-act-btn btn-dn-subpage"   data-id="${sp.id}" title="Move down">▼</button>
+          <button class="sb-act-btn btn-add-child-page" data-parent-page-id="${sp.id}"
+            data-domain="${domain}" data-phase="${phaseKey}"
+            data-parent-type="${parentType}" data-parent-id="${parentId}"
+            data-path="${getPath(phaseKey)}" title="Add sub-page here">＋</button>
+          <button class="sb-act-btn btn-rename-subpage" data-id="${sp.id}" data-name="${escHtml(sp.name)}" title="Rename">✎</button>
+          <button class="sb-act-btn btn-del-subpage"    data-id="${sp.id}" data-name="${escHtml(sp.name)}" title="Delete">✕</button>
+        </span>
+      </div>
+      ${sp.is_folder && folderOpen ? kids.map(c => renderSubpageRow(c, getPath, phaseKey, depth + 1)).join('') : ''}
+      ${!sp.is_folder ? kids.map(c => renderSubpageRow(c, getPath, phaseKey, depth + 1)).join('') : ''}
+    `;
+  }
+
   return `
     <div class="sb-group ${open ? 'open' : 'closed'}" data-group="${groupKey}">
       <div class="sb-group-header-row">
-        <button class="sb-group-header">
+        <button class="sb-group-header" title="${escHtml(domainLabel)}">
           <span class="sb-chevron">▶</span>
           <span class="sb-group-icon">${icon}</span>
           ${escHtml(domainLabel)}
@@ -326,7 +384,7 @@ function buildDomainGroup({ groupKey, domain, icon, phases, getPath, activePage,
           return `
             <div class="sb-phase-row" data-domain="${domain}" data-phase="${p.key}" data-path="${getPath(p.key)}"
               data-parent-type="${parentType}" data-parent-id="${parentId}">
-              <button class="sb-item ${isAct ? 'active' : ''}" data-nav="${getPath(p.key)}">
+              <button class="sb-item ${isAct ? 'active' : ''}" data-nav="${getPath(p.key)}" title="${escHtml(label)}">
                 <span class="sb-item-icon">${p.icon}</span>
                 <span class="sb-item-label">${escHtml(label)}</span>
               </button>
@@ -337,22 +395,11 @@ function buildDomainGroup({ groupKey, domain, icon, phases, getPath, activePage,
                   data-parent-type="${parentType}" data-parent-id="${parentId}" title="Hide">✕</button>
                 <button class="sb-act-btn btn-add-subpage sb-add-always"  data-domain="${domain}" data-phase="${p.key}"
                   data-parent-type="${parentType}" data-parent-id="${parentId}" data-path="${getPath(p.key)}" title="Add page">↳</button>
+                <button class="sb-act-btn btn-add-folder sb-add-always"  data-domain="${domain}" data-phase="${p.key}"
+                  data-parent-type="${parentType}" data-parent-id="${parentId}" data-path="${getPath(p.key)}" title="Add folder">📁</button>
               </span>
             </div>
-            ${subs.map(sp => {
-              const isSpAct = activePageId === sp.id;
-              return `
-                <div class="sb-subpage-row" data-subpage-id="${sp.id}">
-                  <button class="sb-subitem ${isSpAct ? 'active' : ''}" data-nav="${getPath(p.key)}/page/${sp.id}">
-                    <span class="sb-item-icon" style="opacity:0.4">╰</span>
-                    <span class="sb-item-label">${escHtml(sp.name)}</span>
-                  </button>
-                  <span class="sb-phase-actions">
-                    <button class="sb-act-btn btn-rename-subpage" data-id="${sp.id}" data-name="${escHtml(sp.name)}" title="Rename">✎</button>
-                    <button class="sb-act-btn btn-del-subpage"    data-id="${sp.id}" data-name="${escHtml(sp.name)}" title="Delete">✕</button>
-                  </span>
-                </div>`;
-            }).join('')}
+            ${subs.filter(sp => !sp.parent_page_id).map(sp => renderSubpageRow(sp, getPath, p.key, 1)).join('')}
           `;
         }).join('')}
       </div>
@@ -375,7 +422,7 @@ function buildSafetyGroup({ groupKey, safetyItems, activePage, routePrefix, sysI
       <div class="sb-group-body">
         ${safetyItems.map(key => `
           <div class="sb-phase-row">
-            <button class="sb-item ${activePage === `${pfx}${key}` ? 'active' : ''}" data-nav="${routePrefix}/${key}">
+            <button class="sb-item ${activePage === `${pfx}${key}` ? 'active' : ''}" data-nav="${routePrefix}/${key}" title="${t(`safety.${key}`)}">
               <span class="sb-item-icon">△</span>
               <span class="sb-item-label">${t(`safety.${key}`)}</span>
             </button>
@@ -471,26 +518,30 @@ function wirePhaseActions(container, _parentType, _parentId, onReload) {
     };
   });
 
-  // Add sub-page
+  // Add sub-page — shows type picker first
   container.querySelectorAll('.btn-add-subpage').forEach(btn => {
     btn.onclick = async (e) => {
       e.stopPropagation();
       const { domain, phase, path } = btn.dataset;
       const { pType, pId } = ctx(btn);
-      openNameModal('New page name', '', async (name) => {
-        const count = (await sb.from('nav_pages').select('id', { count: 'exact', head: true })
-          .eq('parent_type', pType).eq('parent_id', pId)
-          .eq('domain', domain).eq('phase', phase)).count || 0;
+      openPageTypeMenu(btn, (pageType) => {
+        const label = pageType === 'wiki' ? 'New wiki page name' : 'New page name';
+        openNameModal(label, '', async (name) => {
+          const count = (await sb.from('nav_pages').select('id', { count: 'exact', head: true })
+            .eq('parent_type', pType).eq('parent_id', pId)
+            .eq('domain', domain).eq('phase', phase)).count || 0;
 
-        const { data: pg, error } = await sb.from('nav_pages').insert({
-          parent_type: pType, parent_id: pId,
-          domain, phase, name, sort_order: count,
-        }).select().single();
+          const { data: pg, error } = await sb.from('nav_pages').insert({
+            parent_type: pType, parent_id: pId,
+            domain, phase, name, sort_order: count,
+            page_type: pageType,
+          }).select().single();
 
-        if (error) { toast(t('common.error'), 'error'); return; }
-        toast(`Page "${name}" created.`, 'success');
-        onReload();
-        navigate(`${path}/page/${pg.id}`);
+          if (error) { toast(t('common.error'), 'error'); return; }
+          toast(`Page "${name}" created.`, 'success');
+          onReload();
+          navigate(`${path}/page/${pg.id}`);
+        });
       });
     };
   });
@@ -521,6 +572,234 @@ function wirePhaseActions(container, _parentType, _parentId, onReload) {
         onReload();
       });
     };
+  });
+
+  // Add child sub-page (+ button on each subpage row) — shows type picker first
+  container.querySelectorAll('.btn-add-child-page').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const { domain, phase, path } = btn.dataset;
+      const parentPageId = btn.dataset.parentPageId;
+      const { pType, pId } = ctx(btn);
+      openPageTypeMenu(btn, (pageType) => {
+        const label = pageType === 'wiki' ? 'New wiki page name' : 'New sub-page name';
+        openNameModal(label, '', async (name) => {
+          const count = (await sb.from('nav_pages').select('id', { count: 'exact', head: true })
+            .eq('parent_page_id', parentPageId)).count || 0;
+
+          const { data: pg, error } = await sb.from('nav_pages').insert({
+            parent_type: pType, parent_id: pId,
+            domain, phase, name,
+            parent_page_id: parentPageId,
+            sort_order: count,
+            page_type: pageType,
+          }).select().single();
+
+          if (error) { toast(t('common.error'), 'error'); return; }
+          toast(`Page "${name}" created.`, 'success');
+          onReload();
+          navigate(`${path}/page/${pg.id}`);
+        });
+      });
+    };
+  });
+
+  // Add folder at phase level
+  container.querySelectorAll('.btn-add-folder').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const { domain, phase } = btn.dataset;
+      const { pType, pId } = ctx(btn);
+      openNameModal('Folder name', '', async (name) => {
+        const count = (await sb.from('nav_pages').select('id', { count: 'exact', head: true })
+          .eq('parent_type', pType).eq('parent_id', pId)
+          .eq('domain', domain).eq('phase', phase)).count || 0;
+
+        const { error } = await sb.from('nav_pages').insert({
+          parent_type: pType, parent_id: pId,
+          domain, phase, name,
+          is_folder: true,
+          sort_order: count,
+        });
+
+        if (error) { toast(t('common.error'), 'error'); return; }
+        toast(`Folder "${name}" created.`, 'success');
+        onReload();
+      });
+    };
+  });
+
+  // Folder toggle expand/collapse
+  container.querySelectorAll('.sb-folder-toggle').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const folderId = btn.dataset.folderId;
+      const key = `folder-${folderId}`;
+      const open = !isOpen(key, false);
+      setGroupOpen(key, open);
+      onReload();
+    };
+  });
+
+  // Up / Down arrows on subpage rows
+  container.querySelectorAll('.btn-up-subpage, .btn-dn-subpage').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const row = btn.closest('.sb-subpage-row');
+      const dir = btn.classList.contains('btn-up-subpage') ? -1 : 1;
+      await reorderSubpage(row, dir);
+      onReload();
+    };
+  });
+
+  // Drag-and-drop reorder + move into folder
+  wireSubpageDragDrop(container, onReload);
+}
+
+// ── Subpage reorder helpers ───────────────────────────────────────────────────
+
+async function reorderSubpage(row, dir) {
+  const id           = row.dataset.subpageId;
+  const domain       = row.dataset.domain;
+  const phase        = row.dataset.phase;
+  const parentPageId = row.dataset.parentPageId || null;
+  const parentType   = row.dataset.parentType;
+  const parentId     = row.dataset.parentId;
+
+  // Fetch all siblings from DB (same parent group, ordered by sort_order)
+  let q = sb.from('nav_pages')
+    .select('id, sort_order')
+    .eq('parent_type', parentType)
+    .eq('parent_id', parentId)
+    .eq('domain', domain)
+    .eq('phase', phase)
+    .order('sort_order');
+  if (parentPageId) q = q.eq('parent_page_id', parentPageId);
+  else              q = q.is('parent_page_id', null);
+
+  const { data: siblings } = await q;
+  if (!siblings) return;
+
+  const idx     = siblings.findIndex(s => s.id === id);
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= siblings.length) return;
+
+  const a = siblings[idx], b = siblings[swapIdx];
+  const aOrd = a.sort_order, bOrd = b.sort_order;
+
+  // If sort_orders are equal, assign distinct values first
+  if (aOrd === bOrd) {
+    await Promise.all(siblings.map((s, i) =>
+      sb.from('nav_pages').update({ sort_order: i }).eq('id', s.id)
+    ));
+    const newA = idx, newB = swapIdx;
+    await sb.from('nav_pages').update({ sort_order: newB }).eq('id', a.id);
+    await sb.from('nav_pages').update({ sort_order: newA }).eq('id', b.id);
+  } else {
+    await sb.from('nav_pages').update({ sort_order: bOrd }).eq('id', a.id);
+    await sb.from('nav_pages').update({ sort_order: aOrd }).eq('id', b.id);
+  }
+}
+
+function wireSubpageDragDrop(container, onReload) {
+  let dragId  = null;
+  let dragRow = null;
+
+  // ── dragstart / dragend — per source row ────────────────────────────────────
+  container.querySelectorAll('.sb-subpage-row[draggable]').forEach(row => {
+    row.addEventListener('dragstart', e => {
+      dragId  = row.dataset.subpageId;
+      dragRow = row;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragId);
+      setTimeout(() => row.classList.add('sb-dragging'), 0);
+    });
+
+    row.addEventListener('dragend', () => {
+      row.classList.remove('sb-dragging');
+      clearDropHighlights();
+      dragId = null; dragRow = null;
+    });
+  });
+
+  function clearDropHighlights() {
+    container.querySelectorAll('.sb-drop-target, .sb-drop-folder')
+      .forEach(el => el.classList.remove('sb-drop-target', 'sb-drop-folder'));
+  }
+
+  function targetRow(e) {
+    return e.target.closest('.sb-subpage-row');
+  }
+
+  // ── dragover / dragleave / drop — delegated on container ────────────────────
+  container.addEventListener('dragover', e => {
+    if (!dragId) return;
+    const row = targetRow(e);
+    if (!row || row.dataset.subpageId === dragId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    clearDropHighlights();
+    if (row.dataset.isFolder === '1') {
+      row.classList.add('sb-drop-folder');
+    } else {
+      row.classList.add('sb-drop-target');
+    }
+  });
+
+  container.addEventListener('dragleave', e => {
+    const row = targetRow(e);
+    if (row) {
+      // Only clear if leaving the row entirely (not just moving to a child)
+      if (!row.contains(e.relatedTarget)) {
+        row.classList.remove('sb-drop-target', 'sb-drop-folder');
+      }
+    }
+  });
+
+  container.addEventListener('drop', async e => {
+    const row = targetRow(e);
+    if (!row) return;
+    e.preventDefault();
+    clearDropHighlights();
+    if (!dragId || !dragRow || dragId === row.dataset.subpageId) return;
+
+    const targetIsFolder     = row.dataset.isFolder === '1';
+    const targetId           = row.dataset.subpageId;
+    const dragParentPageId   = dragRow.dataset.parentPageId || null;
+    const targetParentPageId = row.dataset.parentPageId    || null;
+
+    // Capture before any await (dragend may fire and null these out)
+    const capturedDragId  = dragId;
+    const capturedDragRow = dragRow;
+
+    if (targetIsFolder) {
+      // Move into folder
+      const { count } = await sb.from('nav_pages')
+        .select('id', { count: 'exact', head: true })
+        .eq('parent_page_id', targetId);
+      await sb.from('nav_pages')
+        .update({ parent_page_id: targetId, sort_order: count || 0 })
+        .eq('id', capturedDragId);
+      setGroupOpen(`folder-${targetId}`, true);
+      toast('Moved into folder.', 'success');
+
+    } else if (capturedDragRow.dataset.domain === row.dataset.domain &&
+               capturedDragRow.dataset.phase  === row.dataset.phase  &&
+               dragParentPageId               === targetParentPageId) {
+      // Same-level swap
+      const aOrd = parseInt(capturedDragRow.dataset.sortOrder) || 0;
+      const bOrd = parseInt(row.dataset.sortOrder) || 0;
+      await sb.from('nav_pages').update({ sort_order: bOrd }).eq('id', capturedDragId);
+      await sb.from('nav_pages').update({ sort_order: aOrd }).eq('id', targetId);
+
+    } else {
+      // Different level — adopt target's parent
+      await sb.from('nav_pages')
+        .update({ parent_page_id: targetParentPageId || null, sort_order: parseInt(row.dataset.sortOrder) || 0 })
+        .eq('id', capturedDragId);
+    }
+
+    onReload();
   });
 }
 
@@ -708,6 +987,48 @@ function openNameModal(title, current, onSave) {
     hideModal();
   };
   input.onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('m-save').click(); };
+}
+
+/**
+ * Show a small dropdown near `anchor` to let the user pick the page type
+ * before being asked for a name. Calls `onPick(pageType)` with 'standard' or 'wiki'.
+ */
+function openPageTypeMenu(anchor, onPick) {
+  document.querySelectorAll('.sb-page-type-menu').forEach(m => m.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'sb-page-type-menu';
+  menu.innerHTML = `
+    <button class="sb-ptm-btn" data-type="standard">
+      <span class="sb-ptm-icon">╰</span>
+      <span class="sb-ptm-label">Standard page</span>
+      <span class="sb-ptm-desc">Requirements, specs, analysis…</span>
+    </button>
+    <button class="sb-ptm-btn" data-type="wiki">
+      <span class="sb-ptm-icon">📄</span>
+      <span class="sb-ptm-label">Wiki page</span>
+      <span class="sb-ptm-desc">Free-form notes &amp; documentation</span>
+    </button>
+  `;
+  document.body.appendChild(menu);
+
+  // Position below anchor
+  const r = anchor.getBoundingClientRect();
+  menu.style.top  = `${r.bottom + window.scrollY + 4}px`;
+  menu.style.left = `${r.left  + window.scrollX}px`;
+
+  menu.querySelectorAll('.sb-ptm-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      menu.remove();
+      onPick(btn.dataset.type);
+    });
+  });
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', () => menu.remove(), { once: true });
+  }, 0);
 }
 
 function escHtml(str) {
