@@ -1192,8 +1192,8 @@ function reqTd(c, r) {
       </td>`;
     case 'actions':
       return `<td data-col="actions" class="actions-cell">
-        <button class="btn btn-ghost btn-sm btn-move-up"   data-id="${r.id}" title="Move up">▲</button>
-        <button class="btn btn-ghost btn-sm btn-move-dn"   data-id="${r.id}" title="Move down">▼</button>
+        <button class="btn btn-ghost btn-xs btn-move-up"   data-id="${r.id}" title="Move up">↑</button>
+        <button class="btn btn-ghost btn-xs btn-move-dn"   data-id="${r.id}" title="Move down">↓</button>
         <button class="btn btn-ghost btn-sm btn-view-req"  data-id="${r.id}">Detail</button>
         <button class="btn btn-ghost btn-sm btn-copy-link" data-id="${r.id}" title="Copy link to this requirement">🔗</button>
         <button class="btn btn-ghost btn-sm btn-del-req"   data-id="${r.id}" data-title="${esc(r.title)}">${t('common.delete')}</button>
