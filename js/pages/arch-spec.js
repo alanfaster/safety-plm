@@ -391,7 +391,6 @@ function sectionRowHTML(it) {
           <span style="width:1px;height:14px;background:var(--color-border);display:inline-block;margin:0 2px"></span>
           <button class="btn btn-ghost btn-xs spec-sec-move-up"    title="Move section up (with contents)">↑</button>
           <button class="btn btn-ghost btn-xs spec-sec-move-dn"    title="Move section down (with contents)">↓</button>
-          <button class="btn btn-ghost btn-xs spec-sec-add-below"  title="Add section below">+</button>
           <button class="btn btn-ghost btn-xs spec-sec-del"        title="Delete section" style="color:var(--color-danger)">✕</button>
         </div>
       </div>
@@ -575,7 +574,6 @@ function wireSectionRow(tr, it) {
 
   tr.querySelector('.spec-sec-move-up').addEventListener('click', () => moveSectionBlock(it.id, -1));
   tr.querySelector('.spec-sec-move-dn').addEventListener('click', () => moveSectionBlock(it.id,  1));
-  tr.querySelector('.spec-sec-add-below').addEventListener('click', () => addSection(it.id));
   tr.querySelector('.spec-sec-del').addEventListener('click', () => deleteRow(it));
 }
 

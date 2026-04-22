@@ -315,7 +315,7 @@ function reqSectionRowHTML(r) {
   return `
     <td class="spec-section-cell" colspan="20">
       <div class="spec-section-inner spec-section-inner--l${lvl}">
-        <button class="req-section-toggle${collapsed ? ' collapsed' : ''}"
+        <button class="spec-section-toggle${collapsed ? ' collapsed' : ''}"
           data-rid="${r.id}" title="Expand/Collapse">▼</button>
         <span class="spec-section-num spec-section-num--l${lvl}">${esc(num)}</span>
         <input class="spec-section-title spec-section-title--l${lvl}"
@@ -493,7 +493,7 @@ function wireReqSectionRow(tr) {
   if (!r) return;
 
   // Collapse toggle
-  const toggle = tr.querySelector('.req-section-toggle');
+  const toggle = tr.querySelector('.spec-section-toggle');
   if (toggle) {
     toggle.onclick = (e) => {
       e.stopPropagation();
@@ -676,7 +676,7 @@ function applyCollapseState(tbody) {
     tr.style.display = hiddenSet.has(tr.dataset.rid) ? 'none' : '';
   });
 
-  tbody.querySelectorAll('.req-section-toggle').forEach(btn => {
+  tbody.querySelectorAll('.spec-section-toggle').forEach(btn => {
     const isCollapsed = _collapsed.has(btn.dataset.rid);
     btn.textContent = isCollapsed ? '▶' : '▼';
     btn.title = isCollapsed ? 'Expand section' : 'Collapse section';
@@ -1194,9 +1194,9 @@ function reqTd(c, r) {
       return `<td data-col="actions" class="actions-cell">
         <button class="btn btn-ghost btn-xs btn-move-up"   data-id="${r.id}" title="Move up">↑</button>
         <button class="btn btn-ghost btn-xs btn-move-dn"   data-id="${r.id}" title="Move down">↓</button>
-        <button class="btn btn-ghost btn-sm btn-view-req"  data-id="${r.id}">Detail</button>
-        <button class="btn btn-ghost btn-sm btn-copy-link" data-id="${r.id}" title="Copy link to this requirement">🔗</button>
-        <button class="btn btn-ghost btn-sm btn-del-req"   data-id="${r.id}" data-title="${esc(r.title)}">${t('common.delete')}</button>
+        <button class="btn btn-ghost btn-xs btn-view-req"  data-id="${r.id}" title="View detail">👁</button>
+        <button class="btn btn-ghost btn-xs btn-copy-link" data-id="${r.id}" title="Copy link">🔗</button>
+        <button class="btn btn-ghost btn-xs btn-del-req"   data-id="${r.id}" data-title="${esc(r.title)}" style="color:var(--color-danger)" title="Delete">✕</button>
       </td>`;
     default:
       if (c.custom) return `<td data-col="${c.id}" class="req-custom-cell" data-rid="${r.id}" data-custom-col="${c.id}"
