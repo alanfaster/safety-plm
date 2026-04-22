@@ -65,8 +65,8 @@ const ASPICE_LINKS = [
   { from: 'sw_arch',   to: 'sw_it',   type: 'trace' },
   { from: 'sw_design', to: 'sw_ut',   type: 'trace' },
   // Cross-level vertical trace links (pre-curved left to avoid overlaps)
-  { from: 'sys_req',   to: 'sw_req',  type: 'trace', bend: { x: -160, y: 0 } },
-  { from: 'sw_req',    to: 'sw_impl', type: 'trace', bend: { x: -160, y: 0 } },
+  { from: 'sys_req',   to: 'sw_req',  type: 'trace', bend: { x: -220, y: 0 } },
+  { from: 'sw_req',    to: 'sw_impl', type: 'trace', bend: { x: -220, y: 0 } },
   // Vertical trace links (left arm top → bottom)
   { from: 'sys_req',   to: 'sys_arch',  type: 'trace' },
   { from: 'sys_arch',  to: 'sw_req',    type: 'trace' },
@@ -544,8 +544,13 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       }
     });
     ASPICE_LINKS.forEach(al => {
-      const dup = _links.some(l => l.type === al.type && ((l.from === al.from && l.to === al.to) || (l.from === al.to && l.to === al.from)));
-      if (!dup) _links.push({ id: uid(), ...al });
+      const existing = _links.find(l => l.type === al.type && ((l.from === al.from && l.to === al.to) || (l.from === al.to && l.to === al.from)));
+      if (!existing) {
+        _links.push({ id: uid(), ...al });
+      } else if (al.bend) {
+        // Update bend if ASPICE default defines one
+        existing.bend = { ...al.bend };
+      }
     });
     _dirty = true; render();
   });
