@@ -64,18 +64,18 @@ const ASPICE_LINKS = [
   { from: 'sw_req',    to: 'sw_qt',   type: 'trace' },
   { from: 'sw_arch',   to: 'sw_it',   type: 'trace' },
   { from: 'sw_design', to: 'sw_ut',   type: 'trace' },
-  // Vertical sequential links (left arm top → bottom)
-  { from: 'sys_req',   to: 'sys_arch',  type: 'sequential' },
-  { from: 'sys_arch',  to: 'sw_req',    type: 'sequential' },
-  { from: 'sw_req',    to: 'sw_arch',   type: 'sequential' },
-  { from: 'sw_arch',   to: 'sw_design', type: 'sequential' },
-  { from: 'sw_design', to: 'sw_impl',   type: 'sequential' },
-  // Vertical sequential links (right arm bottom → top)
-  { from: 'sw_impl',   to: 'sw_ut',   type: 'sequential' },
-  { from: 'sw_ut',     to: 'sw_it',   type: 'sequential' },
-  { from: 'sw_it',     to: 'sw_qt',   type: 'sequential' },
-  { from: 'sw_qt',     to: 'sys_it',  type: 'sequential' },
-  { from: 'sys_it',    to: 'sys_qt',  type: 'sequential' },
+  // Vertical trace links (left arm top → bottom)
+  { from: 'sys_req',   to: 'sys_arch',  type: 'trace' },
+  { from: 'sys_arch',  to: 'sw_req',    type: 'trace' },
+  { from: 'sw_req',    to: 'sw_arch',   type: 'trace' },
+  { from: 'sw_arch',   to: 'sw_design', type: 'trace' },
+  { from: 'sw_design', to: 'sw_impl',   type: 'trace' },
+  // Vertical trace links (right arm bottom → top)
+  { from: 'sw_impl',   to: 'sw_ut',   type: 'trace' },
+  { from: 'sw_ut',     to: 'sw_it',   type: 'trace' },
+  { from: 'sw_it',     to: 'sw_qt',   type: 'trace' },
+  { from: 'sw_qt',     to: 'sys_it',  type: 'trace' },
+  { from: 'sys_it',    to: 'sys_qt',  type: 'trace' },
 ];
 
 // ── Dimensions ────────────────────────────────────────────────────────────────
