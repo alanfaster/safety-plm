@@ -278,10 +278,21 @@ function buildShell(container, title) {
         <span class="arch-topbar-title">◈ ${escH(title)} — Architecture</span>
         <div class="arch-topbar-right">
           <div class="arch-sep"></div>
+          <button class="arch-tb-btn" id="btn-arch-tree" title="Toggle component tree">🌳 Tree</button>
+          <div class="arch-sep"></div>
           <button class="arch-tb-btn" id="btn-arch-frame" title="Architecture Frame tree">🗂 Frame</button>
         </div>
       </div>
       <div class="arch-workspace">
+        <!-- Left component tree -->
+        <div class="arch-tree-panel" id="arch-tree-panel">
+          <div class="arch-tree-hdr">
+            <span class="arch-tree-title">Components</span>
+            <button class="arch-tb-btn arch-tree-close-btn" id="arch-tree-close" title="Close tree">✕</button>
+          </div>
+          <div class="arch-tree-body" id="arch-tree-body"></div>
+        </div>
+
         <div class="arch-canvas-outer" id="arch-outer">
           <div class="canvas-zoom-fab" id="arch-zoom-fab">
             <button class="czf-btn" id="btn-zoom-in"  title="Zoom in">＋</button>
@@ -409,6 +420,7 @@ function renderAll() {
   renderComponents();
   renderConnections();
   applyViewport();
+  refreshArchTree();
 }
 
 function renderGroups() {
@@ -800,6 +812,20 @@ function wireCanvas() {
   document.getElementById('btn-zoom-in').onclick  = () => { _s.zoom=Math.min(2.5,_s.zoom*1.2); applyViewport(); };
   document.getElementById('btn-zoom-out').onclick = () => { _s.zoom=Math.max(0.2,_s.zoom*0.8); applyViewport(); };
   document.getElementById('btn-zoom-fit').onclick = fitView;
+  // Component tree toggle
+  document.getElementById('btn-arch-tree')?.addEventListener('click', () => {
+    const panel = document.getElementById('arch-tree-panel');
+    if (!panel) return;
+    const open = panel.classList.contains('arch-tree-open');
+    panel.classList.toggle('arch-tree-open', !open);
+    document.getElementById('btn-arch-tree')?.classList.toggle('arch-tb-active', !open);
+    if (!open) renderArchTree();
+  });
+  document.getElementById('arch-tree-close')?.addEventListener('click', () => {
+    document.getElementById('arch-tree-panel')?.classList.remove('arch-tree-open');
+    document.getElementById('btn-arch-tree')?.classList.remove('arch-tb-active');
+  });
+
   // Frame tree toggle
   document.getElementById('btn-arch-frame')?.addEventListener('click', () => {
     const panel = document.getElementById('arch-frame-panel');
@@ -2126,6 +2152,10 @@ function selectComp(id, skipProps=false) {
     if (id) openProps(id);
     else showPropsEmpty();
   }
+  // Highlight in tree
+  document.querySelectorAll('.arch-tree-node').forEach(el => {
+    el.classList.toggle('arch-tree-selected', el.dataset.cid === id);
+  });
 }
 
 function refreshComp(id) {
@@ -2134,6 +2164,7 @@ function refreshComp(id) {
   if (c.comp_type==='Group') { el.outerHTML=groupHTML(c); wireGroup(id); }
   else if (c.comp_type==='Port') { el.outerHTML=portHTML(c); wireBlock(id); }
   else { el.outerHTML=blockHTML(c); wireBlock(id); }
+  refreshArchTree();
 }
 
 function startRename(id) {
@@ -2156,6 +2187,177 @@ function fitView() {
   _s.zoom=Math.min(2,Math.min((ow-pad*2)/(Math.max(...xe)-Math.min(...xs)||1),(oh-pad*2)/(Math.max(...ye)-Math.min(...ys)||1)));
   _s.panX=pad-Math.min(...xs)*_s.zoom; _s.panY=pad-Math.min(...ys)*_s.zoom;
   applyViewport();
+}
+
+// ── Component Tree (left sidebar) ────────────────────────────────────────────
+
+function renderArchTree() {
+  const body = document.getElementById('arch-tree-body');
+  if (!body) return;
+
+  const TYPE_ICON = { HW: '🔧', SW: '💾', Mechanical: '⚙️', Port: '■', Group: '⬜' };
+  const TYPE_COLOR = { HW: '#1A73E8', SW: '#1E8E3E', Mechanical: '#E37400', Port: '#555', Group: '#777' };
+
+  const groups    = _s.components.filter(c => c.comp_type === 'Group');
+  const blocks    = _s.components.filter(c => c.comp_type !== 'Group');
+  const conns     = _s.connections || [];
+
+  // collapsed state persists across re-renders
+  if (!renderArchTree._collapsed) renderArchTree._collapsed = new Set();
+  const col = renderArchTree._collapsed;
+
+  function nodeId(id) { return `atree-${id}`; }
+
+  function connLabel(cn) {
+    const src = _s.components.find(c => c.id === cn.source_id);
+    const tgt = _s.components.find(c => c.id === cn.target_id);
+    const srcName = src?.name || '?';
+    const tgtName = tgt?.name || '?';
+    const itype = cn.data?.iface_type || '';
+    return `${itype ? itype + ': ' : ''}${srcName} → ${tgtName}`;
+  }
+
+  function blockNode(c, depth = 0) {
+    const icon  = TYPE_ICON[c.comp_type]  || '▪';
+    const color = TYPE_COLOR[c.comp_type] || '#555';
+    const fns   = c.functions || [];
+    const myConns = conns.filter(cn => cn.source_id === c.id || cn.target_id === c.id);
+    const hasChildren = fns.length > 0 || myConns.length > 0;
+    const isCol = col.has(c.id);
+    const pad   = depth * 14;
+
+    let children = '';
+    if (!isCol && hasChildren) {
+      const fnRows = fns.map(f =>
+        `<div class="arch-tree-leaf" style="padding-left:${pad + 28}px">
+          <span class="arch-tree-leaf-icon">λ</span>
+          <span class="arch-tree-leaf-label">${escH(f.name)}</span>
+        </div>`
+      ).join('');
+      const cnRows = myConns.map(cn => {
+        const other = _s.components.find(cc => cc.id === (cn.source_id === c.id ? cn.target_id : cn.source_id));
+        const dir   = cn.source_id === c.id ? '→' : '←';
+        const itype = cn.data?.iface_type || 'Link';
+        return `<div class="arch-tree-leaf arch-tree-conn-leaf" style="padding-left:${pad + 28}px"
+            data-conn-id="${cn.id}" title="Click to select connection">
+            <span class="arch-tree-leaf-icon" style="color:#666">${dir}</span>
+            <span class="arch-tree-leaf-label" style="color:#555">${escH(itype)}: ${escH(other?.name || '?')}</span>
+          </div>`;
+      }).join('');
+      children = fnRows + cnRows;
+    }
+
+    return `<div class="arch-tree-node" id="${nodeId(c.id)}" data-cid="${c.id}"
+        style="padding-left:${pad}px">
+        <button class="arch-tree-chevron ${hasChildren ? '' : 'arch-tree-chevron-empty'} ${isCol ? 'arch-tree-chevron-col' : ''}"
+          data-toggle="${c.id}">▾</button>
+        <span class="arch-tree-node-icon" style="color:${color}">${icon}</span>
+        <span class="arch-tree-node-label" data-focus="${c.id}">${escH(c.name)}</span>
+      </div>${children}`;
+  }
+
+  function groupSubtree(g) {
+    const children = blocks.filter(c => (c.data?.group_id) === g.id);
+    const isCol    = col.has(g.id);
+    const hasKids  = children.length > 0;
+    const myConns  = conns.filter(cn => cn.source_id === g.id || cn.target_id === g.id);
+
+    let inner = '';
+    if (!isCol) {
+      inner = children.map(c => blockNode(c, 1)).join('');
+      if (myConns.length) {
+        inner += myConns.map(cn => {
+          const other = _s.components.find(cc => cc.id === (cn.source_id === g.id ? cn.target_id : cn.source_id));
+          const dir   = cn.source_id === g.id ? '→' : '←';
+          const itype = cn.data?.iface_type || 'Link';
+          return `<div class="arch-tree-leaf arch-tree-conn-leaf" style="padding-left:14px"
+              data-conn-id="${cn.id}" title="Click to select connection">
+              <span class="arch-tree-leaf-icon" style="color:#666">${dir}</span>
+              <span class="arch-tree-leaf-label" style="color:#555">${escH(itype)}: ${escH(other?.name || '?')}</span>
+            </div>`;
+        }).join('');
+      }
+    }
+
+    return `<div class="arch-tree-node arch-tree-group-node" id="${nodeId(g.id)}" data-cid="${g.id}">
+        <button class="arch-tree-chevron ${hasKids || myConns.length ? '' : 'arch-tree-chevron-empty'} ${isCol ? 'arch-tree-chevron-col' : ''}"
+          data-toggle="${g.id}">▾</button>
+        <span class="arch-tree-node-icon" style="color:#777">⬜</span>
+        <span class="arch-tree-node-label" data-focus="${g.id}">${escH(g.name)}</span>
+      </div>${inner}`;
+  }
+
+  // Ungrouped blocks (not inside any group)
+  const groupIds = new Set(groups.map(g => g.id));
+  const ungrouped = blocks.filter(c => !groupIds.has(c.id) && !c.data?.group_id);
+  const ports     = blocks.filter(c => c.comp_type === 'Port');
+
+  let html = '';
+
+  if (groups.length) {
+    html += groups.map(g => groupSubtree(g)).join('');
+  }
+  const freeBlocks = ungrouped.filter(c => c.comp_type !== 'Port');
+  if (freeBlocks.length) {
+    if (html) html += `<div class="arch-tree-section-sep">Ungrouped</div>`;
+    html += freeBlocks.map(c => blockNode(c, 0)).join('');
+  }
+  if (ports.length) {
+    html += `<div class="arch-tree-section-sep">Ports</div>`;
+    html += ports.map(c => blockNode(c, 0)).join('');
+  }
+  if (!html) {
+    html = `<div class="arch-tree-empty">No components yet</div>`;
+  }
+
+  body.innerHTML = html;
+
+  // Toggle collapse
+  body.querySelectorAll('.arch-tree-chevron[data-toggle]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.dataset.toggle;
+      if (col.has(id)) col.delete(id); else col.add(id);
+      renderArchTree();
+    });
+  });
+
+  // Click label → select + focus component on canvas
+  body.querySelectorAll('[data-focus]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      const cid = el.dataset.focus;
+      selectComp(cid);
+      focusComp(cid);
+    });
+  });
+
+  // Click connection leaf → select connection
+  body.querySelectorAll('.arch-tree-conn-leaf[data-conn-id]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      selectConn(el.dataset.connId);
+    });
+  });
+}
+
+/** Pan + zoom so a component is centered in the viewport. */
+function focusComp(cid) {
+  const c = compById(cid);
+  if (!c) return;
+  const outer = document.getElementById('arch-outer');
+  if (!outer) return;
+  const vw = outer.clientWidth;
+  const vh = outer.clientHeight;
+  _s.panX = vw / 2 - (c.x + c.width  / 2) * _s.zoom;
+  _s.panY = vh / 2 - (c.y + c.height / 2) * _s.zoom;
+  applyViewport();
+}
+
+/** Refresh tree if it is open (call after any structural change). */
+function refreshArchTree() {
+  const panel = document.getElementById('arch-tree-panel');
+  if (panel?.classList.contains('arch-tree-open')) renderArchTree();
 }
 
 // ── Architecture Frame Tree ───────────────────────────────────────────────────
