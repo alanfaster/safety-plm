@@ -56,13 +56,21 @@ const RESULT_LABELS = { pass: '✓ PASS', fail: '✗ FAIL', blocked: '⊘ BLOCKE
 
 // ── Module state ──────────────────────────────────────────────────────────────
 
-let _ctx        = null;
-let _tests      = [];
-let _selectedId = null;
-let _reqs       = [];
-let _testTypes  = [];    // from project_config.test_types
-let _saveTimer  = null;
-let _currentUser = null; // { email }
+let _ctx          = null;
+let _tests        = [];
+let _selectedId   = null;
+let _testTypes    = [];    // from project_config.test_types
+let _traceFields  = [];    // from project_config.traceability_fields
+let _traceData    = {};    // { [source]: [{code, label}] } — cached lookup data
+let _saveTimer    = null;
+let _currentUser  = null;  // { email }
+
+const DEFAULT_TRACE_FIELDS = [
+  { id: 'cust_reqs',   label: 'Customer Requirements', source: 'req:customer' },
+  { id: 'sw_reqs',     label: 'SW Requirements',       source: 'req:software' },
+  { id: 'arch_items',  label: 'Architecture Items',    source: 'arch_spec_items' },
+  { id: 'functions',   label: 'Functions',             source: 'free_text' },
+];
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -72,10 +80,11 @@ export async function renderTestSpecs(container, { project, item, system, phase,
   const parentId   = system ? system.id : item.id;
   const parentName = system?.name || item?.name;
 
-  _ctx         = { project, item, system, phase, parentType, parentId, meta };
-  _tests       = [];
-  _selectedId  = null;
-  _saveTimer   = null;
+  _ctx          = { project, item, system, phase, parentType, parentId, meta };
+  _tests        = [];
+  _selectedId   = null;
+  _saveTimer    = null;
+  _traceData    = {};
 
   // Get current user for last-modified tracking
   const { data: { user } } = await sb.auth.getUser();
@@ -89,10 +98,15 @@ export async function renderTestSpecs(container, { project, item, system, phase,
   ]);
   renderSidebar({ view: 'item', project, item, system, activePage: phase });
 
-  // Load project config for custom test types
+  // Load project config
   const { data: pcRow } = await sb.from('project_config')
     .select('config').eq('project_id', project.id).maybeSingle();
-  _testTypes = pcRow?.config?.test_types || ['test', 'inspection', 'analysis', 'demonstration'];
+  const cfg = pcRow?.config || {};
+  _testTypes   = cfg.test_types || ['test', 'inspection', 'analysis', 'demonstration'];
+  _traceFields = cfg.traceability_fields?.length ? cfg.traceability_fields : DEFAULT_TRACE_FIELDS;
+
+  // Pre-fetch traceability source data
+  await loadTraceSourceData(parentType, parentId);
 
   container.innerHTML = `
     <div class="page-header">
@@ -117,15 +131,47 @@ export async function renderTestSpecs(container, { project, item, system, phase,
 
   document.getElementById('btn-new-test').onclick = () => createTest();
 
-  // Cache requirements
-  const { data: reqs } = await sb.from('requirements')
-    .select('id, req_code, title, type')
-    .eq('parent_type', parentType).eq('parent_id', parentId)
-    .not('type', 'in', '("title","info")')
-    .order('sort_order', { ascending: true });
-  _reqs = reqs || [];
-
   await loadTests();
+}
+
+// ── Traceability source loader ────────────────────────────────────────────────
+
+async function loadTraceSourceData(parentType, parentId) {
+  // Collect which sources are needed
+  const sources = [...new Set(_traceFields.map(f => f.source))];
+
+  for (const src of sources) {
+    if (src === 'free_text' || _traceData[src]) continue;
+
+    if (src === 'arch_spec_items') {
+      const { data } = await sb.from('arch_spec_items')
+        .select('spec_code, title')
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .neq('type', 'section')
+        .order('sort_order', { ascending: true });
+      _traceData[src] = (data || []).map(r => ({
+        code:  r.spec_code || r.id,
+        label: r.title || r.spec_code || '',
+      }));
+      continue;
+    }
+
+    // requirements (all or filtered by type)
+    if (src === 'requirements' || src.startsWith('req:')) {
+      const reqType = src.startsWith('req:') ? src.slice(4) : null;
+      let q = sb.from('requirements')
+        .select('req_code, title, type')
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .not('type', 'in', '("title","info")')
+        .order('sort_order', { ascending: true });
+      if (reqType) q = q.eq('type', reqType);
+      const { data } = await q;
+      _traceData[src] = (data || []).map(r => ({
+        code:  r.req_code,
+        label: r.title || '',
+      }));
+    }
+  }
 }
 
 // ── Load & render table ───────────────────────────────────────────────────────
@@ -169,7 +215,7 @@ function renderTestTable(pane) {
               <th>Name</th>
               <th style="width:100px">Type</th>
               <th style="width:110px">Level</th>
-              <th style="width:130px">Requirement(s)</th>
+              <th style="width:130px">${esc(_traceFields.find(f => f.source !== 'free_text')?.label || 'Traceability')}</th>
               <th style="width:90px">Spec Status</th>
               <th style="width:90px">Result</th>
               <th style="width:40px"></th>
@@ -202,7 +248,10 @@ function renderTestTable(pane) {
 }
 
 function testRowHTML(t) {
-  const reqs    = (t.linked_requirements || []).slice(0, 2).join(', ') + (t.linked_requirements?.length > 2 ? '…' : '');
+  const traceability  = t.traceability || {};
+  const firstField    = _traceFields.find(f => f.source !== 'free_text');
+  const firstVals     = firstField ? (traceability[firstField.id] || []) : [];
+  const reqs          = firstVals.slice(0, 2).join(', ') + (firstVals.length > 2 ? '…' : '');
   const sColor  = STATUS_COLORS[t.status] || '#9AA0A6';
   const rColor  = RESULT_COLORS[t.result] || '';
   const lvlLabel = LEVELS.find(l => l.value === t.level)?.label || t.level || '—';
@@ -407,34 +456,7 @@ function buildDetailHTML(t) {
         </div>
         <div class="ts-section-body" id="sec-trace" style="display:none">
           <div class="ts-field-grid">
-            <div class="ts-field">
-              <label>Linked Requirements</label>
-              <div class="ts-req-tags" id="ts-req-tags">
-                ${(t.linked_requirements || []).map(rc => reqTagHTML(rc)).join('')}
-              </div>
-              <div style="display:flex;gap:6px;margin-top:6px">
-                <input id="ts-req-inp" class="form-input" placeholder="Type req code + Enter…"
-                  style="flex:1;font-size:12px" list="ts-req-datalist"/>
-                <datalist id="ts-req-datalist">
-                  ${_reqs.map(r => `<option value="${esc(r.req_code)}">${esc(r.req_code)} — ${esc(r.title || '')}</option>`).join('')}
-                </datalist>
-              </div>
-            </div>
-            <div class="ts-field">
-              <label>Linked Functions</label>
-              <input id="td-linked-functions" class="form-input"
-                value="${esc((t.linked_functions || []).join(', '))}" placeholder="Comma-separated"/>
-            </div>
-            <div class="ts-field">
-              <label>Linked Components</label>
-              <input id="td-linked-components" class="form-input"
-                value="${esc((t.linked_components || []).join(', '))}" placeholder="Comma-separated"/>
-            </div>
-            <div class="ts-field">
-              <label>Linked Safety Items (FHA/FMEA)</label>
-              <input id="td-linked-safety" class="form-input"
-                value="${esc((t.linked_safety || []).join(', '))}" placeholder="Comma-separated"/>
-            </div>
+            ${buildTraceFieldsHTML(t)}
           </div>
         </div>
       </div>
@@ -524,6 +546,48 @@ function evidenceItemHTML(e, i) {
   </div>`;
 }
 
+function buildTraceFieldsHTML(t) {
+  const traceability = t.traceability || {};
+  return _traceFields.map(field => {
+    const values  = traceability[field.id] || [];
+    const isFree  = field.source === 'free_text';
+    const options = isFree ? [] : (_traceData[field.source] || []);
+
+    if (isFree) {
+      return `
+        <div class="ts-field">
+          <label>${esc(field.label)}</label>
+          <input id="td-trace-free-${esc(field.id)}" class="form-input ts-trace-free"
+            data-field="${esc(field.id)}"
+            value="${esc(values.join(', '))}"
+            placeholder="Comma-separated…"/>
+        </div>`;
+    }
+
+    return `
+      <div class="ts-field">
+        <label>${esc(field.label)}</label>
+        <div class="ts-req-tags ts-trace-tags" id="ts-trace-tags-${esc(field.id)}" data-field="${esc(field.id)}">
+          ${values.map(c => traceTagHTML(c, field.id)).join('')}
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <input class="form-input ts-trace-inp" data-field="${esc(field.id)}"
+            id="ts-trace-inp-${esc(field.id)}"
+            placeholder="Type code + Enter…"
+            style="flex:1;font-size:12px"
+            list="ts-trace-dl-${esc(field.id)}"/>
+          <datalist id="ts-trace-dl-${esc(field.id)}">
+            ${options.map(o => `<option value="${esc(o.code)}">${esc(o.code)}${o.label ? ' — ' + esc(o.label) : ''}</option>`).join('')}
+          </datalist>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function traceTagHTML(code, fieldId) {
+  return `<span class="ts-req-tag" data-code="${esc(code)}" data-field="${esc(fieldId)}">${esc(code)}<button class="ts-req-tag-del" title="Remove">×</button></span>`;
+}
+
 // ── Wire detail ───────────────────────────────────────────────────────────────
 
 function wireDetail(test) {
@@ -550,25 +614,34 @@ function wireDetail(test) {
     });
   });
 
-  // Requirement tags
-  const reqInp  = document.getElementById('ts-req-inp');
-  const reqTags = document.getElementById('ts-req-tags');
-  const addReqTag = (code) => {
-    code = code.trim().toUpperCase();
-    if (!code || reqTags.querySelector(`[data-code="${code}"]`)) return;
-    const span = document.createElement('span');
-    span.className  = 'ts-req-tag';
-    span.dataset.code = code;
-    span.innerHTML  = `${esc(code)}<button class="ts-req-tag-del" title="Remove">×</button>`;
-    span.querySelector('.ts-req-tag-del').onclick = () => { span.remove(); scheduleSave(test); };
-    reqTags.appendChild(span);
-    scheduleSave(test);
-  };
-  reqTags.querySelectorAll('.ts-req-tag-del').forEach(btn => {
-    btn.onclick = () => { btn.closest('.ts-req-tag').remove(); scheduleSave(test); };
+  // Traceability tag pickers
+  document.querySelectorAll('.ts-trace-tags').forEach(tagsDiv => {
+    const fieldId = tagsDiv.dataset.field;
+    tagsDiv.querySelectorAll('.ts-req-tag-del').forEach(btn => {
+      btn.onclick = () => { btn.closest('.ts-req-tag').remove(); scheduleSave(test); };
+    });
+    const inp = document.getElementById(`ts-trace-inp-${fieldId}`);
+    if (!inp) return;
+    inp.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ',') return;
+      e.preventDefault();
+      const code = inp.value.trim();
+      if (!code || tagsDiv.querySelector(`[data-code="${CSS.escape(code)}"]`)) { inp.value = ''; return; }
+      const span = document.createElement('span');
+      span.className = 'ts-req-tag';
+      span.dataset.code  = code;
+      span.dataset.field = fieldId;
+      span.innerHTML = `${esc(code)}<button class="ts-req-tag-del" title="Remove">×</button>`;
+      span.querySelector('.ts-req-tag-del').onclick = () => { span.remove(); scheduleSave(test); };
+      tagsDiv.appendChild(span);
+      inp.value = '';
+      scheduleSave(test);
+    });
   });
-  reqInp.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addReqTag(reqInp.value); reqInp.value = ''; }
+
+  // Free text traceability fields
+  document.querySelectorAll('.ts-trace-free').forEach(inp => {
+    inp.addEventListener('input', () => scheduleSave(test));
   });
 
   // Steps
@@ -608,8 +681,7 @@ function wireDetail(test) {
   // Auto-save on all scalar inputs
   const autoFields = ['td-name','td-description','td-type','td-level','td-status','td-version',
     'td-impl-ticket','td-environment','td-preconditions','td-expected-results',
-    'td-acceptance-criteria','td-executor','td-execution-date','td-notes',
-    'td-linked-functions','td-linked-components','td-linked-safety'];
+    'td-acceptance-criteria','td-executor','td-execution-date','td-notes'];
   autoFields.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -775,8 +847,20 @@ function collectPatch(test) {
     });
   });
 
-  const linkedRequirements = [...document.querySelectorAll('#ts-req-tags .ts-req-tag')]
-    .map(t => t.dataset.code).filter(Boolean);
+  // Dynamic traceability fields
+  const traceability = {};
+  _traceFields.forEach(field => {
+    if (field.source === 'free_text') {
+      const inp = document.getElementById(`td-trace-free-${field.id}`);
+      if (inp) traceability[field.id] = splitCsv(inp.value);
+    } else {
+      const tagsDiv = document.getElementById(`ts-trace-tags-${field.id}`);
+      if (tagsDiv) {
+        traceability[field.id] = [...tagsDiv.querySelectorAll('.ts-req-tag')]
+          .map(t => t.dataset.code).filter(Boolean);
+      }
+    }
+  });
 
   const evidence = [];
   document.querySelectorAll('#ts-evidence-list .ts-evidence-item').forEach(div => {
@@ -805,10 +889,7 @@ function collectPatch(test) {
     executor:             document.getElementById('td-executor')?.value.trim()            || null,
     execution_date:       document.getElementById('td-execution-date')?.value             || null,
     notes:                document.getElementById('td-notes')?.value.trim()               || null,
-    linked_requirements:  linkedRequirements,
-    linked_functions:     splitCsv(document.getElementById('td-linked-functions')?.value),
-    linked_components:    splitCsv(document.getElementById('td-linked-components')?.value),
-    linked_safety:        splitCsv(document.getElementById('td-linked-safety')?.value),
+    traceability,
     steps,
     evidence,
     result:               result || null,

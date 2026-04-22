@@ -31,12 +31,30 @@ export async function renderProjectSettings(container, ctx) {
   const functionTypes  = config.function_types  || [];
   const reqCustomCols      = config.req_custom_cols       || [];
   const archSpecCustomCols = config.arch_spec_custom_cols || [];
-  const testTypes          = config.test_types            || [];
+  const testTypes           = config.test_types            || [];
+  const traceFields         = config.traceability_fields   || [];
 
-  render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, pcRow?.id, config);
+  render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, pcRow?.id, config);
 }
 
-function render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, configId, fullConfig = {}) {
+const TRACE_SOURCE_OPTIONS = [
+  { value: 'requirements',           label: 'All Requirements' },
+  { value: 'req:customer',           label: 'Customer Requirements' },
+  { value: 'req:interface',          label: 'Interface Requirements' },
+  { value: 'req:software',           label: 'SW Requirements' },
+  { value: 'req:safety',             label: 'Safety Requirements' },
+  { value: 'arch_spec_items',        label: 'Architecture Items' },
+  { value: 'free_text',              label: 'Free text (no lookup)' },
+];
+
+const DEFAULT_TRACE_FIELDS = [
+  { id: 'cust_reqs',   label: 'Customer Requirements', source: 'req:customer' },
+  { id: 'sw_reqs',     label: 'SW Requirements',       source: 'req:software' },
+  { id: 'arch_items',  label: 'Architecture Items',    source: 'arch_spec_items' },
+  { id: 'functions',   label: 'Functions',             source: 'free_text' },
+];
+
+function render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, configId, fullConfig = {}) {
   const fields    = DEFAULT_PHA_FIELDS.map(f => ({ ...f, ...(phaOverrides[f.key] || {}) }));
   const fhaFields = DEFAULT_FHA_FIELDS.map(f => ({ ...f, ...(fhaOverrides[f.key] || {}) }));
 
@@ -58,6 +76,7 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         <button class="settings-tab" data-tab="reqcols">Req Columns</button>
         <button class="settings-tab" data-tab="archspeccols">Arch Spec Columns</button>
         <button class="settings-tab" data-tab="testtypes">Test Types</button>
+        <button class="settings-tab" data-tab="tracefields">Traceability Fields</button>
         <button class="settings-tab" data-tab="members">Members <span class="badge-soon">soon</span></button>
       </div>
 
@@ -254,6 +273,36 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
           </div>
           <div style="margin-top:16px">
             <button class="btn btn-primary" id="btn-save-testtypes">Save Test Types</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-tracefields" class="settings-tab-panel" style="display:none">
+        <div class="settings-section">
+          <p class="settings-section-desc">
+            Define the <strong>Traceability</strong> fields shown in Test Specifications.
+            Each field can pull its options from a DB table (Requirements, Architecture Items) or accept free text.
+          </p>
+          <table class="settings-table" id="tracefields-table">
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th style="width:220px">Source</th>
+                <th style="width:60px;text-align:center">Delete</th>
+              </tr>
+            </thead>
+            <tbody id="tracefields-tbody">
+            </tbody>
+          </table>
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input class="form-input" id="tracefields-new-label" placeholder="Field label (e.g. Detail Design)…" style="max-width:260px"/>
+            <select class="form-input form-select" id="tracefields-new-source" style="width:200px">
+              ${TRACE_SOURCE_OPTIONS.map(o => `<option value="${escHtml(o.value)}">${escHtml(o.label)}</option>`).join('')}
+            </select>
+            <button class="btn btn-secondary btn-sm" id="btn-add-tracefield">＋ Add Field</button>
+          </div>
+          <div style="margin-top:16px">
+            <button class="btn btn-primary" id="btn-save-tracefields">Save Traceability Fields</button>
           </div>
         </div>
       </div>
@@ -603,6 +652,81 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     if (error) { toast(t('common.error'), 'error'); return; }
     fullConfig = newConfig;
     toast('Test types saved.', 'success');
+  };
+
+  // ── Traceability Fields tab ───────────────────────────────────────────────
+  let _traceFields = (traceFields.length ? traceFields : DEFAULT_TRACE_FIELDS).map(f => ({ ...f }));
+
+  function renderTraceFieldsTable() {
+    const tbody = document.getElementById('tracefields-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = _traceFields.length
+      ? _traceFields.map((f, i) => `
+          <tr data-tf-idx="${i}">
+            <td>
+              <input class="form-input tf-label-input" data-idx="${i}" value="${escHtml(f.label)}"
+                placeholder="Field label" style="max-width:300px"/>
+            </td>
+            <td>
+              <select class="form-input form-select tf-source-sel" data-idx="${i}">
+                ${TRACE_SOURCE_OPTIONS.map(o => `<option value="${escHtml(o.value)}" ${f.source===o.value?'selected':''}>${escHtml(o.label)}</option>`).join('')}
+              </select>
+            </td>
+            <td style="text-align:center">
+              <button class="btn btn-ghost btn-sm btn-del-tracefield" data-idx="${i}"
+                style="color:var(--color-danger)" title="Delete">✕</button>
+            </td>
+          </tr>`).join('')
+      : `<tr><td colspan="3" style="color:var(--color-text-muted);font-size:13px;padding:12px 8px">No traceability fields defined yet.</td></tr>`;
+
+    tbody.querySelectorAll('.tf-label-input').forEach(inp => {
+      inp.oninput = () => { _traceFields[parseInt(inp.dataset.idx)].label = inp.value; };
+    });
+    tbody.querySelectorAll('.tf-source-sel').forEach(sel => {
+      sel.onchange = () => { _traceFields[parseInt(sel.dataset.idx)].source = sel.value; };
+    });
+    tbody.querySelectorAll('.btn-del-tracefield').forEach(btn => {
+      btn.onclick = () => {
+        _traceFields.splice(parseInt(btn.dataset.idx), 1);
+        renderTraceFieldsTable();
+      };
+    });
+  }
+
+  renderTraceFieldsTable();
+
+  document.getElementById('btn-add-tracefield').onclick = () => {
+    const labelEl  = document.getElementById('tracefields-new-label');
+    const sourceEl = document.getElementById('tracefields-new-source');
+    const label    = labelEl.value.trim();
+    if (!label) { labelEl.focus(); return; }
+    const id = label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    _traceFields.push({ id: id + '_' + Date.now().toString(36), label, source: sourceEl.value });
+    labelEl.value = '';
+    renderTraceFieldsTable();
+  };
+  document.getElementById('tracefields-new-label').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-add-tracefield').click(); }
+  });
+
+  document.getElementById('btn-save-tracefields').onclick = async () => {
+    const btn = document.getElementById('btn-save-tracefields');
+    btn.disabled = true;
+    document.querySelectorAll('.tf-label-input').forEach(inp => {
+      const i = parseInt(inp.dataset.idx);
+      if (_traceFields[i]) _traceFields[i].label = inp.value.trim() || _traceFields[i].label;
+    });
+    const newConfig = { ...fullConfig, traceability_fields: _traceFields };
+    let error;
+    if (configId) {
+      ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));
+    } else {
+      ({ error } = await sb.from('project_config').insert({ project_id: project.id, config: newConfig }));
+    }
+    btn.disabled = false;
+    if (error) { toast(t('common.error'), 'error'); return; }
+    fullConfig = newConfig;
+    toast('Traceability fields saved.', 'success');
   };
 
   // ── Function Types tab ─────────────────────────────────────────────────────
