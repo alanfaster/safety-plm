@@ -137,7 +137,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
                 <marker id="arr-trace" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
                   <polygon points="0 0, 8 3, 0 6" fill="#1A73E8" opacity="0.8"/>
                 </marker>
-                <marker id="arr-trace-start" markerWidth="8" markerHeight="6" refX="1" refY="3" orient="auto-start-reverse">
+                <marker id="arr-trace-start" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto-start-reverse">
                   <polygon points="0 0, 8 3, 0 6" fill="#1A73E8" opacity="0.8"/>
                 </marker>
                 <marker id="arr-seq" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
