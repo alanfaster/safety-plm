@@ -1321,6 +1321,37 @@ tr.req-title-row td { cursor: default; }
   vertical-align: middle;
 }
 
+/* V-Model link rows */
+.vmodel-link-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.vmodel-arrow {
+  font-size: 16px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+.vmodel-node {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  min-width: 140px;
+  justify-content: center;
+}
+.vmodel-node--system { background: #E8F0FE; color: #1A73E8; border-color: #C5D8FB; }
+.vmodel-node--sw     { background: #E6F4EA; color: #1E7E34; border-color: #A8D5B5; }
+.vmodel-node--hw     { background: #FEF3E2; color: #B05000; border-color: #F8D09A; }
+.vmodel-node--mech   { background: #F3E8FD; color: #7B1FA2; border-color: #D9A8F0; }
+
 .settings-section-desc {
   font-size: var(--text-sm);
   color: var(--color-text-muted);

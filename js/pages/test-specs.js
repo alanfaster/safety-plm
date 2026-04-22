@@ -59,17 +59,40 @@ const RESULT_LABELS = { pass: '✓ PASS', fail: '✗ FAIL', blocked: '⊘ BLOCKE
 let _ctx          = null;
 let _tests        = [];
 let _selectedId   = null;
-let _testTypes    = [];    // from project_config.test_types
-let _traceFields  = [];    // from project_config.traceability_fields
-let _traceData    = {};    // { [source]: [{code, label}] } — cached lookup data
+let _testTypes    = [];   // from project_config.test_types
+let _traceFields  = [];   // derived from vmodel_links for this page
+let _traceData    = {};   // { [fieldId]: [{code, label}] } — cached lookup data
 let _saveTimer    = null;
-let _currentUser  = null;  // { email }
+let _currentUser  = null; // { email }
 
-const DEFAULT_TRACE_FIELDS = [
-  { id: 'cust_reqs',   label: 'Customer Requirements', source: 'req:customer' },
-  { id: 'sw_reqs',     label: 'SW Requirements',       source: 'req:software' },
-  { id: 'arch_items',  label: 'Architecture Items',    source: 'arch_spec_items' },
-  { id: 'functions',   label: 'Functions',             source: 'free_text' },
+// DB source per phase — determines how to fetch options for a traceability field
+const PHASE_DB_SOURCE = {
+  requirements:        'requirements',
+  architecture:        'arch_spec_items',
+  unit_testing:        'test_specs',
+  integration_testing: 'test_specs',
+  system_testing:      'test_specs',
+};
+
+// All V-model node definitions (must match project-settings.js)
+const VMODEL_NODES = [
+  { id: 'sys_req',     domain: 'system', phase: 'requirements',        label: 'System Requirements' },
+  { id: 'sys_arch',    domain: 'system', phase: 'architecture',        label: 'System Architecture' },
+  { id: 'sys_it',      domain: 'system', phase: 'integration_testing', label: 'System Integration Test' },
+  { id: 'sys_qt',      domain: 'system', phase: 'system_testing',      label: 'System Qualification Test' },
+  { id: 'sw_req',      domain: 'sw',     phase: 'requirements',        label: 'SW Requirements' },
+  { id: 'sw_arch',     domain: 'sw',     phase: 'architecture',        label: 'SW Architecture' },
+  { id: 'sw_design',   domain: 'sw',     phase: 'design',              label: 'SW Detailed Design' },
+  { id: 'sw_impl',     domain: 'sw',     phase: 'implementation',      label: 'SW Units' },
+  { id: 'sw_ut',       domain: 'sw',     phase: 'unit_testing',        label: 'Unit Test Specification' },
+  { id: 'sw_it',       domain: 'sw',     phase: 'integration_testing', label: 'SW Integration Test Spec' },
+  { id: 'sw_qt',       domain: 'sw',     phase: 'system_testing',      label: 'SW Qualification Test Spec' },
+  { id: 'hw_req',      domain: 'hw',     phase: 'requirements',        label: 'HW Requirements' },
+  { id: 'hw_arch',     domain: 'hw',     phase: 'architecture',        label: 'HW Architecture' },
+  { id: 'hw_design',   domain: 'hw',     phase: 'design',              label: 'HW Detailed Design' },
+  { id: 'hw_ut',       domain: 'hw',     phase: 'unit_testing',        label: 'HW Test Specification' },
+  { id: 'mech_req',    domain: 'mech',   phase: 'requirements',        label: 'MECH Requirements' },
+  { id: 'mech_design', domain: 'mech',   phase: 'design',              label: 'MECH Detailed Design' },
 ];
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -80,7 +103,7 @@ export async function renderTestSpecs(container, { project, item, system, phase,
   const parentId   = system ? system.id : item.id;
   const parentName = system?.name || item?.name;
 
-  _ctx          = { project, item, system, phase, parentType, parentId, meta };
+  _ctx          = { project, item, system, phase, domain, parentType, parentId, meta };
   _tests        = [];
   _selectedId   = null;
   _saveTimer    = null;
@@ -102,11 +125,14 @@ export async function renderTestSpecs(container, { project, item, system, phase,
   const { data: pcRow } = await sb.from('project_config')
     .select('config').eq('project_id', project.id).maybeSingle();
   const cfg = pcRow?.config || {};
-  _testTypes   = cfg.test_types || ['test', 'inspection', 'analysis', 'demonstration'];
-  _traceFields = cfg.traceability_fields?.length ? cfg.traceability_fields : DEFAULT_TRACE_FIELDS;
+  _testTypes  = cfg.test_types || ['test', 'inspection', 'analysis', 'demonstration'];
 
-  // Pre-fetch traceability source data
-  await loadTraceSourceData(parentType, parentId);
+  // Derive traceability fields from V-Model links
+  const vmodelLinks = cfg.vmodel_links || [];
+  _traceFields = deriveTraceFields(domain, phase, vmodelLinks);
+
+  // Pre-fetch data for each traceability field
+  await loadTraceSourceData(item, system);
 
   container.innerHTML = `
     <div class="page-header">
@@ -134,42 +160,67 @@ export async function renderTestSpecs(container, { project, item, system, phase,
   await loadTests();
 }
 
+// ── V-Model helpers ────────────────────────────────────────────────────────────
+
+/** Derive traceability fields for this page from vmodel_links config */
+function deriveTraceFields(domain, phase, vmodelLinks) {
+  const myNodeId = VMODEL_NODES.find(n => n.domain === domain && n.phase === phase)?.id;
+  if (!myNodeId || !vmodelLinks.length) return [];
+
+  const fields = [];
+  for (const link of vmodelLinks) {
+    const otherNodeId = link.from === myNodeId ? link.to : link.to === myNodeId ? link.from : null;
+    if (!otherNodeId) continue;
+    const node = VMODEL_NODES.find(n => n.id === otherNodeId);
+    if (!node) continue;
+    const source = PHASE_DB_SOURCE[node.phase] || 'free_text';
+    fields.push({ id: otherNodeId, label: node.label, source, node });
+  }
+  return fields;
+}
+
 // ── Traceability source loader ────────────────────────────────────────────────
 
-async function loadTraceSourceData(parentType, parentId) {
-  // Collect which sources are needed
-  const sources = [...new Set(_traceFields.map(f => f.source))];
+async function loadTraceSourceData(item, system) {
+  for (const field of _traceFields) {
+    if (_traceData[field.id]) continue;
+    const node = field.node;
+    if (!node) continue;
 
-  for (const src of sources) {
-    if (src === 'free_text' || _traceData[src]) continue;
+    // Resolve parent for this node's domain
+    const isSystemDomain = node.domain === 'system';
+    const parentType     = isSystemDomain ? 'system' : 'item';
+    const parentId       = isSystemDomain ? system?.id : item?.id;
+    if (!parentId) { _traceData[field.id] = []; continue; }
 
-    if (src === 'arch_spec_items') {
+    const dbSource = PHASE_DB_SOURCE[node.phase];
+
+    if (dbSource === 'requirements') {
+      const { data } = await sb.from('requirements')
+        .select('req_code, title')
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .not('type', 'in', '("title","info")')
+        .order('sort_order', { ascending: true });
+      _traceData[field.id] = (data || []).map(r => ({ code: r.req_code, label: r.title || '' }));
+
+    } else if (dbSource === 'arch_spec_items') {
       const { data } = await sb.from('arch_spec_items')
         .select('spec_code, title')
         .eq('parent_type', parentType).eq('parent_id', parentId)
         .neq('type', 'section')
         .order('sort_order', { ascending: true });
-      _traceData[src] = (data || []).map(r => ({
-        code:  r.spec_code || r.id,
-        label: r.title || r.spec_code || '',
-      }));
-      continue;
-    }
+      _traceData[field.id] = (data || []).map(r => ({ code: r.spec_code || r.id, label: r.title || '' }));
 
-    // requirements (all or filtered by type)
-    if (src === 'requirements' || src.startsWith('req:')) {
-      const reqType = src.startsWith('req:') ? src.slice(4) : null;
-      let q = sb.from('requirements')
-        .select('req_code, title, type')
+    } else if (dbSource === 'test_specs') {
+      const { data } = await sb.from('test_specs')
+        .select('test_code, name, phase')
         .eq('parent_type', parentType).eq('parent_id', parentId)
-        .not('type', 'in', '("title","info")')
+        .eq('phase', node.phase)
         .order('sort_order', { ascending: true });
-      if (reqType) q = q.eq('type', reqType);
-      const { data } = await q;
-      _traceData[src] = (data || []).map(r => ({
-        code:  r.req_code,
-        label: r.title || '',
-      }));
+      _traceData[field.id] = (data || []).map(r => ({ code: r.test_code, label: r.name || '' }));
+
+    } else {
+      _traceData[field.id] = [];
     }
   }
 }
@@ -548,10 +599,16 @@ function evidenceItemHTML(e, i) {
 
 function buildTraceFieldsHTML(t) {
   const traceability = t.traceability || {};
+  if (!_traceFields.length) {
+    return `<p style="color:var(--color-text-muted);font-size:13px">
+      No traceability links configured for this page. Go to
+      <strong>Project Settings → V-Model Links</strong> to define connections.
+    </p>`;
+  }
   return _traceFields.map(field => {
     const values  = traceability[field.id] || [];
     const isFree  = field.source === 'free_text';
-    const options = isFree ? [] : (_traceData[field.source] || []);
+    const options = isFree ? [] : (_traceData[field.id] || []);
 
     if (isFree) {
       return `

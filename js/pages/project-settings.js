@@ -33,9 +33,40 @@ export async function renderProjectSettings(container, ctx) {
   const archSpecCustomCols = config.arch_spec_custom_cols || [];
   const testTypes           = config.test_types            || [];
   const traceFields         = config.traceability_fields   || [];
+  const vmodelLinks         = config.vmodel_links          || [];
 
-  render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, pcRow?.id, config);
+  render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, vmodelLinks, pcRow?.id, config);
 }
+
+// V-Model node definitions — domain × phase combinations matching the sidebar
+const VMODEL_NODES = [
+  { id: 'sys_req',     domain: 'system', phase: 'requirements',        label: 'System Requirements' },
+  { id: 'sys_arch',    domain: 'system', phase: 'architecture',        label: 'System Architecture' },
+  { id: 'sys_it',      domain: 'system', phase: 'integration_testing', label: 'System Integration Test' },
+  { id: 'sys_qt',      domain: 'system', phase: 'system_testing',      label: 'System Qualification Test' },
+  { id: 'sw_req',      domain: 'sw',     phase: 'requirements',        label: 'SW Requirements' },
+  { id: 'sw_arch',     domain: 'sw',     phase: 'architecture',        label: 'SW Architecture' },
+  { id: 'sw_design',   domain: 'sw',     phase: 'design',              label: 'SW Detailed Design' },
+  { id: 'sw_impl',     domain: 'sw',     phase: 'implementation',      label: 'SW Units' },
+  { id: 'sw_ut',       domain: 'sw',     phase: 'unit_testing',        label: 'Unit Test Specification' },
+  { id: 'sw_it',       domain: 'sw',     phase: 'integration_testing', label: 'SW Integration Test Spec' },
+  { id: 'sw_qt',       domain: 'sw',     phase: 'system_testing',      label: 'SW Qualification Test Spec' },
+  { id: 'hw_req',      domain: 'hw',     phase: 'requirements',        label: 'HW Requirements' },
+  { id: 'hw_arch',     domain: 'hw',     phase: 'architecture',        label: 'HW Architecture' },
+  { id: 'hw_design',   domain: 'hw',     phase: 'design',              label: 'HW Detailed Design' },
+  { id: 'hw_ut',       domain: 'hw',     phase: 'unit_testing',        label: 'HW Test Specification' },
+  { id: 'mech_req',    domain: 'mech',   phase: 'requirements',        label: 'MECH Requirements' },
+  { id: 'mech_design', domain: 'mech',   phase: 'design',              label: 'MECH Detailed Design' },
+];
+
+// DB source for each phase (used in test-specs to know how to query)
+const PHASE_DB_SOURCE = {
+  requirements:        'requirements',
+  architecture:        'arch_spec_items',
+  unit_testing:        'test_specs',
+  integration_testing: 'test_specs',
+  system_testing:      'test_specs',
+};
 
 const TRACE_SOURCE_OPTIONS = [
   { value: 'requirements',           label: 'All Requirements' },
@@ -54,7 +85,7 @@ const DEFAULT_TRACE_FIELDS = [
   { id: 'functions',   label: 'Functions',             source: 'free_text' },
 ];
 
-function render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, configId, fullConfig = {}) {
+function render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, vmodelLinks, configId, fullConfig = {}) {
   const fields    = DEFAULT_PHA_FIELDS.map(f => ({ ...f, ...(phaOverrides[f.key] || {}) }));
   const fhaFields = DEFAULT_FHA_FIELDS.map(f => ({ ...f, ...(fhaOverrides[f.key] || {}) }));
 
@@ -76,7 +107,7 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         <button class="settings-tab" data-tab="reqcols">Req Columns</button>
         <button class="settings-tab" data-tab="archspeccols">Arch Spec Columns</button>
         <button class="settings-tab" data-tab="testtypes">Test Types</button>
-        <button class="settings-tab" data-tab="tracefields">Traceability Fields</button>
+        <button class="settings-tab" data-tab="vmodel">V-Model Links</button>
         <button class="settings-tab" data-tab="members">Members <span class="badge-soon">soon</span></button>
       </div>
 
@@ -273,6 +304,32 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
           </div>
           <div style="margin-top:16px">
             <button class="btn btn-primary" id="btn-save-testtypes">Save Test Types</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-vmodel" class="settings-tab-panel" style="display:none">
+        <div class="settings-section">
+          <p class="settings-section-desc">
+            Define bidirectional traceability links between project pages.
+            Each link will automatically create a traceability field on both connected pages,
+            so that items on each side can reference items on the other.
+          </p>
+          <div id="vmodel-links-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px;border:1px dashed var(--color-border);border-radius:8px;background:var(--color-hover)">
+            <span style="font-size:12px;font-weight:600;color:var(--color-text-muted);white-space:nowrap">Add link:</span>
+            <select class="form-input form-select" id="vmodel-new-from" style="flex:1;min-width:180px">
+              ${VMODEL_NODES.map(n => `<option value="${escHtml(n.id)}">${escHtml(n.label)}</option>`).join('')}
+            </select>
+            <span style="font-size:18px;color:var(--color-text-muted)">↔</span>
+            <select class="form-input form-select" id="vmodel-new-to" style="flex:1;min-width:180px">
+              ${VMODEL_NODES.map(n => `<option value="${escHtml(n.id)}">${escHtml(n.label)}</option>`).join('')}
+            </select>
+            <button class="btn btn-secondary btn-sm" id="btn-add-vmodel-link">＋ Add Link</button>
+          </div>
+          <div style="margin-top:16px">
+            <button class="btn btn-primary" id="btn-save-vmodel">Save V-Model Links</button>
           </div>
         </div>
       </div>
@@ -652,6 +709,66 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     if (error) { toast(t('common.error'), 'error'); return; }
     fullConfig = newConfig;
     toast('Test types saved.', 'success');
+  };
+
+  // ── V-Model Links tab ─────────────────────────────────────────────────────
+  let _vmodelLinks = vmodelLinks.map(l => ({ ...l }));
+
+  function nodeById(id) { return VMODEL_NODES.find(n => n.id === id); }
+
+  function renderVmodelLinks() {
+    const list = document.getElementById('vmodel-links-list');
+    if (!list) return;
+    if (!_vmodelLinks.length) {
+      list.innerHTML = `<p style="color:var(--color-text-muted);font-size:13px;padding:8px 0">No links defined yet. Add a link below.</p>`;
+      return;
+    }
+    list.innerHTML = _vmodelLinks.map((link, i) => {
+      const fromNode = nodeById(link.from) || { label: link.from };
+      const toNode   = nodeById(link.to)   || { label: link.to };
+      const fromDomain = fromNode.domain || '';
+      const toDomain   = toNode.domain   || '';
+      return `
+        <div class="vmodel-link-row" data-idx="${i}">
+          <span class="vmodel-node vmodel-node--${escHtml(fromDomain)}">${escHtml(fromNode.label)}</span>
+          <span class="vmodel-arrow">↔</span>
+          <span class="vmodel-node vmodel-node--${escHtml(toDomain)}">${escHtml(toNode.label)}</span>
+          <button class="btn btn-ghost btn-sm btn-del-vmodel" data-idx="${i}"
+            style="color:var(--color-danger);margin-left:auto" title="Remove link">✕</button>
+        </div>`;
+    }).join('');
+    list.querySelectorAll('.btn-del-vmodel').forEach(btn => {
+      btn.onclick = () => { _vmodelLinks.splice(parseInt(btn.dataset.idx), 1); renderVmodelLinks(); };
+    });
+  }
+
+  renderVmodelLinks();
+
+  document.getElementById('btn-add-vmodel-link').onclick = () => {
+    const fromId = document.getElementById('vmodel-new-from').value;
+    const toId   = document.getElementById('vmodel-new-to').value;
+    if (fromId === toId) { toast('A page cannot link to itself.', 'error'); return; }
+    const exists = _vmodelLinks.some(l =>
+      (l.from === fromId && l.to === toId) || (l.from === toId && l.to === fromId));
+    if (exists) { toast('This link already exists.', 'error'); return; }
+    _vmodelLinks.push({ id: crypto.randomUUID(), from: fromId, to: toId });
+    renderVmodelLinks();
+  };
+
+  document.getElementById('btn-save-vmodel').onclick = async () => {
+    const btn = document.getElementById('btn-save-vmodel');
+    btn.disabled = true;
+    const newConfig = { ...fullConfig, vmodel_links: _vmodelLinks };
+    let error;
+    if (configId) {
+      ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));
+    } else {
+      ({ error } = await sb.from('project_config').insert({ project_id: project.id, config: newConfig }));
+    }
+    btn.disabled = false;
+    if (error) { toast(t('common.error'), 'error'); return; }
+    fullConfig = newConfig;
+    toast('V-Model links saved.', 'success');
   };
 
   // ── Traceability Fields tab ───────────────────────────────────────────────
