@@ -265,12 +265,76 @@ export async function renderArchitecture(container, { project, item, system, dom
     }
   }
 
+  // ── Sync arch_spec_items for each HW/SW/Mechanical component ───────────────
+  // Each such component must have exactly one 'component' spec item linked by
+  // component_ref_id.  We upsert missing ones and update system_name if the
+  // component moved between groups.
+  const specComponents = components.filter(c =>
+    c.comp_type === 'HW' || c.comp_type === 'SW' || c.comp_type === 'Mechanical'
+  );
+  let specItems = [];
+  if (specComponents.length) {
+    const { data: existingSpec } = await sb.from('arch_spec_items')
+      .select('*')
+      .eq('parent_type', parentType)
+      .eq('parent_id', parentId)
+      .not('component_ref_id', 'is', null);
+    specItems = existingSpec || [];
+
+    const specByCompId = Object.fromEntries(specItems.map(s => [s.component_ref_id, s]));
+    const sysResData   = sysRes.data || [];
+
+    for (const c of specComponents) {
+      // Resolve system name from the group the component belongs to
+      const grp        = c.data?.group_id ? components.find(g => g.id === c.data.group_id) : null;
+      const linkedSys  = grp?.data?.system_id ? sysResData.find(s => s.id === grp.data.system_id) : null;
+      const systemName = linkedSys?.name || grp?.name || '';
+
+      if (specByCompId[c.id]) {
+        // Update system_name if it changed
+        const existing = specByCompId[c.id];
+        if (existing.system_name !== systemName || existing.title !== c.name) {
+          const patch = {};
+          if (existing.system_name !== systemName) patch.system_name = systemName;
+          if (existing.title       !== c.name)     patch.title       = c.name;
+          if (Object.keys(patch).length) {
+            await sb.from('arch_spec_items').update(patch).eq('id', existing.id);
+            Object.assign(existing, patch);
+          }
+        }
+      } else {
+        // Create missing spec item
+        const idx  = await nextIndex('arch_spec_items', { parent_id: parentId });
+        const code = buildCode('AS', {
+          domain:      parentType === 'item' ? 'ITEM' : 'SYS',
+          projectName: project.name,
+          index:       idx,
+        });
+        const { data: newSpec } = await sb.from('arch_spec_items').insert({
+          spec_code:        code,
+          title:            c.name,
+          type:             'component',
+          status:           'draft',
+          sort_order:       specItems.length,
+          parent_type:      parentType,
+          parent_id:        parentId,
+          project_id:       project.id,
+          component_ref_id: c.id,
+          system_name:      systemName,
+          custom_fields:    {},
+        }).select().single();
+        if (newSpec) { specItems.push(newSpec); specByCompId[c.id] = newSpec; }
+      }
+    }
+  }
+
   _s = {
     container, project, item, system,
     parentType, parentId,
     components,
     connections: connRes.data || [],
     projectSystems: sysRes.data || [],
+    specItems,
     panX: 20, panY: 20, zoom: 1,
     dragging: null, resizing: null, connecting: null, draggingEndpoint: null,
     selected: null,
@@ -1856,21 +1920,54 @@ function openProps(id) {
     return;
   }
 
-  // ── Block ─────────────────────────────────────────────────────────────────
-  const st = STYLES[c.comp_type] || STYLES.HW;
+  // ── Block (HW / SW / Mechanical) — show arch-spec fields ────────────────
+  const st      = STYLES[c.comp_type] || STYLES.HW;
+  const specItem = (_s.specItems || []).find(s => s.component_ref_id === id);
+
+  // Resolve system name
+  const grp       = c.data?.group_id ? compById(c.data.group_id) : null;
+  const linkedSys = grp?.data?.system_id ? _s.projectSystems.find(s => s.id === grp.data.system_id) : null;
+  const sysName   = linkedSys?.name || grp?.name || '—';
+
+  const specStatuses = ['draft', 'review', 'approved'];
+
   showPropsPanel(`
-    <div class="arch-props-hdr" style="border-left:3px solid ${st.border};padding-left:8px">${escH(c.comp_type)} · ${escH(c.name)}</div>
+    <div class="arch-props-hdr" style="border-left:3px solid ${st.border};padding-left:8px">
+      ${escH(c.comp_type)} · ${escH(c.name)}
+    </div>
+
     <label class="arch-form-lbl">Name</label>
     <input class="form-input" id="props-name" value="${escH(c.name)}"/>
-    <label class="arch-form-lbl">Type</label>
+
+    <label class="arch-form-lbl">Block type</label>
     <select class="form-input" id="props-type">
       ${['HW','SW','Mechanical'].map(t=>`<option value="${t}" ${c.comp_type===t?'selected':''}>${t}</option>`).join('')}
     </select>
+
     <label class="arch-form-lbl" style="display:flex;align-items:center;gap:6px;margin-top:6px">
       <input type="checkbox" id="props-safe" ${c.is_safety_critical?'checked':''}/> Safety Critical
     </label>
-    ${propseFunSection(c)}`);
 
+    <div class="arch-props-sep"></div>
+
+    <div class="arch-props-spec-hdr">📐 Specification</div>
+
+    <label class="arch-form-lbl">Type</label>
+    <input class="form-input" value="Component" disabled style="background:#F1F3F4;color:#888"/>
+
+    <label class="arch-form-lbl">System</label>
+    <input class="form-input" value="${escH(sysName)}" disabled style="background:#F1F3F4;color:#888"/>
+
+    <label class="arch-form-lbl">Description</label>
+    <textarea class="form-input" id="props-spec-desc" rows="4"
+      style="font-size:12px;resize:vertical">${escH(specItem?.title || '')}</textarea>
+
+    <label class="arch-form-lbl">Status</label>
+    <select class="form-input" id="props-spec-status">
+      ${specStatuses.map(s=>`<option value="${s}" ${(specItem?.status||'draft')===s?'selected':''}>${s}</option>`).join('')}
+    </select>
+
+    ${propseFunSection(c)}`);
 
   document.getElementById('props-name').addEventListener('input', debName);
   document.getElementById('props-type').addEventListener('change', async () => {
@@ -1881,6 +1978,22 @@ function openProps(id) {
     const safe = document.getElementById('props-safe').checked;
     await saveComp({is_safety_critical:safe}); refreshComp(id);
   });
+
+  // Spec fields — autosave on change/blur
+  const saveSpec = debounce(async () => {
+    if (!specItem) return;
+    const desc   = document.getElementById('props-spec-desc')?.value  ?? specItem.title;
+    const status = document.getElementById('props-spec-status')?.value ?? specItem.status;
+    const patch  = {};
+    if (desc   !== specItem.title)  { patch.title  = desc;   specItem.title  = desc; }
+    if (status !== specItem.status) { patch.status = status; specItem.status = status; }
+    if (Object.keys(patch).length) {
+      await sb.from('arch_spec_items').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', specItem.id);
+    }
+  }, 600);
+
+  document.getElementById('props-spec-desc')  ?.addEventListener('input',  saveSpec);
+  document.getElementById('props-spec-status') ?.addEventListener('change', saveSpec);
 
   document.getElementById('props-add-fun').onclick = () => openIdefPanel();
   wirePropsF(c, id);
