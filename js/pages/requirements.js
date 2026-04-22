@@ -1393,12 +1393,7 @@ function buildNodeCardHTML({ field, linked, revLinked }, arrowDir) {
 
   const unlinked = options.filter(o => !linked.includes(o.code));
   const fieldId  = field.id;
-
-  // Collapse body when there are many items — show first 4, rest behind toggle
-  const SHOW_LIMIT = 4;
-  const allItems   = linked.length + revLinked.length;
-  const bodyCollapsible = allItems > SHOW_LIMIT;
-  const hiddenCount     = allItems - SHOW_LIMIT;
+  const hasMany  = totalLinks > 3;
 
   return `
     <div class="rtrace-node rtrace-node--${arrowDir}">
@@ -1406,21 +1401,26 @@ function buildNodeCardHTML({ field, linked, revLinked }, arrowDir) {
         <span class="rtrace-node-icon">${icon}</span>
         <span class="rtrace-node-name">${esc(field.label)}</span>
         <span class="rtrace-node-count ${totalLinks ? 'has-links' : ''}">${totalLinks}</span>
-        ${bodyCollapsible
-          ? `<button class="rtrace-show-more" data-field="${fieldId}" data-expanded="0"
-               title="Show all">＋${hiddenCount} more</button>`
-          : ''}
+        <div class="rtrace-hdr-actions">
+          ${totalLinks > 0 ? `
+            <button class="rtrace-filter-btn" data-field="${fieldId}" title="Filter linked items">🔍</button>` : ''}
+          ${hasMany ? `
+            <button class="rtrace-expand-btn" data-field="${fieldId}" data-expanded="0"
+              title="Expand list">⤢</button>` : ''}
+        </div>
       </div>
-      <div class="rtrace-node-body ${bodyCollapsible ? 'rtrace-node-body--collapsed' : ''}"
-           id="rtrace-nbody-${fieldId}">
+      <div class="rtrace-node-filter" id="rtrace-filter-${fieldId}" style="display:none">
+        <input type="text" class="rtrace-filter-inp" data-field="${fieldId}"
+          placeholder="Filter…" autocomplete="off"/>
+      </div>
+      <div class="rtrace-node-body" id="rtrace-nbody-${fieldId}">
         ${linkedItems}${revItems}
         ${!linkedItems && !revItems ? `<div class="rtrace-empty">No links yet</div>` : ''}
       </div>
-      <div class="rtrace-add-row" id="rtrace-add-${fieldId}">
+      <div class="rtrace-add-row">
         <div class="rtrace-search-wrap">
           <input type="text" class="rtrace-search-inp" data-field="${fieldId}"
-            placeholder="＋ Search to add link…"
-            autocomplete="off"/>
+            placeholder="＋ Search to add link…" autocomplete="off"/>
           <div class="rtrace-search-list" id="rtrace-sl-${fieldId}" style="display:none">
             ${unlinked.map(o =>
               `<div class="rtrace-search-opt" data-field="${fieldId}" data-code="${esc(o.code)}"
@@ -1565,27 +1565,43 @@ function wireTracePanelLinks(body, req) {
     });
   });
 
-  // Show-more toggle
-  body.querySelectorAll('.rtrace-show-more').forEach(btn => {
+  // 🔍 Filter button: show/hide inline filter input
+  body.querySelectorAll('.rtrace-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fieldId   = btn.dataset.field;
+      const filterRow = document.getElementById(`rtrace-filter-${fieldId}`);
+      if (!filterRow) return;
+      const visible = filterRow.style.display !== 'none';
+      filterRow.style.display = visible ? 'none' : 'block';
+      if (!visible) filterRow.querySelector('.rtrace-filter-inp')?.focus();
+    });
+  });
+
+  // Inline filter input: hide non-matching items
+  body.querySelectorAll('.rtrace-filter-inp').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const q     = inp.value.toLowerCase();
+      const nbody = document.getElementById(`rtrace-nbody-${inp.dataset.field}`);
+      nbody?.querySelectorAll('.rtrace-item').forEach(item => {
+        const code  = item.querySelector('.rtrace-item-code')?.textContent.toLowerCase() || '';
+        const label = item.querySelector('.rtrace-item-label')?.textContent.toLowerCase() || '';
+        item.style.display = (!q || code.includes(q) || label.includes(q)) ? '' : 'none';
+      });
+    });
+  });
+
+  // ⤢ Expand button: toggle expanded class on node body (removes max-height cap)
+  body.querySelectorAll('.rtrace-expand-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const fieldId  = btn.dataset.field;
-      const expanded = btn.dataset.expanded === '1';
       const nbody    = document.getElementById(`rtrace-nbody-${fieldId}`);
       if (!nbody) return;
-      if (expanded) {
-        nbody.classList.add('rtrace-node-body--collapsed');
-        btn.dataset.expanded = '0';
-        const hidden = parseInt(btn.title.match(/\d+/) || [0]) || 0;
-        btn.textContent = `＋${btn.dataset.hidden || ''} more`;
-      } else {
-        nbody.classList.remove('rtrace-node-body--collapsed');
-        btn.dataset.expanded = '1';
-        btn.textContent = '▲ less';
-      }
+      const expanded = btn.dataset.expanded === '1';
+      nbody.classList.toggle('rtrace-node-body--expanded', !expanded);
+      btn.dataset.expanded = expanded ? '0' : '1';
+      btn.title   = expanded ? 'Expand list' : 'Collapse list';
+      btn.textContent = expanded ? '⤢' : '⤡';
     });
-    // Store hidden count for toggle label
-    const allItems = parseInt(btn.textContent.match(/\d+/)?.[0] || '0');
-    btn.dataset.hidden = allItems;
   });
 
   // Searchable add-link

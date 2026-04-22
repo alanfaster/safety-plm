@@ -4573,16 +4573,33 @@ th.col-th-dragging * { pointer-events: none; }
 .rtrace-detail-desc { font-size: 11px; color: var(--color-text); line-height: 1.5; white-space: pre-wrap; }
 .rtrace-detail-desc--empty { font-style: italic; color: var(--color-text-muted); }
 
-/* Show-more button in node header */
-.rtrace-show-more {
+/* Header action buttons (filter + expand) */
+.rtrace-hdr-actions { display: flex; gap: 2px; margin-left: auto; flex-shrink: 0; }
+.rtrace-filter-btn,
+.rtrace-expand-btn {
   background: none; border: none; cursor: pointer;
-  font-size: 10px; color: #1A73E8; padding: 1px 5px;
-  border-radius: 3px; white-space: nowrap;
+  font-size: 12px; padding: 2px 4px; border-radius: 3px;
+  color: var(--color-text-muted); line-height: 1;
 }
-.rtrace-show-more:hover { background: #E8F0FE; }
+.rtrace-filter-btn:hover,
+.rtrace-expand-btn:hover { background: var(--color-hover); color: var(--color-text); }
 
-/* Collapsed node body — show only first 4 items */
-.rtrace-node-body--collapsed { max-height: 152px; overflow: hidden; }
+/* Inline filter row */
+.rtrace-node-filter { padding: 4px 6px; border-bottom: 1px solid var(--color-border); }
+.rtrace-filter-inp {
+  width: 100%; box-sizing: border-box; font-size: 11px;
+  padding: 2px 6px; height: 24px; border: 1px solid #1A73E8;
+  border-radius: 3px; background: var(--color-surface); color: var(--color-text);
+}
+.rtrace-filter-inp:focus { outline: none; }
+
+/* Node body: fixed 3-item height with scroll */
+.rtrace-node-body {
+  max-height: 114px;   /* ~3 items × 38px each */
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.rtrace-node-body--expanded { max-height: 380px; }
 
 /* Add-link row */
 .rtrace-add-row {
