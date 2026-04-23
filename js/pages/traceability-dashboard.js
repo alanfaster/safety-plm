@@ -1096,6 +1096,7 @@ function wireBadgeDrag(svgWrap, badgeOffsets, traceLinks, activeIds, posMap, nod
   const sig = ac.signal;
 
   let dragging = null;
+  let didMove  = false;
 
   function getSvgPoint(svg, clientX, clientY) {
     const pt = svg.createSVGPoint();
@@ -1114,6 +1115,7 @@ function wireBadgeDrag(svgWrap, badgeOffsets, traceLinks, activeIds, posMap, nod
     const key = `${g.dataset.from}__${g.dataset.to}`;
     const orig = badgeOffsets[key] || { dx: 0, dy: 0 };
     dragging = { key, startSvgX: sp.x, startSvgY: sp.y, origDx: orig.dx, origDy: orig.dy, gEl: g };
+    didMove = false;
     g.style.cursor = 'grabbing';
   }, { signal: sig });
 
@@ -1124,6 +1126,7 @@ function wireBadgeDrag(svgWrap, badgeOffsets, traceLinks, activeIds, posMap, nod
     const sp = getSvgPoint(svg, e.clientX, e.clientY);
     const ddx = sp.x - dragging.startSvgX;
     const ddy = sp.y - dragging.startSvgY;
+    if (Math.abs(ddx) > 2 || Math.abs(ddy) > 2) didMove = true;
     dragging.gEl.setAttribute('transform', `translate(${dragging.origDx + ddx},${dragging.origDy + ddy})`);
     const tether = svg.querySelector(`[data-tether="${dragging.key}"]`);
     if (tether) {
@@ -1139,17 +1142,28 @@ function wireBadgeDrag(svgWrap, badgeOffsets, traceLinks, activeIds, posMap, nod
 
   window.addEventListener('mouseup', e => {
     if (!dragging) return;
+    const d = dragging;
+    dragging = null;
+
+    if (!didMove) {
+      // Simple click — reset cursor, re-register, let click event bubble through
+      d.gEl.style.cursor = '';
+      ac.abort();
+      wireBadgeDrag(svgWrap, badgeOffsets, traceLinks, activeIds, posMap, nodeMap, linkStats, item, systems);
+      return;
+    }
+
+    // Badge was actually dragged — save offset and re-render SVG
     const svg = svgWrap.querySelector('svg');
     if (svg) {
       const sp = getSvgPoint(svg, e.clientX, e.clientY);
-      const ddx = sp.x - dragging.startSvgX;
-      const ddy = sp.y - dragging.startSvgY;
-      badgeOffsets[dragging.key] = {
-        dx: Math.round(dragging.origDx + ddx),
-        dy: Math.round(dragging.origDy + ddy),
+      const ddx = sp.x - d.startSvgX;
+      const ddy = sp.y - d.startSvgY;
+      badgeOffsets[d.key] = {
+        dx: Math.round(d.origDx + ddx),
+        dy: Math.round(d.origDy + ddy),
       };
     }
-    dragging = null;
     svgWrap._dragJustEnded = true;
     ac.abort();
     // Recompute lsMap and re-render SVG in place
@@ -1157,6 +1171,7 @@ function wireBadgeDrag(svgWrap, badgeOffsets, traceLinks, activeIds, posMap, nod
     for (const ls of linkStats) lsMap[`${ls.link.from}__${ls.link.to}`] = ls;
     svgWrap.innerHTML = buildVmodelSVG(traceLinks, activeIds, posMap, nodeMap, lsMap, badgeOffsets);
     wireBadgeDrag(svgWrap, badgeOffsets, traceLinks, activeIds, posMap, nodeMap, linkStats, item, systems);
+    wireDiagramZoom(svgWrap);
     setTimeout(() => { svgWrap._dragJustEnded = false; }, 50);
   }, { signal: sig });
 }
