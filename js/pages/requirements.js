@@ -345,6 +345,9 @@ function renderTable(body) {
 
   const tbody = document.getElementById('req-tbody');
 
+  // Delegate multi-select toggle clicks for system_component / target_domain
+  wireMultiselCells(tbody);
+
   function reqFilterValue(r, colId) {
     switch (colId) {
       case 'code':         return r.req_code || '';
@@ -524,9 +527,6 @@ function wireAllRows(tbody) {
       moveReq(btn.dataset.id, dir, tbody);
     });
   });
-
-  // Multi-select toggle cells (system_component, target_domain)
-  wireMultiselCells(tbody);
 
   // Traceability panel
   tbody.querySelectorAll('.btn-trace-req').forEach(btn => {
@@ -933,6 +933,10 @@ function showInlineInsertForm(afterRid, tbody) {
       toShift.forEach(r => { r.sort_order += 1; });
     }
 
+    const SUB_DOMAINS = new Set(['sw','hw','mech']);
+    const autoCustomFields = SUB_DOMAINS.has(_ctx.domain)
+      ? { target_domains: [_ctx.domain] } : {};
+
     const { data: newReq, error } = await sb.from('requirements').insert({
       req_code: reqCode, title, type,
       parent_type: parentType, parent_id: parentId,
@@ -940,6 +944,7 @@ function showInlineInsertForm(afterRid, tbody) {
       domain: _ctx.domain,
       status: 'draft', priority: 'medium',
       sort_order: sortOrder,
+      custom_fields: autoCustomFields,
     }).select().single();
 
     if (error) { toast(error.message || t('common.error'), 'error'); saveBtn.disabled = false; return; }
@@ -973,7 +978,6 @@ function showInlineInsertForm(afterRid, tbody) {
 
 function wireNewRow(tr, req, tbody) {
   const { project, parentType, parentId, typeFilter } = _ctx;
-  wireMultiselCells(tr);
   tr.querySelectorAll('.req-inline-sel').forEach(sel => {
     sel.addEventListener('change', async () => {
       const r = _data.find(r => r.id === req.id);
@@ -1245,26 +1249,29 @@ function wireCustomCols(tbody) {
 
 // ── Multi-select toggle cells (system_component / target_domain) ─────────────
 
-function wireMultiselCells(tbody) {
-  tbody.querySelectorAll('.req-mtog').forEach(btn => {
-    btn.onclick = async () => {
-      const rid   = btn.dataset.rid;
-      const field = btn.dataset.field;  // 'system_components' | 'target_domains'
-      const val   = btn.dataset.val;
-      const r     = _data.find(d => d.id === rid);
-      if (!r) return;
+function wireMultiselCells(container) {
+  // Use event delegation so draggable rows never interfere with button clicks
+  container.addEventListener('click', async e => {
+    const btn = e.target.closest('.req-mtog');
+    if (!btn || btn.classList.contains('req-mtog--fixed')) return;
+    e.stopPropagation();
 
-      const cur  = Array.isArray(r.custom_fields?.[field]) ? [...r.custom_fields[field]] : [];
-      const idx  = cur.indexOf(val);
-      if (idx >= 0) cur.splice(idx, 1); else cur.push(val);
+    const rid   = btn.dataset.rid;
+    const field = btn.dataset.field;  // 'system_components' | 'target_domains'
+    const val   = btn.dataset.val;
+    const r     = _data.find(d => d.id === rid);
+    if (!r) return;
 
-      const fields = { ...(r.custom_fields || {}), [field]: cur };
-      r.custom_fields = fields;
-      const { error } = await sb.from('requirements').update({ custom_fields: fields }).eq('id', rid);
-      if (error) { toast(t('common.error'), 'error'); return; }
+    const cur  = Array.isArray(r.custom_fields?.[field]) ? [...r.custom_fields[field]] : [];
+    const idx  = cur.indexOf(val);
+    if (idx >= 0) cur.splice(idx, 1); else cur.push(val);
 
-      btn.classList.toggle('req-mtog--on', cur.includes(val));
-    };
+    const fields = { ...(r.custom_fields || {}), [field]: cur };
+    r.custom_fields = fields;
+    const { error } = await sb.from('requirements').update({ custom_fields: fields }).eq('id', rid);
+    if (error) { toast(t('common.error'), 'error'); return; }
+
+    btn.classList.toggle('req-mtog--on', cur.includes(val));
   });
 }
 
@@ -1370,8 +1377,17 @@ function reqTd(c, r) {
     }
     case 'target_domain': {
       const selected = (r.custom_fields?.target_domains) || [];
-      const DOMAINS = ['sw','hw','mech'];
-      const btns = DOMAINS.map(d =>
+      const SUB_DOMAINS = ['sw','hw','mech'];
+      const currentDomain = _ctx.domain;
+      // Domain-specific pages: show only the current domain as a fixed badge
+      if (SUB_DOMAINS.includes(currentDomain)) {
+        return `<td data-col="target_domain"><div class="req-mtog-wrap">
+          <button class="req-mtog req-mtog--${currentDomain} req-mtog--on req-mtog--fixed"
+            data-rid="${r.id}" data-field="target_domains" data-val="${currentDomain}"
+            title="Domain fixed for this page">${currentDomain.toUpperCase()}</button>
+        </div></td>`;
+      }
+      const btns = SUB_DOMAINS.map(d =>
         `<button class="req-mtog req-mtog--${d}${selected.includes(d) ? ' req-mtog--on' : ''}"
           data-rid="${r.id}" data-field="target_domains" data-val="${d}">${d.toUpperCase()}</button>`
       ).join('');
@@ -2117,10 +2133,13 @@ function openReqModal({ project, parentType, parentId, projectType, existing, de
         systemName:  parentType === 'system' ? (project.item_name || '') : undefined,
         index:       reqIdx,
       });
+      const SUB_DOMS = new Set(['sw','hw','mech']);
+      const autoFields = SUB_DOMS.has(_ctx.domain) ? { target_domains: [_ctx.domain] } : {};
       ({ error } = await sb.from('requirements').insert({
         ...payload, req_code: reqCode,
         parent_type: parentType, parent_id: parentId, project_id: project.id,
         domain: _ctx.domain,
+        custom_fields: autoFields,
       }));
     }
     btn.disabled = false;
