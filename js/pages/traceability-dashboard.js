@@ -452,61 +452,88 @@ async function loadDashboard(project, item, systems) {
   // Show overview coverage on initial load
   showCoverageTable(topLinkStats, '🌐 Overview — all systems');
 
-  // Overview SVG wiring
-  const topSvgWrap = document.getElementById('tdb-top-svg-wrap');
-  if (topSvgWrap) {
-    wireBadgeDrag(topSvgWrap, badgeOffsets, topLinks, topActiveIds, topPosMap, nodeMap, topLinkStats, item, systems);
-    topSvgWrap.addEventListener('click', e => {
-      if (topSvgWrap._dragJustEnded) return;
+  // ── SVG wiring helper ──────────────────────────────────────────────────────
+  function wireSvg(wrapEl, links, activeIds, posMap, lsStats, badgeOffs, openSystems) {
+    if (!wrapEl) return;
+    wireBadgeDrag(wrapEl, badgeOffs, links, activeIds, posMap, nodeMap, lsStats, item, openSystems);
+    wrapEl.addEventListener('click', e => {
+      if (wrapEl._dragJustEnded) return;
       const badge = e.target.closest('.tdb-link-badge--clickable');
       if (!badge) return;
-      const ls = topLinkStats.find(l => l.link.from === badge.dataset.from && l.link.to === badge.dataset.to);
+      const ls = lsStats.find(l => l.link.from === badge.dataset.from && l.link.to === badge.dataset.to);
       if (!ls) return;
       const hasMissing = (ls.forward?.missing || 0) + (ls.backward?.missing || 0) > 0;
-      openLinkPanel(ls, allLinkStats, item, systems, itemCache, nodeMap, project, allTraceLinks,
-        allActiveIds, topPosMap, hasMissing ? 'missing' : 'browse', badgeOffsets);
+      openLinkPanel(ls, allLinkStats, item, openSystems, itemCache, nodeMap, project, allTraceLinks,
+        allActiveIds, posMap, hasMissing ? 'missing' : 'browse', badgeOffs, refreshAllDiagrams);
     });
-    wireDiagramZoom(topSvgWrap);
+    wireDiagramZoom(wrapEl);
   }
+
+  // ── Full diagram refresh ───────────────────────────────────────────────────
+  function refreshAllDiagrams() {
+    // Recompute overview stats
+    for (const ls of topLinkStats) {
+      ls.forward  = computeLinkCov(ls.link.from, ls.link.to,   ls.fromNode, item, systems, itemCache);
+      ls.backward = computeLinkCov(ls.link.to,   ls.link.from, ls.toNode,   item, systems, itemCache);
+    }
+    // Re-render overview SVG
+    const tLsMap = {};
+    for (const ls of topLinkStats) tLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
+    const topWrap = document.getElementById('tdb-top-svg-wrap');
+    if (topWrap) {
+      topWrap.innerHTML = buildVmodelSVG(topLinks, topActiveIds, topPosMap, nodeMap, tLsMap, badgeOffsets);
+      wireBadgeDrag(topWrap, badgeOffsets, topLinks, topActiveIds, topPosMap, nodeMap, topLinkStats, item, systems);
+      wireDiagramZoom(topWrap);
+    }
+    // Recompute and re-render per-system SVGs
+    for (const sys of systems) {
+      const stls = sysTopLinkStats[sys.id] || [];
+      for (const ls of stls) {
+        ls.forward  = computeTopLinkCovForSystem(ls.link.from, ls.link.to,   ls.fromNode, sys, item, itemCache);
+        ls.backward = computeTopLinkCovForSystem(ls.link.to,   ls.link.from, ls.toNode,   sys, item, itemCache);
+      }
+      const stLsMap = {};
+      for (const ls of stls) stLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
+      const stWrap = document.getElementById(`tdb-syssvg-${sys.id}`);
+      if (stWrap) {
+        stWrap.innerHTML = buildVmodelSVG(topLinks, topActiveIds, topPosMap, nodeMap, stLsMap, sysTopBadgeOff[sys.id]);
+        wireBadgeDrag(stWrap, sysTopBadgeOff[sys.id], topLinks, topActiveIds, topPosMap, nodeMap, stls, item, [sys]);
+        wireDiagramZoom(stWrap);
+      }
+      // Domain SVGs
+      for (const d of SUB_DOMAINS_LIST) {
+        const dls  = domainStats[sys.id]?.[d] || [];
+        for (const ls of dls) {
+          ls.forward  = computeLinkCovForSystem(ls.link.from, ls.link.to,   ls.fromNode, sys, itemCache);
+          ls.backward = computeLinkCovForSystem(ls.link.to,   ls.link.from, ls.toNode,   sys, itemCache);
+        }
+        const dIds  = new Set(domainLinks[d].flatMap(l => [l.from, l.to]));
+        const dLsMap = {};
+        for (const ls of dls) dLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
+        const dWrap = document.getElementById(`tdb-dsvg-${sys.id}-${d}`);
+        if (dWrap && dIds.size) {
+          dWrap.innerHTML = buildVmodelSVG(domainLinks[d], dIds, dPosMap[d], nodeMap, dLsMap, sysDomBadgeOff[sys.id][d]);
+          wireBadgeDrag(dWrap, sysDomBadgeOff[sys.id][d], domainLinks[d], dIds, dPosMap[d], nodeMap, dls, item, [sys]);
+          wireDiagramZoom(dWrap);
+        }
+      }
+    }
+  }
+
+  // Overview SVG
+  wireSvg(document.getElementById('tdb-top-svg-wrap'), topLinks, topActiveIds, topPosMap, topLinkStats, badgeOffsets, systems);
 
   // Per-system panel wiring
   for (const sys of systems) {
-    // System-level top diagram
-    const stSvgWrap = document.getElementById(`tdb-syssvg-${sys.id}`);
     const stls = sysTopLinkStats[sys.id] || [];
-    if (stSvgWrap) {
-      wireBadgeDrag(stSvgWrap, sysTopBadgeOff[sys.id], topLinks, topActiveIds, topPosMap, nodeMap, stls, item, [sys]);
-      stSvgWrap.addEventListener('click', e => {
-        if (stSvgWrap._dragJustEnded) return;
-        const badge = e.target.closest('.tdb-link-badge--clickable');
-        if (!badge) return;
-        const ls = stls.find(l => l.link.from === badge.dataset.from && l.link.to === badge.dataset.to);
-        if (!ls) return;
-        const hasMissing = (ls.forward?.missing || 0) + (ls.backward?.missing || 0) > 0;
-        openLinkPanel(ls, allLinkStats, item, [sys], itemCache, nodeMap, project, allTraceLinks,
-          allActiveIds, topPosMap, hasMissing ? 'missing' : 'browse', sysTopBadgeOff[sys.id]);
-      });
-      wireDiagramZoom(stSvgWrap);
-    }
+    wireSvg(document.getElementById(`tdb-syssvg-${sys.id}`), topLinks, topActiveIds, topPosMap, stls, sysTopBadgeOff[sys.id], [sys]);
 
     // Domain columns
     for (const d of SUB_DOMAINS_LIST) {
-      const dls     = domainStats[sys.id]?.[d] || [];
-      const dIds    = new Set(domainLinks[d].flatMap(l => [l.from, l.to]));
-      const dSvgWrap = document.getElementById(`tdb-dsvg-${sys.id}-${d}`);
-      if (dSvgWrap && dIds.size) {
-        wireBadgeDrag(dSvgWrap, sysDomBadgeOff[sys.id][d], domainLinks[d], dIds, dPosMap[d], nodeMap, dls, item, [sys]);
-        dSvgWrap.addEventListener('click', e => {
-          if (dSvgWrap._dragJustEnded) return;
-          const badge = e.target.closest('.tdb-link-badge--clickable');
-          if (!badge) return;
-          const ls = dls.find(l => l.link.from === badge.dataset.from && l.link.to === badge.dataset.to);
-          if (!ls) return;
-          const hasMissing = (ls.forward?.missing || 0) + (ls.backward?.missing || 0) > 0;
-          openLinkPanel(ls, allLinkStats, item, [sys], itemCache, nodeMap, project, allTraceLinks,
-            allActiveIds, dPosMap[d], hasMissing ? 'missing' : 'browse', sysDomBadgeOff[sys.id][d]);
-        });
-        wireDiagramZoom(dSvgWrap);
+      const dls  = domainStats[sys.id]?.[d] || [];
+      const dIds = new Set(domainLinks[d].flatMap(l => [l.from, l.to]));
+      if (dIds.size) {
+        wireSvg(document.getElementById(`tdb-dsvg-${sys.id}-${d}`), domainLinks[d], dIds, dPosMap[d], dls, sysDomBadgeOff[sys.id][d], [sys]);
       }
     }
   }
@@ -1176,7 +1203,7 @@ function wireBadgeDrag(svgWrap, badgeOffsets, traceLinks, activeIds, posMap, nod
   }, { signal: sig });
 }
 
-function openLinkPanel(ls, linkStats, item, systems, itemCache, nodeMap, project, traceLinks, activeIds, posMap, preferTab = 'missing', badgeOffsets = {}) {
+function openLinkPanel(ls, linkStats, item, systems, itemCache, nodeMap, project, traceLinks, activeIds, posMap, preferTab = 'missing', badgeOffsets = {}, onLinkSaved = null) {
   const bpEl = document.getElementById('tdb-bp');
   if (!bpEl) return;
   bpEl._bp?.expand();
@@ -1187,11 +1214,11 @@ function openLinkPanel(ls, linkStats, item, systems, itemCache, nodeMap, project
     const leftEl  = document.getElementById('tdb-bp-left');
     const rightEl = document.getElementById('tdb-bp-right');
     if (leftEl && rightEl)
-      renderPanelCols(ls, linkStats, item, systems, itemCache, nodeMap, project, traceLinks, activeIds, posMap, leftEl, rightEl, badgeOffsets);
+      renderPanelCols(ls, linkStats, item, systems, itemCache, nodeMap, project, traceLinks, activeIds, posMap, leftEl, rightEl, badgeOffsets, onLinkSaved);
   }
 }
 
-function renderPanelCols(ls, linkStats, item, systems, itemCache, nodeMap, project, traceLinks, activeIds, posMap, leftEl, rightEl, badgeOffsets = {}) {
+function renderPanelCols(ls, linkStats, item, systems, itemCache, nodeMap, project, traceLinks, activeIds, posMap, leftEl, rightEl, badgeOffsets = {}, onLinkSaved = null) {
   let selectedSrc = null;
 
   function buildCols() {
@@ -1418,6 +1445,7 @@ function renderPanelCols(ls, linkStats, item, systems, itemCache, nodeMap, proje
     ls.forward  = computeLinkCov(ls.link.from, ls.link.to,   ls.fromNode, item, systems, itemCache);
     ls.backward = computeLinkCov(ls.link.to,   ls.link.from, ls.toNode,   item, systems, itemCache);
     buildCols();
+    onLinkSaved?.();
   }
 
   buildCols();
