@@ -1468,21 +1468,52 @@ async function removeJustification(srcItem, dstNodeId, srcNode, item, systems, i
   return true;
 }
 
+function _tableAndIdCol(node) {
+  const table = PHASE_DB_SOURCE[node.phase];
+  const idCol = table === 'requirements' ? 'req_code' : table === 'arch_spec_items' ? 'spec_code' : 'test_code';
+  return { table, idCol };
+}
+
 async function saveLink(srcItem, srcNodeId, dstNodeId, dstCode, srcNode, item, systems, itemCache) {
+  // ── Forward: srcItem → dstCode ──────────────────────────────────────────
   const existing = srcItem.traceability || {};
   const current  = Array.isArray(existing[dstNodeId]) ? existing[dstNodeId] : [];
-  if (current.includes(dstCode)) return true;
-  const updated  = { ...existing, [dstNodeId]: [...current, dstCode] };
+  if (!current.includes(dstCode)) {
+    const updated = { ...existing, [dstNodeId]: [...current, dstCode] };
+    const { table, idCol } = _tableAndIdCol(srcNode);
+    const { error } = await sb.from(table).update({ traceability: updated }).eq(idCol, srcItem.code);
+    if (error) { toast('Error saving link: ' + error.message, 'error'); return false; }
+    srcItem.traceability = updated;
+    // Update cache
+    for (const { parentId } of getParents(srcNode, item, systems)) {
+      const cached = itemCache[`${srcNodeId}:${parentId}`];
+      if (cached) { const idx = cached.findIndex(i => i.code === srcItem.code); if (idx >= 0) cached[idx].traceability = updated; }
+    }
+  }
 
-  const table = PHASE_DB_SOURCE[srcNode.phase];
-  const idCol  = table === 'requirements' ? 'req_code' : table === 'arch_spec_items' ? 'spec_code' : 'test_code';
+  // ── Reverse: dstItem → srcItem.code ────────────────────────────────────
+  const dstNode = VMODEL_NODES.find(n => n.id === dstNodeId);
+  if (dstNode) {
+    const dstItems = getAllItems(dstNodeId, item, systems, itemCache);
+    const dstItem  = dstItems.find(i => i.code === dstCode);
+    if (dstItem) {
+      const dstExisting = dstItem.traceability || {};
+      const dstCurrent  = Array.isArray(dstExisting[srcNodeId]) ? dstExisting[srcNodeId] : [];
+      if (!dstCurrent.includes(srcItem.code)) {
+        const dstUpdated = { ...dstExisting, [srcNodeId]: [...dstCurrent, srcItem.code] };
+        const { table, idCol } = _tableAndIdCol(dstNode);
+        const { error } = await sb.from(table).update({ traceability: dstUpdated }).eq(idCol, dstCode);
+        if (error) { toast('Error saving reverse link: ' + error.message, 'error'); return false; }
+        dstItem.traceability = dstUpdated;
+        // Update cache
+        for (const { parentId } of getParents(dstNode, item, systems)) {
+          const cached = itemCache[`${dstNodeId}:${parentId}`];
+          if (cached) { const idx = cached.findIndex(i => i.code === dstCode); if (idx >= 0) cached[idx].traceability = dstUpdated; }
+        }
+      }
+    }
+  }
 
-  const { error } = await sb.from(table)
-    .update({ traceability: updated })
-    .eq(idCol, srcItem.code);
-
-  if (error) { toast('Error saving link: ' + error.message, 'error'); return false; }
-  srcItem.traceability = updated;
   return true;
 }
 
