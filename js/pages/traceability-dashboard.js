@@ -15,7 +15,8 @@ const NODE_H = 34;
 
 // Domain visibility per system — populated by loadDashboard, consumed by getParents.
 // Shape: { [systemId]: Set<domain> } — only contains domains that are hidden.
-let _hiddenDomains = {};
+let _hiddenDomains   = {};
+let _refreshDiagrams = null;   // set in loadDashboard, used by browse unlink
 
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -538,6 +539,7 @@ async function loadDashboard(project, item, systems) {
     }
   }
 
+  _refreshDiagrams = refreshAllDiagrams;
   wireBpTabs(allLinkStats, item, systems, itemCache, nodeMap, allTraceLinks, project);
 
   return { allLinkStats, badgeOffsets, topLinks, allActiveIds, topPosMap, nodeMap };
@@ -950,6 +952,25 @@ async function buildBrowseRight(selItem, nodeId, nodeMap, itemCache, item, syste
       openItemInNewTab(code, fNode, project, item, systems, itemCache);
     });
   });
+
+  rightEl.querySelectorAll('.tdb-unlink-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (!confirm(`Remove link ${btn.dataset.srcCode} ↔ ${btn.dataset.dstCode}?`)) return;
+      btn.disabled = true; btn.textContent = '…';
+      const ok = await unlinkItems(
+        btn.dataset.srcCode, btn.dataset.srcNode,
+        btn.dataset.dstCode, btn.dataset.dstNode,
+        item, systems, itemCache
+      );
+      if (!ok) { btn.disabled = false; btn.textContent = '✕'; return; }
+      toast(`Unlinked ${btn.dataset.srcCode} ↔ ${btn.dataset.dstCode}`, 'success');
+      _refreshDiagrams?.();
+      // Rebuild the right panel to reflect removal
+      await buildBrowseRight(selItem, nodeId, nodeMap, itemCache, item, systems, traceLinks, rightEl, project);
+    });
+  });
 }
 
 function openItemInNewTab(code, node, project, item, systems, itemCache) {
@@ -998,6 +1019,8 @@ function buildBrowseChainHTML(it, myNode, upstreamFields, downstreamFields, test
           <span class="rtrace-item-chevron">▶</span>
         </div>
         <div class="rtrace-item-detail" id="rtrace-detail-${esc(code)}" style="display:none"></div>
+        <button class="tdb-unlink-btn" data-src-code="${esc(it.code)}" data-src-node="${esc(nodeId)}"
+          data-dst-code="${esc(code)}" data-dst-node="${esc(field.id)}" title="Remove link (both directions)">✕</button>
         <button class="tdb-open-btn" data-code="${esc(code)}" data-field="${esc(field.id)}" title="Open item in new tab">↗</button>
       </div>`;
     }).join('');
@@ -1010,6 +1033,8 @@ function buildBrowseChainHTML(it, myNode, upstreamFields, downstreamFields, test
           <span class="rtrace-item-chevron">▶</span>
         </div>
         <div class="rtrace-item-detail" id="rtrace-detail-${esc(r.code)}" style="display:none"></div>
+        <button class="tdb-unlink-btn" data-src-code="${esc(r.code)}" data-src-node="${esc(field.id)}"
+          data-dst-code="${esc(it.code)}" data-dst-node="${esc(nodeId)}" title="Remove link (both directions)">✕</button>
         <button class="tdb-open-btn" data-code="${esc(r.code)}" data-field="${esc(field.id)}" title="Open item in new tab">↗</button>
       </div>`).join('');
     return `
@@ -1543,6 +1568,36 @@ async function saveLink(srcItem, srcNodeId, dstNodeId, dstCode, srcNode, item, s
   }
 
   return true;
+}
+
+async function unlinkItems(srcCode, srcNodeId, dstCode, dstNodeId, item, systems, itemCache) {
+  const srcNode = VMODEL_NODES.find(n => n.id === srcNodeId);
+  const dstNode = VMODEL_NODES.find(n => n.id === dstNodeId);
+
+  async function removeSide(code, nodeId, node, otherCode, otherNodeId) {
+    if (!node) return true;
+    const allItems = getAllItems(nodeId, item, systems, itemCache);
+    const it = allItems.find(i => i.code === code);
+    if (!it) return true;
+    const existing = it.traceability || {};
+    const current  = Array.isArray(existing[otherNodeId]) ? existing[otherNodeId] : [];
+    if (!current.includes(otherCode)) return true;  // already gone
+    const updated = { ...existing, [otherNodeId]: current.filter(c => c !== otherCode) };
+    if (!updated[otherNodeId].length) delete updated[otherNodeId];
+    const { table, idCol } = _tableAndIdCol(node);
+    const { error } = await sb.from(table).update({ traceability: updated }).eq(idCol, code);
+    if (error) { toast('Error removing link: ' + error.message, 'error'); return false; }
+    it.traceability = updated;
+    for (const { parentId } of getParents(node, item, systems)) {
+      const cached = itemCache[`${nodeId}:${parentId}`];
+      if (cached) { const idx = cached.findIndex(i => i.code === code); if (idx >= 0) cached[idx].traceability = updated; }
+    }
+    return true;
+  }
+
+  const ok1 = await removeSide(srcCode, srcNodeId, srcNode, dstCode, dstNodeId);
+  const ok2 = await removeSide(dstCode, dstNodeId, dstNode, srcCode, srcNodeId);
+  return ok1 && ok2;
 }
 
 // ── Data helpers ──────────────────────────────────────────────────────────────

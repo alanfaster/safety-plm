@@ -720,6 +720,15 @@ input, select, textarea { font-family: var(--font); }
 
 .tdb-link-table td { vertical-align: middle; }
 
+.tdb-unlink-btn {
+  flex-shrink: 0; margin-left: 2px;
+  background: none; border: 1px solid transparent; border-radius: 4px;
+  color: var(--color-text-muted); font-size: 11px; cursor: pointer; padding: 1px 5px;
+  opacity: 0; transition: opacity .15s, color .15s;
+}
+.rtrace-item:hover .tdb-unlink-btn { opacity: 1; }
+.tdb-unlink-btn:hover { color: #c62828; border-color: #c62828; background: #fce8e6; }
+
 .tdb-missing-row td { background: var(--color-bg-subtle, #f8f9fa); padding: 8px 12px; }
 .tdb-missing-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .tdb-missing-item {
