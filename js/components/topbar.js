@@ -13,6 +13,15 @@ export function initTopbar(user) {
   document.getElementById('user-email').textContent = email;
   document.getElementById('user-avatar').textContent = email.charAt(0).toUpperCase();
 
+  // Gear / project settings button
+  const btnSettings = document.getElementById('btn-settings');
+  if (btnSettings) {
+    btnSettings.onclick = () => {
+      const m = window.location.hash.match(/\/project\/([^/]+)/);
+      if (m) navigate(`/project/${m[1]}/settings`);
+    };
+  }
+
   // Logout
   document.getElementById('btn-logout').textContent = t('auth.signout');
   document.getElementById('btn-logout').onclick = signOut;
@@ -51,13 +60,17 @@ export function initTopbar(user) {
     handle.addEventListener('mousedown', (e) => {
       startX  = e.clientX;
       didDrag = false;
-      if (!sidebar.classList.contains('collapsed')) {
-        isResizing  = true;
-        startWidth  = sidebar.getBoundingClientRect().width;
-        document.body.style.cursor     = 'col-resize';
-        document.body.style.userSelect = 'none';
-        e.preventDefault();
+      // Allow resizing from rail (collapsed) too — it will expand automatically
+      isResizing  = true;
+      if (sidebar.classList.contains('collapsed')) {
+        sidebar.classList.remove('collapsed');
+        startWidth = 44;
+      } else {
+        startWidth = sidebar.getBoundingClientRect().width;
       }
+      document.body.style.cursor     = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
     });
 
     document.addEventListener('mousemove', (e) => {
@@ -87,6 +100,10 @@ function toggleSidebar(sidebar) {
     // Restore saved width when expanding
     const savedWidth = localStorage.getItem('alm_sidebar_width');
     if (savedWidth) sidebar.style.width = savedWidth;
+    else sidebar.style.width = '';
+  } else {
+    // Rail mode: clear any custom width so CSS 44px takes effect
+    sidebar.style.width = '';
   }
 }
 

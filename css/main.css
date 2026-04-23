@@ -731,6 +731,44 @@ input, select, textarea { font-family: var(--font); }
   border-radius: 4px;
 }
 
+/* Traceability Dashboard — main tabs */
+.tdb-main-tabs {
+  display: flex; gap: 4px; margin-bottom: 12px;
+  border-bottom: 2px solid var(--color-border);
+  padding-bottom: 0;
+}
+.tdb-main-tab {
+  padding: 7px 14px; font-size: 13px; font-weight: 500;
+  border: none; background: none; cursor: pointer;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  border-radius: 4px 4px 0 0;
+  transition: color .15s, border-color .15s;
+}
+.tdb-main-tab:hover { color: var(--color-text); background: var(--color-bg-subtle, #f8f9fa); }
+.tdb-main-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+
+.tdb-main-panel { display: none; }
+.tdb-main-panel.active { display: block; }
+
+/* Domain 3-column row */
+.tdb-dom-row {
+  display: flex; gap: 12px; align-items: flex-start;
+}
+.tdb-dom-col {
+  flex: 1; min-width: 0;
+  background: var(--color-bg-card); border: 1px solid var(--color-border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.tdb-dom-col-hdr {
+  padding: 8px 12px; font-size: 12px; font-weight: 700;
+  border-bottom: 1px solid var(--color-border);
+  letter-spacing: .4px;
+}
+.tdb-dom-col-hdr--sw   { background: #e3f2fd; color: #1565c0; }
+.tdb-dom-col-hdr--hw   { background: #e8f5e9; color: #2e7d32; }
+.tdb-dom-col-hdr--mech { background: #fff3e0; color: #e65100; }
+
 /* ── Column filter ───────────────────────────────────────────────────────── */
 
 /* Funnel icon button inside <th> */
