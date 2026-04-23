@@ -14,19 +14,22 @@
 import { sb, buildCode, nextIndex } from '../config.js';
 import { toast } from '../toast.js';
 import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr } from '../components/col-mgr.js';
+import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 
 const SPEC_STATUSES = ['draft', 'review', 'approved'];
 const SPEC_TYPES    = ['overview', 'component', 'interface', 'behavior', 'deployment', 'info'];
 const UML_TYPES     = ['none', 'component', 'state', 'usecase', 'class'];
 
 const SPEC_BUILTIN_COLS = [
-  { id: 'drag',        name: '',            fixed: true,  visible: true },
-  { id: 'id',          name: 'ID',          fixed: true,  visible: true },
-  { id: 'description', name: 'Description', fixed: true,  visible: true },
-  { id: 'system',      name: 'System',      visible: true },
-  { id: 'type',        name: 'Type',        visible: true },
-  { id: 'status',      name: 'Status',      visible: true },
-  { id: 'actions',     name: '',            fixed: true,  visible: true },
+  { id: 'drag',             name: '',                 fixed: true,  visible: true },
+  { id: 'id',               name: 'ID',               fixed: true,  visible: true },
+  { id: 'description',      name: 'Description',      fixed: true,  visible: true },
+  { id: 'system',           name: 'System',           visible: true },
+  { id: 'type',             name: 'Type',             visible: true },
+  { id: 'status',           name: 'Status',           visible: true },
+  { id: 'system_component', name: 'System Component', visible: true, parentTypes: ['item'] },
+  { id: 'target_domain',    name: 'Target Domain',    visible: true, parentTypes: ['system'] },
+  { id: 'actions',          name: '',                 fixed: true,  visible: true },
 ];
 
 // Module-level state
@@ -35,7 +38,9 @@ let _items     = [];     // ordered array of spec items (in-memory cache)
 let _umlOpenId = null;   // id of item whose UML editor is currently open
 let _cols      = [];     // active column config
 let _builtins  = SPEC_BUILTIN_COLS; // builtins + project custom cols
-let _collapsed = new Set(); // collapsed section ids
+let _collapsed  = new Set(); // collapsed section ids
+let _colFilters = {};        // { [colId]: string } — active column filter values
+let _systems    = [];        // systems for the current item (used by system_component column)
 
 // ── Entry Point ───────────────────────────────────────────────────────────────
 
@@ -46,7 +51,8 @@ export async function renderArchSpec(container, { project, item, system, parentT
   _umlOpenId = null;
   _builtins  = SPEC_BUILTIN_COLS; // will be updated in loadSpec after project_config fetch
   _cols      = loadColConfig(`spec_${parentId}`, _builtins);
-  _collapsed = new Set();
+  _collapsed  = new Set();
+  _colFilters = {};
 
   // Remove any leftover insert pill from a previous render
   document.getElementById('spec-insert-pill')?.remove();
@@ -91,6 +97,7 @@ export async function renderArchSpec(container, { project, item, system, parentT
   document.getElementById('spec-nav-expand').onclick       = () => toggleNav(true);
 
   await loadSpec();
+  applyGotoTarget();
 }
 
 // ── Sync component spec items from architecture canvas ────────────────────────
@@ -185,6 +192,26 @@ async function syncComponentSpecItems() {
   }
 }
 
+function applyGotoTarget() {
+  const raw = sessionStorage.getItem('tdb_goto');
+  if (!raw) return;
+  try {
+    const { code } = JSON.parse(raw);
+    sessionStorage.removeItem('tdb_goto');
+    if (!code) return;
+    setTimeout(() => {
+      const item = _items.find(i => i.spec_code === code || i.id === code);
+      if (!item) return;
+      const tr = document.querySelector(`tr[data-id="${item.id}"]`);
+      if (tr) {
+        tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        tr.classList.add('req-row--goto-highlight');
+        setTimeout(() => tr.classList.remove('req-row--goto-highlight'), 5000);
+      }
+    }, 400);
+  } catch {}
+}
+
 // ── Load ──────────────────────────────────────────────────────────────────────
 
 async function loadSpec() {
@@ -194,10 +221,23 @@ async function loadSpec() {
   const archSpecCustomCols = (pcRow?.config?.arch_spec_custom_cols || []).map(c => ({
     id: c.id, name: c.name, type: c.type || 'text', custom: true, visible: true,
   }));
+  // Load systems for system_component column (item-level pages only)
+  if (_ctx.parentType === 'item') {
+    const { data: sysData } = await sb.from('systems')
+      .select('id, name').eq('item_id', _ctx.parentId).order('created_at', { ascending: true });
+    _systems = sysData || [];
+  } else {
+    _systems = [];
+  }
+
   // Rebuild builtins with custom cols appended (before the fixed 'actions' column)
   const actionCol = SPEC_BUILTIN_COLS.find(c => c.id === 'actions');
   _builtins = [
-    ...SPEC_BUILTIN_COLS.filter(c => c.id !== 'actions'),
+    ...SPEC_BUILTIN_COLS.filter(c => {
+      if (c.id === 'actions') return false;
+      if (c.parentTypes && !c.parentTypes.includes(_ctx.parentType)) return false;
+      return true;
+    }),
     ...archSpecCustomCols,
     ...(actionCol ? [actionCol] : []),
   ];
@@ -233,17 +273,21 @@ async function loadSpec() {
 
   _items = data || [];
 
-  // Sync component spec items from architecture canvas (upserts missing/stale rows)
-  await syncComponentSpecItems();
+  // Sync component spec items from architecture canvas — only for system/default domain
+  // (SW/HW/MECH have no block diagram source to sync from)
+  if (_ctx.domain === 'system' || _ctx.domain === 'default') {
+    await syncComponentSpecItems();
 
-  // Re-fetch after sync so newly created component rows appear
-  const { data: refreshed } = await sb.from('arch_spec_items')
-    .select('*')
-    .eq('parent_type', _ctx.parentType)
-    .eq('parent_id',   _ctx.parentId)
-    .order('sort_order', { ascending: true })
-    .order('created_at',  { ascending: true });
-  _items = refreshed || _items;
+    // Re-fetch after sync so newly created component rows appear
+    const { data: refreshed } = await sb.from('arch_spec_items')
+      .select('*')
+      .eq('parent_type', _ctx.parentType)
+      .eq('parent_id',   _ctx.parentId)
+      .eq('domain',      _ctx.domain)
+      .order('sort_order', { ascending: true })
+      .order('created_at',  { ascending: true });
+    _items = refreshed || _items;
+  }
 
   // Auto-create "Architecture Components" section if missing
   const hasCompSection = _items.some(it =>
@@ -326,12 +370,20 @@ function renderTable(body) {
     return `<th data-col="${esc(c.id)}"${style}${managed}>${c.custom ? esc(c.name) : meta.label}</th>`;
   }).join('');
 
+  const SKIP_FILTER  = new Set(['drag', 'actions']);
+  const COL_OPTIONS  = {
+    type:   SPEC_TYPES,
+    status: SPEC_STATUSES,
+  };
+  const filterRowHTML = buildFilterRowHTML(visibleCols, SKIP_FILTER, COL_OPTIONS);
+
   body.innerHTML = `
     <div class="card">
       <div class="table-wrap">
         <table class="data-table spec-table" id="spec-table">
           <thead>
             <tr id="spec-thead-row">${theadHtml}</tr>
+            ${filterRowHTML}
           </thead>
           <tbody id="spec-tbody"></tbody>
         </table>
@@ -339,12 +391,45 @@ function renderTable(body) {
     </div>
   `;
 
-  const tbody   = document.getElementById('spec-tbody');
-  const tableEl = document.getElementById('spec-table');
+  const tbody    = document.getElementById('spec-tbody');
+  const tableEl  = document.getElementById('spec-table');
   const theadRow = document.getElementById('spec-thead-row');
-  _items.forEach(it => appendRowToTbody(tbody, it));
-  applyCollapsed();
-  wireSpecDragDrop(tbody);
+
+  function specFilterValue(it, colId) {
+    switch (colId) {
+      case 'id':          return it.spec_code || '';
+      case 'description': return it.title || it.description || '';
+      case 'system':      return it.system || '';
+      case 'type':        return it.type || '';
+      case 'status':      return it.status || '';
+      default:            return it.custom_fields?.[colId] || '';
+    }
+  }
+
+  function rerenderTbody() {
+    const filtered = applyColFilters(
+      _items.filter(it => it.type !== 'section'),
+      _colFilters,
+      specFilterValue
+    );
+    const visibleIds = new Set(filtered.map(it => it.id));
+    tbody.innerHTML = '';
+    _items.forEach(it => {
+      if (it.type === 'section' || visibleIds.has(it.id)) {
+        appendRowToTbody(tbody, it);
+      }
+    });
+    applyCollapsed();
+    wireSpecDragDrop(tbody);
+    wireSpecCustomCols(tbody);
+    wireInsertHover(tbody);
+  }
+
+  rerenderTbody();
+
+  // Wire filter icons into column headers
+  const theadEl = body.querySelector('#spec-table thead');
+  wireColFilterIcons(theadEl, _colFilters, () => rerenderTbody(), SKIP_FILTER);
 
   if (tableEl && theadRow) {
     applyColVisibility(tableEl, _cols);
@@ -353,8 +438,6 @@ function renderTable(body) {
       renderTable(body);
     });
   }
-  wireSpecCustomCols(tbody);
-  wireInsertHover(tbody);
 }
 
 function appendRowToTbody(tbody, it) {
@@ -432,6 +515,33 @@ function rowHTML(it) {
             ${SPEC_STATUSES.map(v => `<option value="${v}" ${it.status === v ? 'selected' : ''}>${v}</option>`).join('')}
           </select>
         </td>`;
+      case 'system_component': {
+        const selected = (it.custom_fields?.system_components) || [];
+        const btns = _systems.map(s =>
+          `<button class="req-mtog${selected.includes(s.id) ? ' req-mtog--on' : ''}"
+            data-item-id="${it.id}" data-field="system_components" data-val="${esc(s.id)}"
+            title="${esc(s.name)}">${esc(s.name.slice(0,12))}</button>`
+        ).join('');
+        return `<td data-col="system_component"><div class="req-mtog-wrap">${btns || '<span style="color:#ccc;font-size:11px">—</span>'}</div></td>`;
+      }
+      case 'target_domain': {
+        const selected = (it.custom_fields?.target_domains) || [];
+        const SUB_DOMAINS = ['sw','hw','mech'];
+        const currentDomain = _ctx.domain;
+        // Domain-level pages: show current domain as a fixed badge (auto-implied)
+        if (SUB_DOMAINS.includes(currentDomain)) {
+          return `<td data-col="target_domain"><div class="req-mtog-wrap">
+            <button class="req-mtog req-mtog--${currentDomain} req-mtog--on req-mtog--fixed"
+              data-item-id="${it.id}" data-field="target_domains" data-val="${currentDomain}"
+              title="Domain is fixed for this level">${currentDomain.toUpperCase()}</button>
+          </div></td>`;
+        }
+        const btns = SUB_DOMAINS.map(d =>
+          `<button class="req-mtog req-mtog--${d}${selected.includes(d) ? ' req-mtog--on' : ''}"
+            data-item-id="${it.id}" data-field="target_domains" data-val="${d}">${d.toUpperCase()}</button>`
+        ).join('');
+        return `<td data-col="target_domain"><div class="req-mtog-wrap">${btns}</div></td>`;
+      }
       case 'actions':
         return `<td data-col="actions" class="spec-row-actions">
           <button class="btn btn-ghost btn-xs spec-move-up"   title="Move up">↑</button>
@@ -470,8 +580,34 @@ function umlAreaPreviewHTML(it) {
 
 // ── Row Wiring ────────────────────────────────────────────────────────────────
 
+function wireSpecMultiselCells(tr) {
+  tr.querySelectorAll('.req-mtog:not(.req-mtog--fixed)').forEach(btn => {
+    btn.onclick = async () => {
+      const id    = btn.dataset.itemId;
+      const field = btn.dataset.field;
+      const val   = btn.dataset.val;
+      const it    = _items.find(i => i.id === id);
+      if (!it) return;
+
+      const cur  = Array.isArray(it.custom_fields?.[field]) ? [...it.custom_fields[field]] : [];
+      const idx  = cur.indexOf(val);
+      if (idx >= 0) cur.splice(idx, 1); else cur.push(val);
+
+      const fields = { ...(it.custom_fields || {}), [field]: cur };
+      it.custom_fields = fields;
+      const { error } = await sb.from('arch_spec_items').update({ custom_fields: fields }).eq('id', id);
+      if (error) { toast('Error saving.', 'error'); return; }
+
+      btn.classList.toggle('req-mtog--on', cur.includes(val));
+    };
+  });
+}
+
 function wireRow(tr, it) {
   if (it.type === 'section') { wireSectionRow(tr, it); return; }
+
+  // ── Multi-select toggle cells ─────────────────────────────────────────────
+  wireSpecMultiselCells(tr);
 
   // ── Text description: double-click to edit, blur to save ─────────────────
   const textView = tr.querySelector('.spec-text-view');

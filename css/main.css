@@ -5256,3 +5256,4 @@ th.col-th-dragging * { pointer-events: none; }
 .req-mtog--sw.req-mtog--on  { background: #1976D2; border-color: #1976D2; }
 .req-mtog--hw.req-mtog--on  { background: #388E3C; border-color: #388E3C; }
 .req-mtog--mech.req-mtog--on { background: #F57C00; border-color: #F57C00; }
+.req-mtog--fixed { cursor: default; opacity: 0.8; pointer-events: none; }
