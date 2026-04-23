@@ -769,6 +769,35 @@ input, select, textarea { font-family: var(--font); }
 .tdb-dom-col-hdr--hw   { background: #e8f5e9; color: #2e7d32; }
 .tdb-dom-col-hdr--mech { background: #fff3e0; color: #e65100; }
 
+/* Diagram zoom toolbar */
+.tdb-zoom-bar {
+  position: absolute; top: 6px; right: 10px; z-index: 10;
+  display: flex; gap: 2px; background: rgba(255,255,255,0.92);
+  border: 1px solid var(--color-border); border-radius: 6px;
+  padding: 2px 4px; box-shadow: 0 1px 4px rgba(0,0,0,.1);
+}
+.tdb-zoom-btn { font-size: 14px; line-height: 1; padding: 2px 5px; }
+
+/* Domain column equal height SVG */
+.tdb-dom-vmodel-wrap {
+  height: 280px; overflow: hidden; position: relative;
+}
+.tdb-dom-vmodel-wrap svg { display: block; width: 100%; height: 100%; }
+
+/* Domain column selected state */
+.tdb-dom-col--selected {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -1px;
+}
+.tdb-dom-col--selected .tdb-dom-col-hdr { font-weight: 800; }
+
+/* Coverage table label in bottom panel */
+.tdb-cov-label {
+  padding: 6px 14px 2px; font-size: 12px; font-weight: 600;
+  color: var(--color-text-muted); border-bottom: 1px solid var(--color-border);
+  margin-bottom: 4px;
+}
+
 /* ── Column filter ───────────────────────────────────────────────────────── */
 
 /* Funnel icon button inside <th> */

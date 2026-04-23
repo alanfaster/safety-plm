@@ -49,7 +49,8 @@ export async function renderTraceabilityDashboard(container, { project, item }) 
         <div class="bp-resize-handle"></div>
         <div class="bp-hdr">
           <div class="tdb-bp-tabs">
-            <button class="tdb-bp-tab tdb-bp-tab--active" data-tab="missing">⚠ Missing &amp; Justify</button>
+            <button class="tdb-bp-tab tdb-bp-tab--active" data-tab="coverage">📊 Coverage</button>
+            <button class="tdb-bp-tab" data-tab="missing">⚠ Missing &amp; Justify</button>
             <button class="tdb-bp-tab" data-tab="browse">🔍 Check individual traceability</button>
           </div>
           <span class="bp-title" id="tdb-bp-title" style="display:none"></span>
@@ -57,13 +58,17 @@ export async function renderTraceabilityDashboard(container, { project, item }) 
           <span class="bp-toggle">▲</span>
         </div>
         <div class="bp-body" id="tdb-bp-body">
+          <!-- Tab: Coverage -->
+          <div id="tdb-tab-coverage" style="overflow:auto;padding:4px 0">
+            <div class="tdb-panel-empty"><p>Select a diagram tab or domain to view coverage.</p></div>
+          </div>
           <!-- Tab: Missing & Justify -->
-          <div id="tdb-tab-missing" class="tdb-bp-cols">
+          <div id="tdb-tab-missing" class="tdb-bp-cols" style="display:none">
             <div class="tdb-bp-left"  id="tdb-bp-left"></div>
             <div class="tdb-bp-right" id="tdb-bp-right"></div>
           </div>
           <!-- Tab: Browse Links -->
-          <div id="tdb-tab-browse" class="tdb-bp-cols" style="display:none">
+          <div id="tdb-tab-browse" class="tdb-bp-cols" style="display:none;">
             <div class="tdb-bp-left"  id="tdb-browse-left"></div>
             <div class="tdb-bp-right tdb-browse-right" id="tdb-browse-right">
               <div class="tdb-panel-empty"><p>Select an item on the left to view its V-model trace.</p></div>
@@ -296,25 +301,36 @@ async function loadDashboard(project, item, systems) {
   const topLsMap = {};
   for (const ls of topLinkStats) topLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
   const topSvgHtml   = buildVmodelSVG(topLinks, topActiveIds, topPosMap, nodeMap, topLsMap, badgeOffsets);
-  const topTableHtml = buildLinkTableRows(topLinkStats, 'top');
+  // ── Coverage panel helper ─────────────────────────────────────────────────
+  function showCoverageTable(stats, label) {
+    const el = document.getElementById('tdb-tab-coverage');
+    if (!el) return;
+    if (!stats || !stats.length) {
+      el.innerHTML = `<div class="tdb-panel-empty"><p>No trace links in this diagram.</p></div>`;
+    } else {
+      el.innerHTML = `
+        <div class="tdb-cov-label">${esc(label)}</div>
+        <div class="table-wrap"><table class="data-table tdb-link-table">
+          <thead><tr>
+            <th>From</th><th></th><th>To</th>
+            <th style="text-align:center;width:64px">Total</th>
+            <th style="text-align:center;width:64px">Linked</th>
+            <th style="text-align:center;width:72px">Missing</th>
+            <th style="text-align:center;width:88px">Coverage</th>
+            <th style="width:140px"></th>
+          </tr></thead>
+          <tbody>${buildLinkTableRows(stats, 'cov')}</tbody>
+        </table></div>`;
+      wireTableMissing(el, stats, 'cov');
+    }
+    // Switch bottom panel to coverage tab
+    switchBpTab('coverage', allLinkStats, item, systems, itemCache, nodeMap, allTraceLinks, project);
+    document.getElementById('tdb-bp')?._bp?.expand();
+  }
 
   // ── Build per-system tab HTML ─────────────────────────────────────────────
   const DOMAIN_ICONS  = { sw: '◧', hw: '◨', mech: '◎' };
   const DOMAIN_LABELS = { sw: 'SW', hw: 'HW', mech: 'MECH' };
-
-  function linkTableHTML(stats, scope) {
-    return `<div class="table-wrap"><table class="data-table tdb-link-table">
-      <thead><tr>
-        <th>From</th><th></th><th>To</th>
-        <th style="text-align:center;width:64px">Total</th>
-        <th style="text-align:center;width:64px">Linked</th>
-        <th style="text-align:center;width:72px">Missing</th>
-        <th style="text-align:center;width:88px">Coverage</th>
-        <th style="width:140px"></th>
-      </tr></thead>
-      <tbody id="tdb-tbody-${esc(scope)}">${buildLinkTableRows(stats, scope)}</tbody>
-    </table></div>`;
-  }
 
   const sysPanelsHtml = systems.map(sys => {
     // System-level top diagram for this system only
@@ -332,14 +348,14 @@ async function loadDashboard(project, item, systems) {
       for (const ls of dls) dlsMap[`${ls.link.from}__${ls.link.to}`] = ls;
       const svgHtml = dIds.size
         ? buildVmodelSVG(domainLinks[d], dIds, dPosMap[d], nodeMap, dlsMap, sysDomBadgeOff[sys.id][d])
-        : '<svg viewBox="0 0 200 60" width="100%"><text x="10" y="30" font-size="12" fill="#bbb">No links configured</text></svg>';
+        : '<svg viewBox="0 0 200 60" width="100%" height="200"><text x="10" y="30" font-size="12" fill="#bbb">No links configured</text></svg>';
       return `
         <div class="tdb-dom-col" id="tdb-domcol-${esc(sys.id)}-${d}">
-          <div class="tdb-dom-col-hdr tdb-dom-col-hdr--${d}">
+          <div class="tdb-dom-col-hdr tdb-dom-col-hdr--${d}" style="cursor:pointer"
+               data-sys="${esc(sys.id)}" data-domain="${d}">
             ${DOMAIN_ICONS[d]} ${DOMAIN_LABELS[d]}${hidden ? ' <span style="font-size:10px;opacity:0.6">(not active)</span>' : ''}
           </div>
-          <div class="tdb-vmodel-wrap" id="tdb-dsvg-${esc(sys.id)}-${d}">${svgHtml}</div>
-          ${linkTableHTML(dls, `${sys.id}-${d}`)}
+          <div class="tdb-vmodel-wrap tdb-dom-vmodel-wrap" id="tdb-dsvg-${esc(sys.id)}-${d}">${svgHtml}</div>
         </div>`;
     }).join('');
 
@@ -347,12 +363,11 @@ async function loadDashboard(project, item, systems) {
       <div class="tdb-main-panel" id="tdb-panel-${esc(sys.id)}" style="display:none">
         <!-- System-level sub-diagram (item req → sys arch, this system only) -->
         <div class="card" style="margin-bottom:16px">
-          <div class="card-header">
+          <div class="card-header" style="cursor:pointer" id="tdb-systop-hdr-${esc(sys.id)}">
             <h3 style="font-size:14px">${esc(sys.system_code || sys.code || '')} · ${esc(sys.name || '')}
-              <span style="font-size:11px;font-weight:400;color:var(--color-text-muted)">— item &amp; system level</span></h3>
+              <span style="font-size:11px;font-weight:400;color:var(--color-text-muted)">— item &amp; system level · click to view coverage</span></h3>
           </div>
           <div class="tdb-vmodel-wrap" id="tdb-syssvg-${esc(sys.id)}">${stSvg}</div>
-          ${linkTableHTML(stls, `systop-${sys.id}`)}
         </div>
         <!-- 3 domain diagrams side by side -->
         <div class="tdb-dom-row">${domColsHtml}</div>
@@ -385,13 +400,12 @@ async function loadDashboard(project, item, systems) {
           <h3>System &amp; Item Level <span style="font-size:11px;color:var(--color-text-muted);font-weight:400">· all systems · click badge to review</span></h3>
         </div>
         <div class="tdb-vmodel-wrap" id="tdb-top-svg-wrap">${topSvgHtml}</div>
-        ${linkTableHTML(topLinkStats, 'top')}
       </div>
     </div>
 
     ${sysPanelsHtml}`;
 
-  // 10. Wire tab switching
+  // 10. Wire tab switching + coverage update
   body.querySelectorAll('.tdb-main-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       body.querySelectorAll('.tdb-main-tab').forEach(t => t.classList.toggle('active', t === tab));
@@ -399,8 +413,44 @@ async function loadDashboard(project, item, systems) {
         p.classList.toggle('active', p.id === tab.dataset.panel);
         p.style.display = p.id === tab.dataset.panel ? '' : 'none';
       });
+      // Update coverage table for the newly shown panel
+      if (tab.dataset.panel === 'tdb-panel-overview') {
+        showCoverageTable(topLinkStats, '🌐 Overview — all systems');
+      } else {
+        const sysId = tab.dataset.panel.replace('tdb-panel-', '');
+        const sys   = systems.find(s => s.id === sysId);
+        const stls  = sysTopLinkStats[sysId] || [];
+        showCoverageTable(stls, `${sys?.system_code || sys?.name || 'System'} — item & system level`);
+      }
+      // Clear domain selection highlight
+      body.querySelectorAll('.tdb-dom-col--selected').forEach(el => el.classList.remove('tdb-dom-col--selected'));
     });
   });
+
+  // Wire domain column header click → update coverage
+  body.querySelectorAll('.tdb-dom-col-hdr[data-sys]').forEach(hdr => {
+    hdr.addEventListener('click', () => {
+      const sysId  = hdr.dataset.sys;
+      const domain = hdr.dataset.domain;
+      const sys    = systems.find(s => s.id === sysId);
+      const dls    = domainStats[sysId]?.[domain] || [];
+      body.querySelectorAll('.tdb-dom-col--selected').forEach(el => el.classList.remove('tdb-dom-col--selected'));
+      hdr.closest('.tdb-dom-col')?.classList.add('tdb-dom-col--selected');
+      showCoverageTable(dls, `${sys?.system_code || sys?.name || 'System'} — ${DOMAIN_LABELS[domain]}`);
+    });
+  });
+
+  // Wire system-top header click → update coverage
+  for (const sys of systems) {
+    document.getElementById(`tdb-systop-hdr-${sys.id}`)?.addEventListener('click', () => {
+      const stls = sysTopLinkStats[sys.id] || [];
+      body.querySelectorAll('.tdb-dom-col--selected').forEach(el => el.classList.remove('tdb-dom-col--selected'));
+      showCoverageTable(stls, `${sys.system_code || sys.name || 'System'} — item & system level`);
+    });
+  }
+
+  // Show overview coverage on initial load
+  showCoverageTable(topLinkStats, '🌐 Overview — all systems');
 
   // Overview SVG wiring
   const topSvgWrap = document.getElementById('tdb-top-svg-wrap');
@@ -416,8 +466,8 @@ async function loadDashboard(project, item, systems) {
       openLinkPanel(ls, allLinkStats, item, systems, itemCache, nodeMap, project, allTraceLinks,
         allActiveIds, topPosMap, hasMissing ? 'missing' : 'browse', badgeOffsets);
     });
+    wireDiagramZoom(topSvgWrap);
   }
-  wireTableMissing(body, topLinkStats, 'top');
 
   // Per-system panel wiring
   for (const sys of systems) {
@@ -436,16 +486,14 @@ async function loadDashboard(project, item, systems) {
         openLinkPanel(ls, allLinkStats, item, [sys], itemCache, nodeMap, project, allTraceLinks,
           allActiveIds, topPosMap, hasMissing ? 'missing' : 'browse', sysTopBadgeOff[sys.id]);
       });
+      wireDiagramZoom(stSvgWrap);
     }
-    const stPanel = document.getElementById(`tdb-panel-${sys.id}`);
-    if (stPanel) wireTableMissing(stPanel, stls, `systop-${sys.id}`);
 
     // Domain columns
     for (const d of SUB_DOMAINS_LIST) {
       const dls     = domainStats[sys.id]?.[d] || [];
       const dIds    = new Set(domainLinks[d].flatMap(l => [l.from, l.to]));
       const dSvgWrap = document.getElementById(`tdb-dsvg-${sys.id}-${d}`);
-      const dCol     = document.getElementById(`tdb-domcol-${sys.id}-${d}`);
       if (dSvgWrap && dIds.size) {
         wireBadgeDrag(dSvgWrap, sysDomBadgeOff[sys.id][d], domainLinks[d], dIds, dPosMap[d], nodeMap, dls, item, [sys]);
         dSvgWrap.addEventListener('click', e => {
@@ -458,8 +506,8 @@ async function loadDashboard(project, item, systems) {
           openLinkPanel(ls, allLinkStats, item, [sys], itemCache, nodeMap, project, allTraceLinks,
             allActiveIds, dPosMap[d], hasMissing ? 'missing' : 'browse', sysDomBadgeOff[sys.id][d]);
         });
+        wireDiagramZoom(dSvgWrap);
       }
-      if (dCol) wireTableMissing(dCol, dls, `${sys.id}-${d}`);
     }
   }
 
@@ -512,6 +560,98 @@ function computeTopLinkCovForSystem(srcNodeId, dstNodeId, srcNode, system, item,
     }
   }
   return { total, linked, missing: missingItems.length, missingItems, justifiedItems, linkedItems };
+}
+
+// ── Diagram zoom/pan ─────────────────────────────────────────────────────────
+
+function wireDiagramZoom(wrapEl) {
+  const svg = wrapEl.querySelector('svg');
+  if (!svg) return;
+
+  const vbStr = svg.getAttribute('viewBox');
+  if (!vbStr) return;
+  const [ox, oy, ow, oh] = vbStr.split(' ').map(Number);
+  let vx = ox, vy = oy, vw = ow, vh = oh;
+
+  function applyVB() {
+    svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
+  }
+
+  function zoomAt(factor, cx, cy) {
+    vx = cx - (cx - vx) * factor;
+    vy = cy - (cy - vy) * factor;
+    vw *= factor;
+    vh *= factor;
+    applyVB();
+  }
+
+  // Zoom toolbar
+  const bar = document.createElement('div');
+  bar.className = 'tdb-zoom-bar';
+  bar.innerHTML = `
+    <button class="btn btn-ghost btn-xs tdb-zoom-btn" data-action="in"  title="Zoom in">＋</button>
+    <button class="btn btn-ghost btn-xs tdb-zoom-btn" data-action="out" title="Zoom out">－</button>
+    <button class="btn btn-ghost btn-xs tdb-zoom-btn" data-action="fit" title="Fit to view">⊡</button>`;
+  wrapEl.style.position = 'relative';
+  wrapEl.insertBefore(bar, svg);
+
+  bar.querySelectorAll('.tdb-zoom-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const cx = vx + vw / 2, cy = vy + vh / 2;
+      if (btn.dataset.action === 'in')  zoomAt(0.75, cx, cy);
+      if (btn.dataset.action === 'out') zoomAt(1.33, cx, cy);
+      if (btn.dataset.action === 'fit') { vx = ox; vy = oy; vw = ow; vh = oh; applyVB(); }
+    });
+  });
+
+  // Mouse wheel zoom
+  wrapEl.addEventListener('wheel', e => {
+    e.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const px = (e.clientX - rect.left) / rect.width;
+    const py = (e.clientY - rect.top)  / rect.height;
+    const cx = vx + vw * px, cy = vy + vh * py;
+    zoomAt(e.deltaY > 0 ? 1.15 : 0.87, cx, cy);
+  }, { passive: false });
+
+  // Drag to pan
+  let drag = null;
+  svg.style.cursor = 'grab';
+
+  svg.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    if (e.target.closest('.tdb-link-badge')) return; // let badge drag handle it
+    e.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    drag = {
+      startX: e.clientX, startY: e.clientY,
+      startVx: vx, startVy: vy,
+      scaleX: vw / rect.width, scaleY: vh / rect.height,
+    };
+    svg.style.cursor = 'grabbing';
+  });
+
+  const onMove = e => {
+    if (!drag) return;
+    vx = drag.startVx - (e.clientX - drag.startX) * drag.scaleX;
+    vy = drag.startVy - (e.clientY - drag.startY) * drag.scaleY;
+    applyVB();
+  };
+  const onUp = () => {
+    if (!drag) return;
+    drag = null;
+    svg.style.cursor = 'grab';
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup',   onUp);
+
+  // Cleanup on page navigation
+  wrapEl._zoomCleanup = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+  };
 }
 
 async function refreshCache(activeIds, nodeMap, item, systems, cache) {
@@ -629,10 +769,10 @@ function wireBpTabs(linkStats, item, systems, itemCache, nodeMap, traceLinks, pr
 function switchBpTab(tabId, linkStats, item, systems, itemCache, nodeMap, traceLinks, project) {
   document.querySelectorAll('.tdb-bp-tab').forEach(t =>
     t.classList.toggle('tdb-bp-tab--active', t.dataset.tab === tabId));
-  const isMissing = tabId === 'missing';
-  document.getElementById('tdb-tab-missing').style.display = isMissing ? '' : 'none';
-  document.getElementById('tdb-tab-browse').style.display  = isMissing ? 'none' : '';
-  if (!isMissing) buildBrowseLeft(linkStats, item, systems, itemCache, nodeMap, traceLinks, project);
+  document.getElementById('tdb-tab-coverage').style.display = tabId === 'coverage' ? '' : 'none';
+  document.getElementById('tdb-tab-missing').style.display  = tabId === 'missing'  ? '' : 'none';
+  document.getElementById('tdb-tab-browse').style.display   = tabId === 'browse'   ? '' : 'none';
+  if (tabId === 'browse') buildBrowseLeft(linkStats, item, systems, itemCache, nodeMap, traceLinks, project);
 }
 
 function buildBrowseLeft(linkStats, item, systems, itemCache, nodeMap, traceLinks, project) {
