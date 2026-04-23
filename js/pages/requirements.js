@@ -933,10 +933,6 @@ function showInlineInsertForm(afterRid, tbody) {
       toShift.forEach(r => { r.sort_order += 1; });
     }
 
-    const SUB_DOMAINS = new Set(['sw','hw','mech']);
-    const autoCustomFields = SUB_DOMAINS.has(_ctx.domain)
-      ? { target_domains: [_ctx.domain] } : {};
-
     const { data: newReq, error } = await sb.from('requirements').insert({
       req_code: reqCode, title, type,
       parent_type: parentType, parent_id: parentId,
@@ -944,7 +940,6 @@ function showInlineInsertForm(afterRid, tbody) {
       domain: _ctx.domain,
       status: 'draft', priority: 'medium',
       sort_order: sortOrder,
-      custom_fields: autoCustomFields,
     }).select().single();
 
     if (error) { toast(error.message || t('common.error'), 'error'); saveBtn.disabled = false; return; }
@@ -2133,17 +2128,14 @@ function openReqModal({ project, parentType, parentId, projectType, existing, de
         systemName:  parentType === 'system' ? (project.item_name || '') : undefined,
         index:       reqIdx,
       });
-      const SUB_DOMS = new Set(['sw','hw','mech']);
-      const autoFields = SUB_DOMS.has(_ctx.domain) ? { target_domains: [_ctx.domain] } : {};
       ({ error } = await sb.from('requirements').insert({
         ...payload, req_code: reqCode,
         parent_type: parentType, parent_id: parentId, project_id: project.id,
         domain: _ctx.domain,
-        custom_fields: autoFields,
       }));
     }
     btn.disabled = false;
-    if (error) { toast(t('common.error'), 'error'); return; }
+    if (error) { toast(error.message || t('common.error'), 'error'); console.error('req save error', error); return; }
     hideModal();
     toast(isEdit ? 'Requirement updated.' : 'Requirement created.', 'success');
     await loadData();

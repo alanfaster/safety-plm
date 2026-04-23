@@ -1072,20 +1072,16 @@ async function addRow(afterId) {
     );
   }
 
-  const SUB_DOMS = new Set(['sw','hw','mech']);
-  const autoFields = SUB_DOMS.has(_ctx.domain) ? { target_domains: [_ctx.domain] } : {};
-
   const { data: newItem, error } = await sb.from('arch_spec_items').insert({
-    spec_code:     code,
-    title:         '',
-    type:          'overview',
-    status:        'draft',
-    sort_order:    sortOrder,
-    parent_type:   _ctx.parentType,
-    parent_id:     _ctx.parentId,
-    project_id:    _ctx.project.id,
-    domain:        _ctx.domain,
-    custom_fields: autoFields,
+    spec_code:   code,
+    title:       '',
+    type:        'overview',
+    status:      'draft',
+    sort_order:  sortOrder,
+    parent_type: _ctx.parentType,
+    parent_id:   _ctx.parentId,
+    project_id:  _ctx.project.id,
+    domain:      _ctx.domain,
   }).select().single();
 
   if (error) { toast('Error creating item.', 'error'); return; }
