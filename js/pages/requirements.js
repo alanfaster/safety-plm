@@ -6,6 +6,7 @@ import { navigate } from '../router.js';
 import { loadColConfig, saveColConfig, wireColMgr } from '../components/col-mgr.js';
 import { copyElementLink, scrollToAnchor } from '../deep-link.js';
 import { VMODEL_NODES, PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
+import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 
 const REQ_TYPES      = ['functional','performance','safety','safety-independency','interface','constraint'];
 const REQ_STATUSES   = ['draft','review','approved','deprecated'];
@@ -14,16 +15,18 @@ const ASIL_LEVELS    = ['QM','ASIL-A','ASIL-B','ASIL-C','ASIL-D'];
 const DAL_LEVELS     = ['DAL-E','DAL-D','DAL-C','DAL-B','DAL-A'];
 
 const REQ_BUILTIN_COLS = [
-  { id: 'drag',         name: '',             fixed: true,  visible: true },
-  { id: 'code',         name: 'Code',         fixed: true,  visible: true },
-  { id: 'title',        name: 'Title',        fixed: true,  visible: true },
-  { id: 'type',         name: 'Type',         visible: true },
-  { id: 'priority',     name: 'Priority',     visible: true },
-  { id: 'status',       name: 'Status',       visible: true },
-  { id: 'asil',         name: 'ASIL',         visible: true, projectTypes: ['automotive'] },
-  { id: 'dal',          name: 'DAL',          visible: true, projectTypes: ['aerospace','military'] },
-  { id: 'verification', name: 'Verification', visible: true },
-  { id: 'actions',      name: '',             fixed: true,  visible: true },
+  { id: 'drag',             name: '',                 fixed: true,  visible: true },
+  { id: 'code',             name: 'Code',             fixed: true,  visible: true },
+  { id: 'title',            name: 'Title',            fixed: true,  visible: true },
+  { id: 'type',             name: 'Type',             visible: true },
+  { id: 'priority',         name: 'Priority',         visible: true },
+  { id: 'status',           name: 'Status',           visible: true },
+  { id: 'asil',             name: 'ASIL',             visible: true, projectTypes: ['automotive'] },
+  { id: 'dal',              name: 'DAL',              visible: true, projectTypes: ['aerospace','military'] },
+  { id: 'verification',     name: 'Verification',     visible: true },
+  { id: 'system_component', name: 'System Component', visible: true, parentTypes: ['item'] },
+  { id: 'target_domain',    name: 'Target Domain',    visible: true, parentTypes: ['system'] },
+  { id: 'actions',          name: '',                 fixed: true,  visible: true },
 ];
 
 // ── Module-level state ────────────────────────────────────────────────────────
@@ -38,6 +41,8 @@ let _showDal    = false;
 let _traceFields   = [];   // derived from vmodel_links for this node
 let _traceData     = {};   // { [nodeId]: [{code, label}] } — cached lookup data
 let _tracePanelId  = null; // currently open req id in trace panel
+let _colFilters    = {};   // { [colId]: string } — active column filter values
+let _systems       = [];   // systems for the current item (used by system_component column)
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -62,6 +67,7 @@ export async function renderRequirements(container, { project, item, system, par
   _traceFields   = [];
   _traceData     = {};
   _tracePanelId  = null;
+  _colFilters    = {};
   _collapsed   = new Set(JSON.parse(sessionStorage.getItem(`req_collapsed_${parentId}`) || '[]'));
   _showAsil    = project.type === 'automotive';
   _showDal     = project.type === 'aerospace' || project.type === 'military';
@@ -151,6 +157,33 @@ export async function renderRequirements(container, { project, item, system, par
   }
 
   await loadData();
+  applyGotoTarget();
+}
+
+function applyGotoTarget() {
+  const raw = sessionStorage.getItem('tdb_goto');
+  if (!raw) return;
+  try {
+    const { code } = JSON.parse(raw);
+    sessionStorage.removeItem('tdb_goto');
+    if (!code) return;
+    // Wait for table to render, then find and open the row
+    setTimeout(() => {
+      const row = document.querySelector(`tr[data-rid]`);
+      if (!row) return;
+      // Find the req whose req_code matches
+      const req = _data.find(r => r.req_code === code);
+      if (req) {
+        const tr = document.querySelector(`tr[data-rid="${req.id}"]`);
+        if (tr) {
+          tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          tr.classList.add('req-row--goto-highlight');
+          setTimeout(() => tr.classList.remove('req-row--goto-highlight'), 5000);
+        }
+        openTracePanel(req.id, true);
+      }
+    }, 400);
+  } catch {}
 }
 
 // ── Nav helpers ───────────────────────────────────────────────────────────────
@@ -243,9 +276,22 @@ async function loadData() {
   const projectCustomCols = (pcRow?.config?.req_custom_cols || [])
     .map(c => ({ ...c, custom: true, visible: true }));
 
+  // Load systems for system_component column (item-level pages only)
+  if (parentType === 'item') {
+    const { data: sysData } = await sb.from('systems')
+      .select('id, name').eq('item_id', item.id).order('created_at', { ascending: true });
+    _systems = sysData || [];
+  } else {
+    _systems = [];
+  }
+
   _colKey   = pageId ? `req_${parentId}_${pageId}` : `req_${parentId}`;
   _builtins = [
-    ...REQ_BUILTIN_COLS.filter(c => !c.projectTypes || c.projectTypes.includes(project.type)),
+    ...REQ_BUILTIN_COLS.filter(c => {
+      if (c.projectTypes && !c.projectTypes.includes(project.type)) return false;
+      if (c.parentTypes && !c.parentTypes.includes(parentType)) return false;
+      return true;
+    }),
     ...projectCustomCols,
   ];
   _cols = loadColConfig(_colKey, _builtins);
@@ -270,6 +316,16 @@ function renderTable(body) {
   const visCols = _cols.filter(c => c.visible);
   const { project, item, system, parentType, parentId, typeFilter } = _ctx;
 
+  const SKIP_FILTER  = new Set(['drag', 'actions']);
+  const COL_OPTIONS  = {
+    type:     REQ_TYPES,
+    priority: REQ_PRIORITIES,
+    status:   REQ_STATUSES,
+    asil:     ASIL_LEVELS,
+    dal:      DAL_LEVELS,
+  };
+  const filterRowHTML = buildFilterRowHTML(visCols, SKIP_FILTER, COL_OPTIONS);
+
   body.innerHTML = `
     <div class="card">
       <div class="table-wrap">
@@ -278,6 +334,7 @@ function renderTable(body) {
             <tr id="req-thead-row">
               ${visCols.map(c => reqTh(c)).join('')}
             </tr>
+            ${filterRowHTML}
           </thead>
           <tbody id="req-tbody">
           </tbody>
@@ -287,8 +344,48 @@ function renderTable(body) {
   `;
 
   const tbody = document.getElementById('req-tbody');
-  _data.forEach(r => appendReqRow(tbody, r));
-  applyCollapseState(tbody);
+
+  function reqFilterValue(r, colId) {
+    switch (colId) {
+      case 'code':         return r.req_code || '';
+      case 'title':        return r.title || '';
+      case 'type':         return r.type || '';
+      case 'priority':     return r.priority || '';
+      case 'status':       return r.status || '';
+      case 'asil':         return r.asil || '';
+      case 'dal':          return r.dal || '';
+      case 'verification': return r.verification_criteria || '';
+      default:             return r.custom_fields?.[colId] || '';
+    }
+  }
+
+  function rerenderTbody() {
+    const filtered = applyColFilters(
+      _data.filter(r => r.type !== 'title' && r.type !== 'info'),
+      _colFilters,
+      reqFilterValue
+    );
+    // Keep structural rows (title/info) always visible; filter only data rows
+    const visibleIds = new Set(filtered.map(r => r.id));
+    tbody.innerHTML = '';
+    _data.forEach(r => {
+      if (r.type === 'title' || r.type === 'info' || visibleIds.has(r.id)) {
+        appendReqRow(tbody, r);
+      }
+    });
+    applyCollapseState(tbody);
+    wireAllRows(tbody);
+    wireReqDragDrop(tbody);
+    const customCols = visCols.filter(c => c.custom);
+    if (customCols.length) wireCustomCols(tbody);
+    wireInsertHover(tbody);
+  }
+
+  rerenderTbody();
+
+  // Wire filter icons into column headers
+  const theadEl = body.querySelector('#req-table thead');
+  wireColFilterIcons(theadEl, _colFilters, () => rerenderTbody(), SKIP_FILTER);
 
   // Column manager
   const tableEl  = body.querySelector('#req-table');
@@ -299,19 +396,6 @@ function renderTable(body) {
       renderTable(body);
     });
   }
-
-  // Wire all rows
-  wireAllRows(tbody);
-
-  // Drag-drop row reorder
-  wireReqDragDrop(tbody);
-
-  // Custom column inline editing
-  const customCols = visCols.filter(c => c.custom);
-  if (customCols.length) wireCustomCols(tbody);
-
-  // Insert pill
-  wireInsertHover(tbody);
 
   scrollToAnchor();
 }
@@ -440,6 +524,9 @@ function wireAllRows(tbody) {
       moveReq(btn.dataset.id, dir, tbody);
     });
   });
+
+  // Multi-select toggle cells (system_component, target_domain)
+  wireMultiselCells(tbody);
 
   // Traceability panel
   tbody.querySelectorAll('.btn-trace-req').forEach(btn => {
@@ -886,6 +973,7 @@ function showInlineInsertForm(afterRid, tbody) {
 
 function wireNewRow(tr, req, tbody) {
   const { project, parentType, parentId, typeFilter } = _ctx;
+  wireMultiselCells(tr);
   tr.querySelectorAll('.req-inline-sel').forEach(sel => {
     sel.addEventListener('change', async () => {
       const r = _data.find(r => r.id === req.id);
@@ -1155,6 +1243,31 @@ function wireCustomCols(tbody) {
   });
 }
 
+// ── Multi-select toggle cells (system_component / target_domain) ─────────────
+
+function wireMultiselCells(tbody) {
+  tbody.querySelectorAll('.req-mtog').forEach(btn => {
+    btn.onclick = async () => {
+      const rid   = btn.dataset.rid;
+      const field = btn.dataset.field;  // 'system_components' | 'target_domains'
+      const val   = btn.dataset.val;
+      const r     = _data.find(d => d.id === rid);
+      if (!r) return;
+
+      const cur  = Array.isArray(r.custom_fields?.[field]) ? [...r.custom_fields[field]] : [];
+      const idx  = cur.indexOf(val);
+      if (idx >= 0) cur.splice(idx, 1); else cur.push(val);
+
+      const fields = { ...(r.custom_fields || {}), [field]: cur };
+      r.custom_fields = fields;
+      const { error } = await sb.from('requirements').update({ custom_fields: fields }).eq('id', rid);
+      if (error) { toast(t('common.error'), 'error'); return; }
+
+      btn.classList.toggle('req-mtog--on', cur.includes(val));
+    };
+  });
+}
+
 // ── Column header / cell builders ─────────────────────────────────────────────
 
 function reqTh(c) {
@@ -1246,6 +1359,24 @@ function reqTd(c, r) {
         <button class="btn btn-ghost btn-xs btn-copy-link" data-id="${r.id}" title="Copy link">🔗</button>
         <button class="btn btn-ghost btn-xs btn-del-req"   data-id="${r.id}" data-title="${esc(r.title)}" style="color:var(--color-danger)" title="Delete">✕</button>
       </td>`;
+    case 'system_component': {
+      const selected = (r.custom_fields?.system_components) || [];
+      const btns = _systems.map(s =>
+        `<button class="req-mtog${selected.includes(s.id) ? ' req-mtog--on' : ''}"
+          data-rid="${r.id}" data-field="system_components" data-val="${esc(s.id)}"
+          title="${esc(s.name)}">${esc(s.name.slice(0,12))}</button>`
+      ).join('');
+      return `<td data-col="system_component"><div class="req-mtog-wrap">${btns || '<span style="color:#ccc;font-size:11px">—</span>'}</div></td>`;
+    }
+    case 'target_domain': {
+      const selected = (r.custom_fields?.target_domains) || [];
+      const DOMAINS = ['sw','hw','mech'];
+      const btns = DOMAINS.map(d =>
+        `<button class="req-mtog req-mtog--${d}${selected.includes(d) ? ' req-mtog--on' : ''}"
+          data-rid="${r.id}" data-field="target_domains" data-val="${d}">${d.toUpperCase()}</button>`
+      ).join('');
+      return `<td data-col="target_domain"><div class="req-mtog-wrap">${btns}</div></td>`;
+    }
     default:
       if (c.custom) return `<td data-col="${c.id}" class="req-custom-cell" data-rid="${r.id}" data-custom-col="${c.id}"
         title="Click to edit" style="cursor:text;font-size:12px;color:#444;min-width:80px">
@@ -1310,6 +1441,11 @@ async function openTracePanel(reqId, force = false) {
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 
+  // Split into upstream (above current node in V-model) and downstream (below)
+  const myNodeIdx      = nodeOrder.indexOf(myNode?.id);
+  const upstreamFields   = devFields.filter(e => nodeOrder.indexOf(e.field.id) < myNodeIdx);
+  const downstreamFields = devFields.filter(e => nodeOrder.indexOf(e.field.id) > myNodeIdx);
+
   body.innerHTML = `
     <div class="rtrace-chain">
       ${!_traceFields.length ? `
@@ -1318,7 +1454,7 @@ async function openTracePanel(reqId, force = false) {
           <p style="margin-top:4px">Go to <strong>Project Settings → V-Model</strong> to define connections.</p>
         </div>
       ` : ''}
-      ${buildChainHTML(req, myNode, devFields, testFields)}
+      ${buildChainHTML(req, myNode, upstreamFields, downstreamFields, testFields)}
     </div>
   `;
 
@@ -1438,40 +1574,48 @@ function buildNodeCardHTML({ field, linked, revLinked }, arrowDir) {
     </div>`;
 }
 
-function buildChainHTML(req, myNode, devFields, testFields) {
+function buildChainHTML(req, myNode, upstreamFields, downstreamFields, testFields) {
   const nodeIcon = { system: '⬡', sw: '◧', hw: '◨', mech: '◎', item: '⬡' };
-  const currentCode = myNode?.id || '';
 
-  // Top row: current node (left) ←→ test nodes (right)
+  // Test column (right arm)
   const testColumn = testFields.length
     ? testFields.map(entry => buildNodeCardHTML(entry, 'right')).join(
         `<div class="rtrace-v-spacer"></div>`)
     : '';
 
-  // Dev column: nodes going down.
-  // Every node in devFields has a DIRECT V-model link from the current node.
-  // Between consecutive nodes there's also a chain link (e.g. sys_arch → sw_req).
-  // For i > 0, show BOTH arrows: chain (from previous) + direct (from current req).
-  const devColumn = devFields.length
-    ? devFields.map((entry, i) => {
-        const prevLabel = i > 0 ? esc(devFields[i - 1].field.label) : '';
-        const connector = i === 0 ? '' : `
-          <div class="rtrace-dual-arrow">
-            <div class="rtrace-down-arrow rtrace-down-arrow--chain">
-              ↓ <span>${prevLabel} → ${esc(entry.field.label)}</span>
-            </div>
-            <div class="rtrace-down-arrow rtrace-down-arrow--direct">
-              ↓ <span>${esc(req.req_code)} → ${esc(entry.field.label)}</span>
-            </div>
-          </div>`;
-        return connector + buildNodeCardHTML(entry, 'down');
-      }).join('')
-    : '';
+  // Helper: render a sequence of node cards — each connected to the CURRENT node only.
+  // The connector goes BELOW each card (except the last) and references THAT card's label,
+  // so it's clear the link is between the current req and that specific node.
+  function renderNodeSequence(fields) {
+    return fields.map((entry, i) => {
+      const isLast = i === fields.length - 1;
+      const connector = isLast ? '' : `
+        <div class="rtrace-bidir-arrow">
+          <span class="rtrace-bidir-up">↑</span>
+          <span class="rtrace-bidir-label">${esc(req.req_code)} ↔ ${esc(entry.field.label)}</span>
+          <span class="rtrace-bidir-down">↓</span>
+        </div>`;
+      return buildNodeCardHTML(entry, 'down') + connector;
+    }).join('');
+  }
+
+  const upstreamColumn   = upstreamFields.length   ? renderNodeSequence(upstreamFields)   : '';
+  const downstreamColumn = downstreamFields.length ? renderNodeSequence(downstreamFields) : '';
 
   return `
     <div class="rtrace-v-layout">
 
-      <!-- TOP ROW: current ←→ test -->
+      <!-- UPSTREAM: nodes above current in V-model -->
+      ${upstreamColumn ? `
+        <div class="rtrace-dev-chain rtrace-upstream">${upstreamColumn}</div>
+        <div class="rtrace-bidir-arrow">
+          <span class="rtrace-bidir-up">↑</span>
+          <span class="rtrace-bidir-label">${esc(req.req_code)} ↔ ${esc(upstreamFields[upstreamFields.length - 1]?.field.label || '')}</span>
+          <span class="rtrace-bidir-down">↓</span>
+        </div>
+      ` : ''}
+
+      <!-- MIDDLE ROW: current node ←→ test nodes -->
       <div class="rtrace-top-row">
         <div class="rtrace-top-left">
           <div class="rtrace-current">
@@ -1482,7 +1626,12 @@ function buildChainHTML(req, myNode, devFields, testFields) {
               ${req.type ? `<span class="rtrace-current-type">${esc(req.type)}</span>` : ''}
             </div>
           </div>
-          ${devFields.length ? `<div class="rtrace-down-arrow">↓ <span>trace</span></div>` : ''}
+          ${downstreamFields.length ? `
+          <div class="rtrace-bidir-arrow">
+            <span class="rtrace-bidir-up">↑</span>
+            <span class="rtrace-bidir-label">${esc(req.req_code)} ↔ ${esc(downstreamFields[0]?.field.label || '')}</span>
+            <span class="rtrace-bidir-down">↓</span>
+          </div>` : ''}
         </div>
 
         ${testColumn ? `
@@ -1497,8 +1646,8 @@ function buildChainHTML(req, myNode, devFields, testFields) {
         </div>` : ''}
       </div>
 
-      <!-- BOTTOM: dev chain going down -->
-      ${devColumn ? `<div class="rtrace-dev-chain">${devColumn}</div>` : ''}
+      <!-- DOWNSTREAM: nodes below current in V-model -->
+      ${downstreamColumn ? `<div class="rtrace-dev-chain">${downstreamColumn}</div>` : ''}
 
     </div>
   `;
