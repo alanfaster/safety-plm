@@ -916,7 +916,7 @@ async function buildBrowseRight(selItem, nodeId, nodeMap, itemCache, item, syste
   const upstreamFields   = devFields.filter(e => nodeOrder.indexOf(e.field.id) < myNodeIdx);
   const downstreamFields = devFields.filter(e => nodeOrder.indexOf(e.field.id) > myNodeIdx);
 
-  const chainHTML = buildBrowseChainHTML(selItem, node, upstreamFields, downstreamFields, testFields);
+  const chainHTML = buildBrowseChainHTML(selItem, node, nodeId, upstreamFields, downstreamFields, testFields);
 
   rightEl.innerHTML = `<div class="rtrace-chain" style="overflow-y:auto;padding:12px 8px">${chainHTML}</div>`;
 
@@ -1002,7 +1002,7 @@ function openItemInNewTab(code, node, project, item, systems, itemCache) {
   window.open(`${window.location.pathname}#${route}`, '_blank');
 }
 
-function buildBrowseChainHTML(it, myNode, upstreamFields, downstreamFields, testFields) {
+function buildBrowseChainHTML(it, myNode, nodeId, upstreamFields, downstreamFields, testFields) {
   const nodeIcon   = { system: '⬡', sw: '◧', hw: '◨', mech: '◎', item: '⬡' };
   const TEST_PHASES = new Set(['unit_testing', 'integration_testing', 'system_testing']);
   const isTestNode  = TEST_PHASES.has(myNode?.phase);
