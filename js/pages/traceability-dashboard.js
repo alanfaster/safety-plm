@@ -392,38 +392,42 @@ async function loadDashboard(project, item, systems) {
     for (const ls of stls) stMap[`${ls.link.from}__${ls.link.to}`] = ls;
     const stSvg = buildVmodelSVG(sysViewLinks, sysViewActiveIds, sysViewPosMap, nodeMap, stMap, sysTopBadgeOff[sys.id]);
 
-    // 3 domain columns — always all 3
-    const domColsHtml = SUB_DOMAINS_LIST.map(d => {
+    // Domain panel — full width, tabs for SW / HW / MECH
+    const firstD = SUB_DOMAINS_LIST[0];
+    const domTabsHtml = SUB_DOMAINS_LIST.map((d, i) => {
       const hidden = !!_hiddenDomains[sys.id]?.has(d);
-      const dls    = domainStats[sys.id]?.[d] || [];
-      const dIds   = new Set(domainLinks[d].flatMap(l => [l.from, l.to]));
-      const dlsMap = {};
-      for (const ls of dls) dlsMap[`${ls.link.from}__${ls.link.to}`] = ls;
-      const svgHtml = dIds.size
-        ? buildVmodelSVG(domainLinks[d], dIds, dPosMap[d], nodeMap, dlsMap, sysDomBadgeOff[sys.id][d])
-        : '<svg viewBox="0 0 200 60" width="100%" height="200"><text x="10" y="30" font-size="12" fill="#bbb">No links configured</text></svg>';
-      return `
-        <div class="tdb-dom-col" id="tdb-domcol-${esc(sys.id)}-${d}">
-          <div class="tdb-dom-col-hdr tdb-dom-col-hdr--${d}" style="cursor:pointer"
-               data-sys="${esc(sys.id)}" data-domain="${d}">
-            ${DOMAIN_ICONS[d]} ${DOMAIN_LABELS[d]}${hidden ? ' <span style="font-size:10px;opacity:0.6">(not active)</span>' : ''}
-          </div>
-          <div class="tdb-vmodel-wrap tdb-dom-vmodel-wrap" id="tdb-dsvg-${esc(sys.id)}-${d}">${svgHtml}</div>
-        </div>`;
+      return `<button class="tdb-dom-tab${i === 0 ? ' tdb-dom-tab--active' : ''}"
+        data-sys="${esc(sys.id)}" data-domain="${d}">
+        ${DOMAIN_ICONS[d]} ${DOMAIN_LABELS[d]}${hidden ? ' <span style="font-size:10px;opacity:0.5">(not active)</span>' : ''}
+      </button>`;
     }).join('');
+
+    // Build initial SVG for first domain
+    const initD   = firstD;
+    const initDls = domainStats[sys.id]?.[initD] || [];
+    const initIds = new Set(domainLinks[initD].flatMap(l => [l.from, l.to]));
+    const initMap = {};
+    for (const ls of initDls) initMap[`${ls.link.from}__${ls.link.to}`] = ls;
+    const initSvg = initIds.size
+      ? buildVmodelSVG(domainLinks[initD], initIds, dPosMap[initD], nodeMap, initMap, sysDomBadgeOff[sys.id][initD])
+      : '<svg viewBox="0 0 200 60" width="100%"><text x="10" y="30" font-size="12" fill="#bbb">No links configured</text></svg>';
 
     return `
       <div class="tdb-main-panel" id="tdb-panel-${esc(sys.id)}" style="display:none">
-        <!-- System-level sub-diagram (item req → sys arch, this system only) -->
-        <div class="card" style="margin-bottom:16px">
+        <!-- System-level diagram -->
+        <div class="card" style="margin-bottom:12px">
           <div class="card-header" style="cursor:pointer" id="tdb-systop-hdr-${esc(sys.id)}">
             <h3 style="font-size:14px">${esc(sys.system_code || sys.code || '')} · ${esc(sys.name || '')}
               <span style="font-size:11px;font-weight:400;color:var(--color-text-muted)">— item &amp; system level · click to view coverage</span></h3>
           </div>
           <div class="tdb-vmodel-wrap" id="tdb-syssvg-${esc(sys.id)}">${stSvg}</div>
         </div>
-        <!-- 3 domain diagrams side by side -->
-        <div class="tdb-dom-row">${domColsHtml}</div>
+        <!-- Domain diagram — full width with tabs -->
+        <div class="card">
+          <div class="tdb-dom-tabbar">${domTabsHtml}</div>
+          <div class="tdb-vmodel-wrap tdb-dom-full-wrap" id="tdb-dsvg-${esc(sys.id)}-active"
+               data-sys="${esc(sys.id)}" data-domain="${initD}">${initSvg}</div>
+        </div>
       </div>`;
   }).join('');
 
@@ -481,15 +485,33 @@ async function loadDashboard(project, item, systems) {
     });
   });
 
-  // Wire domain column header click → update coverage
-  body.querySelectorAll('.tdb-dom-col-hdr[data-sys]').forEach(hdr => {
-    hdr.addEventListener('click', () => {
-      const sysId  = hdr.dataset.sys;
-      const domain = hdr.dataset.domain;
+  // Wire domain tab click → swap full-width domain SVG
+  body.querySelectorAll('.tdb-dom-tab[data-sys]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sysId  = btn.dataset.sys;
+      const domain = btn.dataset.domain;
       const sys    = systems.find(s => s.id === sysId);
+
+      // Update active tab style
+      body.querySelectorAll(`.tdb-dom-tab[data-sys="${CSS.escape(sysId)}"]`)
+        .forEach(b => b.classList.toggle('tdb-dom-tab--active', b === btn));
+
+      // Rebuild SVG for selected domain
       const dls    = domainStats[sysId]?.[domain] || [];
-      body.querySelectorAll('.tdb-dom-col--selected').forEach(el => el.classList.remove('tdb-dom-col--selected'));
-      hdr.closest('.tdb-dom-col')?.classList.add('tdb-dom-col--selected');
+      const dIds   = new Set(domainLinks[domain].flatMap(l => [l.from, l.to]));
+      const dlsMap = {};
+      for (const ls of dls) dlsMap[`${ls.link.from}__${ls.link.to}`] = ls;
+      const svgHtml = dIds.size
+        ? buildVmodelSVG(domainLinks[domain], dIds, dPosMap[domain], nodeMap, dlsMap, sysDomBadgeOff[sysId][domain])
+        : '<svg viewBox="0 0 200 60" width="100%"><text x="10" y="30" font-size="12" fill="#bbb">No links configured</text></svg>';
+
+      const wrap = document.getElementById(`tdb-dsvg-${sysId}-active`);
+      if (wrap) {
+        wrap.dataset.domain = domain;
+        wrap.innerHTML = svgHtml;
+        wireSvg(wrap, domainLinks[domain], dIds, dPosMap[domain], dls, sysDomBadgeOff[sysId][domain], [sys]);
+        wireDiagramZoom(wrap);
+      }
       showCoverageTable(dls, `${sys?.system_code || sys?.name || 'System'} — ${DOMAIN_LABELS[domain]}`);
     });
   });
@@ -554,21 +576,22 @@ async function loadDashboard(project, item, systems) {
         wireBadgeDrag(stWrap, sysTopBadgeOff[sys.id], sysViewLinks, sysViewActiveIds, sysViewPosMap, nodeMap, stls, item, [sys]);
         wireDiagramZoom(stWrap);
       }
-      // Domain SVGs
-      for (const d of SUB_DOMAINS_LIST) {
-        const dls  = domainStats[sys.id]?.[d] || [];
+      // Active domain SVG (single full-width panel)
+      const activeWrap = document.getElementById(`tdb-dsvg-${sys.id}-active`);
+      if (activeWrap) {
+        const activeDomain = activeWrap.dataset.domain || SUB_DOMAINS_LIST[0];
+        const dls  = domainStats[sys.id]?.[activeDomain] || [];
         for (const ls of dls) {
           ls.forward  = computeLinkCovForSystem(ls.link.from, ls.link.to,   ls.fromNode, sys, itemCache);
           ls.backward = computeLinkCovForSystem(ls.link.to,   ls.link.from, ls.toNode,   sys, itemCache);
         }
-        const dIds  = new Set(domainLinks[d].flatMap(l => [l.from, l.to]));
+        const dIds  = new Set(domainLinks[activeDomain].flatMap(l => [l.from, l.to]));
         const dLsMap = {};
         for (const ls of dls) dLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
-        const dWrap = document.getElementById(`tdb-dsvg-${sys.id}-${d}`);
-        if (dWrap && dIds.size) {
-          dWrap.innerHTML = buildVmodelSVG(domainLinks[d], dIds, dPosMap[d], nodeMap, dLsMap, sysDomBadgeOff[sys.id][d]);
-          wireBadgeDrag(dWrap, sysDomBadgeOff[sys.id][d], domainLinks[d], dIds, dPosMap[d], nodeMap, dls, item, [sys]);
-          wireDiagramZoom(dWrap);
+        if (dIds.size) {
+          activeWrap.innerHTML = buildVmodelSVG(domainLinks[activeDomain], dIds, dPosMap[activeDomain], nodeMap, dLsMap, sysDomBadgeOff[sys.id][activeDomain]);
+          wireBadgeDrag(activeWrap, sysDomBadgeOff[sys.id][activeDomain], domainLinks[activeDomain], dIds, dPosMap[activeDomain], nodeMap, dls, item, [sys]);
+          wireDiagramZoom(activeWrap);
         }
       }
     }
@@ -582,12 +605,14 @@ async function loadDashboard(project, item, systems) {
     const stls = sysTopLinkStats[sys.id] || [];
     wireSvg(document.getElementById(`tdb-syssvg-${sys.id}`), sysViewLinks, sysViewActiveIds, sysViewPosMap, stls, sysTopBadgeOff[sys.id], [sys]);
 
-    // Domain columns
-    for (const d of SUB_DOMAINS_LIST) {
-      const dls  = domainStats[sys.id]?.[d] || [];
-      const dIds = new Set(domainLinks[d].flatMap(l => [l.from, l.to]));
+    // Wire initial active domain SVG
+    const activeWrap = document.getElementById(`tdb-dsvg-${sys.id}-active`);
+    if (activeWrap) {
+      const activeDomain = activeWrap.dataset.domain || SUB_DOMAINS_LIST[0];
+      const dls  = domainStats[sys.id]?.[activeDomain] || [];
+      const dIds = new Set(domainLinks[activeDomain].flatMap(l => [l.from, l.to]));
       if (dIds.size) {
-        wireSvg(document.getElementById(`tdb-dsvg-${sys.id}-${d}`), domainLinks[d], dIds, dPosMap[d], dls, sysDomBadgeOff[sys.id][d], [sys]);
+        wireSvg(activeWrap, domainLinks[activeDomain], dIds, dPosMap[activeDomain], dls, sysDomBadgeOff[sys.id][activeDomain], [sys]);
       }
     }
   }
