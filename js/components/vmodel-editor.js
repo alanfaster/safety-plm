@@ -259,7 +259,7 @@ const MULTI_DOM_LINKS = [
   // ── Shared top chain ──
   { from: 'customer_req', to: 'item_req',     type: 'trace' },
   { from: 'item_req',     to: 'item_arch',    type: 'trace' },
-  { from: 'item_arch',    to: 'sys_arch',     type: 'trace' },
+  { from: 'item_arch',    to: 'sys_arch',     type: 'trace', bend: { x: -70, y: 50 } },
   { from: 'sys_req',      to: 'sys_arch',     type: 'trace' },
   { from: 'item_req',     to: 'sys_req',      type: 'trace', bend: { x: -300, y: 0 } },
   // ── System/item horizontal traces ──
