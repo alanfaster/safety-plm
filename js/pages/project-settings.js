@@ -368,7 +368,15 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     };
   });
 
-  document.getElementById('btn-back-project').onclick = () => navigate(`/project/${project.id}`);
+  document.getElementById('btn-back-project').onclick = () => {
+    const returnHash = sessionStorage.getItem('settings_return_hash');
+    sessionStorage.removeItem('settings_return_hash');
+    if (returnHash && returnHash !== window.location.hash) {
+      window.location.hash = returnHash;
+    } else {
+      navigate(`/project/${project.id}`);
+    }
+  };
 
   document.getElementById('btn-save-pha-config').onclick = async () => {
     const btn = document.getElementById('btn-save-pha-config');

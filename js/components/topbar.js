@@ -18,7 +18,10 @@ export function initTopbar(user) {
   if (btnSettings) {
     btnSettings.onclick = () => {
       const m = window.location.hash.match(/\/project\/([^/]+)/);
-      if (m) navigate(`/project/${m[1]}/settings`);
+      if (m) {
+        sessionStorage.setItem('settings_return_hash', window.location.hash);
+        navigate(`/project/${m[1]}/settings`);
+      }
     };
   }
 
