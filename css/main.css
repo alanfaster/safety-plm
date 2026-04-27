@@ -5727,3 +5727,106 @@ th.col-th-dragging * { pointer-events: none; }
   padding: 8px 14px 10px; border-top: 1px solid var(--border); background: var(--bg); }
 .rve-fcard-reply-input  { flex: 1; font-size: 12px; min-height: 38px; resize: vertical; }
 .rve-fcard-reply-btn    { flex-shrink: 0; white-space: nowrap; }
+
+/* ============================================================
+   ARTIFACT CARD — verdict state
+   ============================================================ */
+.rve-artcard-verdict-badge { font-size: 10px; font-weight: 700; padding: 2px 6px;
+  border-radius: 10px; border: 1px solid transparent; white-space: nowrap; }
+.rve-artcard-verdict-go         { background: #e8f5e9; color: #1e8e3e; border-color: #a5d6a7; }
+.rve-artcard-verdict-no_go      { background: #fce8e6; color: #d93025; border-color: #f5c6c4; }
+.rve-artcard-verdict-conditional{ background: #fef3e2; color: #e37400; border-color: #f8d7a0; }
+/* Left-border accent on card when verdict set */
+.rve-artcard-go         { border-left: 3px solid #1e8e3e !important; }
+.rve-artcard-no_go      { border-left: 3px solid #d93025 !important; }
+.rve-artcard-conditional{ border-left: 3px solid #e37400 !important; }
+
+/* ============================================================
+   CHECKLIST — accordion sections
+   ============================================================ */
+.rvck-section           { border: 1px solid var(--border); border-radius: 6px;
+  margin-bottom: 8px; overflow: hidden; }
+.rvck-section-header    { display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  background: var(--bg-card); cursor: pointer; border: none; width: 100%; text-align: left;
+  font-size: 13px; font-weight: 600; color: var(--text); transition: background .12s; }
+.rvck-section-header:hover { background: var(--bg-hover); }
+.rvck-sec-chevron       { font-size: 11px; color: var(--text-muted); width: 12px; flex-shrink: 0; }
+.rvck-sec-name          { flex: 1; }
+.rvck-sec-progress      { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+.rvck-sec-badge         { font-size: 11px; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text-muted); padding: 1px 6px; border-radius: 10px; font-weight: 400; }
+.rvck-section-body      { border-top: 1px solid var(--border); }
+
+/* Checklist item */
+.rvck-item              { display: flex; gap: 12px; padding: 10px 12px;
+  border-bottom: 1px solid var(--border); }
+.rvck-item:last-child   { border-bottom: none; }
+.rvck-item-criterion    { flex: 1; min-width: 0; }
+.rvck-criterion-text    { font-size: 12px; line-height: 1.55; }
+.rvck-guidance          { font-size: 11px; color: var(--text-muted); margin-top: 4px;
+  padding: 3px 8px; border-left: 3px solid var(--border); }
+.rvck-item-controls     { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; }
+.rvck-other-pills       { display: flex; flex-wrap: wrap; gap: 3px; }
+.rvck-verdict-row       { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rvck-verdict-pills     { display: flex; gap: 3px; flex-wrap: wrap; }
+.rvck-comment-wrap      { }
+.rvck-comment           { width: 100%; font-size: 11px; min-height: 44px; resize: vertical; }
+
+/* Item findings (inline tags below item) */
+.rvck-item-findings     { display: flex; flex-direction: column; gap: 4px; }
+
+/* ============================================================
+   OPEN POINTS section
+   ============================================================ */
+.rvck-open-points       { border: 1px solid var(--border); border-radius: 6px;
+  margin-top: 16px; margin-bottom: 8px; overflow: hidden; }
+.rvck-open-points-toggle { display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  background: var(--bg-card); cursor: pointer; border: none; width: 100%; text-align: left;
+  font-size: 13px; font-weight: 600; color: var(--text); transition: background .12s; }
+.rvck-open-points-toggle:hover { background: var(--bg-hover); }
+.rvck-op-add-btn        { font-size: 11px; font-weight: 500; color: var(--accent);
+  padding: 2px 8px; border-radius: 4px; border: 1px solid var(--accent);
+  background: none; cursor: pointer; transition: all .12s; }
+.rvck-op-add-btn:hover  { background: var(--accent); color: #fff; }
+.rvck-open-points-body  { border-top: 1px solid var(--border); padding: 8px 12px;
+  display: flex; flex-direction: column; gap: 8px; }
+.rvck-op-empty          { font-size: 12px; padding: 8px 0; }
+.rvck-no-template       { font-size: 13px; padding: 24px 0; text-align: center; }
+
+/* ============================================================
+   INLINE FINDING CARD (inside checklist or open points)
+   ============================================================ */
+.rvck-inline-finding    { border: 1px solid var(--border); border-radius: 6px;
+  overflow: hidden; background: var(--bg-card); font-size: 12px; }
+.rvck-inline-finding-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 6px 10px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.rvck-inline-finding-code  { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.rvck-inline-finding-title { font-size: 12px; font-weight: 500; flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rvck-inline-finding-desc  { font-size: 11px; padding: 4px 10px; color: var(--text-muted); }
+.rvck-inline-transitions   { display: flex; gap: 4px; flex-wrap: wrap; padding: 6px 10px;
+  border-top: 1px solid var(--border); background: var(--bg); }
+.rvck-inline-thread     { padding: 0 10px; }
+.rvck-inline-thread:not(:empty) { padding: 6px 10px; border-top: 1px solid var(--border); }
+.rvck-inline-reply      { display: flex; gap: 6px; align-items: flex-end;
+  padding: 6px 10px; border-top: 1px solid var(--border); background: var(--bg); }
+.rvck-inline-reply-input { flex: 1; font-size: 11px; min-height: 30px; resize: vertical; }
+.rvck-inline-reply-btn  { flex-shrink: 0; font-size: 11px; }
+
+/* ============================================================
+   FINAL VERDICT STAMP
+   ============================================================ */
+.rvck-verdict-stamp     { margin-top: 20px; padding: 14px 16px; border: 2px solid var(--border);
+  border-radius: 8px; background: var(--bg-card); }
+.rvck-stamp-label       { font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--text-muted); margin-bottom: 10px; }
+.rvck-stamp-btns        { display: flex; gap: 10px; margin-bottom: 10px; }
+.rvck-stamp-btn         { font-size: 13px; font-weight: 600; padding: 8px 20px; border-radius: 6px;
+  border: 2px solid var(--border); background: var(--bg); color: var(--text);
+  cursor: pointer; transition: all .15s; }
+.rvck-stamp-btn:hover   { border-color: var(--accent); }
+.rvck-stamp-go          { border-color: #1e8e3e !important; background: #e8f5e9 !important; color: #1e8e3e !important; }
+.rvck-stamp-conditional { border-color: #e37400 !important; background: #fef3e2 !important; color: #e37400 !important; }
+.rvck-stamp-nogo        { border-color: #d93025 !important; background: #fce8e6 !important; color: #d93025 !important; }
+.rvck-stamp-comment     { width: 100%; font-size: 12px; margin-bottom: 8px; }
+.rvck-stamp-other       { display: flex; gap: 6px; flex-wrap: wrap; }

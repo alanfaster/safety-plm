@@ -1,16 +1,14 @@
 -- Review Artifact Verdicts
--- One overall verdict + comment per reviewer per artifact snapshot.
--- This is the "Artifact Review" tab: reviewer marks each artifact OK/NOK/Partially OK
--- and leaves a comment for the author.
+-- One GO/NO-GO/Conditional verdict + closing comment per reviewer per artifact snapshot.
 
 CREATE TABLE review_artifact_verdicts (
-  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  session_id  UUID REFERENCES review_sessions(id) ON DELETE CASCADE,
-  snapshot_id UUID REFERENCES review_artifact_snapshots(id) ON DELETE CASCADE,
-  reviewer_id UUID REFERENCES auth.users(id),
-  verdict     TEXT CHECK (verdict IN ('ok','nok','partially_ok')),
-  comment     TEXT,
-  updated_at  TIMESTAMPTZ DEFAULT now(),
+  id              UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  session_id      UUID REFERENCES review_sessions(id) ON DELETE CASCADE,
+  snapshot_id     UUID REFERENCES review_artifact_snapshots(id) ON DELETE CASCADE,
+  reviewer_id     UUID REFERENCES auth.users(id),
+  verdict         TEXT CHECK (verdict IN ('go','conditional','no_go')),
+  verdict_comment TEXT,
+  updated_at      TIMESTAMPTZ DEFAULT now(),
   UNIQUE (snapshot_id, reviewer_id)
 );
 
