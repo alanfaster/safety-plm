@@ -1917,7 +1917,7 @@ tr.req-title-row td { cursor: default; }
   box-sizing: border-box;
 }
 .vme-dp-svg {
-  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  position: absolute; top: 0; left: 0;
   pointer-events: none; overflow: visible;
 }
 .vme-dp-svg .vme-link-hit,

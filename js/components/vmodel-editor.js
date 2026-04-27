@@ -674,16 +674,16 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     const tabIds  = new Set(_nodes.filter(n => n.panelDomain === _domainTab).map(n => n.id));
     const nodeMap = Object.fromEntries(_nodes.filter(n => n.panelDomain === _domainTab).map(n => [n.id, n]));
 
-    // Fit viewBox to domain nodes only
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    // Size SVG to cover all domain nodes (1:1 pixel coords — no viewBox rescaling)
+    let maxX = 0, maxY = 0;
     for (const n of Object.values(nodeMap)) {
-      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
-      maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + NODE_H);
+      maxX = Math.max(maxX, n.x + NODE_W);
+      maxY = Math.max(maxY, n.y + NODE_H);
     }
-    if (isFinite(minX)) {
-      const PAD = 10;
-      _panelSVG.setAttribute('viewBox', `${minX-PAD} ${minY-PAD} ${maxX-minX+PAD*2} ${maxY-minY+PAD*2}`);
-    }
+    const PAD = 20;
+    _panelSVG.setAttribute('width',  maxX + PAD);
+    _panelSVG.setAttribute('height', maxY + PAD);
+    _panelSVG.removeAttribute('viewBox');
 
     // Draw only pure domain links (both endpoints inside the panel tab)
     _links.forEach(link => {
