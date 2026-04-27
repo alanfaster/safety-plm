@@ -57,10 +57,12 @@ export async function renderReviewDashboard(container, ctx) {
 
   document.getElementById('rv-btn-new').onclick = () => navigate(`${base}/reviews/new`);
 
+  const { data: { user } } = await sb.auth.getUser();
+  const currentUserId = user?.id;
+
   await loadSessions();
 
   async function loadSessions() {
-    // Load sessions + snapshot counts + response/finding counts in parallel
     const [{ data: sessions }, { data: snapshots }] = await Promise.all([
       sb.from('review_sessions').select('*, review_protocol_templates(name, artifact_type, review_type)')
         .eq('project_id', project.id).order('created_at', { ascending: false }),
@@ -118,6 +120,7 @@ export async function renderReviewDashboard(container, ctx) {
                   <button class="btn btn-secondary btn-sm rv-open-btn" data-id="${s.id}" title="Open checklist">Open</button>
                   <button class="btn btn-ghost btn-sm rv-findings-btn" data-id="${s.id}" title="View findings">Findings</button>
                   ${s.status !== 'completed' && s.status !== 'cancelled' ? `<button class="btn btn-ghost btn-sm rv-cancel-btn" data-id="${s.id}" title="Cancel">Cancel</button>` : ''}
+                  ${s.created_by === currentUserId ? `<button class="btn btn-ghost btn-sm rv-delete-btn" data-id="${s.id}" title="Delete review">Delete</button>` : ''}
                 </td>
               </tr>`;
           }).join('')}
@@ -137,6 +140,15 @@ export async function renderReviewDashboard(container, ctx) {
         const { error } = await sb.from('review_sessions').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', btn.dataset.id);
         if (error) { toast('Error: ' + error.message, 'error'); return; }
         toast('Session cancelled.', 'success');
+        await loadSessions();
+      };
+    });
+    wrap.querySelectorAll('.rv-delete-btn').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('Delete this review session and all its data (snapshots, findings, responses)? This cannot be undone.')) return;
+        const { error } = await sb.from('review_sessions').delete().eq('id', btn.dataset.id);
+        if (error) { toast('Error: ' + error.message, 'error'); return; }
+        toast('Review session deleted.', 'success');
         await loadSessions();
       };
     });
