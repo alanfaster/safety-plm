@@ -377,9 +377,8 @@ async function loadDashboard(project, item, systems) {
         </table></div>`;
       wireTableMissing(el, stats, 'cov');
     }
-    // Switch bottom panel to coverage tab
+    // Switch bottom panel to coverage tab (don't auto-expand)
     switchBpTab('coverage', allLinkStats, item, systems, itemCache, nodeMap, allTraceLinks, project);
-    document.getElementById('tdb-bp')?._bp?.expand();
   }
 
   // ── Build per-system tab HTML ─────────────────────────────────────────────
@@ -467,6 +466,7 @@ async function loadDashboard(project, item, systems) {
         p.classList.toggle('active', p.id === tab.dataset.panel);
         p.style.display = p.id === tab.dataset.panel ? '' : 'none';
       });
+      document.getElementById('tdb-bp')?._bp?.collapse();
       // Update coverage table for the newly shown panel
       if (tab.dataset.panel === 'tdb-panel-overview') {
         showCoverageTable(topLinkStats, '🌐 Overview — all systems');
@@ -844,7 +844,6 @@ function wireBpTabs(linkStats, item, systems, itemCache, nodeMap, traceLinks, pr
   document.querySelectorAll('.tdb-bp-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       switchBpTab(tab.dataset.tab, linkStats, item, systems, itemCache, nodeMap, traceLinks, project);
-      document.getElementById('tdb-bp')._bp?.expand();
     });
   });
 }
