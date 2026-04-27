@@ -185,25 +185,6 @@ async function loadDashboard(project, item, systems) {
              (fd === d && CROSS_DOMAINS.has(td)) ||
              (td === d && CROSS_DOMAINS.has(fd));
     });
-
-    // Auto-inject default cross-level links (sys_req/sys_arch → {d}_req) when:
-    // • the top-level config has sys_req/sys_arch nodes
-    // • the domain has {d}_req nodes
-    // This ensures backward-compat for projects that don't have explicit cross-level links yet
-    const domainReqId = `${d}_req`;
-    const hasDomainReq = domainLinks[d].some(l => l.from === domainReqId || l.to === domainReqId);
-    if (hasDomainReq) {
-      for (const sysNodeId of ['sys_req', 'sys_arch']) {
-        if (!topActiveIds.has(sysNodeId)) continue;
-        const alreadyLinked = domainLinks[d].some(l =>
-          (l.from === sysNodeId && l.to === domainReqId) ||
-          (l.to === sysNodeId && l.from === domainReqId)
-        );
-        if (!alreadyLinked) {
-          domainLinks[d].push({ from: sysNodeId, to: domainReqId, type: 'trace', _auto: true });
-        }
-      }
-    }
   }
 
   // 4. Canvas positions
@@ -246,6 +227,25 @@ async function loadDashboard(project, item, systems) {
   const topPosMap = {};
   for (const id of topActiveIds) {
     topPosMap[id] = topPos[id] || ASPICE_TOP_POS[id] || { x: 0, y: 0 };
+  }
+
+  // Auto-inject cross-level links (sys_req/sys_arch → {d}_req) for backward-compat:
+  // projects without explicit cross-level links still show sys nodes in domain diagrams
+  for (const d of SUB_DOMAINS_LIST) {
+    const domainReqId = `${d}_req`;
+    const hasDomainReq = domainLinks[d].some(l => l.from === domainReqId || l.to === domainReqId);
+    if (hasDomainReq) {
+      for (const sysNodeId of ['sys_req', 'sys_arch']) {
+        if (!topActiveIds.has(sysNodeId)) continue;
+        const alreadyLinked = domainLinks[d].some(l =>
+          (l.from === sysNodeId && l.to === domainReqId) ||
+          (l.to === sysNodeId && l.from === domainReqId)
+        );
+        if (!alreadyLinked) {
+          domainLinks[d].push({ from: sysNodeId, to: domainReqId, type: 'trace', _auto: true });
+        }
+      }
+    }
   }
 
   // Collect ALL active node IDs for cache refresh
