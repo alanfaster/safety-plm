@@ -193,6 +193,20 @@ function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId, ctx)
       mx=0.25*x1+0.5*bx+0.25*x2; my=0.25*y1+0.5*by+0.25*y2;
     } else {
       dPath=`M${x1},${y1} L${x2},${y2}`; mx=(x1+x2)/2; my=(y1+y2)/2;
+      // If the straight-line midpoint lands on any node, apply a perpendicular nudge
+      const lineDx=x2-x1, lineDy=y2-y1, len=Math.sqrt(lineDx*lineDx+lineDy*lineDy);
+      if (len > 1) {
+        const overlap = Object.values(nodePos).some(np => {
+          const cx=np.x+NODE_W/2, cy=np.y+NODE_H/2;
+          return Math.abs(mx-cx)<NODE_W/2+4 && Math.abs(my-cy)<NODE_H/2+4;
+        });
+        if (overlap) {
+          const P=65, nx=-lineDy/len, ny=lineDx/len;
+          const nbx=(x1+x2)/2+nx*P, nby=(y1+y2)/2+ny*P;
+          dPath=`M${x1},${y1} Q${nbx},${nby} ${x2},${y2}`;
+          mx=0.25*x1+0.5*nbx+0.25*x2; my=0.25*y1+0.5*nby+0.25*y2;
+        }
+      }
     }
     const ls=lsMap[`${link.from}__${link.to}`];
     const fwd=ls?.forward, bwd=ls?.backward;
