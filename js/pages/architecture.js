@@ -1963,9 +1963,10 @@ function openProps(id) {
       style="font-size:12px;resize:vertical">${escH(specItem?.title || '')}</textarea>
 
     <label class="arch-form-lbl">Status</label>
-    <select class="form-input" id="props-spec-status">
-      ${specStatuses.map(s=>`<option value="${s}" ${(specItem?.status||'draft')===s?'selected':''}>${s}</option>`).join('')}
-    </select>
+    <div class="arch-props-note" style="margin:2px 0 6px">
+      <span class="badge badge-${specItem?.status||'draft'}" style="font-size:11px">${specItem?.status||'draft'}</span>
+      <span style="font-size:10px;color:var(--color-text-muted);margin-left:6px">Edit in Architecture Specification</span>
+    </div>
 
     ${propseFunSection(c)}`);
 
@@ -1982,18 +1983,14 @@ function openProps(id) {
   // Spec fields — autosave on change/blur
   const saveSpec = debounce(async () => {
     if (!specItem) return;
-    const desc   = document.getElementById('props-spec-desc')?.value  ?? specItem.title;
-    const status = document.getElementById('props-spec-status')?.value ?? specItem.status;
-    const patch  = {};
-    if (desc   !== specItem.title)  { patch.title  = desc;   specItem.title  = desc; }
-    if (status !== specItem.status) { patch.status = status; specItem.status = status; }
-    if (Object.keys(patch).length) {
-      await sb.from('arch_spec_items').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', specItem.id);
+    const desc = document.getElementById('props-spec-desc')?.value ?? specItem.title;
+    if (desc !== specItem.title) {
+      specItem.title = desc;
+      await sb.from('arch_spec_items').update({ title: desc, updated_at: new Date().toISOString() }).eq('id', specItem.id);
     }
   }, 600);
 
-  document.getElementById('props-spec-desc')  ?.addEventListener('input',  saveSpec);
-  document.getElementById('props-spec-status') ?.addEventListener('change', saveSpec);
+  document.getElementById('props-spec-desc')?.addEventListener('input', saveSpec);
 
   document.getElementById('props-add-fun').onclick = () => openIdefPanel();
   wirePropsF(c, id);
@@ -2831,6 +2828,20 @@ async function loadIfaceReqs() {
   renderIfaceReqs();
 }
 
+function _ifreqSystemName(r) {
+  // Find the connection linked to this requirement
+  const cn = (_s?.connections || []).find(c => c.requirement === r.req_code);
+  if (!cn) return '—';
+  const src = compById(cn.source_id);
+  if (!src) return '—';
+  const grp = src.data?.group_id ? compById(src.data.group_id) : null;
+  if (!grp) return '—';
+  const linkedSys = grp.data?.system_id
+    ? (_s.projectSystems || []).find(s => s.id === grp.data.system_id)
+    : null;
+  return linkedSys?.name || grp.name || '—';
+}
+
 function renderIfaceReqs() {
   const body = document.getElementById('arch-ifreqs-body');
   if (!body) return;
@@ -2845,6 +2856,7 @@ function renderIfaceReqs() {
           <tr>
             <th>Code</th>
             <th>Title</th>
+            <th>System</th>
             <th>Status</th>
             <th>Priority</th>
           </tr>
@@ -2854,6 +2866,7 @@ function renderIfaceReqs() {
             <tr class="arch-ifreqs-row" data-req-code="${escH(r.req_code)}" id="ifreq-row-${escH(r.req_code)}">
               <td class="arch-ifreqs-code">${escH(r.req_code)}</td>
               <td class="arch-ifreqs-title">${escH(r.title)}</td>
+              <td style="font-size:11px;color:var(--color-text-muted);white-space:nowrap">${escH(_ifreqSystemName(r))}</td>
               <td><span class="arch-ifreqs-badge arch-ifreqs-badge--${r.status}">${r.status}</span></td>
               <td><span class="arch-ifreqs-badge arch-ifreqs-badge--${r.priority}">${r.priority}</span></td>
             </tr>`).join('')}

@@ -1,13 +1,14 @@
 /**
  * Test Specifications — unit_testing, integration_testing, system_testing
  *
- * Layout  : table (left) + sliding detail panel (right)
- * Sections: Basic Info · Test Definition · Test Steps · Criteria · Traceability · Execution
- * Auto-save on every field change (1.5 s debounce)
+ * Layout : spec-nav (Contents) | table | detail panel (right slide-in)
+ * Sections, column manager, column filters, drag-to-reorder rows.
  */
 
-import { sb } from '../config.js';
+import { sb, buildCode, nextIndex } from '../config.js';
 import { toast } from '../toast.js';
+import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr } from '../components/col-mgr.js';
+import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 import { VMODEL_NODES, PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -53,17 +54,33 @@ const STATUS_COLORS = {
 const RESULT_COLORS = { pass: '#34A853', fail: '#EA4335', blocked: '#F29900' };
 const RESULT_LABELS = { pass: '✓ PASS', fail: '✗ FAIL', blocked: '⊘ BLOCKED' };
 
+const BUILTIN_COLS = [
+  { id: 'drag',    name: '',             fixed: true,  visible: true },
+  { id: 'code',    name: 'ID',           fixed: true,  visible: true },
+  { id: 'name',    name: 'Name',         fixed: true,  visible: true },
+  { id: 'type',    name: 'Type',         visible: true },
+  { id: 'level',   name: 'Level',        visible: true },
+  { id: 'trace',   name: 'Traced to',    visible: true },
+  { id: 'status',  name: 'Status',       visible: true },
+  { id: 'result',  name: 'Result',       visible: true },
+  { id: 'actions', name: '',             fixed: true,  visible: true },
+];
+
+const SKIP_FILTER = new Set(['drag', 'actions']);
+
 // ── Module state ──────────────────────────────────────────────────────────────
 
 let _ctx          = null;
-let _tests        = [];
+let _rows         = [];     // tests + section rows, ordered
+let _cols         = [];
 let _selectedId   = null;
-let _testTypes    = [];   // from project_config.test_types
-let _traceFields  = [];   // derived from vmodel_links for this page
-let _traceData    = {};   // { [fieldId]: [{code, label}] } — cached lookup data
+let _testTypes    = [];
+let _traceFields  = [];
+let _traceData    = {};
 let _saveTimer    = null;
-let _currentUser  = null; // { email }
-
+let _currentUser  = null;
+let _colFilters   = {};
+let _colKey       = '';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -72,30 +89,29 @@ export async function renderTestSpecs(container, { project, item, system, phase,
   const parentType = system ? 'system' : 'item';
   const parentId   = system ? system.id : item.id;
   const parentName = system?.name || item?.name;
+  const domainKey  = parentType === 'system' ? (domain || 'system') : 'item';
 
-  const domainKey = parentType === 'system' ? (domain || 'system') : 'item';
-  _ctx          = { project, item, system, phase, domain: domainKey, parentType, parentId, meta };
-  _tests        = [];
-  _selectedId   = null;
-  _saveTimer    = null;
-  _traceData    = {};
+  _ctx         = { project, item, system, phase, domain: domainKey, parentType, parentId, meta };
+  _rows        = [];
+  _selectedId  = null;
+  _saveTimer   = null;
+  _traceData   = {};
+  _colFilters  = {};
+  _colKey      = `ts_${parentId}_${phase}`;
+  _cols        = loadColConfig(_colKey, BUILTIN_COLS);
 
-  // Get current user for last-modified tracking
   const { data: { user } } = await sb.auth.getUser();
   _currentUser = user;
 
-  // Load project config
   const { data: pcRow } = await sb.from('project_config')
     .select('config').eq('project_id', project.id).maybeSingle();
   const cfg = pcRow?.config || {};
-  _testTypes  = cfg.test_types || ['test', 'inspection', 'analysis', 'demonstration'];
-
-  // Derive traceability fields from V-Model links
-  const vmodelLinks = cfg.vmodel_links || [];
-  _traceFields = deriveTraceFields(domain, phase, vmodelLinks);
-
-  // Pre-fetch data for each traceability field
+  _testTypes   = cfg.test_types || ['test', 'inspection', 'analysis', 'demonstration'];
+  _traceFields = deriveTraceFields(domainKey, phase, cfg.vmodel_links || []);
   await loadTraceSourceData(item, system);
+
+  // Remove any leftover insert pill from a previous render
+  document.getElementById('ts-insert-pill')?.remove();
 
   container.innerHTML = `
     <div class="page-header">
@@ -107,225 +123,476 @@ export async function renderTestSpecs(container, { project, item, system, phase,
         <div></div>
       </div>
     </div>
-    <div class="ts-page-body" id="ts-page-body">
-      <div class="ts-list-pane" id="ts-list-pane">
+    <div class="page-body spec-page-body" id="ts-outer">
+      <nav class="spec-nav" id="ts-nav">
+        <button class="spec-nav-expand" id="ts-nav-expand" title="Open navigation">
+          <span>❯</span>
+          <span class="spec-nav-rail-label">Contents</span>
+        </button>
+        <div class="spec-nav-hdr">
+          <span class="spec-nav-title">Contents</span>
+          <button class="btn-icon spec-nav-close" id="ts-nav-close" title="Close">✕</button>
+        </div>
+        <div class="spec-nav-tree" id="ts-nav-tree"></div>
+      </nav>
+      <div class="spec-content" id="ts-body">
         <div class="content-loading"><div class="spinner"></div></div>
       </div>
-      <div class="ts-detail-pane" id="ts-detail-pane"></div>
+      <aside class="req-trace-panel" id="ts-detail-panel">
+        <div class="req-trace-panel-hdr">
+          <span class="req-trace-panel-title" id="ts-panel-title">Test Detail</span>
+          <button class="btn-icon" id="ts-panel-close" title="Close">✕</button>
+        </div>
+        <div class="req-trace-panel-body" id="ts-panel-body">
+          <p style="padding:16px;font-size:13px;color:var(--color-text-muted)">
+            Click any test row to view and edit its details.
+          </p>
+        </div>
+      </aside>
     </div>
     <div class="spec-fab" id="ts-fab">
-      <button class="btn btn-primary" id="btn-new-test">＋ New Test</button>
+      <button class="btn btn-primary"   id="btn-new-test">＋ New Test</button>
+      <button class="btn btn-secondary" id="btn-new-section">＋ Section</button>
     </div>
   `;
 
-  document.getElementById('btn-new-test').onclick = () => createTest();
+  document.getElementById('btn-new-test').onclick    = () => createTest();
+  document.getElementById('btn-new-section').onclick = () => addSection(null);
+  document.getElementById('ts-nav-close').onclick    = () => toggleNav(false);
+  document.getElementById('ts-nav-expand').onclick   = () => toggleNav(true);
+  document.getElementById('ts-panel-close').onclick  = () => closeDetail();
 
   await loadTests();
+  applyGotoTarget();
 }
 
-// ── V-Model helpers ────────────────────────────────────────────────────────────
+// ── Nav ───────────────────────────────────────────────────────────────────────
 
-/** Derive traceability fields for this page from vmodel_links config */
-function deriveTraceFields(domain, phase, vmodelLinks) {
-  const myNodeId = VMODEL_NODES.find(n => n.domain === domain && n.phase === phase)?.id;
-  if (!myNodeId || !vmodelLinks.length) return [];
+function toggleNav(open) {
+  const nav = document.getElementById('ts-nav');
+  if (!nav) return;
+  if (open === undefined) nav.classList.toggle('spec-nav--hidden');
+  else nav.classList.toggle('spec-nav--hidden', !open);
+}
 
-  const fields = [];
-  for (const link of vmodelLinks) {
-    // Only traceability links drive fields; sequential links are visual-only
-    if (link.type && link.type !== 'trace') continue;
-    const otherNodeId = link.from === myNodeId ? link.to : link.to === myNodeId ? link.from : null;
-    if (!otherNodeId) continue;
-    const node = VMODEL_NODES.find(n => n.id === otherNodeId);
-    if (!node) continue;
-    const source = PHASE_DB_SOURCE[node.phase] || 'free_text';
-    fields.push({ id: otherNodeId, label: node.label, source, node });
+function buildNavTree() {
+  const tree = document.getElementById('ts-nav-tree');
+  if (!tree) return;
+  const sections = _rows.filter(r => r.type === 'section');
+  if (!sections.length) {
+    tree.innerHTML = `<div style="padding:8px 12px;font-size:11px;color:var(--color-text-muted)">No sections yet</div>`;
+    return;
   }
-  return fields;
+  tree.innerHTML = sections.map(r =>
+    `<div class="spec-nav-item spec-nav-item--l1" data-sid="${r.id}" title="${esc(r.name || '')}">
+      ${esc(r.name || 'Untitled section')}
+    </div>`
+  ).join('');
+  tree.querySelectorAll('.spec-nav-item').forEach(el => {
+    el.onclick = () => {
+      const tr = document.querySelector(`tr[data-id="${el.dataset.sid}"]`);
+      if (tr) tr.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  });
 }
 
-// ── Traceability source loader ────────────────────────────────────────────────
-
-async function loadTraceSourceData(item, system) {
-  for (const field of _traceFields) {
-    if (_traceData[field.id]) continue;
-    const node = field.node;
-    if (!node) continue;
-
-    // Resolve parent for this node's domain
-    const isSystemDomain = node.domain === 'system';
-    const parentType     = isSystemDomain ? 'system' : 'item';
-    const parentId       = isSystemDomain ? system?.id : item?.id;
-    if (!parentId) { _traceData[field.id] = []; continue; }
-
-    const dbSource = PHASE_DB_SOURCE[node.phase];
-
-    if (dbSource === 'requirements') {
-      const { data } = await sb.from('requirements')
-        .select('req_code, title')
-        .eq('parent_type', parentType).eq('parent_id', parentId)
-        .not('type', 'in', '("title","info")')
-        .order('sort_order', { ascending: true });
-      _traceData[field.id] = (data || []).map(r => ({ code: r.req_code, label: r.title || '' }));
-
-    } else if (dbSource === 'arch_spec_items') {
-      const { data } = await sb.from('arch_spec_items')
-        .select('spec_code, title')
-        .eq('parent_type', parentType).eq('parent_id', parentId)
-        .neq('type', 'section')
-        .order('sort_order', { ascending: true });
-      _traceData[field.id] = (data || []).map(r => ({ code: r.spec_code || r.id, label: r.title || '' }));
-
-    } else if (dbSource === 'test_specs') {
-      const { data } = await sb.from('test_specs')
-        .select('test_code, name, phase')
-        .eq('parent_type', parentType).eq('parent_id', parentId)
-        .eq('phase', node.phase)
-        .order('sort_order', { ascending: true });
-      _traceData[field.id] = (data || []).map(r => ({ code: r.test_code, label: r.name || '' }));
-
-    } else {
-      _traceData[field.id] = [];
-    }
-  }
+function applyGotoTarget() {
+  const raw = sessionStorage.getItem('tdb_goto');
+  if (!raw) return;
+  try {
+    const { code } = JSON.parse(raw);
+    sessionStorage.removeItem('tdb_goto');
+    if (!code) return;
+    setTimeout(() => {
+      const row = _rows.find(r => r.test_code === code);
+      if (!row) return;
+      const tr = document.querySelector(`tr[data-id="${row.id}"]`);
+      if (tr) {
+        tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        tr.classList.add('req-row--goto-highlight');
+        setTimeout(() => tr.classList.remove('req-row--goto-highlight'), 5000);
+      }
+      openDetail(row.id);
+    }, 400);
+  } catch {}
 }
 
-// ── Load & render table ───────────────────────────────────────────────────────
+// ── Load ──────────────────────────────────────────────────────────────────────
 
 async function loadTests() {
   const { parentType, parentId, phase, domain } = _ctx;
-  let q = sb.from('test_specs')
+  const { data, error } = await sb.from('test_specs')
     .select('*')
-    .eq('parent_type', parentType).eq('parent_id', parentId).eq('phase', phase);
-  q = q.eq('domain', domain);
-  const { data, error } = await q
+    .eq('parent_type', parentType).eq('parent_id', parentId)
+    .eq('phase', phase).eq('domain', domain)
     .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
 
-  const pane = document.getElementById('ts-list-pane');
-  if (!pane) return;
-  if (error) { pane.innerHTML = `<p class="text-muted">Error: ${esc(error.message)}</p>`; return; }
+  const body = document.getElementById('ts-body');
+  if (!body) return;
+  if (error) { body.innerHTML = `<p class="text-muted" style="padding:24px">Error: ${esc(error.message)}</p>`; return; }
 
-  _tests = data || [];
-  renderTestTable(pane);
+  _rows = data || [];
+  renderTable(body);
 
-  if (_selectedId && _tests.find(t => t.id === _selectedId)) openDetail(_selectedId);
-  else { _selectedId = null; closeDetail(); }
+  if (_selectedId && _rows.find(r => r.id === _selectedId)) openDetail(_selectedId);
+  else { _selectedId = null; resetDetailPanel(); }
 }
 
-function renderTestTable(pane) {
-  if (!_tests.length) {
-    pane.innerHTML = `
+// ── Table render ──────────────────────────────────────────────────────────────
+
+function renderTable(body) {
+  if (!_rows.length) {
+    body.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">🧪</div>
         <h3>No test specifications yet</h3>
         <p>Click <strong>＋ New Test</strong> to create the first specification.</p>
       </div>`;
+    buildNavTree();
     return;
   }
 
-  pane.innerHTML = `
+  const traceLabel = esc(_traceFields.find(f => f.source !== 'free_text')?.label || 'Traced to');
+  const COL_OPTIONS = {
+    type:   _testTypes.length ? _testTypes.map(t => t.name || t) : undefined,
+    level:  LEVELS.map(l => l.label),
+    status: STATUSES,
+    result: RESULTS,
+  };
+  Object.keys(COL_OPTIONS).forEach(k => { if (!COL_OPTIONS[k]) delete COL_OPTIONS[k]; });
+
+  // Build visible cols list using current _cols config, mapping col ids to header labels
+  const COL_LABELS = {
+    drag: '', code: 'ID', name: 'Name', type: 'Type', level: 'Level',
+    trace: traceLabel, status: 'Status', result: 'Result', actions: '',
+  };
+  const COL_WIDTHS = {
+    drag: '20px', code: '110px', name: '', type: '100px', level: '110px',
+    trace: '130px', status: '90px', result: '90px', actions: '100px',
+  };
+
+  const filterRowHTML = buildFilterRowHTML(
+    _cols.filter(c => c.visible),
+    SKIP_FILTER,
+    COL_OPTIONS
+  );
+
+  const theadCells = _cols.filter(c => c.visible).map(c => {
+    const w = COL_WIDTHS[c.id] ? ` style="width:${COL_WIDTHS[c.id]}"` : '';
+    return `<th data-col="${c.id}"${w}>${COL_LABELS[c.id] ?? esc(c.name)}</th>`;
+  }).join('');
+
+  body.innerHTML = `
     <div class="card">
       <div class="table-wrap">
         <table class="data-table ts-table" id="ts-table">
           <thead>
-            <tr>
-              <th style="width:110px">ID</th>
-              <th>Name</th>
-              <th style="width:100px">Type</th>
-              <th style="width:110px">Level</th>
-              <th style="width:130px">${esc(_traceFields.find(f => f.source !== 'free_text')?.label || 'Traceability')}</th>
-              <th style="width:90px">Spec Status</th>
-              <th style="width:90px">Result</th>
-              <th style="width:40px"></th>
-            </tr>
+            <tr id="ts-thead-row">${theadCells}</tr>
+            ${filterRowHTML}
           </thead>
-          <tbody id="ts-tbody">
-            ${_tests.map(t => testRowHTML(t)).join('')}
-          </tbody>
+          <tbody id="ts-tbody"></tbody>
         </table>
       </div>
     </div>
   `;
 
-  document.getElementById('ts-tbody').querySelectorAll('tr[data-id]').forEach(tr => {
-    tr.addEventListener('click', e => {
-      if (e.target.closest('.ts-row-del')) return;
-      openDetail(tr.dataset.id);
-    });
-    tr.querySelector('.ts-row-del')?.addEventListener('click', async e => {
-      e.stopPropagation();
-      const t = _tests.find(t => t.id === tr.dataset.id);
-      if (!confirm(`Delete "${t?.name || 'this test'}"?`)) return;
-      await sb.from('test_specs').delete().eq('id', tr.dataset.id);
-      if (_selectedId === tr.dataset.id) closeDetail();
-      _tests.splice(_tests.findIndex(t => t.id === tr.dataset.id), 1);
-      renderTestTable(document.getElementById('ts-list-pane'));
-      toast('Deleted.', 'success');
-    });
+  const tableEl  = body.querySelector('#ts-table');
+  const theadRow = body.querySelector('#ts-thead-row');
+
+  applyColVisibility(tableEl, _cols);
+  wireColMgr(theadRow, tableEl, _colKey, _cols, updated => {
+    _cols = updated;
+    renderTable(body);
+  });
+
+  function colVal(r, colId) {
+    const traceability = r.traceability || {};
+    const firstField   = _traceFields.find(f => f.source !== 'free_text');
+    const firstVals    = firstField ? (traceability[firstField.id] || []) : [];
+    switch (colId) {
+      case 'code':   return r.test_code || '';
+      case 'name':   return r.name || '';
+      case 'type':   return r.type || '';
+      case 'level':  return LEVELS.find(l => l.value === r.level)?.label || r.level || '';
+      case 'trace':  return firstVals.join(' ');
+      case 'status': return r.status || '';
+      case 'result': return r.result || '';
+      default:       return '';
+    }
+  }
+
+  function rerenderTbody() {
+    const tests    = _rows.filter(r => r.type !== 'section');
+    const filtered = applyColFilters(tests, _colFilters, colVal);
+    const filteredIds = new Set(filtered.map(r => r.id));
+
+    const tbody = document.getElementById('ts-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    for (const r of _rows) {
+      if (r.type === 'section' || filteredIds.has(r.id)) {
+        const tr = buildRowEl(r);
+        tbody.appendChild(tr);
+        wireRow(tr, r);
+      }
+    }
+    wireDragDrop(tbody);
+    wireInsertHover(tbody);
+  }
+
+  rerenderTbody();
+
+  const theadEl = body.querySelector('#ts-table thead');
+  wireColFilterIcons(theadEl, _colFilters, () => rerenderTbody(), SKIP_FILTER);
+
+  buildNavTree();
+}
+
+function buildRowEl(r) {
+  const tr = document.createElement('tr');
+  tr.dataset.id    = r.id;
+  tr.dataset.order = r.sort_order ?? 0;
+  if (r.type === 'section') {
+    tr.className = 'spec-section-row';
+    tr.draggable = false;
+    tr.innerHTML = sectionRowHTML(r);
+  } else {
+    tr.className = `spec-row ts-row${r.id === _selectedId ? ' ts-row--selected' : ''}`;
+    tr.draggable = true;
+    tr.innerHTML = testRowHTML(r);
+  }
+  return tr;
+}
+
+function sectionRowHTML(r) {
+  return `
+    <td colspan="20" class="spec-section-cell">
+      <div class="spec-section-inner">
+        <span class="spec-section-drag spec-drag-handle" title="Drag">⠿</span>
+        <span class="spec-section-title" contenteditable="true" spellcheck="false">${esc(r.name || 'Untitled section')}</span>
+        <div class="spec-section-actions">
+          <button class="btn btn-ghost btn-xs spec-sec-move-up" title="Move section up">↑</button>
+          <button class="btn btn-ghost btn-xs spec-sec-move-dn" title="Move section down">↓</button>
+          <button class="btn btn-ghost btn-xs spec-add-below"   title="Add test below">+</button>
+          <button class="btn btn-ghost btn-xs spec-sec-del"     title="Delete section" style="color:var(--color-danger)">✕</button>
+        </div>
+      </div>
+    </td>`;
+}
+
+function testRowHTML(r) {
+  const traceability = r.traceability || {};
+  const firstField   = _traceFields.find(f => f.source !== 'free_text');
+  const firstVals    = firstField ? (traceability[firstField.id] || []) : [];
+  const traceStr     = firstVals.slice(0, 2).join(', ') + (firstVals.length > 2 ? '…' : '');
+  const sColor       = STATUS_COLORS[r.status] || '#9AA0A6';
+  const lvlLabel     = LEVELS.find(l => l.value === r.level)?.label || r.level || '—';
+
+  return _cols.filter(c => c.visible).map(c => {
+    switch (c.id) {
+      case 'drag':
+        return `<td data-col="drag" class="spec-drag-cell"><span class="spec-drag-handle" title="Drag">⠿</span></td>`;
+      case 'code':
+        return `<td data-col="code" class="code-cell" style="white-space:nowrap">${esc(r.test_code || '—')}</td>`;
+      case 'name':
+        return `<td data-col="name"><strong style="font-size:13px">${esc(r.name || 'Untitled')}</strong></td>`;
+      case 'type':
+        return `<td data-col="type"><span class="ts-badge ts-badge--type">${esc(r.type || '—')}</span></td>`;
+      case 'level':
+        return `<td data-col="level" style="font-size:12px;color:var(--color-text-muted)">${esc(lvlLabel)}</td>`;
+      case 'trace':
+        return `<td data-col="trace" style="font-size:11px;color:var(--color-text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(traceStr || '—')}</td>`;
+      case 'status':
+        return `<td data-col="status"><span class="ts-badge" style="background:${sColor}20;color:${sColor};border:1px solid ${sColor}40">${esc(r.status || 'draft')}</span></td>`;
+      case 'result':
+        return r.result
+          ? `<td data-col="result"><span class="ts-badge ts-result--${r.result}">${RESULT_LABELS[r.result] || r.result}</span></td>`
+          : `<td data-col="result" style="color:#ccc;font-size:11px">not run</td>`;
+      case 'actions':
+        return `<td data-col="actions" class="spec-row-actions">
+          <button class="btn btn-ghost btn-xs spec-move-up"   title="Move up">↑</button>
+          <button class="btn btn-ghost btn-xs spec-move-dn"   title="Move down">↓</button>
+          <button class="btn btn-ghost btn-xs spec-add-below" title="Add test below">+</button>
+          <button class="btn btn-ghost btn-xs spec-del-btn"   title="Delete" style="color:var(--color-danger)">✕</button>
+        </td>`;
+      default:
+        return `<td data-col="${c.id}"></td>`;
+    }
+  }).join('');
+}
+
+// ── Wire row events ───────────────────────────────────────────────────────────
+
+function wireRow(tr, r) {
+  if (r.type === 'section') {
+    wireSectionRow(tr, r);
+  } else {
+    wireTestRow(tr, r);
+  }
+}
+
+function wireTestRow(tr, r) {
+  tr.addEventListener('click', e => {
+    if (e.target.closest('.spec-row-actions')) return;
+    openDetail(r.id);
+  });
+
+  tr.querySelector('.spec-move-up')?.addEventListener('click', e => {
+    e.stopPropagation(); moveRow(r, -1);
+  });
+  tr.querySelector('.spec-move-dn')?.addEventListener('click', e => {
+    e.stopPropagation(); moveRow(r, 1);
+  });
+  tr.querySelector('.spec-add-below')?.addEventListener('click', e => {
+    e.stopPropagation(); createTest(r);
+  });
+  tr.querySelector('.spec-del-btn')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    if (!confirm(`Delete "${r.name || 'this test'}"?`)) return;
+    await sb.from('test_specs').delete().eq('id', r.id);
+    if (_selectedId === r.id) closeDetail();
+    _rows.splice(_rows.findIndex(x => x.id === r.id), 1);
+    renderTable(document.getElementById('ts-body'));
+    toast('Deleted.', 'success');
   });
 }
 
-function testRowHTML(t) {
-  const traceability  = t.traceability || {};
-  const firstField    = _traceFields.find(f => f.source !== 'free_text');
-  const firstVals     = firstField ? (traceability[firstField.id] || []) : [];
-  const reqs          = firstVals.slice(0, 2).join(', ') + (firstVals.length > 2 ? '…' : '');
-  const sColor  = STATUS_COLORS[t.status] || '#9AA0A6';
-  const rColor  = RESULT_COLORS[t.result] || '';
-  const lvlLabel = LEVELS.find(l => l.value === t.level)?.label || t.level || '—';
-  const sel     = t.id === _selectedId;
-  return `
-    <tr data-id="${t.id}" class="ts-row${sel ? ' ts-row--selected' : ''}" style="cursor:pointer">
-      <td class="code-cell" style="white-space:nowrap">${esc(t.test_code || '—')}</td>
-      <td><strong style="font-size:13px">${esc(t.name || 'Untitled')}</strong></td>
-      <td><span class="ts-badge ts-badge--type">${esc(t.type || '—')}</span></td>
-      <td style="font-size:12px;color:var(--color-text-muted)">${esc(lvlLabel)}</td>
-      <td style="font-size:11px;color:var(--color-text-muted);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(reqs || '—')}</td>
-      <td><span class="ts-badge" style="background:${sColor}20;color:${sColor};border:1px solid ${sColor}40">${esc(t.status || 'draft')}</span></td>
-      <td>${t.result
-        ? `<span class="ts-badge ts-result--${t.result}">${RESULT_LABELS[t.result] || t.result}</span>`
-        : '<span style="color:#ccc;font-size:11px">not run</span>'}</td>
-      <td><button class="btn btn-ghost btn-xs ts-row-del" style="color:var(--color-danger)" title="Delete">✕</button></td>
-    </tr>`;
+function wireSectionRow(tr, r) {
+  const titleEl = tr.querySelector('.spec-section-title');
+  if (titleEl) {
+    titleEl.addEventListener('blur', async () => {
+      const newName = titleEl.textContent.trim();
+      if (newName === (r.name || '')) return;
+      r.name = newName;
+      await sb.from('test_specs').update({ name: newName }).eq('id', r.id);
+      buildNavTree();
+    });
+    titleEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); titleEl.blur(); }
+    });
+  }
+  tr.querySelector('.spec-sec-move-up')?.addEventListener('click', () => moveRow(r, -1));
+  tr.querySelector('.spec-sec-move-dn')?.addEventListener('click', () => moveRow(r, 1));
+  tr.querySelector('.spec-add-below')?.addEventListener('click', () => createTest(r));
+  tr.querySelector('.spec-sec-del')?.addEventListener('click', async () => {
+    if (!confirm('Delete this section?')) return;
+    await sb.from('test_specs').delete().eq('id', r.id);
+    _rows.splice(_rows.findIndex(x => x.id === r.id), 1);
+    renderTable(document.getElementById('ts-body'));
+  });
+}
+
+// ── Drag & drop reorder ───────────────────────────────────────────────────────
+
+function wireDragDrop(tbody) {
+  if (!tbody) return;
+  let dragEl = null;
+  tbody.addEventListener('dragstart', e => {
+    const tr = e.target.closest('tr[draggable="true"]');
+    if (!tr || !e.target.closest('.spec-drag-handle')) { e.preventDefault(); return; }
+    dragEl = tr;
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => tr.classList.add('ts-step-dragging'), 0);
+  });
+  tbody.addEventListener('dragend', () => {
+    dragEl?.classList.remove('ts-step-dragging');
+    tbody.querySelectorAll('.ts-step-drop').forEach(x => x.classList.remove('ts-step-drop'));
+    dragEl = null;
+  });
+  tbody.addEventListener('dragover', e => {
+    if (!dragEl) return;
+    const tr = e.target.closest('tr');
+    if (!tr || tr === dragEl || tr.draggable === false) return;
+    e.preventDefault();
+    tbody.querySelectorAll('.ts-step-drop').forEach(x => x.classList.remove('ts-step-drop'));
+    tr.classList.add('ts-step-drop');
+  });
+  tbody.addEventListener('drop', async e => {
+    e.preventDefault();
+    if (!dragEl) return;
+    const tr = e.target.closest('tr');
+    if (!tr || tr === dragEl) return;
+    tbody.querySelectorAll('.ts-step-drop').forEach(x => x.classList.remove('ts-step-drop'));
+    const before = e.clientY < tr.getBoundingClientRect().top + tr.getBoundingClientRect().height / 2;
+    before ? tr.before(dragEl) : tr.after(dragEl);
+    await persistOrder(tbody);
+  });
+}
+
+async function persistOrder(tbody) {
+  const trs = [...tbody.querySelectorAll('tr[data-id]')];
+  const updates = trs.map((tr, i) => ({ id: tr.dataset.id, sort_order: i }));
+  updates.forEach(u => {
+    const row = _rows.find(r => r.id === u.id);
+    if (row) row.sort_order = u.sort_order;
+  });
+  _rows.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  await Promise.all(updates.map(u => sb.from('test_specs').update({ sort_order: u.sort_order }).eq('id', u.id)));
+}
+
+async function moveRow(r, dir) {
+  const idx    = _rows.findIndex(x => x.id === r.id);
+  const target = _rows[idx + dir];
+  if (!target) return;
+  const tmp         = r.sort_order;
+  r.sort_order      = target.sort_order;
+  target.sort_order = tmp;
+  _rows.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  await Promise.all([
+    sb.from('test_specs').update({ sort_order: r.sort_order }).eq('id', r.id),
+    sb.from('test_specs').update({ sort_order: target.sort_order }).eq('id', target.id),
+  ]);
+  renderTable(document.getElementById('ts-body'));
 }
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
+function resetDetailPanel() {
+  document.getElementById('ts-detail-panel')?.classList.remove('open');
+}
+
 function openDetail(testId) {
   _selectedId = testId;
-  const test  = _tests.find(t => t.id === testId);
+  const test  = _rows.find(r => r.id === testId);
   if (!test) return;
 
+  // Highlight selected row
   document.querySelectorAll('.ts-row').forEach(tr =>
     tr.classList.toggle('ts-row--selected', tr.dataset.id === testId));
 
-  const panel = document.getElementById('ts-detail-pane');
+  const panel  = document.getElementById('ts-detail-panel');
+  const title  = document.getElementById('ts-panel-title');
+  const body   = document.getElementById('ts-panel-body');
+  if (!panel || !body) return;
+
+  if (title) title.textContent = test.test_code || 'Test Detail';
   panel.classList.add('open');
-  panel.innerHTML = buildDetailHTML(test);
+  body.innerHTML = buildDetailHTML(test);
   wireDetail(test);
-  document.getElementById('ts-list-pane').classList.add('ts-list-pane--narrow');
+
+  // Narrow the table area
+  document.getElementById('ts-body')?.classList.add('spec-content--narrow');
 }
 
 function closeDetail() {
   clearTimeout(_saveTimer);
   _selectedId = null;
   document.querySelectorAll('.ts-row').forEach(tr => tr.classList.remove('ts-row--selected'));
-  document.getElementById('ts-detail-pane')?.classList.remove('open');
-  if (document.getElementById('ts-detail-pane')) document.getElementById('ts-detail-pane').innerHTML = '';
-  document.getElementById('ts-list-pane')?.classList.remove('ts-list-pane--narrow');
+  document.getElementById('ts-detail-panel')?.classList.remove('open');
+  document.getElementById('ts-body')?.classList.remove('spec-content--narrow');
 }
 
+// ── Detail HTML ───────────────────────────────────────────────────────────────
+
 function buildDetailHTML(t) {
-  const steps    = t.steps || [];
-  const methods  = Array.isArray(t.method) ? t.method : (t.method ? [t.method] : []);
-  const lvlLabel = LEVELS.find(l => l.value === t.level)?.label || t.level || '—';
-  const sColor   = STATUS_COLORS[t.status] || '#9AA0A6';
-  const modDate  = t.updated_at ? new Date(t.updated_at).toLocaleString() : '—';
-  const modBy    = t.last_modified_by || '—';
+  const steps   = t.steps || [];
+  const methods = Array.isArray(t.method) ? t.method : (t.method ? [t.method] : []);
+  const sColor  = STATUS_COLORS[t.status] || '#9AA0A6';
+  const modDate = t.updated_at ? new Date(t.updated_at).toLocaleString() : '—';
+  const modBy   = t.last_modified_by || '—';
 
   return `
     <div class="ts-detail-inner">
-      <!-- Header -->
       <div class="ts-detail-header">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
@@ -339,7 +606,6 @@ function buildDetailHTML(t) {
             <span class="ts-autosave-indicator" id="ts-autosave-ind"></span>
           </div>
         </div>
-        <button class="btn-icon ts-detail-close" id="ts-close-btn" title="Close">✕</button>
       </div>
 
       <!-- ① Basic Information -->
@@ -415,7 +681,7 @@ function buildDetailHTML(t) {
             <div class="ts-field">
               <label>Preconditions</label>
               <textarea id="td-preconditions" class="form-input form-textarea" rows="4"
-                placeholder="• Initial system state&#10;• HW/SW configuration&#10;• Required conditions&#10;• Dependencies">${esc(t.preconditions || '')}</textarea>
+                placeholder="• Initial system state&#10;• HW/SW configuration&#10;• Required conditions">${esc(t.preconditions || '')}</textarea>
             </div>
           </div>
         </div>
@@ -446,7 +712,7 @@ function buildDetailHTML(t) {
         </div>
       </div>
 
-      <!-- ④ Expected Results & Acceptance Criteria -->
+      <!-- ④ Results & Acceptance Criteria -->
       <div class="ts-section">
         <div class="ts-section-hdr" data-sec="criteria">
           <span class="ts-section-chevron">▶</span> Results &amp; Acceptance Criteria
@@ -454,14 +720,14 @@ function buildDetailHTML(t) {
         <div class="ts-section-body" id="sec-criteria" style="display:none">
           <div class="ts-field-grid">
             <div class="ts-field">
-              <label>Expected Results <span style="color:var(--color-text-muted);font-size:11px">(per-step summary)</span></label>
+              <label>Expected Results</label>
               <textarea id="td-expected-results" class="form-input form-textarea" rows="3"
                 placeholder="Summarise the expected system behaviour after all steps.">${esc(t.expected_results || '')}</textarea>
             </div>
             <div class="ts-field">
-              <label>Acceptance Criteria <span style="color:var(--color-text-muted);font-size:11px">(global Pass/Fail definition)</span></label>
+              <label>Acceptance Criteria</label>
               <textarea id="td-acceptance-criteria" class="form-input form-textarea" rows="4"
-                placeholder="• Metric A ≥ threshold X&#10;• No errors of type Y&#10;• Response time &lt; Z ms">${esc(t.acceptance_criteria || '')}</textarea>
+                placeholder="• Metric A ≥ threshold X&#10;• No errors of type Y">${esc(t.acceptance_criteria || '')}</textarea>
             </div>
           </div>
         </div>
@@ -527,7 +793,6 @@ function buildDetailHTML(t) {
         </div>
       </div>
 
-      <!-- Footer: duplicate only (no save — auto-save) -->
       <div class="ts-detail-footer">
         <button class="btn btn-secondary btn-sm" id="ts-btn-duplicate">⊕ Duplicate</button>
         <span style="font-size:11px;color:var(--color-text-muted)">Auto-saved</span>
@@ -551,10 +816,6 @@ function stepRowHTML(s, i) {
     </tr>`;
 }
 
-function reqTagHTML(code) {
-  return `<span class="ts-req-tag" data-code="${esc(code)}">${esc(code)}<button class="ts-req-tag-del" title="Remove">×</button></span>`;
-}
-
 function evidenceItemHTML(e, i) {
   return `<div class="ts-evidence-item" data-idx="${i}">
     <span class="ts-evidence-icon">📎</span>
@@ -568,8 +829,7 @@ function buildTraceFieldsHTML(t) {
   const traceability = t.traceability || {};
   if (!_traceFields.length) {
     return `<p style="color:var(--color-text-muted);font-size:13px">
-      No traceability links configured for this page. Go to
-      <strong>Project Settings → V-Model Links</strong> to define connections.
+      No traceability links configured. Go to <strong>Project Settings → V-Model Links</strong>.
     </p>`;
   }
   return _traceFields.map(field => {
@@ -587,7 +847,6 @@ function buildTraceFieldsHTML(t) {
             placeholder="Comma-separated…"/>
         </div>`;
     }
-
     return `
       <div class="ts-field">
         <label>${esc(field.label)}</label>
@@ -615,8 +874,6 @@ function traceTagHTML(code, fieldId) {
 // ── Wire detail ───────────────────────────────────────────────────────────────
 
 function wireDetail(test) {
-  document.getElementById('ts-close-btn').onclick = () => closeDetail();
-
   // Accordion sections
   document.querySelectorAll('.ts-section-hdr').forEach(hdr => {
     hdr.addEventListener('click', () => {
@@ -629,8 +886,8 @@ function wireDetail(test) {
     });
   });
 
-  // Result buttons — trigger auto-save
-  document.getElementById('ts-result-btns').querySelectorAll('.ts-result-btn').forEach(btn => {
+  // Result buttons
+  document.getElementById('ts-result-btns')?.querySelectorAll('.ts-result-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.ts-result-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -663,29 +920,28 @@ function wireDetail(test) {
     });
   });
 
-  // Free text traceability fields
   document.querySelectorAll('.ts-trace-free').forEach(inp => {
     inp.addEventListener('input', () => scheduleSave(test));
   });
 
   // Steps
-  document.getElementById('ts-add-step').onclick = () => {
+  document.getElementById('ts-add-step')?.addEventListener('click', () => {
     addStep({ action: '', input: '', expected_result: '' }, test);
-  };
+  });
   document.querySelectorAll('.ts-step-row').forEach(tr => wireStepRow(tr, test));
   wireStepsDnD(document.getElementById('ts-steps-tbody'), test);
 
   // Evidence
-  document.getElementById('ts-add-evidence').onclick = () => {
+  document.getElementById('ts-add-evidence')?.addEventListener('click', () => {
     const name = document.getElementById('ts-evidence-name').value.trim();
     const url  = document.getElementById('ts-evidence-url').value.trim();
     if (!name && !url) return;
     const list = document.getElementById('ts-evidence-list');
     const idx  = list.querySelectorAll('.ts-evidence-item').length;
     const div  = document.createElement('div');
-    div.className   = 'ts-evidence-item';
+    div.className = 'ts-evidence-item';
     div.dataset.idx = idx;
-    div.innerHTML   = `<span class="ts-evidence-icon">📎</span>
+    div.innerHTML = `<span class="ts-evidence-icon">📎</span>
       <span class="ts-evidence-name">${esc(name)}</span>
       ${url ? `<a href="${esc(url)}" target="_blank" class="ts-evidence-url">↗</a>` : ''}
       <button class="ts-evidence-del btn btn-ghost btn-xs" style="color:var(--color-danger);margin-left:auto">✕</button>`;
@@ -694,26 +950,24 @@ function wireDetail(test) {
     document.getElementById('ts-evidence-name').value = '';
     document.getElementById('ts-evidence-url').value  = '';
     scheduleSave(test);
-  };
+  });
   document.querySelectorAll('.ts-evidence-del').forEach(btn => {
     btn.onclick = () => { btn.closest('.ts-evidence-item').remove(); scheduleSave(test); };
   });
 
   // Duplicate
-  document.getElementById('ts-btn-duplicate').onclick = () => duplicateTest(test);
+  document.getElementById('ts-btn-duplicate')?.addEventListener('click', () => duplicateTest(test));
 
-  // Auto-save on all scalar inputs
-  const autoFields = ['td-name','td-description','td-type','td-level','td-status','td-version',
-    'td-impl-ticket','td-environment','td-preconditions','td-expected-results',
-    'td-acceptance-criteria','td-executor','td-execution-date','td-notes'];
-  autoFields.forEach(id => {
+  // Auto-save scalar fields
+  ['td-name','td-description','td-type','td-level','td-status','td-version',
+   'td-impl-ticket','td-environment','td-preconditions','td-expected-results',
+   'td-acceptance-criteria','td-executor','td-execution-date','td-notes'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('input',  () => scheduleSave(test));
     el.addEventListener('change', () => scheduleSave(test));
   });
 
-  // Auto-save on method checkboxes
   document.querySelectorAll('.ts-method-chk').forEach(chk => {
     chk.addEventListener('change', () => scheduleSave(test));
   });
@@ -738,28 +992,27 @@ function wireStepRow(tr, test) {
   tr.querySelectorAll('.ts-step-inp').forEach(inp => {
     inp.addEventListener('input', () => scheduleSave(test));
   });
-  tr.querySelector('.ts-step-del').onclick = () => {
+  tr.querySelector('.ts-step-del')?.addEventListener('click', () => {
     tr.remove(); renumberSteps(); scheduleSave(test);
-  };
-  tr.querySelector('.ts-step-dup').onclick = () => {
+  });
+  tr.querySelector('.ts-step-dup')?.addEventListener('click', () => {
     const s = {
       action:          tr.querySelector('.ts-step-action')?.value  || '',
       input:           tr.querySelector('.ts-step-input')?.value   || '',
       expected_result: tr.querySelector('.ts-step-expected')?.value || '',
     };
-    // Insert duplicate right after this row
     const tbody = tr.closest('tbody');
-    const idx   = [...tbody.querySelectorAll('.ts-step-row')].indexOf(tr) + 1;
     const newTr = document.createElement('tr');
     newTr.className = 'ts-step-row';
     newTr.draggable = true;
+    const idx = [...tbody.querySelectorAll('.ts-step-row')].indexOf(tr) + 1;
     newTr.dataset.stepIdx = idx;
     newTr.innerHTML = stepRowHTML(s, idx).replace(/^<tr[^>]*>/, '').replace(/<\/tr>$/, '');
     tr.after(newTr);
     wireStepRow(newTr, test);
     renumberSteps();
     scheduleSave(test);
-  };
+  });
 }
 
 function renumberSteps() {
@@ -782,7 +1035,7 @@ function wireStepsDnD(tbody, test) {
   });
   tbody.addEventListener('dragend', () => {
     dragTr?.classList.remove('ts-step-dragging');
-    tbody.querySelectorAll('.ts-step-drop').forEach(t => t.classList.remove('ts-step-drop'));
+    tbody.querySelectorAll('.ts-step-drop').forEach(x => x.classList.remove('ts-step-drop'));
     dragTr = null;
   });
   tbody.addEventListener('dragover', e => {
@@ -790,7 +1043,7 @@ function wireStepsDnD(tbody, test) {
     const tr = e.target.closest('.ts-step-row');
     if (!tr || tr === dragTr) return;
     e.preventDefault();
-    tbody.querySelectorAll('.ts-step-drop').forEach(t => t.classList.remove('ts-step-drop'));
+    tbody.querySelectorAll('.ts-step-drop').forEach(x => x.classList.remove('ts-step-drop'));
     tr.classList.add('ts-step-drop');
   });
   tbody.addEventListener('drop', e => {
@@ -798,7 +1051,7 @@ function wireStepsDnD(tbody, test) {
     if (!dragTr) return;
     const tr = e.target.closest('.ts-step-row');
     if (!tr || tr === dragTr) return;
-    tbody.querySelectorAll('.ts-step-drop').forEach(t => t.classList.remove('ts-step-drop'));
+    tbody.querySelectorAll('.ts-step-drop').forEach(x => x.classList.remove('ts-step-drop'));
     const before = e.clientY < tr.getBoundingClientRect().top + tr.getBoundingClientRect().height / 2;
     before ? tr.before(dragTr) : tr.after(dragTr);
     renumberSteps();
@@ -826,36 +1079,20 @@ async function doSave(test) {
   Object.assign(test, patch);
   if (ind) { ind.textContent = '· saved'; ind.style.color = '#34A853'; setTimeout(() => { if (ind) ind.textContent = ''; }, 2000); }
 
-  // Refresh table row
+  // Refresh table row in-place
   const tr = document.querySelector(`tr[data-id="${test.id}"]`);
   if (tr) {
-    const tmp = document.createElement('tbody');
-    tmp.innerHTML = testRowHTML(test);
-    const newTr = tmp.firstElementChild;
-    tr.replaceWith(newTr);
-    newTr.addEventListener('click', e => {
-      if (e.target.closest('.ts-row-del')) return;
-      openDetail(newTr.dataset.id);
-    });
-    newTr.querySelector('.ts-row-del')?.addEventListener('click', async e => {
-      e.stopPropagation();
-      if (!confirm(`Delete "${test.name}"?`)) return;
-      await sb.from('test_specs').delete().eq('id', test.id);
-      closeDetail();
-      _tests.splice(_tests.findIndex(t => t.id === test.id), 1);
-      renderTestTable(document.getElementById('ts-list-pane'));
-    });
+    tr.innerHTML = testRowHTML(test);
+    tr.className = `spec-row ts-row ts-row--selected`;
+    wireTestRow(tr, test);
   }
 
-  // Update status badges in header
+  // Update header badges
   const sColor = STATUS_COLORS[test.status] || '#9AA0A6';
-  const statusBadge = document.querySelector('.ts-detail-header .ts-badge');
-  if (statusBadge && !statusBadge.classList.contains('ts-result--pass') &&
-      !statusBadge.classList.contains('ts-result--fail') &&
-      !statusBadge.classList.contains('ts-result--blocked')) {
-    statusBadge.textContent = test.status;
-    statusBadge.style.cssText = `background:${sColor}20;color:${sColor};border:1px solid ${sColor}40;font-size:10px`;
-  }
+  document.querySelector('.ts-detail-header .ts-badge')?.style &&
+    Object.assign(document.querySelector('.ts-detail-header .ts-badge').style, {
+      background: `${sColor}20`, color: sColor, border: `1px solid ${sColor}40`
+    });
 }
 
 function collectPatch(test) {
@@ -871,7 +1108,6 @@ function collectPatch(test) {
     });
   });
 
-  // Dynamic traceability fields
   const traceability = {};
   _traceFields.forEach(field => {
     if (field.source === 'free_text') {
@@ -895,62 +1131,91 @@ function collectPatch(test) {
   });
 
   const resultBtn = document.querySelector('.ts-result-btn.active');
-  const result    = resultBtn?.dataset.result || null;
 
   return {
-    name:                 document.getElementById('td-name')?.value.trim()               || test.name,
-    description:          document.getElementById('td-description')?.value.trim()         || null,
-    type:                 document.getElementById('td-type')?.value                       || test.type,
-    level:                document.getElementById('td-level')?.value                      || test.level,
-    status:               document.getElementById('td-status')?.value                     || test.status,
-    version:              document.getElementById('td-version')?.value.trim()             || '1.0',
-    implementation_ticket:document.getElementById('td-impl-ticket')?.value.trim()         || null,
-    method:               methods,
-    environment:          document.getElementById('td-environment')?.value                || test.environment,
-    preconditions:        document.getElementById('td-preconditions')?.value.trim()       || null,
-    expected_results:     document.getElementById('td-expected-results')?.value.trim()    || null,
-    acceptance_criteria:  document.getElementById('td-acceptance-criteria')?.value.trim() || null,
-    executor:             document.getElementById('td-executor')?.value.trim()            || null,
-    execution_date:       document.getElementById('td-execution-date')?.value             || null,
-    notes:                document.getElementById('td-notes')?.value.trim()               || null,
+    name:                  document.getElementById('td-name')?.value.trim()               || test.name,
+    description:           document.getElementById('td-description')?.value.trim()         || null,
+    type:                  document.getElementById('td-type')?.value                       || test.type,
+    level:                 document.getElementById('td-level')?.value                      || test.level,
+    status:                document.getElementById('td-status')?.value                     || test.status,
+    version:               document.getElementById('td-version')?.value.trim()             || '1.0',
+    implementation_ticket: document.getElementById('td-impl-ticket')?.value.trim()         || null,
+    method:                methods,
+    environment:           document.getElementById('td-environment')?.value                || test.environment,
+    preconditions:         document.getElementById('td-preconditions')?.value.trim()       || null,
+    expected_results:      document.getElementById('td-expected-results')?.value.trim()    || null,
+    acceptance_criteria:   document.getElementById('td-acceptance-criteria')?.value.trim() || null,
+    executor:              document.getElementById('td-executor')?.value.trim()            || null,
+    execution_date:        document.getElementById('td-execution-date')?.value             || null,
+    notes:                 document.getElementById('td-notes')?.value.trim()               || null,
     traceability,
     steps,
     evidence,
-    result:               result || null,
-    last_modified_by:     _currentUser?.email || _currentUser?.id || null,
-    updated_at:           new Date().toISOString(),
+    result:                resultBtn?.dataset.result || null,
+    last_modified_by:      _currentUser?.email || _currentUser?.id || null,
+    updated_at:            new Date().toISOString(),
   };
 }
 
-// ── Create & duplicate ────────────────────────────────────────────────────────
+// ── Create / duplicate ────────────────────────────────────────────────────────
 
-async function createTest() {
+async function createTest(afterRow = null) {
   const { project, parentType, parentId, phase, domain, meta } = _ctx;
-  const count     = _tests.length + 1;
+  const count      = _rows.filter(r => r.type !== 'section').length + 1;
   const domainCode = domain.toUpperCase().slice(0, 3);
-  const proj      = project.name.replace(/\s+/g, '').slice(0, 2).toUpperCase();
-  const testCode  = `${meta.prefix}-${domainCode}-${proj}-${String(count).padStart(3, '0')}`;
-  const defType   = _testTypes[0] || 'test';
+  const proj       = project.name.replace(/\s+/g, '').slice(0, 2).toUpperCase();
+  const testCode   = `${meta.prefix}-${domainCode}-${proj}-${String(count).padStart(3, '0')}`;
+  const defType    = _testTypes[0] || 'test';
+
+  const insertIdx = afterRow
+    ? _rows.findIndex(r => r.id === afterRow.id) + 1
+    : _rows.length;
+  const sortOrder = afterRow ? (afterRow.sort_order ?? 0) + 0.5 : _rows.length;
 
   const { data: newTest, error } = await sb.from('test_specs').insert({
-    project_id:   project.id, parent_type: parentType, parent_id: parentId,
+    project_id: project.id, parent_type: parentType, parent_id: parentId,
     phase, domain, test_code: testCode, name: 'New Test',
     type: defType, level: 'unit_test', status: 'draft',
-    method: [], environment: 'lab', sort_order: _tests.length,
-    steps: [], linked_requirements: [], evidence: [],
+    method: [], environment: 'lab', sort_order: sortOrder,
+    steps: [], evidence: [],
     last_modified_by: _currentUser?.email || null,
   }).select().single();
 
   if (error) { toast('Failed to create test: ' + error.message, 'error'); return; }
-  _tests.push(newTest);
-  renderTestTable(document.getElementById('ts-list-pane'));
+  _rows.splice(insertIdx, 0, newTest);
+  renderTable(document.getElementById('ts-body'));
   openDetail(newTest.id);
   toast(`${testCode} created.`, 'success');
 }
 
+async function addSection(afterRow) {
+  const { parentType, parentId, phase, domain } = _ctx;
+  const sortOrder = afterRow ? (afterRow.sort_order ?? 0) + 0.5 : _rows.length;
+
+  const { data: sec, error } = await sb.from('test_specs').insert({
+    project_id: _ctx.project.id,
+    parent_type: parentType, parent_id: parentId,
+    phase, domain,
+    type: 'section', name: 'New Section',
+    test_code: null, status: 'draft',
+    sort_order: sortOrder,
+    steps: [], evidence: [],
+  }).select().single();
+
+  if (error) { toast('Failed to create section: ' + error.message, 'error'); return; }
+  const insertIdx = afterRow ? _rows.findIndex(r => r.id === afterRow.id) + 1 : _rows.length;
+  _rows.splice(insertIdx, 0, sec);
+  renderTable(document.getElementById('ts-body'));
+  // Focus the section title inline
+  setTimeout(() => {
+    const tr = document.querySelector(`tr[data-id="${sec.id}"]`);
+    tr?.querySelector('.spec-section-title')?.focus();
+  }, 50);
+}
+
 async function duplicateTest(test) {
   const { project, parentType, parentId, phase, domain, meta } = _ctx;
-  const count    = _tests.length + 1;
+  const count    = _rows.filter(r => r.type !== 'section').length + 1;
   const domainCode = domain.toUpperCase().slice(0, 3);
   const proj     = project.name.replace(/\s+/g, '').slice(0, 2).toUpperCase();
   const testCode = `${meta.prefix}-${domainCode}-${proj}-${String(count).padStart(3, '0')}`;
@@ -959,15 +1224,127 @@ async function duplicateTest(test) {
     ...test, id: undefined, test_code: testCode, domain,
     name: test.name + ' (copy)', result: null,
     execution_date: null, executor: null, notes: null, evidence: [],
-    sort_order: _tests.length, created_at: undefined, updated_at: undefined,
+    sort_order: _rows.length, created_at: undefined, updated_at: undefined,
     last_modified_by: _currentUser?.email || null,
   }).select().single();
 
   if (error) { toast('Failed to duplicate: ' + error.message, 'error'); return; }
-  _tests.push(newTest);
-  renderTestTable(document.getElementById('ts-list-pane'));
+  _rows.push(newTest);
+  renderTable(document.getElementById('ts-body'));
   openDetail(newTest.id);
   toast(`${testCode} created as duplicate.`, 'success');
+}
+
+// ── Hover insert pill ─────────────────────────────────────────────────────────
+
+function wireInsertHover(tbody) {
+  let pill = document.getElementById('ts-insert-pill');
+  if (!pill) {
+    pill = document.createElement('div');
+    pill.id        = 'ts-insert-pill';
+    pill.className = 'spec-insert-pill';
+    pill.innerHTML = `
+      <span class="spec-insert-line"></span>
+      <button class="spec-insert-plus spec-insert-item"    tabindex="-1" title="Add test here">＋ Test</button>
+      <button class="spec-insert-plus spec-insert-section" tabindex="-1" title="Add section here">＋ Section</button>
+      <span class="spec-insert-line"></span>`;
+    document.body.appendChild(pill);
+  }
+
+  let afterId   = null;
+  let hideTimer = null;
+
+  function showPill(tr) {
+    const r = _rows.find(x => x.id === tr.dataset.id);
+    if (!r) return;
+    afterId = r.id;
+    const rect = tr.getBoundingClientRect();
+    pill.style.top     = (rect.bottom - 9) + 'px';
+    pill.style.left    = rect.left + 'px';
+    pill.style.width   = rect.width + 'px';
+    pill.style.display = 'flex';
+    clearTimeout(hideTimer);
+  }
+
+  function hidePill() {
+    hideTimer = setTimeout(() => { pill.style.display = 'none'; afterId = null; }, 120);
+  }
+
+  tbody.addEventListener('mousemove', e => {
+    const tr = e.target.closest('tr');
+    if (!tr) { hidePill(); return; }
+    const rect = tr.getBoundingClientRect();
+    if (e.clientY > rect.bottom - rect.height * 0.35) showPill(tr);
+    else hidePill();
+  });
+  tbody.addEventListener('mouseleave', hidePill);
+  pill.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+  pill.addEventListener('mouseleave', hidePill);
+
+  pill.querySelector('.spec-insert-item').addEventListener('click', () => {
+    pill.style.display = 'none';
+    if (afterId) createTest(_rows.find(r => r.id === afterId));
+  });
+  pill.querySelector('.spec-insert-section').addEventListener('click', () => {
+    pill.style.display = 'none';
+    if (afterId) addSection(_rows.find(r => r.id === afterId));
+  });
+}
+
+// ── V-Model helpers ───────────────────────────────────────────────────────────
+
+function deriveTraceFields(domain, phase, vmodelLinks) {
+  const myNodeId = VMODEL_NODES.find(n => n.domain === domain && n.phase === phase)?.id;
+  if (!myNodeId || !vmodelLinks.length) return [];
+  const fields = [];
+  for (const link of vmodelLinks) {
+    if (link.type && link.type !== 'trace') continue;
+    const otherNodeId = link.from === myNodeId ? link.to : link.to === myNodeId ? link.from : null;
+    if (!otherNodeId) continue;
+    const node = VMODEL_NODES.find(n => n.id === otherNodeId);
+    if (!node) continue;
+    const source = PHASE_DB_SOURCE[node.phase] || 'free_text';
+    fields.push({ id: otherNodeId, label: node.label, source, node });
+  }
+  return fields;
+}
+
+async function loadTraceSourceData(item, system) {
+  for (const field of _traceFields) {
+    if (_traceData[field.id]) continue;
+    const node = field.node;
+    if (!node) continue;
+    const isSystemDomain = node.domain === 'system';
+    const parentType     = isSystemDomain ? 'system' : 'item';
+    const parentId       = isSystemDomain ? system?.id : item?.id;
+    if (!parentId) { _traceData[field.id] = []; continue; }
+
+    const dbSource = PHASE_DB_SOURCE[node.phase];
+    if (dbSource === 'requirements') {
+      const { data } = await sb.from('requirements')
+        .select('req_code, title')
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .not('type', 'in', '("title","info")')
+        .order('sort_order', { ascending: true });
+      _traceData[field.id] = (data || []).map(r => ({ code: r.req_code, label: r.title || '' }));
+    } else if (dbSource === 'arch_spec_items') {
+      const { data } = await sb.from('arch_spec_items')
+        .select('spec_code, title')
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .neq('type', 'section')
+        .order('sort_order', { ascending: true });
+      _traceData[field.id] = (data || []).map(r => ({ code: r.spec_code || r.id, label: r.title || '' }));
+    } else if (dbSource === 'test_specs') {
+      const { data } = await sb.from('test_specs')
+        .select('test_code, name, phase')
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .eq('phase', node.phase)
+        .order('sort_order', { ascending: true });
+      _traceData[field.id] = (data || []).map(r => ({ code: r.test_code, label: r.name || '' }));
+    } else {
+      _traceData[field.id] = [];
+    }
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

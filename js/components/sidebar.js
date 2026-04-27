@@ -202,6 +202,7 @@ function buildSingleSystemSidebar({ projectId, itemId, itemName, activePage, act
 
   html += buildSafetyGroup({ groupKey: `item-${itemId}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
   html += buildTraceabilityEntry({ base, activePage });
+  html += buildReviewsEntry({ base, activePage });
   html += addSystemBtn();
   return html;
 }
@@ -223,6 +224,7 @@ function buildMultiSystemSidebar({ projectId, itemId, itemName, activePage, acti
 
   html += buildSafetyGroup({ groupKey: `item-${itemId}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
   html += buildTraceabilityEntry({ base, activePage });
+  html += buildReviewsEntry({ base, activePage });
 
   // Systems section
   html += `<div class="sb-section-label" style="margin-top:6px">
@@ -440,6 +442,17 @@ function buildTraceabilityEntry({ base, activePage }) {
       <button class="sb-item ${active ? 'active' : ''}" data-nav="${base}/traceability" title="Traceability Dashboard">
         <span class="sb-item-icon">⛓</span>
         <span class="sb-item-label">Traceability</span>
+      </button>
+    </div>`;
+}
+
+function buildReviewsEntry({ base, activePage }) {
+  const active = activePage === 'reviews';
+  return `
+    <div class="sb-phase-row">
+      <button class="sb-item ${active ? 'active' : ''}" data-nav="${base}/reviews" title="Review Sessions">
+        <span class="sb-item-icon">✓</span>
+        <span class="sb-item-label">Reviews</span>
       </button>
     </div>`;
 }

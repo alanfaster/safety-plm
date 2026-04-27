@@ -23,6 +23,7 @@ import { renderFTA }                   from './pages/safety/fta.js';
 import { renderDFA }                   from './pages/safety/dfa.js';
 import { renderSafetyGeneric }         from './pages/safety/generic.js';
 import { renderProjectSettings }       from './pages/project-settings.js';
+import { renderTraceabilityDashboard } from './pages/traceability-dashboard.js';
 
 // ── Shared state ──────────────────────────────────────────────────────
 const state = {
@@ -234,6 +235,14 @@ route('/project/:projectId/item/:itemId/domain/:domain/vcycle/:phase', async ({ 
   await renderVcycle(getContent(), { ...ctx, phase, domain });
 });
 
+// Item-level traceability dashboard
+route('/project/:projectId/item/:itemId/traceability', async ({ projectId, itemId }) => {
+  setLoading();
+  const ctx = await loadItemContext(projectId, itemId, null, 'traceability');
+  if (!ctx) { navigate('/projects'); return; }
+  await renderTraceabilityDashboard(getContent(), ctx);
+});
+
 // Item-level safety
 route('/project/:projectId/item/:itemId/safety/:analysisType', async ({ projectId, itemId, analysisType }) => {
   setLoading();
@@ -281,6 +290,39 @@ route('/project/:projectId/item/:itemId/system/:systemId/vcycle/:phase', async (
 
 route('/project/:projectId/item/:itemId/system/:systemId', async ({ projectId, itemId, systemId }) => {
   navigate(`/project/${projectId}/item/${itemId}/system/${systemId}/domain/system/vcycle/item_definition`);
+});
+
+// ── Review routes ─────────────────────────────────────────────────────
+route('/project/:projectId/item/:itemId/reviews/new', async ({ projectId, itemId }) => {
+  setLoading();
+  const ctx = await loadItemContext(projectId, itemId, null, 'reviews');
+  if (!ctx) { navigate('/projects'); return; }
+  const { renderReviewSessionWizard } = await import('./pages/review-session-wizard.js');
+  await renderReviewSessionWizard(getContent(), ctx);
+});
+
+route('/project/:projectId/item/:itemId/reviews/:sessionId/findings', async ({ projectId, itemId, sessionId }) => {
+  setLoading();
+  const ctx = await loadItemContext(projectId, itemId, null, 'reviews');
+  if (!ctx) { navigate('/projects'); return; }
+  const { renderReviewFindings } = await import('./pages/review-findings.js');
+  await renderReviewFindings(getContent(), { ...ctx, sessionId });
+});
+
+route('/project/:projectId/item/:itemId/reviews/:sessionId/execute', async ({ projectId, itemId, sessionId }) => {
+  setLoading();
+  const ctx = await loadItemContext(projectId, itemId, null, 'reviews');
+  if (!ctx) { navigate('/projects'); return; }
+  const { renderReviewExecute } = await import('./pages/review-execute.js');
+  await renderReviewExecute(getContent(), { ...ctx, sessionId });
+});
+
+route('/project/:projectId/item/:itemId/reviews', async ({ projectId, itemId }) => {
+  setLoading();
+  const ctx = await loadItemContext(projectId, itemId, null, 'reviews');
+  if (!ctx) { navigate('/projects'); return; }
+  const { renderReviewDashboard } = await import('./pages/review-dashboard.js');
+  await renderReviewDashboard(getContent(), ctx);
 });
 
 // ── Project settings route ────────────────────────────────────────────

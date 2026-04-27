@@ -29,12 +29,20 @@ export async function renderVcycle(container, { project, item, system, phase, do
     return;
   }
 
-  if (phase === 'architecture' && (domain === 'system' || domain === 'default')) {
+  if (phase === 'architecture') {
+    const parentType = system ? 'system' : 'item';
+    const parentId   = system ? system.id : item.id;
+
+    // SW / HW / MECH domains always use the Architecture Specification table layout
+    if (domain === 'sw' || domain === 'hw' || domain === 'mech') {
+      await renderArchSpec(container, { project, item, system, parentType, parentId, domain, pageId });
+      return;
+    }
+
+    // System / default: block diagram for main page; arch-spec for named "specification" sub-pages
     if (pageId) {
       const { data: pg } = await sb.from('nav_pages').select('name').eq('id', pageId).maybeSingle();
       if (pg?.name?.toLowerCase().includes('specification')) {
-        const parentType = system ? 'system' : 'item';
-        const parentId   = system ? system.id : item.id;
         await renderArchSpec(container, { project, item, system, parentType, parentId, domain, pageId });
         return;
       }
