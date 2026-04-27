@@ -10,6 +10,7 @@ import { toast } from '../toast.js';
 import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr } from '../components/col-mgr.js';
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 import { VMODEL_NODES, PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
+import { showVersionHistory } from '../components/version-history.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -413,6 +414,7 @@ function testRowHTML(r) {
           <button class="btn btn-ghost btn-xs spec-move-up"   title="Move up">↑</button>
           <button class="btn btn-ghost btn-xs spec-move-dn"   title="Move down">↓</button>
           <button class="btn btn-ghost btn-xs spec-add-below" title="Add test below">+</button>
+          <button class="btn btn-ghost btn-xs spec-history-btn" title="Version history">🕐</button>
           <button class="btn btn-ghost btn-xs spec-del-btn"   title="Delete" style="color:var(--color-danger)">✕</button>
         </td>`;
       default:
@@ -445,6 +447,10 @@ function wireTestRow(tr, r) {
   });
   tr.querySelector('.spec-add-below')?.addEventListener('click', e => {
     e.stopPropagation(); createTest(r);
+  });
+  tr.querySelector('.spec-history-btn')?.addEventListener('click', e => {
+    e.stopPropagation();
+    showVersionHistory(sb, { artifactType: 'test_specs', artifactId: r.id, artifactCode: r.test_code || r.id, currentData: r });
   });
   tr.querySelector('.spec-del-btn')?.addEventListener('click', async e => {
     e.stopPropagation();

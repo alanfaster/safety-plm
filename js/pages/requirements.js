@@ -7,6 +7,7 @@ import { loadColConfig, saveColConfig, wireColMgr } from '../components/col-mgr.
 import { copyElementLink, scrollToAnchor } from '../deep-link.js';
 import { VMODEL_NODES, PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
+import { showVersionHistory } from '../components/version-history.js';
 
 const REQ_TYPES      = ['functional','performance','safety','safety-independency','interface','constraint'];
 const REQ_STATUSES   = ['draft','review','approved','deprecated'];
@@ -549,6 +550,16 @@ function wireAllRows(tbody) {
     };
   });
 
+  // Version history
+  tbody.querySelectorAll('.btn-history-req').forEach(btn => {
+    btn.onclick = e => {
+      e.stopPropagation();
+      const req = _data.find(r => r.id === btn.dataset.id);
+      if (!req) return;
+      showVersionHistory(sb, { artifactType: 'requirements', artifactId: req.id, artifactCode: req.req_code || req.id, currentData: req });
+    };
+  });
+
   // Delete requirement (with connection check)
   tbody.querySelectorAll('.btn-del-req').forEach(btn => {
     btn.onclick = async () => {
@@ -1000,6 +1011,9 @@ function wireNewRow(tr, req, tbody) {
     btn.onclick = () => openReqModal({ project, parentType, parentId,
       projectType: project.type, existing: req });
   });
+  tr.querySelectorAll('.btn-history-req').forEach(btn => {
+    btn.onclick = e => { e.stopPropagation(); showVersionHistory(sb, { artifactType: 'requirements', artifactId: req.id, artifactCode: req.req_code || req.id, currentData: req }); };
+  });
   tr.querySelectorAll('.btn-copy-link').forEach(btn => {
     btn.onclick = e => { e.stopPropagation(); copyElementLink(`req-${btn.dataset.id}`); };
   });
@@ -1360,6 +1374,7 @@ function reqTd(c, r) {
         <button class="btn btn-ghost btn-xs btn-trace-req" data-id="${r.id}" title="Traceability" style="${_traceFields.length ? '' : 'opacity:0.35'}">⛓</button>
         <button class="btn btn-ghost btn-xs btn-view-req"  data-id="${r.id}" title="View detail">👁</button>
         <button class="btn btn-ghost btn-xs btn-copy-link" data-id="${r.id}" title="Copy link">🔗</button>
+        <button class="btn btn-ghost btn-xs btn-history-req" data-id="${r.id}" title="Version history">🕐</button>
         <button class="btn btn-ghost btn-xs btn-del-req"   data-id="${r.id}" data-title="${esc(r.title)}" style="color:var(--color-danger)" title="Delete">✕</button>
       </td>`;
     case 'system_component': {
