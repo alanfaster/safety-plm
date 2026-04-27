@@ -308,8 +308,8 @@ const NODE_H = 36;
 const DRAG_THRESHOLD = 5;
 
 // Domain panel dimensions
-const PANEL_W = 820;
-const PANEL_H = 370;
+const PANEL_W = 1100;
+const PANEL_H = 520;
 
 // ── Mount ─────────────────────────────────────────────────────────────────────
 
@@ -358,7 +358,11 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
             title="Multi-system: Item Requirements + Item Architecture above System Requirements">↺ Multi-System</button>
           <button class="btn btn-secondary btn-sm" id="vme-load-multidom"
             title="Multi-Domain: shared top chain + interactive SW/HW/MECH domain panels with full V each">↺ Multi-Domain</button>
-          <button class="btn btn-ghost btn-sm" id="vme-autofit" title="Fit all nodes into view">⊡ Autofit</button>
+          <div class="vme-zoom-group">
+            <button class="btn btn-ghost btn-sm vme-zoom-btn" id="vme-zoom-in"  title="Zoom in">+</button>
+            <button class="btn btn-ghost btn-sm vme-zoom-btn" id="vme-zoom-out" title="Zoom out">−</button>
+            <button class="btn btn-ghost btn-sm vme-zoom-btn" id="vme-autofit"  title="Fit all nodes into view">⊡</button>
+          </div>
           <button class="btn btn-ghost btn-sm" id="vme-clear">Clear</button>
         </div>
         <div class="vme-toolbar-right">
@@ -1156,7 +1160,25 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     requestAnimationFrame(autofit);
   }
 
+  function applyMainScale() {
+    canvas.style.transform       = `scale(${_scale})`;
+    canvas.style.transformOrigin = '0 0';
+  }
+
+  wrapper.querySelector('#vme-zoom-in').addEventListener('click', () => {
+    _scale = Math.min(_scale * 1.25, 3); applyMainScale();
+  });
+  wrapper.querySelector('#vme-zoom-out').addEventListener('click', () => {
+    _scale = Math.max(_scale / 1.25, 0.15); applyMainScale();
+  });
   wrapper.querySelector('#vme-autofit').addEventListener('click', autofit);
+
+  wrapper.querySelector('.vme-canvas-scroll').addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    _scale = Math.min(Math.max(_scale * factor, 0.15), 3);
+    applyMainScale();
+  }, { passive: false });
   wrapper.querySelector('#vme-load-aspice-ext').addEventListener('click', () => loadTemplate(ASPICE_EXT_NODES, ASPICE_EXT_LINKS));
   wrapper.querySelector('#vme-load-iso26262').addEventListener('click', () => loadTemplate(ISO26262_NODES, ISO26262_LINKS));
   wrapper.querySelector('#vme-load-multisys').addEventListener('click', () => loadTemplate(MULTI_SYS_NODES, MULTI_SYS_LINKS));

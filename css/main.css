@@ -1654,6 +1654,8 @@ tr.req-title-row td { cursor: default; }
   flex-shrink: 0;
 }
 .vme-toolbar-left, .vme-toolbar-right { display: flex; align-items: center; gap: 8px; }
+.vme-zoom-group { display: flex; align-items: center; gap: 1px; }
+.vme-zoom-group .vme-zoom-btn { padding: 2px 8px; min-width: 28px; }
 
 /* Hint bar */
 .vme-hint-bar {
@@ -1924,7 +1926,7 @@ tr.req-title-row td { cursor: default; }
 /* Interactive sub-canvas inside domain panel */
 .vme-dp-canvas {
   position: relative; width: 100%; height: 100%;
-  overflow: hidden; background: #fafbfc; border-radius: 4px;
+  overflow: auto; background: #fafbfc; border-radius: 4px;
   box-sizing: border-box;
 }
 .vme-dp-svg {
