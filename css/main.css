@@ -786,19 +786,22 @@ input, select, textarea { font-family: var(--font); }
 }
 .tdb-sysview-canvas { position: relative; }
 .tdb-svc-svg {
-  position: absolute; top: 0; left: 0; pointer-events: none; z-index: 3;
+  position: absolute; top: 0; left: 0; pointer-events: none;
 }
 .tdb-svc-svg .tdb-link-badge { pointer-events: all; }
+/* lines layer sits below node divs (z-index:1); badges layer sits above (z-index:4) */
+.tdb-svc-lines  { z-index: 1; }
+.tdb-svc-badges { z-index: 4; }
 .tdb-sv-node {
   position: absolute; width: 148px; height: 34px;
   display: flex; align-items: center; justify-content: center;
   font-size: 10px; font-weight: 700; text-align: center;
   border: 1.5px solid; border-radius: 5px;
-  cursor: grab; z-index: 1;
+  cursor: grab; z-index: 2;
   line-height: 1.2; padding: 2px 6px; box-sizing: border-box;
 }
 .tdb-sv-dpanel {
-  position: absolute; z-index: 2;
+  position: absolute; z-index: 3;
   background: var(--color-bg-card);
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius); overflow: hidden;

@@ -94,7 +94,7 @@ function buildSysCanvas(sys, sysViewLinks, nodeMap, stLsMap, stBadgeOff,
     }).join('');
 
   const ctx = { nodePos: effectivePos, pnlX, pnlY };
-  const svgLinks = _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, stBadgeOff, dPosMap, markerId, ctx);
+  const { lines: svgLines, badges: svgBadges } = _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, stBadgeOff, dPosMap, markerId, ctx);
 
   const initDls = domainStats[sys.id]?.[initD] || [];
   const initIds = new Set(domainLinks[initD].flatMap(l => [l.from, l.to]));
@@ -120,7 +120,16 @@ function buildSysCanvas(sys, sysViewLinks, nodeMap, stLsMap, stBadgeOff,
       </div>
       <div class="tdb-sysview-canvas" id="tdb-svc-${esc(sys.id)}"
            style="width:${svcW}px;height:${svcH}px">
+        <!-- Layer 1: connection lines (below nodes) -->
+        <svg class="tdb-svc-svg tdb-svc-lines" width="${svcW}" height="${svcH}" xmlns="http://www.w3.org/2000/svg" style="z-index:1">
+          <defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/>
+          </marker></defs>
+          ${svgLines}
+        </svg>
+        <!-- Layer 2: node boxes -->
         ${nodeDivs}
+        <!-- Layer 3: domain panel -->
         <div class="tdb-sv-dpanel" id="tdb-svdp-${esc(sys.id)}"
              style="left:${pnlX}px;top:${pnlY}px;width:${SVC_PNL_W}px;height:${SVC_PNL_H}px">
           <div class="tdb-sv-dpanel-hdr">⠿ Domain Implementations</div>
@@ -129,12 +138,9 @@ function buildSysCanvas(sys, sysViewLinks, nodeMap, stLsMap, stBadgeOff,
                data-sys="${esc(sys.id)}" data-domain="${initD}"
                style="height:${SVC_PNL_DOM_H}px">${initDomSvg}</div>
         </div>
-        <!-- SVG last so it paints above nodes; pointer-events:none lets mouse reach node divs -->
-        <svg class="tdb-svc-svg" width="${svcW}" height="${svcH}" xmlns="http://www.w3.org/2000/svg">
-          <defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-            <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/>
-          </marker></defs>
-          ${svgLinks}
+        <!-- Layer 4: badges (above nodes, pointer-events:none except on badge elements) -->
+        <svg class="tdb-svc-svg tdb-svc-badges" width="${svcW}" height="${svcH}" xmlns="http://www.w3.org/2000/svg" style="z-index:4">
+          ${svgBadges}
         </svg>
       </div>
     </div>`;
@@ -157,23 +163,26 @@ function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId, ctx)
     return nodePos[id] || null;
   }
 
+  // Returns { lines, badges } so caller can render them in separate SVG layers
   const drawnCross = new Set();
-  return links.map(link => {
+  const lines = [], badges = [];
+  for (const link of links) {
     const fp = pos(link.from), tp = pos(link.to);
-    if (!fp || !tp) return '';
+    if (!fp || !tp) continue;
     const fn = nodeMap[link.from], tn = nodeMap[link.to];
     const isCross = SUB_DOM.has(fn?.domain) || SUB_DOM.has(tn?.domain);
 
     if (isCross) {
       const mainId = SUB_DOM.has(fn?.domain) ? link.to : link.from;
-      if (drawnCross.has(mainId)) return '';
+      if (drawnCross.has(mainId)) continue;
       drawnCross.add(mainId);
-      const mp = nodePos[mainId]; if (!mp) return '';
+      const mp = nodePos[mainId]; if (!mp) continue;
       const x1=mp.x+NODE_W/2, y1=mp.y+NODE_H;
       const x2=pnlX+SVC_PNL_W*0.28, y2=pnlY;
-      return `<path d="M${x1},${y1} Q${x1},${(y1+y2)/2} ${x2},${y2}"
+      lines.push(`<path d="M${x1},${y1} Q${x1},${(y1+y2)/2} ${x2},${y2}"
         stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="5,3" fill="none" opacity="0.55"
-        marker-end="url(#${markerId})"/>`;
+        marker-end="url(#${markerId})"/>`);
+      continue;
     }
 
     const x1=fp.x+NODE_W/2, y1=fp.y+NODE_H/2, x2=tp.x+NODE_W/2, y2=tp.y+NODE_H/2;
@@ -198,7 +207,8 @@ function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId, ctx)
     const bo=(badgeOff||{})[badgeKey]||{dx:0,dy:0};
     const bmx=mx+bo.dx, bmy=my+bo.dy, bx=bmx-BW/2, by=bmy-BH/2;
     const tetherVis = (bo.dx!==0||bo.dy!==0) ? '0.7' : '0';
-    return `<path d="${dPath}" stroke="${lc}" stroke-width="2" fill="none" stroke-dasharray="5,3" opacity="0.75"/>
+    lines.push(`<path d="${dPath}" stroke="${lc}" stroke-width="2" fill="none" stroke-dasharray="5,3" opacity="0.75"/>`);
+    badges.push(`
       <line data-tether="${badgeKey}" x1="${mx}" y1="${my}" x2="${bmx}" y2="${bmy}"
             stroke="#aaa" stroke-width="1" stroke-dasharray="3,3" opacity="${tetherVis}" pointer-events="none"/>
       <g class="tdb-link-badge tdb-link-badge--clickable"
@@ -209,8 +219,9 @@ function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId, ctx)
               fill="${_pctCol(fp2)}" font-family="system-ui,sans-serif">${esc(ft)}</text>
         <text x="${bmx}" y="${by+22}" text-anchor="middle" font-size="9" font-weight="600"
               fill="${_pctCol(bp2)}" font-family="system-ui,sans-serif">${esc(bt)}</text>
-      </g>`;
-  }).join('');
+      </g>`);
+  }
+  return { lines: lines.join(''), badges: badges.join('') };
 }
 
 // Domain visibility per system — populated by loadDashboard, consumed by getParents.
@@ -740,15 +751,17 @@ async function loadDashboard(project, item, systems) {
       // Refresh outer canvas SVG links
       const stLsMap = {};
       for (const ls of stls) stLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
-      const svgEl = document.querySelector(`#tdb-svc-${sys.id} .tdb-svc-svg`);
-      if (svgEl) {
+      const linesEl  = document.querySelector(`#tdb-svc-${sys.id} .tdb-svc-lines`);
+      const badgesEl = document.querySelector(`#tdb-svc-${sys.id} .tdb-svc-badges`);
+      if (linesEl && badgesEl) {
         const markerId = `sv-arr-${sys.id.replace(/[^a-z0-9]/gi,'_')}`;
         const rLayout = _svcLayout[sys.id] || {};
         const rEffPos = Object.assign({}, rLayout.pos || {}, _svcNodePosOverride[sys.id] || {});
         const rCtx = { nodePos: rEffPos, pnlX: rLayout.pnlX, pnlY: rLayout.pnlY };
-        svgEl.innerHTML = `<defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-          <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/></marker></defs>` +
-          _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sys.id], dPosMap, markerId, rCtx);
+        const { lines, badges } = _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sys.id], dPosMap, markerId, rCtx);
+        linesEl.innerHTML  = `<defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/></marker></defs>` + lines;
+        badgesEl.innerHTML = badges;
         wireSysCanvasDrag(sys.id, sys, stls);
       }
       // Refresh active domain SVG
@@ -854,7 +867,7 @@ async function loadDashboard(project, item, systems) {
         const cp = clientToCanvas(e.clientX, e.clientY);
         const ddx = cp.x - drag.startCX, ddy = cp.y - drag.startCY;
         drag.el.setAttribute('transform', `translate(${drag.origDx+ddx},${drag.origDy+ddy})`);
-        const svg = canvas.querySelector('.tdb-svc-svg');
+        const svg = canvas.querySelector('.tdb-svc-badges');
         const tether = svg?.querySelector(`[data-tether="${drag.key}"]`);
         if (tether) {
           tether.setAttribute('x2', parseFloat(tether.getAttribute('x1')) + drag.origDx + ddx);
@@ -906,17 +919,19 @@ async function loadDashboard(project, item, systems) {
   }
 
   function _rebuildSvcSvg(sysId, sys, stls) {
-    const svgEl = document.querySelector(`#tdb-svc-${sysId} .tdb-svc-svg`);
-    if (!svgEl) return;
+    const linesEl  = document.querySelector(`#tdb-svc-${sysId} .tdb-svc-lines`);
+    const badgesEl = document.querySelector(`#tdb-svc-${sysId} .tdb-svc-badges`);
+    if (!linesEl || !badgesEl) return;
     const stLsMap = {};
     for (const ls of stls) stLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
     const markerId = `sv-arr-${sysId.replace(/[^a-z0-9]/gi,'_')}`;
     const layout = _svcLayout[sysId] || {};
     const effectivePos = Object.assign({}, layout.pos || {}, _svcNodePosOverride[sysId] || {});
     const ctx = { nodePos: effectivePos, pnlX: layout.pnlX, pnlY: layout.pnlY };
-    svgEl.innerHTML = `<defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/></marker></defs>` +
-      _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sysId], dPosMap, markerId, ctx);
+    const { lines, badges } = _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sysId], dPosMap, markerId, ctx);
+    linesEl.innerHTML  = `<defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/></marker></defs>` + lines;
+    badgesEl.innerHTML = badges;
   }
 
   // ── Canvas zoom wiring ─────────────────────────────────────────────────────
