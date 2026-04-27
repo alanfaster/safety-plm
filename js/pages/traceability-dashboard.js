@@ -14,30 +14,51 @@ const NODE_W = 148;
 const NODE_H = 34;
 
 // ── Per-system canvas (HTML nodes + SVG lines + embedded domain panel) ────────
-// V-shape layout: left arm descends diagonally, domain panel at bottom, right arm ascends
-// Step between adjacent nodes: 65px horizontal, 75px vertical
-const SVC_POS = {
-  customer_req: {x:20,  y:20 },
-  fsr:          {x:85,  y:95 },
-  tsr:          {x:150, y:170},
-  item_req:     {x:215, y:245},
-  item_arch:    {x:280, y:320},
-  sys_req:      {x:345, y:395},
-  sys_arch:     {x:410, y:470},
-  // right arm (mirrors left arm y-levels, positioned after domain panel)
-  sys_it:       {x:1005, y:470},
-  sys_qt:       {x:1070, y:395},
-  item_it:      {x:1135, y:320},
-  item_qt:      {x:1200, y:245},
-};
-const SVC_PNL_X = 475, SVC_PNL_Y = 510;
-const SVC_PNL_W = 500, SVC_PNL_H = 400;   // wide+tall panel so inner diagram is readable
-const SVC_PNL_HDR = 28, SVC_PNL_TABS = 32;
+// V-shape layout constants — positions computed dynamically per canvas
+const SVC_PNL_W   = 500, SVC_PNL_H   = 400;  // domain panel size
+const SVC_PNL_HDR = 28,  SVC_PNL_TABS = 32;
 const SVC_PNL_DOM_H = SVC_PNL_H - SVC_PNL_HDR - SVC_PNL_TABS;
-const SVC_W = 1380, SVC_H = SVC_PNL_Y + SVC_PNL_H + 30;
+const SVC_STEP_X = 65, SVC_STEP_Y = 75;       // diagonal step per level
+const SVC_LEFT_ARM  = ['customer_req','fsr','tsr','item_req','item_arch','sys_req','sys_arch'];
+const SVC_RIGHT_ARM = ['sys_it','sys_qt','item_it','item_qt'];
+const SVC_RIGHT_MIRROR = { sys_it:'sys_arch', sys_qt:'sys_req', item_it:'item_arch', item_qt:'item_req' };
 
-// Per-session node position overrides (reset on page reload)
-const _svcNodePosOverride = {}; // { [sysId]: { [nodeId]: {x, y} } }
+// Computed per-system layout cache (reset on page reload)
+const _svcLayout = {};          // { [sysId]: { pos, pnlX, pnlY, svcW, svcH } }
+const _svcNodePosOverride = {}; // { [sysId]: { [nodeId]: {x, y} } } — drag overrides
+
+function _computeSvcLayout(placed, nodeMap) {
+  const SUB_DOM = new Set(['sw','hw','mech']);
+  const pos = {};
+  // Left arm: only nodes that are linked and present in nodeMap
+  const leftActive = SVC_LEFT_ARM.filter(id =>
+    placed.has(id) && nodeMap[id] && !SUB_DOM.has(nodeMap[id].domain));
+  leftActive.forEach((id, i) => {
+    pos[id] = { x: 20 + i * SVC_STEP_X, y: 20 + i * SVC_STEP_Y };
+  });
+  // Domain panel: one step below & right of last left-arm node
+  const lastLeft = leftActive.length
+    ? pos[leftActive[leftActive.length - 1]]
+    : { x: 20, y: 20 };
+  const pnlX = lastLeft.x + SVC_STEP_X;
+  const pnlY = lastLeft.y + SVC_STEP_Y + 10;
+  // Right arm: x starts after panel, y mirrors left counterpart
+  const rightActive = SVC_RIGHT_ARM.filter(id =>
+    placed.has(id) && nodeMap[id] && !SUB_DOM.has(nodeMap[id].domain));
+  rightActive.forEach((id, i) => {
+    const mirrorPos = pos[SVC_RIGHT_MIRROR[id]];
+    const y = mirrorPos ? mirrorPos.y : lastLeft.y - (rightActive.length - 1 - i) * SVC_STEP_Y;
+    pos[id] = { x: pnlX + SVC_PNL_W + 20 + i * SVC_STEP_X, y };
+  });
+  // Canvas bounding box
+  const allX = Object.values(pos).map(p => p.x + NODE_W);
+  const allY = Object.values(pos).map(p => p.y + NODE_H);
+  allX.push(pnlX + SVC_PNL_W + 20);
+  allY.push(pnlY + SVC_PNL_H + 20);
+  const svcW = Math.max(...allX) + 20;
+  const svcH = Math.max(...allY) + 10;
+  return { pos, pnlX, pnlY, svcW, svcH };
+}
 
 function buildSysCanvas(sys, sysViewLinks, nodeMap, stLsMap, stBadgeOff,
                         domainLinks, dPosMap, domainStats, domBadgeOff, nodePosOverride) {
@@ -55,18 +76,25 @@ function buildSysCanvas(sys, sysViewLinks, nodeMap, stLsMap, stBadgeOff,
   const markerId = `sv-arr-${sys.id.replace(/[^a-z0-9]/gi,'_')}`;
 
   const placed = new Set(sysViewLinks.flatMap(l => [l.from, l.to]));
-  const nodeDivs = [...placed]
-    .filter(id => { const n = nodeMap[id]; return n && !SUB_DOM.has(n.domain) && SVC_POS[id]; })
+  // Compute dynamic V-shape layout and cache it
+  const layout = _computeSvcLayout(placed, nodeMap);
+  _svcLayout[sys.id] = layout;
+  const { pos: basePos, pnlX, pnlY, svcW, svcH } = layout;
+  // Merge base positions with per-session drag overrides
+  const effectivePos = Object.assign({}, basePos, nodePosOverride || {});
+
+  const nodeDivs = Object.keys(basePos)
     .map(id => {
-      const n = nodeMap[id];
-      const p = (nodePosOverride || {})[id] || SVC_POS[id];
+      const n = nodeMap[id]; if (!n) return '';
+      const p = effectivePos[id];
       const c = DC[n.domain] || DC.system;
       return `<div class="tdb-sv-node" data-nid="${esc(id)}"
-        style="left:${p.x}px;top:${p.y}px;background:${c.fill};border-color:${c.stroke};color:${c.text};cursor:grab">
+        style="left:${p.x}px;top:${p.y}px;background:${c.fill};border-color:${c.stroke};color:${c.text}">
         ${esc(n.label)}</div>`;
     }).join('');
 
-  const svgLinks = _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, stBadgeOff, dPosMap, markerId, nodePosOverride);
+  const ctx = { nodePos: effectivePos, pnlX, pnlY };
+  const svgLinks = _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, stBadgeOff, dPosMap, markerId, ctx);
 
   const initDls = domainStats[sys.id]?.[initD] || [];
   const initIds = new Set(domainLinks[initD].flatMap(l => [l.from, l.to]));
@@ -91,37 +119,42 @@ function buildSysCanvas(sys, sysViewLinks, nodeMap, stLsMap, stBadgeOff,
         <button class="btn btn-ghost btn-xs tdb-zoom-btn" data-zoom="fit">⊡</button>
       </div>
       <div class="tdb-sysview-canvas" id="tdb-svc-${esc(sys.id)}"
-           style="width:${SVC_W}px;height:${SVC_H}px">
-        <svg class="tdb-svc-svg" width="${SVC_W}" height="${SVC_H}" xmlns="http://www.w3.org/2000/svg">
-          <defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-            <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/>
-          </marker></defs>
-          ${svgLinks}
-        </svg>
+           style="width:${svcW}px;height:${svcH}px">
         ${nodeDivs}
         <div class="tdb-sv-dpanel" id="tdb-svdp-${esc(sys.id)}"
-             style="left:${SVC_PNL_X}px;top:${SVC_PNL_Y}px;width:${SVC_PNL_W}px;height:${SVC_PNL_H}px">
+             style="left:${pnlX}px;top:${pnlY}px;width:${SVC_PNL_W}px;height:${SVC_PNL_H}px">
           <div class="tdb-sv-dpanel-hdr">⠿ Domain Implementations</div>
           <div class="tdb-dom-tabbar">${tabsHtml}</div>
           <div class="tdb-dom-full-wrap" id="tdb-dsvg-${esc(sys.id)}-active"
                data-sys="${esc(sys.id)}" data-domain="${initD}"
                style="height:${SVC_PNL_DOM_H}px">${initDomSvg}</div>
         </div>
+        <!-- SVG last so it paints above nodes; pointer-events:none lets mouse reach node divs -->
+        <svg class="tdb-svc-svg" width="${svcW}" height="${svcH}" xmlns="http://www.w3.org/2000/svg">
+          <defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/>
+          </marker></defs>
+          ${svgLinks}
+        </svg>
       </div>
     </div>`;
 }
 
-function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId, nodePosOverride) {
+// ctx = { nodePos: {id->{x,y}}, pnlX: number, pnlY: number }
+function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId, ctx) {
   const SUB_DOM = new Set(['sw','hw','mech']);
   const _pctCol = p => p===null?'#9ca3af':p===100?'#34a853':p>=50?'#fbbc04':'#ea4335';
+  const nodePos = ctx?.nodePos || {};
+  const pnlX = ctx?.pnlX ?? 475;
+  const pnlY = ctx?.pnlY ?? 510;
 
   function pos(id) {
     const n = nodeMap[id]; if (!n) return null;
     if (SUB_DOM.has(n.domain)) {
       const p = (dPosMap[n.domain] || {})[id];
-      return p ? {x:SVC_PNL_X+p.x, y:SVC_PNL_Y+SVC_PNL_HDR+SVC_PNL_TABS+p.y} : null;
+      return p ? {x:pnlX+p.x, y:pnlY+SVC_PNL_HDR+SVC_PNL_TABS+p.y} : null;
     }
-    return (nodePosOverride || {})[id] || SVC_POS[id] || null;
+    return nodePos[id] || null;
   }
 
   const drawnCross = new Set();
@@ -135,9 +168,9 @@ function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId, node
       const mainId = SUB_DOM.has(fn?.domain) ? link.to : link.from;
       if (drawnCross.has(mainId)) return '';
       drawnCross.add(mainId);
-      const mp = SVC_POS[mainId]; if (!mp) return '';
+      const mp = nodePos[mainId]; if (!mp) return '';
       const x1=mp.x+NODE_W/2, y1=mp.y+NODE_H;
-      const x2=SVC_PNL_X+SVC_PNL_W*0.28, y2=SVC_PNL_Y;
+      const x2=pnlX+SVC_PNL_W*0.28, y2=pnlY;
       return `<path d="M${x1},${y1} Q${x1},${(y1+y2)/2} ${x2},${y2}"
         stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="5,3" fill="none" opacity="0.55"
         marker-end="url(#${markerId})"/>`;
@@ -710,9 +743,12 @@ async function loadDashboard(project, item, systems) {
       const svgEl = document.querySelector(`#tdb-svc-${sys.id} .tdb-svc-svg`);
       if (svgEl) {
         const markerId = `sv-arr-${sys.id.replace(/[^a-z0-9]/gi,'_')}`;
+        const rLayout = _svcLayout[sys.id] || {};
+        const rEffPos = Object.assign({}, rLayout.pos || {}, _svcNodePosOverride[sys.id] || {});
+        const rCtx = { nodePos: rEffPos, pnlX: rLayout.pnlX, pnlY: rLayout.pnlY };
         svgEl.innerHTML = `<defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
           <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/></marker></defs>` +
-          _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sys.id], dPosMap, markerId, _svcNodePosOverride[sys.id]);
+          _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sys.id], dPosMap, markerId, rCtx);
         wireSysCanvasDrag(sys.id, sys, stls);
       }
       // Refresh active domain SVG
@@ -797,7 +833,7 @@ async function loadDashboard(project, item, systems) {
       e.preventDefault();
       const nodeId = nd.dataset.nid;
       const cp = clientToCanvas(e.clientX, e.clientY);
-      const curPos = (_svcNodePosOverride[sysId] || {})[nodeId] || SVC_POS[nodeId];
+      const curPos = (_svcNodePosOverride[sysId] || {})[nodeId] || (_svcLayout[sysId]?.pos || {})[nodeId];
       if (!curPos) return;
       drag = { type:'node', nodeId, el:nd, offX:cp.x - curPos.x, offY:cp.y - curPos.y,
                moved:false, startX:e.clientX, startY:e.clientY };
@@ -875,9 +911,12 @@ async function loadDashboard(project, item, systems) {
     const stLsMap = {};
     for (const ls of stls) stLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
     const markerId = `sv-arr-${sysId.replace(/[^a-z0-9]/gi,'_')}`;
+    const layout = _svcLayout[sysId] || {};
+    const effectivePos = Object.assign({}, layout.pos || {}, _svcNodePosOverride[sysId] || {});
+    const ctx = { nodePos: effectivePos, pnlX: layout.pnlX, pnlY: layout.pnlY };
     svgEl.innerHTML = `<defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/></marker></defs>` +
-      _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sysId], dPosMap, markerId, _svcNodePosOverride[sysId]);
+      _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sysId], dPosMap, markerId, ctx);
   }
 
   // ── Canvas zoom wiring ─────────────────────────────────────────────────────
@@ -888,16 +927,20 @@ async function loadDashboard(project, item, systems) {
     let scale = 1;
     const STEP = 0.12, MIN = 0.3, MAX = 2.0;
     function applyScale() {
+      const { svcH } = _svcLayout[sysId] || { svcH: 800 };
       canvas.style.transform = `scale(${scale})`;
       canvas.style.transformOrigin = '0 0';
-      outer.style.height = Math.ceil(SVC_H * scale + 4) + 'px';
+      outer.style.height = Math.ceil(svcH * scale + 4) + 'px';
       outer.dataset.svcScale = String(scale);
     }
     outer.querySelector('[data-zoom="+"]')?.addEventListener('click', () => { scale = Math.min(MAX, scale+STEP); applyScale(); });
     outer.querySelector('[data-zoom="-"]')?.addEventListener('click', () => { scale = Math.max(MIN, scale-STEP); applyScale(); });
     outer.querySelector('[data-zoom="fit"]')?.addEventListener('click', () => {
+      const { svcW, svcH } = _svcLayout[sysId] || { svcW: 1200, svcH: 800 };
       const avail = outer.clientWidth - 4;
-      scale = Math.min(1, avail / SVC_W);
+      scale = Math.min(1, avail / svcW);
+      canvas.style.width  = svcW + 'px';
+      canvas.style.height = svcH + 'px';
       applyScale();
     });
   }
