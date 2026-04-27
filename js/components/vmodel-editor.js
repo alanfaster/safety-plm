@@ -727,7 +727,10 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       const a = allNodeMap[link.from], b = allNodeMap[link.to];
       if (!a || !b) return;
       if (!tabIds.has(link.from) && !tabIds.has(link.to)) return; // neither side is in tab
-      drawLinkIn(_panelSVG, link, a, b, true);
+      // Cross-level links carry a main-canvas bend that is meaningless in panel coordinates — strip it
+      const isCrossLevel = !tabIds.has(link.from) || !tabIds.has(link.to);
+      const panelLink = isCrossLevel && link.bend ? { ...link, bend: null } : link;
+      drawLinkIn(_panelSVG, panelLink, a, b, true);
     });
     renderDomainRubberBand();
   }
