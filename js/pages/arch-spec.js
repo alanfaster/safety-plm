@@ -493,7 +493,7 @@ function rowHTML(it) {
       case 'drag':
         return `<td data-col="drag" class="req-drag-handle spec-drag-handle" title="Drag to reorder">⠿</td>`;
       case 'id':
-        return `<td data-col="id" class="spec-id-cell code-cell">${esc(it.spec_code)}</td>`;
+        return `<td data-col="id" class="spec-id-cell code-cell">${esc(it.spec_code)}${it.version > 1 ? ` <span class="artifact-version-badge">v${it.version}</span>` : ''}</td>`;
       case 'description':
         return `<td data-col="description" class="spec-desc-cell">
           ${it.component_ref_id ? '<span class="spec-auto-badge" title="Name synced from Architecture Concept (read-only)">AUTO</span>' : ''}

@@ -127,6 +127,7 @@ export function mountReviewChecklist(container, opts) {
         <div class="rvck-artifact-detail">
           <div class="rvck-artifact-detail-header">
             <span class="rvck-snap-code">${escHtml(snapshot.artifact_code || snapshot.artifact_type)}</span>
+            ${snapshot.artifact_version != null ? `<span class="artifact-version-badge">v${snapshot.artifact_version}</span>` : ''}
             <span class="rvck-snap-title">${escHtml(snapshot.artifact_title || '')}</span>
             <span class="badge badge-${escHtml(data.status || 'draft')}">${escHtml(data.status || '—')}</span>
             <span class="rvck-snap-at text-muted">Snapshot: ${formatDate(snapshot.snapshotted_at)}</span>

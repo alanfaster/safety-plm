@@ -1308,6 +1308,7 @@ function reqTd(c, r) {
       return `<td data-col="code" class="code-cell" style="white-space:nowrap">
         ${esc(r.req_code)}
         ${ftaLinked ? '<span title="Linked to FTA AND gate" style="margin-left:4px;font-size:10px;color:#1A73E8">⚡</span>' : ''}
+        ${r.version > 1 ? `<span class="artifact-version-badge">v${r.version}</span>` : ''}
       </td>`;
     }
     case 'title': {

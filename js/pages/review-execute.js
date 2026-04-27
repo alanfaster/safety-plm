@@ -213,7 +213,8 @@ export async function renderReviewExecute(container, ctx) {
       <div class="rve-art-card ${mv ? FINAL_VERDICT_CLASSES[mv] : ''}" data-snap-id="${snap.id}">
         <div class="rve-art-card-header">
           <span class="rve-art-code">${escHtml(snap.artifact_code || snap.artifact_type)}</span>
-          <div style="display:flex;gap:4px;align-items:center">
+          ${snap.artifact_version != null ? `<span class="artifact-version-badge">v${snap.artifact_version}</span>` : ''}
+          <div style="display:flex;gap:4px;align-items:center;margin-left:auto">
             ${drifted ? `<span class="rve-drift-badge" title="Changed since snapshot">⚠</span>` : ''}
             ${mv ? `<span class="rve-artcard-verdict-badge rve-artcard-verdict-${mv}">${mv === 'go' ? '✓ GO' : mv === 'no_go' ? '✗ NO-GO' : '⚑ Cond.'}</span>` : ''}
           </div>
@@ -643,7 +644,7 @@ export async function renderReviewExecute(container, ctx) {
     const { data: newSnap } = await sb.from('review_artifact_snapshots').insert({
       session_id: sessionId, artifact_type: snap.artifact_type, artifact_id: snap.artifact_id,
       artifact_code: snap.artifact_code, artifact_title: live.title || live.name || snap.artifact_title,
-      snapshot_data: live, artifact_updated_at: live.updated_at, is_current: true,
+      snapshot_data: live, artifact_updated_at: live.updated_at, artifact_version: live.version ?? null, is_current: true,
     }).select().single();
 
     if (newSnap) {

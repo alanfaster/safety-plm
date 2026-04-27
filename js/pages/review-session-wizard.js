@@ -345,14 +345,16 @@ export async function renderReviewSessionWizard(container, ctx) {
         if (!art) continue;
         // Fetch full row for snapshot_data
         const fullRow = await fetchFullArtifact(type, id);
+        const row = fullRow || art;
         snapshotInserts.push({
           session_id:          session.id,
           artifact_type:       type,
           artifact_id:         id,
           artifact_code:       art.code || art.req_code || art.spec_code || art.test_code || '',
           artifact_title:      art.title || art.name || '',
-          snapshot_data:       fullRow || art,
+          snapshot_data:       row,
           artifact_updated_at: art.updated_at || null,
+          artifact_version:    row.version ?? null,
           is_current:          true,
         });
       }

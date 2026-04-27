@@ -393,7 +393,7 @@ function testRowHTML(r) {
       case 'drag':
         return `<td data-col="drag" class="spec-drag-cell"><span class="spec-drag-handle" title="Drag">⠿</span></td>`;
       case 'code':
-        return `<td data-col="code" class="code-cell" style="white-space:nowrap">${esc(r.test_code || '—')}</td>`;
+        return `<td data-col="code" class="code-cell" style="white-space:nowrap">${esc(r.test_code || '—')}${r.version > 1 ? ` <span class="artifact-version-badge">v${r.version}</span>` : ''}</td>`;
       case 'name':
         return `<td data-col="name"><strong style="font-size:13px">${esc(r.name || 'Untitled')}</strong></td>`;
       case 'type':
