@@ -13,6 +13,155 @@ import { toast } from '../toast.js';
 const NODE_W = 148;
 const NODE_H = 34;
 
+// ── Per-system canvas (HTML nodes + SVG lines + embedded domain panel) ────────
+const SVC_POS = {
+  customer_req:{x:20,  y:20}, fsr:{x:20,  y:82},  tsr:{x:20,  y:144},
+  item_req:    {x:185, y:20}, item_arch:{x:185, y:82},
+  item_it:     {x:900, y:82}, item_qt:{x:900, y:20},
+  sys_req:     {x:350, y:82}, sys_arch:{x:350, y:144},
+  sys_it:      {x:735, y:144}, sys_qt:{x:735, y:82},
+};
+const SVC_PNL_X = 350, SVC_PNL_Y = 236;
+const SVC_PNL_W = 580, SVC_PNL_H = 320;
+const SVC_PNL_HDR = 28, SVC_PNL_TABS = 32;
+const SVC_PNL_DOM_H = SVC_PNL_H - SVC_PNL_HDR - SVC_PNL_TABS;
+const SVC_W = 1090, SVC_H = SVC_PNL_Y + SVC_PNL_H + 30;
+
+function buildSysCanvas(sys, sysViewLinks, nodeMap, stLsMap, stBadgeOff,
+                        domainLinks, dPosMap, domainStats, domBadgeOff) {
+  const DC = {
+    system:  {fill:'#e8f0fe',stroke:'#4285f4',text:'#1a56db'},
+    sw:      {fill:'#e6f4ea',stroke:'#34a853',text:'#1e7e34'},
+    hw:      {fill:'#fce8e6',stroke:'#ea4335',text:'#c62828'},
+    mech:    {fill:'#f3e8fd',stroke:'#9c27b0',text:'#6a1b9a'},
+    safety:  {fill:'#fff3e0',stroke:'#ff9800',text:'#e65100'},
+    customer:{fill:'#fffde7',stroke:'#f9a825',text:'#795548'},
+    item:    {fill:'#e0f7fa',stroke:'#00acc1',text:'#006064'},
+  };
+  const SUB_DOM = new Set(['sw','hw','mech']);
+  const initD = 'sw';
+  const markerId = `sv-arr-${sys.id.replace(/[^a-z0-9]/gi,'_')}`;
+
+  const placed = new Set(sysViewLinks.flatMap(l => [l.from, l.to]));
+  const nodeDivs = [...placed]
+    .filter(id => { const n = nodeMap[id]; return n && !SUB_DOM.has(n.domain) && SVC_POS[id]; })
+    .map(id => {
+      const n = nodeMap[id], p = SVC_POS[id], c = DC[n.domain] || DC.system;
+      return `<div class="tdb-sv-node" data-nid="${esc(id)}"
+        style="left:${p.x}px;top:${p.y}px;background:${c.fill};border-color:${c.stroke};color:${c.text}">
+        ${esc(n.label)}</div>`;
+    }).join('');
+
+  const svgLinks = _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, stBadgeOff, dPosMap, markerId);
+
+  const initDls = domainStats[sys.id]?.[initD] || [];
+  const initIds = new Set(domainLinks[initD].flatMap(l => [l.from, l.to]));
+  const initMap = {};
+  for (const ls of initDls) initMap[`${ls.link.from}__${ls.link.to}`] = ls;
+  const initDomSvg = initIds.size
+    ? buildVmodelSVG(domainLinks[initD], initIds, dPosMap[initD], nodeMap, initMap, domBadgeOff[initD])
+    : '<svg viewBox="0 0 200 60" width="100%"><text x="10" y="30" font-size="12" fill="#bbb">No links configured</text></svg>';
+
+  const ICONS  = {sw:'◧', hw:'◨', mech:'◎'};
+  const LABELS = {sw:'SW', hw:'HW', mech:'MECH'};
+  const tabsHtml = ['sw','hw','mech'].map((d,i) =>
+    `<button class="tdb-dom-tab${i===0?' tdb-dom-tab--active':''}" data-sys="${esc(sys.id)}" data-domain="${d}">
+      ${ICONS[d]} ${LABELS[d]}</button>`
+  ).join('');
+
+  return `
+    <div class="tdb-sysview-outer" id="tdb-svo-${esc(sys.id)}">
+      <div class="tdb-zoom-bar">
+        <button class="btn btn-ghost btn-xs tdb-zoom-btn" data-zoom="+">＋</button>
+        <button class="btn btn-ghost btn-xs tdb-zoom-btn" data-zoom="-">－</button>
+        <button class="btn btn-ghost btn-xs tdb-zoom-btn" data-zoom="fit">⊡</button>
+      </div>
+      <div class="tdb-sysview-canvas" id="tdb-svc-${esc(sys.id)}"
+           style="width:${SVC_W}px;height:${SVC_H}px">
+        <svg class="tdb-svc-svg" width="${SVC_W}" height="${SVC_H}" xmlns="http://www.w3.org/2000/svg">
+          <defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/>
+          </marker></defs>
+          ${svgLinks}
+        </svg>
+        ${nodeDivs}
+        <div class="tdb-sv-dpanel" id="tdb-svdp-${esc(sys.id)}"
+             style="left:${SVC_PNL_X}px;top:${SVC_PNL_Y}px;width:${SVC_PNL_W}px;height:${SVC_PNL_H}px">
+          <div class="tdb-sv-dpanel-hdr">⠿ Domain Implementations</div>
+          <div class="tdb-dom-tabbar">${tabsHtml}</div>
+          <div class="tdb-dom-full-wrap" id="tdb-dsvg-${esc(sys.id)}-active"
+               data-sys="${esc(sys.id)}" data-domain="${initD}"
+               style="height:${SVC_PNL_DOM_H}px">${initDomSvg}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId) {
+  const SUB_DOM = new Set(['sw','hw','mech']);
+  const _pctCol = p => p===null?'#9ca3af':p===100?'#34a853':p>=50?'#fbbc04':'#ea4335';
+
+  function pos(id) {
+    const n = nodeMap[id]; if (!n) return null;
+    if (SUB_DOM.has(n.domain)) {
+      const p = (dPosMap[n.domain] || {})[id];
+      return p ? {x:SVC_PNL_X+p.x, y:SVC_PNL_Y+SVC_PNL_HDR+SVC_PNL_TABS+p.y} : null;
+    }
+    return SVC_POS[id] || null;
+  }
+
+  const drawnCross = new Set();
+  return links.map(link => {
+    const fp = pos(link.from), tp = pos(link.to);
+    if (!fp || !tp) return '';
+    const fn = nodeMap[link.from], tn = nodeMap[link.to];
+    const isCross = SUB_DOM.has(fn?.domain) || SUB_DOM.has(tn?.domain);
+
+    if (isCross) {
+      const mainId = SUB_DOM.has(fn?.domain) ? link.to : link.from;
+      if (drawnCross.has(mainId)) return '';
+      drawnCross.add(mainId);
+      const mp = SVC_POS[mainId]; if (!mp) return '';
+      const x1=mp.x+NODE_W/2, y1=mp.y+NODE_H;
+      const x2=SVC_PNL_X+SVC_PNL_W*0.28, y2=SVC_PNL_Y;
+      return `<path d="M${x1},${y1} Q${x1},${(y1+y2)/2} ${x2},${y2}"
+        stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="5,3" fill="none" opacity="0.55"
+        marker-end="url(#${markerId})"/>`;
+    }
+
+    const x1=fp.x+NODE_W/2, y1=fp.y+NODE_H/2, x2=tp.x+NODE_W/2, y2=tp.y+NODE_H/2;
+    let mx, my, dPath;
+    if (link.bend) {
+      const bx=(x1+x2)/2+link.bend.x, by=(y1+y2)/2+(link.bend.y||0);
+      dPath=`M${x1},${y1} Q${bx},${by} ${x2},${y2}`;
+      mx=0.25*x1+0.5*bx+0.25*x2; my=0.25*y1+0.5*by+0.25*y2;
+    } else {
+      dPath=`M${x1},${y1} L${x2},${y2}`; mx=(x1+x2)/2; my=(y1+y2)/2;
+    }
+    const ls=lsMap[`${link.from}__${link.to}`];
+    const fwd=ls?.forward, bwd=ls?.backward;
+    const fp2=fwd?.total?Math.round(fwd.linked/fwd.total*100):null;
+    const bp2=bwd?.total?Math.round(bwd.linked/bwd.total*100):null;
+    const minP=fp2!==null&&bp2!==null?Math.min(fp2,bp2):fp2??bp2;
+    const lc=minP===null?'#d1d5db':minP===100?'#34a853':minP>=50?'#fbbc04':'#ea4335';
+    const ft=fwd?`→ ${fwd.linked}/${fwd.total} (${fp2??'N/A'}%)`:'→ N/A';
+    const bt=bwd?`← ${bwd.linked}/${bwd.total} (${bp2??'N/A'}%)`:'← N/A';
+    const BW=Math.max(ft.length,bt.length)*6.2+10, BH=28, BR=4;
+    const bo=(badgeOff||{})[`${link.from}__${link.to}`]||{dx:0,dy:0};
+    const bmx=mx+bo.dx, bmy=my+bo.dy, bx=bmx-BW/2, by=bmy-BH/2;
+    return `<path d="${dPath}" stroke="${lc}" stroke-width="2" fill="none" stroke-dasharray="5,3" opacity="0.75"/>
+      <g class="tdb-link-badge tdb-link-badge--clickable"
+         data-from="${link.from}" data-to="${link.to}" data-mx="${mx}" data-my="${my}" style="cursor:pointer">
+        <rect x="${bx}" y="${by}" width="${BW}" height="${BH}" rx="${BR}"
+              fill="white" stroke="${lc}" stroke-width="1.5" opacity="0.97"/>
+        <text x="${bmx}" y="${by+11}" text-anchor="middle" font-size="9" font-weight="600"
+              fill="${_pctCol(fp2)}" font-family="system-ui,sans-serif">${esc(ft)}</text>
+        <text x="${bmx}" y="${by+22}" text-anchor="middle" font-size="9" font-weight="600"
+              fill="${_pctCol(bp2)}" font-family="system-ui,sans-serif">${esc(bt)}</text>
+      </g>`;
+  }).join('');
+}
+
 // Domain visibility per system — populated by loadDashboard, consumed by getParents.
 // Shape: { [systemId]: Set<domain> } — only contains domains that are hidden.
 let _hiddenDomains   = {};
@@ -386,47 +535,19 @@ async function loadDashboard(project, item, systems) {
   const DOMAIN_LABELS = { sw: 'SW', hw: 'HW', mech: 'MECH' };
 
   const sysPanelsHtml = systems.map(sys => {
-    // System-level top diagram for this system only
     const stls  = sysTopLinkStats[sys.id] || [];
     const stMap = {};
     for (const ls of stls) stMap[`${ls.link.from}__${ls.link.to}`] = ls;
-    const stSvg = buildVmodelSVG(sysViewLinks, sysViewActiveIds, sysViewPosMap, nodeMap, stMap, sysTopBadgeOff[sys.id]);
-
-    // Domain panel — full width, tabs for SW / HW / MECH
-    const firstD = SUB_DOMAINS_LIST[0];
-    const domTabsHtml = SUB_DOMAINS_LIST.map((d, i) => {
-      const hidden = !!_hiddenDomains[sys.id]?.has(d);
-      return `<button class="tdb-dom-tab${i === 0 ? ' tdb-dom-tab--active' : ''}"
-        data-sys="${esc(sys.id)}" data-domain="${d}">
-        ${DOMAIN_ICONS[d]} ${DOMAIN_LABELS[d]}${hidden ? ' <span style="font-size:10px;opacity:0.5">(not active)</span>' : ''}
-      </button>`;
-    }).join('');
-
-    // Build initial SVG for first domain
-    const initD   = firstD;
-    const initDls = domainStats[sys.id]?.[initD] || [];
-    const initIds = new Set(domainLinks[initD].flatMap(l => [l.from, l.to]));
-    const initMap = {};
-    for (const ls of initDls) initMap[`${ls.link.from}__${ls.link.to}`] = ls;
-    const initSvg = initIds.size
-      ? buildVmodelSVG(domainLinks[initD], initIds, dPosMap[initD], nodeMap, initMap, sysDomBadgeOff[sys.id][initD])
-      : '<svg viewBox="0 0 200 60" width="100%"><text x="10" y="30" font-size="12" fill="#bbb">No links configured</text></svg>';
-
+    const canvasHtml = buildSysCanvas(sys, sysViewLinks, nodeMap, stMap, sysTopBadgeOff[sys.id],
+                                      domainLinks, dPosMap, domainStats, sysDomBadgeOff[sys.id]);
     return `
       <div class="tdb-main-panel" id="tdb-panel-${esc(sys.id)}" style="display:none">
-        <!-- System-level diagram -->
-        <div class="card" style="margin-bottom:12px">
+        <div class="card">
           <div class="card-header" style="cursor:pointer" id="tdb-systop-hdr-${esc(sys.id)}">
             <h3 style="font-size:14px">${esc(sys.system_code || sys.code || '')} · ${esc(sys.name || '')}
-              <span style="font-size:11px;font-weight:400;color:var(--color-text-muted)">— item &amp; system level · click to view coverage</span></h3>
+              <span style="font-size:11px;font-weight:400;color:var(--color-text-muted)">— click to view coverage</span></h3>
           </div>
-          <div class="tdb-vmodel-wrap" id="tdb-syssvg-${esc(sys.id)}">${stSvg}</div>
-        </div>
-        <!-- Domain diagram — full width with tabs -->
-        <div class="card">
-          <div class="tdb-dom-tabbar">${domTabsHtml}</div>
-          <div class="tdb-vmodel-wrap tdb-dom-full-wrap" id="tdb-dsvg-${esc(sys.id)}-active"
-               data-sys="${esc(sys.id)}" data-domain="${initD}">${initSvg}</div>
+          ${canvasHtml}
         </div>
       </div>`;
   }).join('');
@@ -485,18 +606,14 @@ async function loadDashboard(project, item, systems) {
     });
   });
 
-  // Wire domain tab click → swap full-width domain SVG
+  // Wire domain tab click → swap domain SVG inside canvas panel
   body.querySelectorAll('.tdb-dom-tab[data-sys]').forEach(btn => {
     btn.addEventListener('click', () => {
       const sysId  = btn.dataset.sys;
       const domain = btn.dataset.domain;
       const sys    = systems.find(s => s.id === sysId);
-
-      // Update active tab style
       body.querySelectorAll(`.tdb-dom-tab[data-sys="${CSS.escape(sysId)}"]`)
         .forEach(b => b.classList.toggle('tdb-dom-tab--active', b === btn));
-
-      // Rebuild SVG for selected domain
       const dls    = domainStats[sysId]?.[domain] || [];
       const dIds   = new Set(domainLinks[domain].flatMap(l => [l.from, l.to]));
       const dlsMap = {};
@@ -504,13 +621,11 @@ async function loadDashboard(project, item, systems) {
       const svgHtml = dIds.size
         ? buildVmodelSVG(domainLinks[domain], dIds, dPosMap[domain], nodeMap, dlsMap, sysDomBadgeOff[sysId][domain])
         : '<svg viewBox="0 0 200 60" width="100%"><text x="10" y="30" font-size="12" fill="#bbb">No links configured</text></svg>';
-
       const wrap = document.getElementById(`tdb-dsvg-${sysId}-active`);
       if (wrap) {
         wrap.dataset.domain = domain;
         wrap.innerHTML = svgHtml;
         wireSvg(wrap, domainLinks[domain], dIds, dPosMap[domain], dls, sysDomBadgeOff[sysId][domain], [sys]);
-        wireDiagramZoom(wrap);
       }
       showCoverageTable(dls, `${sys?.system_code || sys?.name || 'System'} — ${DOMAIN_LABELS[domain]}`);
     });
@@ -520,7 +635,6 @@ async function loadDashboard(project, item, systems) {
   for (const sys of systems) {
     document.getElementById(`tdb-systop-hdr-${sys.id}`)?.addEventListener('click', () => {
       const stls = sysTopLinkStats[sys.id] || [];
-      body.querySelectorAll('.tdb-dom-col--selected').forEach(el => el.classList.remove('tdb-dom-col--selected'));
       showCoverageTable(stls, `${sys.system_code || sys.name || 'System'} — item & system level`);
     });
   }
@@ -568,15 +682,18 @@ async function loadDashboard(project, item, systems) {
         ls.forward  = computeTopLinkCovForSystem(ls.link.from, ls.link.to,   ls.fromNode, sys, item, itemCache);
         ls.backward = computeTopLinkCovForSystem(ls.link.to,   ls.link.from, ls.toNode,   sys, item, itemCache);
       }
+      // Refresh outer canvas SVG links
       const stLsMap = {};
       for (const ls of stls) stLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
-      const stWrap = document.getElementById(`tdb-syssvg-${sys.id}`);
-      if (stWrap) {
-        stWrap.innerHTML = buildVmodelSVG(sysViewLinks, sysViewActiveIds, sysViewPosMap, nodeMap, stLsMap, sysTopBadgeOff[sys.id]);
-        wireBadgeDrag(stWrap, sysTopBadgeOff[sys.id], sysViewLinks, sysViewActiveIds, sysViewPosMap, nodeMap, stls, item, [sys]);
-        wireDiagramZoom(stWrap);
+      const svgEl = document.querySelector(`#tdb-svc-${sys.id} .tdb-svc-svg`);
+      if (svgEl) {
+        const markerId = `sv-arr-${sys.id.replace(/[^a-z0-9]/gi,'_')}`;
+        svgEl.innerHTML = `<defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/></marker></defs>` +
+          _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sys.id], dPosMap, markerId);
+        wireSysCanvasBadges(sys.id, sys, stls);
       }
-      // Active domain SVG (single full-width panel)
+      // Refresh active domain SVG
       const activeWrap = document.getElementById(`tdb-dsvg-${sys.id}-active`);
       if (activeWrap) {
         const activeDomain = activeWrap.dataset.domain || SUB_DOMAINS_LIST[0];
@@ -590,8 +707,7 @@ async function loadDashboard(project, item, systems) {
         for (const ls of dls) dLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
         if (dIds.size) {
           activeWrap.innerHTML = buildVmodelSVG(domainLinks[activeDomain], dIds, dPosMap[activeDomain], nodeMap, dLsMap, sysDomBadgeOff[sys.id][activeDomain]);
-          wireBadgeDrag(activeWrap, sysDomBadgeOff[sys.id][activeDomain], domainLinks[activeDomain], dIds, dPosMap[activeDomain], nodeMap, dls, item, [sys]);
-          wireDiagramZoom(activeWrap);
+          wireSvg(activeWrap, domainLinks[activeDomain], dIds, dPosMap[activeDomain], dls, sysDomBadgeOff[sys.id][activeDomain], [sys]);
         }
       }
     }
@@ -600,10 +716,11 @@ async function loadDashboard(project, item, systems) {
   // Overview SVG
   wireSvg(document.getElementById('tdb-top-svg-wrap'), topLinks, topActiveIds, topPosMap, topLinkStats, badgeOffsets, systems);
 
-  // Per-system panel wiring
+  // Per-system canvas wiring
   for (const sys of systems) {
     const stls = sysTopLinkStats[sys.id] || [];
-    wireSvg(document.getElementById(`tdb-syssvg-${sys.id}`), sysViewLinks, sysViewActiveIds, sysViewPosMap, stls, sysTopBadgeOff[sys.id], [sys]);
+    wireSysCanvasBadges(sys.id, sys, stls);
+    wireSysCanvasZoom(sys.id);
 
     // Wire initial active domain SVG
     const activeWrap = document.getElementById(`tdb-dsvg-${sys.id}-active`);
@@ -615,6 +732,46 @@ async function loadDashboard(project, item, systems) {
         wireSvg(activeWrap, domainLinks[activeDomain], dIds, dPosMap[activeDomain], dls, sysDomBadgeOff[sys.id][activeDomain], [sys]);
       }
     }
+  }
+
+  // ── Canvas badge wiring ────────────────────────────────────────────────────
+  function wireSysCanvasBadges(sysId, sys, stls) {
+    const svgEl = document.querySelector(`#tdb-svc-${sysId} .tdb-svc-svg`);
+    if (!svgEl) return;
+    svgEl.removeEventListener('click', svgEl._badgeHandler);
+    svgEl._badgeHandler = e => {
+      const badge = e.target.closest('.tdb-link-badge--clickable');
+      if (!badge) return;
+      const ls = stls.find(l => l.link.from === badge.dataset.from && l.link.to === badge.dataset.to);
+      if (!ls) return;
+      const hasMissing = (ls.forward?.missing||0) + (ls.backward?.missing||0) > 0;
+      openLinkPanel(ls, allLinkStats, item, [sys], itemCache, nodeMap, project, allTraceLinks,
+        allActiveIds, sysViewPosMap, hasMissing ? 'missing' : 'browse', sysTopBadgeOff[sysId], refreshAllDiagrams);
+    };
+    svgEl.addEventListener('click', svgEl._badgeHandler);
+  }
+
+  // ── Canvas zoom wiring ─────────────────────────────────────────────────────
+  function wireSysCanvasZoom(sysId) {
+    const outer  = document.getElementById(`tdb-svo-${sysId}`);
+    const canvas = document.getElementById(`tdb-svc-${sysId}`);
+    if (!outer || !canvas) return;
+    let scale = 1;
+    const STEP = 0.12, MIN = 0.3, MAX = 2.0;
+    function applyScale() {
+      canvas.style.transform = `scale(${scale})`;
+      canvas.style.transformOrigin = '0 0';
+      outer.style.height = Math.ceil(SVC_H * scale + 4) + 'px';
+    }
+    outer.querySelector('[data-zoom="+"]')?.addEventListener('click', () => { scale = Math.min(MAX, scale+STEP); applyScale(); });
+    outer.querySelector('[data-zoom="-"]')?.addEventListener('click', () => { scale = Math.max(MIN, scale-STEP); applyScale(); });
+    const fitBtn = outer.querySelector('[data-zoom="fit"]');
+    fitBtn?.addEventListener('click', () => {
+      const avail = outer.clientWidth - 4;
+      scale = Math.min(1, avail / SVC_W);
+      applyScale();
+    });
+    requestAnimationFrame(() => fitBtn?.click());
   }
 
   _refreshDiagrams = refreshAllDiagrams;

@@ -761,12 +761,12 @@ input, select, textarea { font-family: var(--font); }
 .tdb-main-panel { display: none; }
 .tdb-main-panel.active { display: block; }
 
-/* Domain full-width tabbed panel */
+/* Domain tab bar (shared by full-width panel and canvas panel) */
 .tdb-dom-tabbar {
   display: flex; gap: 0; border-bottom: 1px solid var(--color-border);
 }
 .tdb-dom-tab {
-  padding: 8px 20px; font-size: 12px; font-weight: 600;
+  padding: 6px 16px; font-size: 11px; font-weight: 600;
   background: none; border: none; border-bottom: 2px solid transparent;
   cursor: pointer; color: var(--color-text-muted); letter-spacing: .3px;
   margin-bottom: -1px; transition: color .15s, border-color .15s;
@@ -774,9 +774,42 @@ input, select, textarea { font-family: var(--font); }
 .tdb-dom-tab:hover { color: var(--color-text); }
 .tdb-dom-tab--active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
 .tdb-dom-full-wrap {
-  height: 380px; overflow: hidden; position: relative;
+  overflow: hidden; position: relative;
 }
 .tdb-dom-full-wrap svg { display: block; width: 100%; height: 100%; }
+
+/* Per-system canvas view */
+.tdb-sysview-outer {
+  position: relative; overflow: auto;
+  background: var(--color-bg-card);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.tdb-sysview-canvas { position: relative; }
+.tdb-svc-svg {
+  position: absolute; top: 0; left: 0; pointer-events: none;
+}
+.tdb-svc-svg .tdb-link-badge { pointer-events: all; }
+.tdb-sv-node {
+  position: absolute; width: 148px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; text-align: center;
+  border: 1.5px solid; border-radius: 5px;
+  pointer-events: none; z-index: 1;
+  line-height: 1.2; padding: 2px 6px; box-sizing: border-box;
+}
+.tdb-sv-dpanel {
+  position: absolute; z-index: 2;
+  background: var(--color-bg-card);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius); overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+.tdb-sv-dpanel-hdr {
+  height: 28px; display: flex; align-items: center; padding: 0 12px;
+  font-size: 11px; font-weight: 600; color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg); letter-spacing: .2px;
+}
 
 /* Diagram zoom toolbar */
 .tdb-zoom-bar {
