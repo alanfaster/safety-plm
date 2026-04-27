@@ -43,7 +43,8 @@ export async function renderReviewSessionWizard(container, ctx) {
     title: '',
     review_type: 'inspection',
     template_id: null,
-    planned_date: '',
+    planned_date: new Date().toISOString().slice(0, 10),
+    checklist_mode: 'individual', // 'individual' | 'shared'
     selected: {},  // { [artifactType]: Set<id> }
     artifacts: {}, // { [artifactType]: [] }  loaded lazily
   };
@@ -118,10 +119,7 @@ export async function renderReviewSessionWizard(container, ctx) {
               ).join('')}
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label">Planned Date</label>
-            <input type="date" class="form-input" id="wiz-date" value="${escHtml(state.planned_date)}"/>
-          </div>
+
           <div class="form-group" style="grid-column:1/-1">
             <label class="form-label">Review Protocol / Checklist Template</label>
             <select class="form-input form-select" id="wiz-template">
@@ -133,13 +131,40 @@ export async function renderReviewSessionWizard(container, ctx) {
             </select>
             <p class="form-hint">Templates define the checklist criteria reviewers will evaluate. Managed in Project Settings → Review Protocols.</p>
           </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Checklist Mode</label>
+            <div class="wiz-checklist-mode-options">
+              <label class="wiz-mode-option ${state.checklist_mode === 'individual' ? 'selected' : ''}">
+                <input type="radio" name="wiz-cmode" value="individual" ${state.checklist_mode === 'individual' ? 'checked' : ''}/>
+                <div>
+                  <strong>Individual per artifact</strong>
+                  <p>Each artifact is evaluated independently against the full checklist. Responses are saved per artifact.</p>
+                </div>
+              </label>
+              <label class="wiz-mode-option ${state.checklist_mode === 'shared' ? 'selected' : ''}">
+                <input type="radio" name="wiz-cmode" value="shared" ${state.checklist_mode === 'shared' ? 'checked' : ''}/>
+                <div>
+                  <strong>Shared — one checklist for all</strong>
+                  <p>The checklist is filled in once and applies to all artifacts in the session. Useful for reviewing a set of artifacts as a whole.</p>
+                </div>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
     `;
     document.getElementById('wiz-title').oninput = e => { state.title = e.target.value; };
     document.getElementById('wiz-rtype').onchange = e => { state.review_type = e.target.value; };
-    document.getElementById('wiz-date').onchange = e => { state.planned_date = e.target.value; };
+
     document.getElementById('wiz-template').onchange = e => { state.template_id = e.target.value || null; };
+    body.querySelectorAll('input[name="wiz-cmode"]').forEach(radio => {
+      radio.onchange = e => {
+        state.checklist_mode = e.target.value;
+        body.querySelectorAll('.wiz-mode-option').forEach(opt =>
+          opt.classList.toggle('selected', opt.querySelector('input').value === state.checklist_mode)
+        );
+      };
+    });
   }
 
   async function renderStep2(body) {
@@ -257,7 +282,7 @@ export async function renderReviewSessionWizard(container, ctx) {
           <div class="wiz-summary-row"><span>Title</span><strong>${escHtml(state.title)}</strong></div>
           <div class="wiz-summary-row"><span>Review Type</span><strong>${escHtml(REVIEW_TYPE_LABELS[state.review_type] || state.review_type)}</strong></div>
           <div class="wiz-summary-row"><span>Protocol</span><strong>${tpl ? escHtml(tpl.name) : 'None'}</strong></div>
-          <div class="wiz-summary-row"><span>Planned Date</span><strong>${escHtml(state.planned_date || '—')}</strong></div>
+          <div class="wiz-summary-row"><span>Date</span><strong>${escHtml(state.planned_date)}</strong></div>
           <div class="wiz-summary-row"><span>Artifacts</span><strong>${totalSelected} selected</strong></div>
         </div>
         ${totalSelected ? `
@@ -298,12 +323,13 @@ export async function renderReviewSessionWizard(container, ctx) {
 
     // 1. Create session
     const { data: session, error: se } = await sb.from('review_sessions').insert({
-      project_id:   project.id,
-      template_id:  state.template_id || null,
-      title:        state.title,
-      review_type:  state.review_type,
-      status:       'in_progress',
-      planned_date: state.planned_date || null,
+      project_id:      project.id,
+      template_id:     state.template_id || null,
+      title:           state.title,
+      review_type:     state.review_type,
+      status:          'in_progress',
+      planned_date:    state.planned_date || null,
+      checklist_mode:  state.checklist_mode,
     }).select().single();
 
     if (se || !session) {
