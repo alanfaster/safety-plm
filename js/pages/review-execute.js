@@ -1,10 +1,9 @@
 /**
  * Review Execute — 3-tab execution view.
  *
- * Tab 1 – Checklist:   split panel (artifact list left + template checklist right)
- * Tab 2 – Findings:    general findings for the session (list + raise without checklist item)
- * Tab 3 – Artifact Review: every artifact in one table — reviewer marks OK/NOK/Partially OK
- *                          and leaves a comment for the author.
+ * Tab 1 – Checklist:       split panel (artifact list left + template checklist right)
+ * Tab 2 – Findings:        finding cards with status lifecycle + reviewer↔author comment threads
+ * Tab 3 – Artifact Review: every artifact — reviewer marks OK/NOK/Partially OK + author comment
  *
  * Route: /project/:projectId/item/:itemId/reviews/:sessionId/execute
  */
@@ -15,18 +14,15 @@ import { showModal, hideModal } from '../components/modal.js';
 import { toast } from '../toast.js';
 import { mountReviewChecklist } from '../components/review-checklist.js';
 
-const STATUS_CLASSES = {
-  planned:     'badge-draft',
-  in_progress: 'badge-review',
-  completed:   'badge-approved',
-  cancelled:   'badge-deprecated',
+const SESSION_STATUS_CLASSES = {
+  planned:'badge-draft', in_progress:'badge-review', completed:'badge-approved', cancelled:'badge-deprecated',
 };
-const STATUS_LABELS = {
-  planned: 'Planned', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled',
+const SESSION_STATUS_LABELS = {
+  planned:'Planned', in_progress:'In Progress', completed:'Completed', cancelled:'Cancelled',
 };
-const SEVERITY_LABELS = { critical: 'Critical', major: 'Major', minor: 'Minor', observation: 'Observation' };
-const VERDICT_LABELS  = { ok: 'OK', nok: 'NOK', partially_ok: 'Partially OK' };
-const VERDICT_CLASSES = { ok: 'rv-v-ok', nok: 'rv-v-nok', partially_ok: 'rv-v-partial' };
+const SEVERITY_LABELS  = { critical:'Critical', major:'Major', minor:'Minor', observation:'Observation' };
+const SEVERITY_CLASSES = { critical:'rv-sev-critical', major:'rv-sev-major', minor:'rv-sev-minor', observation:'rv-sev-observation' };
+const VERDICT_LABELS   = { ok:'OK', nok:'NOK', partially_ok:'Partially OK' };
 
 const FINDING_STATUS_LABELS = {
   open:'Open', accepted:'Accepted', in_progress:'In Progress', deferred:'Deferred',
@@ -36,6 +32,29 @@ const FINDING_STATUS_CLASSES = {
   open:'rv-fs-open', accepted:'rv-fs-accepted', in_progress:'rv-fs-in-progress',
   deferred:'rv-fs-deferred', fixed:'rv-fs-fixed', verified:'rv-fs-verified',
   closed:'rv-fs-closed', duplicate:'rv-fs-closed', rejected:'rv-fs-closed',
+};
+
+// ASPICE MAN.5 valid transitions
+const TRANSITIONS = {
+  open:        ['accepted', 'rejected', 'duplicate'],
+  accepted:    ['in_progress', 'deferred', 'rejected'],
+  in_progress: ['fixed', 'deferred'],
+  deferred:    ['in_progress', 'rejected'],
+  fixed:       ['verified', 'in_progress'],
+  verified:    ['closed', 'in_progress'],
+  closed:      [], duplicate:[], rejected:[],
+};
+
+// Human-readable transition button labels
+const TRANSITION_LABELS = {
+  accepted:    '✓ Accept',
+  in_progress: '▶ Start',
+  deferred:    '⏸ Defer',
+  fixed:       '✔ Mark Fixed',
+  verified:    '★ Verify',
+  closed:      '✓ Close',
+  rejected:    '✕ Reject',
+  duplicate:   '⊘ Duplicate',
 };
 
 export async function renderReviewExecute(container, ctx) {
@@ -97,14 +116,30 @@ export async function renderReviewExecute(container, ctx) {
     }
   }
 
+  // Load finding comments (all at once for the session)
+  let allComments = [];
+  if (findings?.length) {
+    const findingIds = findings.map(f => f.id);
+    const { data: comments } = await sb.from('review_finding_comments')
+      .select('*, user_profiles(display_name)')
+      .in('finding_id', findingIds)
+      .order('created_at');
+    allComments = comments || [];
+  }
+
+  // Load user display name for current user
+  const { data: currentProfile } = await sb.from('user_profiles').select('display_name').eq('id', currentUserId).single();
+  const currentDisplayName = currentProfile?.display_name || currentUserId?.slice(0, 8) || 'Me';
+
   const driftMap = await detectDrift(snapshots || []);
 
   // Local mutable arrays
-  const _findings        = findings        ? [...findings]        : [];
+  const _findings         = findings         ? [...findings]         : [];
   const _artifactVerdicts = artifactVerdicts ? [...artifactVerdicts] : [];
+  const _comments         = [...allComments];
 
   let _selectedSnapshot = snapshots?.[0] || null;
-  let _activeTab = 'checklist'; // 'checklist' | 'findings' | 'artifact-review'
+  let _activeTab        = 'checklist';
 
   renderPage();
 
@@ -116,7 +151,7 @@ export async function renderReviewExecute(container, ctx) {
         <div class="rve-topbar">
           <div class="rve-topbar-left">
             <span class="rve-session-title">${escHtml(session.title)}</span>
-            <span class="badge ${STATUS_CLASSES[session.status] || 'badge-draft'}">${STATUS_LABELS[session.status] || session.status}</span>
+            <span class="badge ${SESSION_STATUS_CLASSES[session.status] || 'badge-draft'}">${SESSION_STATUS_LABELS[session.status] || session.status}</span>
             ${session.review_protocol_templates ? `<span class="rve-tpl-tag">${escHtml(session.review_protocol_templates.name)}</span>` : ''}
           </div>
           <div class="rve-topbar-right">
@@ -131,7 +166,7 @@ export async function renderReviewExecute(container, ctx) {
           </button>
           <button class="rve-main-tab ${_activeTab === 'findings'        ? 'active' : ''}" data-tab="findings">
             ⚑ Findings
-            ${_findings.length ? `<span class="rve-main-tab-badge">${_findings.filter(f => f.status === 'open').length}</span>` : ''}
+            ${_findings.filter(f => f.status === 'open').length ? `<span class="rve-main-tab-badge">${_findings.filter(f => f.status === 'open').length}</span>` : ''}
           </button>
           <button class="rve-main-tab ${_activeTab === 'artifact-review' ? 'active' : ''}" data-tab="artifact-review">
             ✓ Artifact Review
@@ -177,15 +212,30 @@ export async function renderReviewExecute(container, ctx) {
   function checklistProgress() {
     const totalItems = sections.reduce((s, sec) => s + (sec.items?.length || 0), 0);
     if (!totalItems) return '';
-    const done = (allResponses || []).filter(r => r.reviewer_id === currentUserId).length;
+    const done = new Set(
+      (allResponses || []).filter(r => r.reviewer_id === currentUserId).map(r => r.snapshot_id + ':' + r.template_item_id)
+    ).size;
     return `${done}/${totalItems * (snapshots?.length || 1)}`;
   }
 
   function artifactReviewProgress() {
     const total = snapshots?.length || 0;
     if (!total) return '';
-    const done  = _artifactVerdicts.filter(v => v.reviewer_id === currentUserId).length;
+    const done = _artifactVerdicts.filter(v => v.reviewer_id === currentUserId).length;
     return `${done}/${total}`;
+  }
+
+  function updateFindingsBadge() {
+    const tab = container.querySelector('[data-tab="findings"]');
+    if (!tab) return;
+    const openCount = _findings.filter(f => f.status === 'open').length;
+    let badge = tab.querySelector('.rve-main-tab-badge');
+    if (openCount > 0) {
+      if (!badge) { badge = document.createElement('span'); badge.className = 'rve-main-tab-badge'; tab.appendChild(badge); }
+      badge.textContent = openCount;
+    } else {
+      badge?.remove();
+    }
   }
 
   // ── Tab 1: Checklist ─────────────────────────────────────────────────────────
@@ -238,9 +288,7 @@ export async function renderReviewExecute(container, ctx) {
         </div>
         <div class="rve-art-title">${escHtml(snap.artifact_title || '—')}</div>
         ${totalItems ? `
-          <div class="rve-progress-bar">
-            <div class="rve-progress-fill" style="width:${pct}%"></div>
-          </div>
+          <div class="rve-progress-bar"><div class="rve-progress-fill" style="width:${pct}%"></div></div>
           <div class="rve-art-counts">
             <span class="rv-v-ok">${okCount} OK</span>
             <span class="rv-v-nok">${nokCount} ⚑</span>
@@ -254,24 +302,21 @@ export async function renderReviewExecute(container, ctx) {
   function loadChecklist() {
     const panel = document.getElementById('rve-checklist-panel');
     if (!_selectedSnapshot || !panel) return;
-
-    const snap         = _selectedSnapshot;
+    const snap          = _selectedSnapshot;
     const snapResponses = (allResponses || []).filter(r => r.snapshot_id === snap.id);
     const snapFindings  = _findings.filter(f => f.snapshot_id === snap.id);
-    const isDrifted     = !!driftMap[snap.artifact_id];
-
     mountReviewChecklist(panel, {
       session, snapshot: snap, sections, allResponses: snapResponses,
       currentUserId, reviewers: reviewerList, findings: snapFindings,
-      isDrifted,
+      isDrifted: !!driftMap[snap.artifact_id],
       onSaved: ({ itemId, verdict }) => {
         const existing = allResponses?.find(r => r.snapshot_id === snap.id && r.template_item_id === itemId && r.reviewer_id === currentUserId);
-        if (existing) { existing.verdict = verdict; }
-        else { allResponses?.push({ snapshot_id: snap.id, template_item_id: itemId, reviewer_id: currentUserId, verdict, session_id: sessionId }); }
+        if (existing) existing.verdict = verdict;
+        else allResponses?.push({ snapshot_id: snap.id, template_item_id: itemId, reviewer_id: currentUserId, verdict, session_id: sessionId });
         refreshArtifactCard(snap);
       },
-      onFindingRaise: (opts) => openRaiseFindingModal(opts),
-      onReSnapshotRequest: async () => { await reSnapshot(snap); },
+      onFindingRaise: opts => openRaiseFindingModal(opts),
+      onReSnapshotRequest: async () => reSnapshot(snap),
     });
   }
 
@@ -281,93 +326,196 @@ export async function renderReviewExecute(container, ctx) {
     const snapMap = {};
     (snapshots || []).forEach(s => { snapMap[s.id] = s; });
 
-    const openFindings   = _findings.filter(f => f.status === 'open');
-    const closedFindings = _findings.filter(f => !['open','in_progress','accepted'].includes(f.status));
-    const activeFindings = _findings.filter(f => ['accepted','in_progress','deferred'].includes(f.status));
+    const openCount   = _findings.filter(f => f.status === 'open').length;
+    const activeCount = _findings.filter(f => ['accepted','in_progress','deferred'].includes(f.status)).length;
+    const doneCount   = _findings.filter(f => ['fixed','verified','closed','rejected','duplicate'].includes(f.status)).length;
 
     return `
       <div class="rve-findings-wrap">
         <div class="rve-findings-header">
           <div class="rve-findings-stats">
-            <span class="rv-fs-open rve-stat-pill">${openFindings.length} Open</span>
-            <span class="rv-fs-in-progress rve-stat-pill">${activeFindings.length} In Progress</span>
-            <span class="rv-fs-closed rve-stat-pill">${closedFindings.length} Closed</span>
+            <span class="rv-fs-open rve-stat-pill">${openCount} Open</span>
+            <span class="rv-fs-in-progress rve-stat-pill">${activeCount} Active</span>
+            <span class="rv-fs-closed rve-stat-pill">${doneCount} Done</span>
           </div>
-          <button class="btn btn-primary btn-sm" id="rve-raise-general">⚑ Add General Finding</button>
+          <button class="btn btn-primary btn-sm" id="rve-raise-general">⚑ Add Finding</button>
         </div>
 
-        ${!_findings.length ? `
-          <div class="rv-empty" style="padding:40px 0">
-            <p>No findings yet. Raise findings from the Checklist tab or add a general finding here.</p>
-          </div>` : `
-          <table class="data-table rve-findings-table">
-            <thead>
-              <tr>
-                <th>Code</th>
-                <th>Artifact</th>
-                <th>Severity</th>
-                <th>Title</th>
-                <th>Status</th>
-                <th>Due</th>
-                <th>Resolution</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${_findings.map(f => {
-                const snap = f.snapshot_id ? snapMap[f.snapshot_id] : null;
-                return `
-                  <tr>
-                    <td class="mono">${escHtml(f.finding_code)}</td>
-                    <td>${snap ? `<span class="rv-art-code">${escHtml(snap.artifact_code || snap.artifact_type)}</span>` : '<span class="text-muted">General</span>'}</td>
-                    <td><span class="badge rv-sev-${escHtml(f.severity)}">${escHtml(SEVERITY_LABELS[f.severity] || f.severity)}</span></td>
-                    <td>
-                      <div style="font-weight:500;font-size:12px">${escHtml(f.title)}</div>
-                      ${f.description ? `<div class="text-muted" style="font-size:11px">${escHtml(f.description)}</div>` : ''}
-                    </td>
-                    <td><span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span></td>
-                    <td class="text-muted">${f.due_date ? escHtml(f.due_date) : '—'}</td>
-                    <td>
-                      <input class="form-input rve-resolution-input" style="font-size:12px;min-width:140px"
-                        data-finding-id="${f.id}" value="${escHtml(f.resolution_note || '')}" placeholder="Resolution note…"/>
-                    </td>
-                    <td>
-                      <button class="btn btn-ghost btn-sm rve-finding-nav" data-id="${f.id}" title="View in findings tracker">→</button>
-                    </td>
-                  </tr>`;
-              }).join('')}
-            </tbody>
-          </table>`}
+        ${!_findings.length
+          ? `<div class="rv-empty" style="padding:40px 0"><p>No findings yet. Raise findings from the Checklist tab or add one here.</p></div>`
+          : _findings.map(f => renderFindingCard(f, snapMap)).join('')
+        }
+      </div>
+    `;
+  }
+
+  function renderFindingCard(f, snapMap) {
+    const snap        = f.snapshot_id ? snapMap[f.snapshot_id] : null;
+    const transitions = TRANSITIONS[f.status] || [];
+    const comments    = _comments.filter(c => c.finding_id === f.id);
+    const isTerminal  = transitions.length === 0;
+
+    return `
+      <div class="rve-fcard" data-finding-id="${f.id}">
+        <div class="rve-fcard-header">
+          <div class="rve-fcard-meta">
+            <span class="rve-fcard-code mono">${escHtml(f.finding_code)}</span>
+            <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}">${SEVERITY_LABELS[f.severity] || f.severity}</span>
+            ${snap ? `<span class="rv-art-code">${escHtml(snap.artifact_code || snap.artifact_type)}</span>` : '<span class="text-muted" style="font-size:11px">General</span>'}
+          </div>
+          <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
+        </div>
+
+        <div class="rve-fcard-title">${escHtml(f.title)}</div>
+        ${f.description ? `<div class="rve-fcard-desc text-muted">${escHtml(f.description)}</div>` : ''}
+        ${f.due_date ? `<div class="rve-fcard-due text-muted">Due: ${escHtml(f.due_date)}</div>` : ''}
+
+        ${!isTerminal ? `
+          <div class="rve-fcard-transitions">
+            ${transitions.map(to => `
+              <button class="btn btn-sm rve-fcard-trans-btn rve-trans-${to}" data-finding-id="${f.id}" data-to="${to}">
+                ${TRANSITION_LABELS[to] || FINDING_STATUS_LABELS[to]}
+              </button>`).join('')}
+          </div>` : ''}
+
+        <div class="rve-fcard-thread" id="rve-thread-${f.id}">
+          ${comments.map(c => renderComment(c)).join('')}
+        </div>
+
+        <div class="rve-fcard-reply">
+          <textarea class="form-input rve-fcard-reply-input" data-finding-id="${f.id}"
+            rows="2" placeholder="Write a comment…"></textarea>
+          <button class="btn btn-secondary btn-sm rve-fcard-reply-btn" data-finding-id="${f.id}">Reply</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderComment(c) {
+    const name = c.user_profiles?.display_name || c.author_id?.slice(0, 8) || '?';
+    const dt   = formatDateTime(c.created_at);
+    return `
+      <div class="rve-fcard-comment">
+        <span class="rve-fcard-comment-author">${escHtml(name)}, ${escHtml(dt)}:</span>
+        <span class="rve-fcard-comment-text"> ${escHtml(c.comment)}</span>
       </div>
     `;
   }
 
   function wireFindingsTab() {
+    const snapMap = {};
+    (snapshots || []).forEach(s => { snapMap[s.id] = s; });
+
     document.getElementById('rve-raise-general')?.addEventListener('click', () => {
       openRaiseFindingModal({ snapshotId: null, templateItemId: null, criterion: '', verdict: '', comment: '', responseId: null });
     });
 
-    container.querySelectorAll('.rve-resolution-input').forEach(inp => {
-      inp.addEventListener('change', debounce(async () => {
-        const { findingId } = inp.dataset;
+    // Status transitions
+    container.querySelectorAll('.rve-fcard-trans-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const findingId = btn.dataset.findingId;
+        const toStatus  = btn.dataset.to;
         const f = _findings.find(x => x.id === findingId);
         if (!f) return;
-        await sb.from('review_findings').update({ resolution_note: inp.value.trim(), updated_at: new Date().toISOString() }).eq('id', findingId);
-        f.resolution_note = inp.value.trim();
-      }, 600));
+
+        btn.disabled = true;
+        const { error } = await sb.from('review_findings').update({
+          status: toStatus, updated_at: new Date().toISOString(),
+        }).eq('id', findingId);
+        if (error) { toast('Error: ' + error.message, 'error'); btn.disabled = false; return; }
+        f.status = toStatus;
+        toast(`Finding ${f.finding_code}: ${FINDING_STATUS_LABELS[toStatus]}`, 'success');
+
+        // Re-render just this card
+        const card = container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
+        if (card) {
+          card.outerHTML = renderFindingCard(f, snapMap);
+          wireFindingCard(findingId, snapMap);
+        }
+        updateFindingsBadge();
+      });
     });
 
-    container.querySelectorAll('.rve-finding-nav').forEach(btn => {
-      btn.addEventListener('click', () => navigate(`${base}/reviews/${sessionId}/findings`));
+    // Reply buttons
+    container.querySelectorAll('.rve-fcard-reply-btn').forEach(btn => {
+      btn.addEventListener('click', () => postComment(btn.dataset.findingId, snapMap));
     });
+
+    // Ctrl+Enter in textarea
+    container.querySelectorAll('.rve-fcard-reply-input').forEach(ta => {
+      ta.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          postComment(ta.dataset.findingId, snapMap);
+        }
+      });
+    });
+  }
+
+  // Wire only one re-rendered card (after status transition replaces its HTML)
+  function wireFindingCard(findingId, snapMap) {
+    const card = container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
+    if (!card) return;
+
+    card.querySelectorAll('.rve-fcard-trans-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const toStatus = btn.dataset.to;
+        const f = _findings.find(x => x.id === findingId);
+        if (!f) return;
+        btn.disabled = true;
+        const { error } = await sb.from('review_findings').update({ status: toStatus, updated_at: new Date().toISOString() }).eq('id', findingId);
+        if (error) { toast('Error: ' + error.message, 'error'); btn.disabled = false; return; }
+        f.status = toStatus;
+        toast(`Finding ${f.finding_code}: ${FINDING_STATUS_LABELS[toStatus]}`, 'success');
+        card.outerHTML = renderFindingCard(f, snapMap);
+        wireFindingCard(findingId, snapMap);
+        updateFindingsBadge();
+      });
+    });
+
+    card.querySelectorAll('.rve-fcard-reply-btn').forEach(btn => {
+      btn.addEventListener('click', () => postComment(findingId, snapMap));
+    });
+    card.querySelectorAll('.rve-fcard-reply-input').forEach(ta => {
+      ta.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); postComment(findingId, snapMap); }
+      });
+    });
+  }
+
+  async function postComment(findingId, snapMap) {
+    const ta = container.querySelector(`.rve-fcard-reply-input[data-finding-id="${findingId}"]`);
+    if (!ta) return;
+    const text = ta.value.trim();
+    if (!text) { ta.focus(); return; }
+
+    const btn = container.querySelector(`.rve-fcard-reply-btn[data-finding-id="${findingId}"]`);
+    if (btn) btn.disabled = true;
+
+    const { data: comment, error } = await sb.from('review_finding_comments').insert({
+      finding_id: findingId,
+      author_id:  currentUserId,
+      comment:    text,
+    }).select('*, user_profiles(display_name)').single();
+
+    if (btn) btn.disabled = false;
+    if (error) { toast('Error posting comment: ' + error.message, 'error'); return; }
+
+    _comments.push(comment);
+    ta.value = '';
+
+    // Append the new comment to the thread without full re-render
+    const thread = container.querySelector(`#rve-thread-${findingId}`);
+    if (thread) {
+      thread.insertAdjacentHTML('beforeend', renderComment(comment));
+      thread.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
   }
 
   // ── Tab 3: Artifact Review ───────────────────────────────────────────────────
 
   function renderArtifactReviewTab() {
-    if (!snapshots?.length) {
-      return `<div class="rv-empty" style="padding:40px 0">No artifacts in this session.</div>`;
-    }
+    if (!snapshots?.length) return `<div class="rv-empty" style="padding:40px 0">No artifacts in this session.</div>`;
 
     return `
       <div class="rve-artrev-wrap">
@@ -398,7 +546,6 @@ export async function renderReviewExecute(container, ctx) {
     const mv = myVerdict?.verdict || '';
     const mc = myVerdict?.comment || '';
 
-    // Other reviewers' verdicts (read-only)
     const otherPills = reviewerList
       .filter(r => r.user_id !== currentUserId)
       .map(r => {
@@ -407,13 +554,11 @@ export async function renderReviewExecute(container, ctx) {
         return `<span class="rvck-rv-pill ${v.verdict}" title="${escHtml(r.display_name)}: ${VERDICT_LABELS[v.verdict]}">${escHtml(r.display_name.charAt(0))}: ${VERDICT_LABELS[v.verdict]}</span>`;
       }).join('');
 
-    const drifted = driftMap[snap.artifact_id];
-
     return `
       <tr class="rve-artrev-row" data-snap-id="${snap.id}">
         <td>
           <span class="rve-art-code">${escHtml(snap.artifact_code || snap.artifact_type)}</span>
-          ${drifted ? `<span class="rve-drift-badge" title="Changed since snapshot"> ⚠</span>` : ''}
+          ${driftMap[snap.artifact_id] ? `<span class="rve-drift-badge" title="Changed since snapshot"> ⚠</span>` : ''}
         </td>
         <td style="font-size:12px">${escHtml(snap.artifact_title || '—')}</td>
         <td>${otherPills || '<span class="text-muted" style="font-size:11px">—</span>'}</td>
@@ -435,7 +580,6 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   function wireArtifactReviewTab() {
-    // Verdict buttons
     container.querySelectorAll('.rve-artrev-vbtn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const snapId  = btn.dataset.snapId;
@@ -443,48 +587,31 @@ export async function renderReviewExecute(container, ctx) {
         const row     = container.querySelector(`.rve-artrev-row[data-snap-id="${snapId}"]`);
         const comment = row?.querySelector('.rve-artrev-comment')?.value?.trim() || '';
 
-        // Optimistic UI
-        row?.querySelectorAll('.rve-artrev-vbtn').forEach(b => {
-          b.classList.remove('active', 'sel-ok', 'sel-nok', 'sel-partially_ok');
-        });
+        row?.querySelectorAll('.rve-artrev-vbtn').forEach(b => b.classList.remove('active','sel-ok','sel-nok','sel-partially_ok'));
         btn.classList.add('active', `sel-${verdict}`);
 
         await saveArtifactVerdict(snapId, verdict, comment);
       });
     });
 
-    // Comment textareas
     container.querySelectorAll('.rve-artrev-comment').forEach(ta => {
       ta.addEventListener('input', debounce(async () => {
         const snapId  = ta.dataset.snapId;
         const existing = _artifactVerdicts.find(v => v.snapshot_id === snapId && v.reviewer_id === currentUserId);
-        const verdict  = existing?.verdict || null;
-        if (!verdict) return; // need a verdict before saving comment
-        await saveArtifactVerdict(snapId, verdict, ta.value.trim());
+        if (!existing?.verdict) return;
+        await saveArtifactVerdict(snapId, existing.verdict, ta.value.trim());
       }, 600));
     });
   }
 
   async function saveArtifactVerdict(snapId, verdict, comment) {
-    const existing = _artifactVerdicts.find(v => v.snapshot_id === snapId && v.reviewer_id === currentUserId);
-    const payload  = {
-      session_id:  sessionId,
-      snapshot_id: snapId,
-      reviewer_id: currentUserId,
-      verdict,
-      comment,
-      updated_at:  new Date().toISOString(),
-    };
+    const payload = { session_id: sessionId, snapshot_id: snapId, reviewer_id: currentUserId, verdict, comment, updated_at: new Date().toISOString() };
     const { data, error } = await sb.from('review_artifact_verdicts')
-      .upsert(payload, { onConflict: 'snapshot_id,reviewer_id' })
-      .select().single();
+      .upsert(payload, { onConflict: 'snapshot_id,reviewer_id' }).select().single();
     if (error) { toast('Error saving verdict: ' + error.message, 'error'); return; }
-    if (existing) {
-      Object.assign(existing, data);
-    } else {
-      _artifactVerdicts.push(data);
-    }
-    // Update tab progress badge
+    const existing = _artifactVerdicts.find(v => v.snapshot_id === snapId && v.reviewer_id === currentUserId);
+    if (existing) Object.assign(existing, data);
+    else _artifactVerdicts.push(data);
     const tab = container.querySelector('[data-tab="artifact-review"] .rve-main-tab-count');
     if (tab) tab.textContent = artifactReviewProgress();
   }
@@ -495,7 +622,6 @@ export async function renderReviewExecute(container, ctx) {
     const card = container.querySelector(`[data-snap-id="${snap.id}"].rve-art-card`);
     if (!card) return;
     card.outerHTML = renderArtifactCard(snap);
-    // Re-wire the replaced card
     container.querySelectorAll('.rve-art-card').forEach(c => {
       c.addEventListener('click', () => {
         _selectedSnapshot = (snapshots || []).find(s => s.id === c.dataset.snapId);
@@ -507,24 +633,19 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   function openRaiseFindingModal({ snapshotId, templateItemId, criterion, verdict, comment, responseId }) {
-    const snapMap = {};
-    (snapshots || []).forEach(s => { snapMap[s.id] = s; });
-
     showModal({
       title: '⚑ Raise Finding',
       body: `
         <div class="form-grid cols-1">
-          ${criterion ? `<div class="form-group">
-            <label class="form-label">Criterion</label>
-            <p class="form-hint">${escHtml(criterion)}</p>
-          </div>` : ''}
-          ${!snapshotId ? `<div class="form-group">
-            <label class="form-label">Artifact</label>
-            <select class="form-input form-select" id="fnd-snap">
-              <option value="">— General (not tied to an artifact) —</option>
-              ${(snapshots || []).map(s => `<option value="${s.id}">${escHtml(s.artifact_code || s.artifact_type)} – ${escHtml(s.artifact_title || '')}</option>`).join('')}
-            </select>
-          </div>` : ''}
+          ${criterion ? `<div class="form-group"><label class="form-label">Criterion</label><p class="form-hint">${escHtml(criterion)}</p></div>` : ''}
+          ${!snapshotId ? `
+            <div class="form-group">
+              <label class="form-label">Artifact</label>
+              <select class="form-input form-select" id="fnd-snap">
+                <option value="">— General (not tied to an artifact) —</option>
+                ${(snapshots || []).map(s => `<option value="${s.id}">${escHtml(s.artifact_code || s.artifact_type)} – ${escHtml(s.artifact_title || '')}</option>`).join('')}
+              </select>
+            </div>` : ''}
           <div class="form-group">
             <label class="form-label">Finding Title *</label>
             <input class="form-input" id="fnd-title" placeholder="Short description of the issue"/>
@@ -557,21 +678,20 @@ export async function renderReviewExecute(container, ctx) {
       btn.disabled = true;
 
       const resolvedSnapshotId = snapshotId || document.getElementById('fnd-snap')?.value || null;
-
       const { count } = await sb.from('review_findings').select('id', { count: 'exact', head: true }).eq('session_id', sessionId);
       const finding_code = `FND-${String((count || 0) + 1).padStart(3, '0')}`;
 
       const { data: finding, error } = await sb.from('review_findings').insert({
-        session_id:      sessionId,
-        snapshot_id:     resolvedSnapshotId || null,
-        response_id:     responseId || null,
+        session_id:  sessionId,
+        snapshot_id: resolvedSnapshotId || null,
+        response_id: responseId || null,
         finding_code,
         title,
-        severity:        document.getElementById('fnd-severity').value,
-        description:     document.getElementById('fnd-desc').value.trim(),
-        due_date:        document.getElementById('fnd-due').value || null,
-        status:          'open',
-        created_by:      currentUserId,
+        severity:    document.getElementById('fnd-severity').value,
+        description: document.getElementById('fnd-desc').value.trim(),
+        due_date:    document.getElementById('fnd-due').value || null,
+        status:      'open',
+        created_by:  currentUserId,
       }).select().single();
 
       if (error) { toast('Error: ' + error.message, 'error'); btn.disabled = false; return; }
@@ -579,24 +699,12 @@ export async function renderReviewExecute(container, ctx) {
       toast(`Finding ${finding_code} raised.`, 'success');
       hideModal();
 
-      // Refresh whichever tab is visible
       if (_activeTab === 'checklist') loadChecklist();
       if (_activeTab === 'findings') {
         document.getElementById('rve-tab-body').innerHTML = renderFindingsTab();
         wireFindingsTab();
       }
-      // Update findings tab badge
-      const findingsTab = container.querySelector('[data-tab="findings"]');
-      if (findingsTab) {
-        const open = _findings.filter(f => f.status === 'open').length;
-        let badge = findingsTab.querySelector('.rve-main-tab-badge');
-        if (!badge) {
-          badge = document.createElement('span');
-          badge.className = 'rve-main-tab-badge';
-          findingsTab.appendChild(badge);
-        }
-        badge.textContent = open;
-      }
+      updateFindingsBadge();
     };
     document.getElementById('fnd-title').focus();
   }
@@ -660,9 +768,7 @@ async function detectDrift(snapshots) {
     const { data: liveRows } = await sb.from(table).select('id, updated_at').in('id', ids);
     (liveRows || []).forEach(live => {
       const snap = snaps.find(s => s.artifact_id === live.id);
-      if (snap && snap.artifact_updated_at && live.updated_at > snap.artifact_updated_at) {
-        driftMap[live.id] = true;
-      }
+      if (snap && snap.artifact_updated_at && live.updated_at > snap.artifact_updated_at) driftMap[live.id] = true;
     });
   }));
   return driftMap;
@@ -670,6 +776,10 @@ async function detectDrift(snapshots) {
 
 function debounce(fn, ms) {
   let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+function formatDateTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 function escHtml(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');

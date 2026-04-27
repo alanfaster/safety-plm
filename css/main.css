@@ -5684,3 +5684,46 @@ th.col-th-dragging * { pointer-events: none; }
 .rve-artrev-vbtn.sel-partially_ok { background: #fef3e2; color: #e37400; border-color: #f8d7a0; font-weight: 600; }
 .rve-artrev-comment   { width: 100%; min-height: 44px; resize: vertical; font-size: 11px; }
 .rve-artrev-row td    { vertical-align: top; padding: 10px 10px; }
+
+/* ============================================================
+   FINDING CARDS (Findings tab)
+   ============================================================ */
+.rve-fcard              { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  margin-bottom: 12px; overflow: hidden; }
+.rve-fcard-header       { display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--border); gap: 10px; }
+.rve-fcard-meta         { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.rve-fcard-code         { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.rve-fcard-title        { font-size: 13px; font-weight: 600; padding: 8px 14px 2px; }
+.rve-fcard-desc         { font-size: 12px; padding: 2px 14px 6px; line-height: 1.5; }
+.rve-fcard-due          { font-size: 11px; padding: 2px 14px 6px; }
+
+/* Status transition buttons */
+.rve-fcard-transitions  { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 14px;
+  border-top: 1px solid var(--border); background: var(--bg); }
+.rve-fcard-trans-btn    { font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+  transition: all .15s; white-space: nowrap; }
+.rve-fcard-trans-btn:hover   { border-color: var(--accent); color: var(--accent); }
+/* Per-transition colour hints */
+.rve-trans-accepted     { border-color: #a5d6a7; color: #1e8e3e; }
+.rve-trans-in_progress  { border-color: #c5d8fb; color: #1558d6; }
+.rve-trans-fixed        { border-color: #80cbc4; color: #004d40; }
+.rve-trans-verified     { border-color: #a5d6a7; color: #1e8e3e; }
+.rve-trans-closed       { border-color: #dadce0; color: #5f6368; }
+.rve-trans-deferred     { border-color: #f9e580; color: #856404; }
+.rve-trans-rejected     { border-color: #f5c6c4; color: #d93025; }
+.rve-trans-duplicate    { border-color: #dadce0; color: #5f6368; }
+
+/* Comment thread */
+.rve-fcard-thread       { padding: 0 14px; display: flex; flex-direction: column; gap: 6px; }
+.rve-fcard-thread:not(:empty) { padding: 10px 14px; border-top: 1px solid var(--border); }
+.rve-fcard-comment      { font-size: 12px; line-height: 1.6; }
+.rve-fcard-comment-author { font-weight: 700; color: var(--text); }
+.rve-fcard-comment-text   { color: var(--text); font-weight: 400; }
+
+/* Reply input */
+.rve-fcard-reply        { display: flex; gap: 8px; align-items: flex-end;
+  padding: 8px 14px 10px; border-top: 1px solid var(--border); background: var(--bg); }
+.rve-fcard-reply-input  { flex: 1; font-size: 12px; min-height: 38px; resize: vertical; }
+.rve-fcard-reply-btn    { flex-shrink: 0; white-space: nowrap; }
