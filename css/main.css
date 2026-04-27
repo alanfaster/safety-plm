@@ -1910,6 +1910,17 @@ tr.req-title-row td { cursor: default; }
   position: absolute; left: 0; right: 0; bottom: 0;
   padding: 4px; overflow: hidden;
 }
+.vme-dp-zoom-bar {
+  display: flex; gap: 2px; align-items: center;
+  margin-left: auto; padding-right: 4px;
+}
+.vme-dp-zoom-btn {
+  width: 22px; height: 22px; border: 1px solid #cfd8dc; border-radius: 4px;
+  background: #fff; color: #37474f; font-size: 13px; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  padding: 0;
+}
+.vme-dp-zoom-btn:hover { background: #eceff1; border-color: #90a4ae; }
 /* Interactive sub-canvas inside domain panel */
 .vme-dp-canvas {
   position: relative; width: 100%; height: 100%;

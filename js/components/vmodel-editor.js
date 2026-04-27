@@ -329,6 +329,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
   let _panelMouseY = 0;
   let _dirty       = false;
   let _scale       = 1;
+  let _panelScale  = 1;
   let _domainTab   = 'sw';
 
   // Panel sub-canvas references (set when panel is rendered)
@@ -489,7 +490,14 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
         <span class="vme-dp-title">⠿ Domain Implementations</span>
         <button class="vme-dp-del" title="Delete panel">✕</button>
       </div>
-      <div class="vme-dp-tabs" style="height:${DP_TABS_H}px">${tabs}</div>
+      <div class="vme-dp-tabs" style="height:${DP_TABS_H}px">
+        ${tabs}
+        <div class="vme-dp-zoom-bar">
+          <button class="vme-dp-zoom-btn" data-zoom="in"  title="Zoom in">+</button>
+          <button class="vme-dp-zoom-btn" data-zoom="out" title="Zoom out">−</button>
+          <button class="vme-dp-zoom-btn" data-zoom="fit" title="Autofit">⊡</button>
+        </div>
+      </div>
       <div class="vme-dp-body" style="top:${DP_BODY_TOP}px">
         <div class="vme-dp-canvas" id="vme-dp-canvas" style="height:${DP_CANVAS_H}px">
           <svg class="vme-dp-svg" id="vme-dp-svg" xmlns="http://www.w3.org/2000/svg">
@@ -533,6 +541,8 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       btn.addEventListener('click', e => {
         e.stopPropagation();
         _domainTab = btn.dataset.tab;
+        _panelScale = 1;
+        if (_panelCanvas) { _panelCanvas.style.transform = ''; }
         panelDiv.querySelectorAll('.vme-dp-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === _domainTab));
         renderDomainCanvas();
         renderDomainSVG();
@@ -552,6 +562,45 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     // Cache references
     _panelCanvas = panelDiv.querySelector('#vme-dp-canvas');
     _panelSVG    = panelDiv.querySelector('#vme-dp-svg');
+
+    // ── Panel zoom controls ──
+    function applyPanelScale() {
+      _panelCanvas.firstElementChild && (_panelCanvas.querySelector('.vme-dp-zoom-inner') || _panelCanvas).style.transform;
+      // Apply scale to the inner content wrapper (nodes + SVG scroll together)
+      // We scale _panelCanvas's children via a wrapper transform on a scroll-inner div
+      // Since nodes+SVG are absolutely positioned inside _panelCanvas, scale _panelCanvas itself
+      _panelCanvas.style.transformOrigin = '0 0';
+      _panelCanvas.style.transform = `scale(${_panelScale})`;
+    }
+
+    function panelAutofit() {
+      const tabNodes = _nodes.filter(n => n.panelDomain === _domainTab);
+      if (!tabNodes.length) return;
+      const PAD = 20;
+      const maxX = Math.max(...tabNodes.map(n => n.x + NODE_W)) + PAD;
+      const maxY = Math.max(...tabNodes.map(n => n.y + NODE_H)) + PAD;
+      const viewW = _panelCanvas.clientWidth  || (PANEL_W - 8);
+      const viewH = _panelCanvas.clientHeight || DP_CANVAS_H;
+      _panelScale = Math.min(viewW / maxX, viewH / maxY, 1.5);
+      applyPanelScale();
+    }
+
+    panelDiv.querySelectorAll('.vme-dp-zoom-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (btn.dataset.zoom === 'in')  { _panelScale = Math.min(_panelScale * 1.25, 3); applyPanelScale(); }
+        if (btn.dataset.zoom === 'out') { _panelScale = Math.max(_panelScale / 1.25, 0.2); applyPanelScale(); }
+        if (btn.dataset.zoom === 'fit') { panelAutofit(); }
+      });
+    });
+
+    _panelCanvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      _panelScale = Math.min(Math.max(_panelScale * factor, 0.2), 3);
+      applyPanelScale();
+    }, { passive: false });
 
     // Render domain nodes & links for current tab
     renderDomainCanvas();
@@ -611,8 +660,8 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       const rect = _panelCanvas.getBoundingClientRect();
       _drag = {
         nodeId: node.id,
-        offX:   (e.clientX - rect.left) / _scale - node.x,
-        offY:   (e.clientY - rect.top)  / _scale - node.y,
+        offX:   (e.clientX - rect.left) / _panelScale - node.x,
+        offY:   (e.clientY - rect.top)  / _panelScale - node.y,
         moved:  false, startX: e.clientX, startY: e.clientY,
         isPanelNode: true,
       };
@@ -759,7 +808,8 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       const refEl = inPanel ? _panelCanvas : canvas;
       if (!refEl) return;
       const rect = refEl.getBoundingClientRect();
-      showLinkMenu(link, (e.clientX - rect.left) / _scale, (e.clientY - rect.top) / _scale, inPanel);
+      const sc = inPanel ? _panelScale : _scale;
+      showLinkMenu(link, (e.clientX - rect.left) / sc, (e.clientY - rect.top) / sc, inPanel);
     });
 
     const path = mkSVG('path');
@@ -989,8 +1039,8 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
 
     if (_panelCanvas) {
       const pr = _panelCanvas.getBoundingClientRect();
-      _panelMouseX = (e.clientX - pr.left) / _scale;
-      _panelMouseY = (e.clientY - pr.top)  / _scale;
+      _panelMouseX = (e.clientX - pr.left) / _panelScale;
+      _panelMouseY = (e.clientY - pr.top)  / _panelScale;
     }
 
     if (_connectFrom) {
@@ -1003,9 +1053,10 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     if (_bendDrag) {
       const link = _links.find(l => l.id === _bendDrag.linkId);
       if (link) {
+        const bendSc = _bendDrag.isPanelLink ? _panelScale : _scale;
         link.bend = {
-          x: _bendDrag.startBX + (e.clientX - _bendDrag.startMX) / _scale,
-          y: _bendDrag.startBY + (e.clientY - _bendDrag.startMY) / _scale,
+          x: _bendDrag.startBX + (e.clientX - _bendDrag.startMX) / bendSc,
+          y: _bendDrag.startBY + (e.clientY - _bendDrag.startMY) / bendSc,
         };
         if (_bendDrag.isPanelLink) { renderDomainSVG(); } else { renderSVG(); }
         _dirty = true;
@@ -1021,8 +1072,8 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
         if (node) {
           if (_drag.isPanelNode && _panelCanvas) {
             const pr = _panelCanvas.getBoundingClientRect();
-            node.x = Math.max(0, (e.clientX - pr.left) / _scale - _drag.offX);
-            node.y = Math.max(0, (e.clientY - pr.top)  / _scale - _drag.offY);
+            node.x = Math.max(0, (e.clientX - pr.left) / _panelScale - _drag.offX);
+            node.y = Math.max(0, (e.clientY - pr.top)  / _panelScale - _drag.offY);
             const div = _panelCanvas.querySelector(`[data-nid="${node.id}"]`);
             if (div) { div.style.left = node.x + 'px'; div.style.top = node.y + 'px'; }
             renderDomainSVG(); _dirty = true;
