@@ -324,6 +324,7 @@ export async function renderReviewExecute(container, ctx) {
             ${snap ? `<span class="rv-art-code">${escHtml(snap.artifact_code || snap.artifact_type)}</span>` : '<span class="text-muted" style="font-size:11px">General</span>'}
           </div>
           <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
+          <button class="btn btn-ghost btn-sm rve-fcard-del-btn" data-finding-id="${f.id}" title="Delete finding" style="margin-left:4px">✕</button>
         </div>
         <div class="rve-fcard-title">${escHtml(f.title)}</div>
         ${f.description ? `<div class="rve-fcard-desc text-muted">${escHtml(f.description)}</div>` : ''}
@@ -400,6 +401,28 @@ export async function renderReviewExecute(container, ctx) {
       });
     });
 
+    // Delete
+    container.querySelectorAll('.rve-fcard-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const findingId = btn.dataset.findingId;
+        const f = _findings.find(x => x.id === findingId);
+        if (!confirm(`Delete finding ${f?.finding_code || ''}? This cannot be undone.`)) return;
+        btn.disabled = true;
+        const { error } = await sb.from('review_findings').delete().eq('id', findingId);
+        if (error) { toast('Error: ' + error.message, 'error'); btn.disabled = false; return; }
+        const idx = _findings.findIndex(x => x.id === findingId);
+        if (idx >= 0) _findings.splice(idx, 1);
+        container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`)?.remove();
+        toast(`Finding deleted.`, 'success');
+        updateFindingsBadge();
+        // Show empty state if no findings left
+        if (!_findings.length) {
+          container.querySelector('.rve-findings-wrap')?.querySelector('.rve-fcard')?.closest('.rve-findings-wrap')
+            ?.insertAdjacentHTML('beforeend', `<div class="rv-empty" style="padding:40px 0"><p>No findings yet.</p></div>`);
+        }
+      });
+    });
+
     // Reply
     container.querySelectorAll('.rve-fcard-reply-btn').forEach(btn => {
       btn.addEventListener('click', () => postComment(btn.dataset.findingId));
@@ -439,16 +462,31 @@ export async function renderReviewExecute(container, ctx) {
         });
       });
 
-    container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`)
-      ?.querySelectorAll('.rve-fcard-reply-btn').forEach(btn => {
-        btn.addEventListener('click', () => postComment(findingId));
+    const thisCard = () => container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
+
+    thisCard()?.querySelectorAll('.rve-fcard-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const f = _findings.find(x => x.id === findingId);
+        if (!confirm(`Delete finding ${f?.finding_code || ''}? This cannot be undone.`)) return;
+        btn.disabled = true;
+        const { error } = await sb.from('review_findings').delete().eq('id', findingId);
+        if (error) { toast('Error: ' + error.message, 'error'); btn.disabled = false; return; }
+        const idx = _findings.findIndex(x => x.id === findingId);
+        if (idx >= 0) _findings.splice(idx, 1);
+        thisCard()?.remove();
+        toast('Finding deleted.', 'success');
+        updateFindingsBadge();
       });
-    container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`)
-      ?.querySelectorAll('.rve-fcard-reply-input').forEach(ta => {
-        ta.addEventListener('keydown', e => {
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); postComment(findingId); }
-        });
+    });
+
+    thisCard()?.querySelectorAll('.rve-fcard-reply-btn').forEach(btn => {
+      btn.addEventListener('click', () => postComment(findingId));
+    });
+    thisCard()?.querySelectorAll('.rve-fcard-reply-input').forEach(ta => {
+      ta.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); postComment(findingId); }
       });
+    });
   }
 
   function renderComment(c) {

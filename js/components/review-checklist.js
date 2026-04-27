@@ -284,7 +284,8 @@ export function mountReviewChecklist(container, opts) {
           <span class="mono rvck-inline-finding-code">${escHtml(f.finding_code)}</span>
           <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}">${SEVERITY_LABELS[f.severity] || f.severity}</span>
           <span class="rvck-inline-finding-title">${escHtml(f.title)}</span>
-          <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}" style="margin-left:auto">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
+          <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
+          <button class="btn btn-ghost btn-sm rvck-inline-del-btn" data-finding-id="${f.id}" title="Delete finding">✕</button>
         </div>
         ${f.description ? `<div class="rvck-inline-finding-desc text-muted">${escHtml(f.description)}</div>` : ''}
 
@@ -400,10 +401,9 @@ export function mountReviewChecklist(container, opts) {
       });
     });
 
-    // Inline finding transitions
+    // Inline finding transitions, deletes, replies
     wireInlineTransitions(container);
-
-    // Inline reply buttons
+    wireInlineDeletes(container);
     wireInlineReplies(container);
 
     // Load comments for visible findings
@@ -442,13 +442,48 @@ export function mountReviewChecklist(container, opts) {
         const { error } = await sb.from('review_findings').update({ status: toStatus, updated_at: new Date().toISOString() }).eq('id', findingId);
         if (error) { btn.disabled = false; return; }
         f.status = toStatus;
-
-        // Re-render just the inline finding card
         const card = root.querySelector(`.rvck-inline-finding[data-finding-id="${findingId}"]`);
         if (card) {
           card.outerHTML = renderInlineFinding(f);
           wireInlineTransitions(root);
+          wireInlineDeletes(root);
           wireInlineReplies(root);
+        }
+      });
+    });
+  }
+
+  function wireInlineDeletes(root) {
+    root.querySelectorAll('.rvck-inline-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const findingId = btn.dataset.findingId;
+        const f = findings.find(x => x.id === findingId);
+        if (!confirm(`Delete finding ${f?.finding_code || ''}? This cannot be undone.`)) return;
+
+        btn.disabled = true;
+        const { error } = await sb.from('review_findings').delete().eq('id', findingId);
+        if (error) { btn.disabled = false; return; }
+
+        // Remove from local arrays
+        const idx = findings.findIndex(x => x.id === findingId);
+        if (idx >= 0) findings.splice(idx, 1);
+        const key = f?.template_item_id || '__open__';
+        if (findingsByItem[key]) {
+          const fi = findingsByItem[key].findIndex(x => x.id === findingId);
+          if (fi >= 0) findingsByItem[key].splice(fi, 1);
+        }
+
+        // Remove card from DOM
+        root.querySelector(`.rvck-inline-finding[data-finding-id="${findingId}"]`)?.remove();
+
+        // Update open-points badge
+        if (!f?.template_item_id) {
+          const badge = container.querySelector('#rvck-open-points .rvck-sec-badge');
+          if (badge) badge.textContent = (findingsByItem['__open__'] || []).length;
+          const body = container.querySelector('#rvck-op-body');
+          if (body && !(findingsByItem['__open__'] || []).length) {
+            body.innerHTML = `<p class="rvck-op-empty text-muted">No open points yet.</p>`;
+          }
         }
       });
     });
