@@ -168,22 +168,29 @@ async function loadDashboard(project, item, systems) {
     }
   }
 
+  // topLinks: item/system/safety/customer only (pure top-level)
   const topLinks = allExpandedLinks.filter(l => {
     const fn = nodeMap[l.from], tn = nodeMap[l.to];
     if (!fn || !tn) return false;
     return TOP_DOMAINS.has(fn.domain) && TOP_DOMAINS.has(tn.domain);
   });
 
+  // crossLinks: sys_req/sys_arch → {d}_req — shown in the per-system diagram
+  const crossLinks = allExpandedLinks.filter(l => {
+    const fn = nodeMap[l.from], tn = nodeMap[l.to];
+    if (!fn || !tn) return false;
+    const fd = fn.domain, td = tn.domain;
+    return (fd === 'system' && SUB_DOMAINS_LIST.includes(td)) ||
+           (td === 'system' && SUB_DOMAINS_LIST.includes(fd));
+  });
+
+  // domainLinks: pure per-domain links only (no cross-level — kept clean)
   const domainLinks = {};
   for (const d of SUB_DOMAINS_LIST) {
-    // Include pure-domain links AND cross-level links (system/item → domain req)
     domainLinks[d] = allExpandedLinks.filter(l => {
       const fn = nodeMap[l.from], tn = nodeMap[l.to];
       if (!fn || !tn) return false;
-      const fd = fn.domain, td = tn.domain;
-      return (fd === d && td === d) ||
-             (fd === d && CROSS_DOMAINS.has(td)) ||
-             (td === d && CROSS_DOMAINS.has(fd));
+      return fn.domain === d && tn.domain === d;
     });
   }
 
@@ -204,52 +211,51 @@ async function loadDashboard(project, item, systems) {
     mech_ut:{x:360,y:148}, mech_it:{x:430,y:78}, mech_qt:{x:505,y:8},
   };
 
-  // Default positions for cross-level nodes (sys/item) appearing in domain diagrams
-  const DOMAIN_CROSS_DEFAULT_POS = {
-    sys_req:   { x: -190, y:  8  },
-    sys_arch:  { x: -190, y:  78 },
-    item_req:  { x: -190, y: -62 },
-    item_arch: { x: -190, y: 148 },
-    fsr:       { x: -190, y: -132 },
-    tsr:       { x: -190, y: -202 },
-  };
-
   const ASPICE_TOP_POS = {
     customer_req:{x:20,y:20}, fsr:{x:90,y:95}, tsr:{x:160,y:170},
     item_req:{x:90,y:95},  item_arch:{x:160,y:170},
     item_it:{x:1050,y:170}, item_qt:{x:1120,y:95},
     sys_req:{x:230,y:245}, sys_arch:{x:300,y:320},
     sys_it:{x:840,y:320},  sys_qt:{x:910,y:245},
+    // Domain req nodes shown in system diagram (below sys_arch)
+    sw_req:  {x:130,y:430}, hw_req:{x:300,y:430}, mech_req:{x:470,y:430},
   };
 
-  // Build top posMap
+  // Build top posMap (topLinks only — for the shared overview diagram)
   const topActiveIds = new Set(topLinks.flatMap(l => [l.from, l.to]));
   const topPosMap = {};
   for (const id of topActiveIds) {
     topPosMap[id] = topPos[id] || ASPICE_TOP_POS[id] || { x: 0, y: 0 };
   }
 
-  // Auto-inject cross-level links (sys_req/sys_arch → {d}_req) for backward-compat:
-  // projects without explicit cross-level links still show sys nodes in domain diagrams
-  for (const d of SUB_DOMAINS_LIST) {
-    const domainReqId = `${d}_req`;
-    const hasDomainReq = domainLinks[d].some(l => l.from === domainReqId || l.to === domainReqId);
-    if (hasDomainReq) {
-      for (const sysNodeId of ['sys_req', 'sys_arch']) {
-        if (!topActiveIds.has(sysNodeId)) continue;
-        const alreadyLinked = domainLinks[d].some(l =>
-          (l.from === sysNodeId && l.to === domainReqId) ||
-          (l.to === sysNodeId && l.from === domainReqId)
-        );
-        if (!alreadyLinked) {
-          domainLinks[d].push({ from: sysNodeId, to: domainReqId, type: 'trace', _auto: true });
+  // Build per-system posMap: topLinks + crossLinks (includes domain req nodes)
+  const sysViewLinks = [...topLinks, ...crossLinks];
+
+  // Auto-inject cross-level links if project has sys nodes but no explicit cross-level links
+  // (backward-compat for projects set up before v0.3.99)
+  if (crossLinks.length === 0 && topActiveIds.has('sys_req')) {
+    for (const d of SUB_DOMAINS_LIST) {
+      const domainReqId = `${d}_req`;
+      // Only inject if this domain has nodes configured
+      const domainHasNodes = allExpandedLinks.some(l => l.from === domainReqId || l.to === domainReqId);
+      if (domainHasNodes) {
+        for (const sysNodeId of ['sys_req', 'sys_arch']) {
+          if (topActiveIds.has(sysNodeId)) {
+            sysViewLinks.push({ from: sysNodeId, to: domainReqId, type: 'trace', _auto: true });
+          }
         }
       }
     }
   }
 
+  const sysViewActiveIds = new Set(sysViewLinks.flatMap(l => [l.from, l.to]));
+  const sysViewPosMap = {};
+  for (const id of sysViewActiveIds) {
+    sysViewPosMap[id] = topPos[id] || ASPICE_TOP_POS[id] || { x: 0, y: 0 };
+  }
+
   // Collect ALL active node IDs for cache refresh
-  const allActiveIds = new Set(topActiveIds);
+  const allActiveIds = new Set(sysViewActiveIds);
   for (const d of SUB_DOMAINS_LIST) {
     for (const l of domainLinks[d]) {
       allActiveIds.add(l.from);
@@ -263,7 +269,7 @@ async function loadDashboard(project, item, systems) {
     const ids = new Set(domainLinks[d].flatMap(l => [l.from, l.to]));
     dPosMap[d] = {};
     for (const id of ids) {
-      dPosMap[d][id] = domainPos[id] || DOMAIN_DEFAULT_POS[id] || DOMAIN_CROSS_DEFAULT_POS[id] || { x: 0, y: 0 };
+      dPosMap[d][id] = domainPos[id] || DOMAIN_DEFAULT_POS[id] || { x: 0, y: 0 };
     }
   }
 
@@ -314,10 +320,10 @@ async function loadDashboard(project, item, systems) {
     }
   }
 
-  // 7b. Per-system top link stats (item/sys nodes, scoped to one system)
+  // 7b. Per-system diagram stats (topLinks + crossLinks, scoped to one system)
   const sysTopLinkStats = {};
   for (const sys of systems) {
-    sysTopLinkStats[sys.id] = topLinks.map(link => {
+    sysTopLinkStats[sys.id] = sysViewLinks.map(link => {
       const fromNode = nodeMap[link.from], toNode = nodeMap[link.to];
       if (!fromNode || !toNode) return null;
       return {
@@ -385,7 +391,7 @@ async function loadDashboard(project, item, systems) {
     const stls  = sysTopLinkStats[sys.id] || [];
     const stMap = {};
     for (const ls of stls) stMap[`${ls.link.from}__${ls.link.to}`] = ls;
-    const stSvg = buildVmodelSVG(topLinks, topActiveIds, topPosMap, nodeMap, stMap, sysTopBadgeOff[sys.id]);
+    const stSvg = buildVmodelSVG(sysViewLinks, sysViewActiveIds, sysViewPosMap, nodeMap, stMap, sysTopBadgeOff[sys.id]);
 
     // 3 domain columns — always all 3
     const domColsHtml = SUB_DOMAINS_LIST.map(d => {
@@ -544,8 +550,8 @@ async function loadDashboard(project, item, systems) {
       for (const ls of stls) stLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
       const stWrap = document.getElementById(`tdb-syssvg-${sys.id}`);
       if (stWrap) {
-        stWrap.innerHTML = buildVmodelSVG(topLinks, topActiveIds, topPosMap, nodeMap, stLsMap, sysTopBadgeOff[sys.id]);
-        wireBadgeDrag(stWrap, sysTopBadgeOff[sys.id], topLinks, topActiveIds, topPosMap, nodeMap, stls, item, [sys]);
+        stWrap.innerHTML = buildVmodelSVG(sysViewLinks, sysViewActiveIds, sysViewPosMap, nodeMap, stLsMap, sysTopBadgeOff[sys.id]);
+        wireBadgeDrag(stWrap, sysTopBadgeOff[sys.id], sysViewLinks, sysViewActiveIds, sysViewPosMap, nodeMap, stls, item, [sys]);
         wireDiagramZoom(stWrap);
       }
       // Domain SVGs
@@ -574,7 +580,7 @@ async function loadDashboard(project, item, systems) {
   // Per-system panel wiring
   for (const sys of systems) {
     const stls = sysTopLinkStats[sys.id] || [];
-    wireSvg(document.getElementById(`tdb-syssvg-${sys.id}`), topLinks, topActiveIds, topPosMap, stls, sysTopBadgeOff[sys.id], [sys]);
+    wireSvg(document.getElementById(`tdb-syssvg-${sys.id}`), sysViewLinks, sysViewActiveIds, sysViewPosMap, stls, sysTopBadgeOff[sys.id], [sys]);
 
     // Domain columns
     for (const d of SUB_DOMAINS_LIST) {
@@ -615,9 +621,10 @@ function computeLinkCovForSystem(srcNodeId, dstNodeId, srcNode, system, itemCach
 }
 
 function computeTopLinkCovForSystem(srcNodeId, dstNodeId, srcNode, system, item, itemCache) {
-  // For system-domain nodes use system's cache; for item-domain nodes use item's cache
-  const isSystemDomain = srcNode.domain === 'system';
-  const parentId = isSystemDomain ? system.id : item?.id;
+  // system/sub-domain nodes → use system's cache; item-level nodes → use item's cache
+  const SUB_DOM = new Set(['sw', 'hw', 'mech']);
+  const usesSystem = srcNode.domain === 'system' || SUB_DOM.has(srcNode.domain);
+  const parentId = usesSystem ? system.id : item?.id;
   const items = parentId ? (itemCache[`${srcNodeId}:${parentId}`] || []) : [];
   let total = 0, linked = 0;
   const missingItems = [], justifiedItems = [], linkedItems = [];
