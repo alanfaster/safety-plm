@@ -5637,3 +5637,50 @@ th.col-th-dragging * { pointer-events: none; }
 .rvf-actions      { white-space: nowrap; }
 .rvf-actions .btn { margin-right: 2px; }
 .rvf-resolution-input { font-size: 12px; min-width: 160px; }
+
+/* ============================================================
+   REVIEW EXECUTE — 3-TAB LAYOUT
+   ============================================================ */
+.rve-main-tabs     { display: flex; gap: 0; border-bottom: 1px solid var(--border);
+  background: var(--bg-card); flex-shrink: 0; padding: 0 12px; }
+.rve-main-tab      { padding: 10px 18px; font-size: 13px; font-weight: 500; border: none;
+  background: none; color: var(--text-muted); cursor: pointer; border-bottom: 3px solid transparent;
+  display: flex; align-items: center; gap: 7px; transition: color .15s; white-space: nowrap; }
+.rve-main-tab:hover  { color: var(--text); }
+.rve-main-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.rve-main-tab-count  { font-size: 11px; padding: 1px 6px; border-radius: 10px;
+  background: #f1f3f4; color: #5f6368; font-weight: 400; }
+.rve-main-tab.active .rve-main-tab-count { background: #e8f0fe; color: var(--accent); }
+.rve-main-tab-badge  { font-size: 10px; padding: 1px 5px; border-radius: 10px;
+  background: #fce8e6; color: #c5221f; font-weight: 700; }
+.rve-tab-body        { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+/* Tab 1: Checklist — keep the split panel inside tab body */
+.rve-body            { display: flex; flex: 1; overflow: hidden; }
+.rve-artifact-list   { width: 260px; flex-shrink: 0; overflow-y: auto; padding: 8px;
+  border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.rve-checklist-panel { flex: 1; overflow-y: auto; }
+
+/* Tab 2: Findings */
+.rve-findings-wrap   { padding: 18px 20px; overflow-y: auto; flex: 1; }
+.rve-findings-header { display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
+.rve-findings-stats  { display: flex; gap: 8px; flex-wrap: wrap; }
+.rve-stat-pill       { font-size: 12px; padding: 4px 10px; border-radius: 12px; font-weight: 500;
+  border-width: 1px; border-style: solid; }
+.rve-findings-table  { font-size: 12px; }
+
+/* Tab 3: Artifact Review */
+.rve-artrev-wrap      { padding: 18px 20px; overflow-y: auto; flex: 1; }
+.rve-artrev-subtitle  { font-size: 12px; margin-bottom: 16px; }
+.rve-artrev-table     { font-size: 12px; }
+.rve-artrev-verdict-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+.rve-artrev-vbtn      { font-size: 11px; padding: 4px 10px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text-muted);
+  transition: all .15s; white-space: nowrap; }
+.rve-artrev-vbtn:hover { border-color: var(--accent); color: var(--accent); }
+.rve-artrev-vbtn.sel-ok          { background: #e8f5e9; color: #1e8e3e; border-color: #a5d6a7; font-weight: 600; }
+.rve-artrev-vbtn.sel-nok         { background: #fce8e6; color: #d93025; border-color: #f5c6c4; font-weight: 600; }
+.rve-artrev-vbtn.sel-partially_ok { background: #fef3e2; color: #e37400; border-color: #f8d7a0; font-weight: 600; }
+.rve-artrev-comment   { width: 100%; min-height: 44px; resize: vertical; font-size: 11px; }
+.rve-artrev-row td    { vertical-align: top; padding: 10px 10px; }
