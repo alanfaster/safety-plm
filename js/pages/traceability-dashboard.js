@@ -15,6 +15,7 @@ const NODE_H = 34;
 
 // ── Per-system canvas (HTML nodes + SVG lines + embedded domain panel) ────────
 // V-shape layout: left arm descends diagonally, domain panel at bottom, right arm ascends
+// Step between adjacent nodes: 65px horizontal, 75px vertical
 const SVC_POS = {
   customer_req: {x:20,  y:20 },
   fsr:          {x:85,  y:95 },
@@ -23,19 +24,23 @@ const SVC_POS = {
   item_arch:    {x:280, y:320},
   sys_req:      {x:345, y:395},
   sys_arch:     {x:410, y:470},
-  sys_it:       {x:825, y:470},
-  sys_qt:       {x:890, y:395},
-  item_it:      {x:955, y:320},
-  item_qt:      {x:1020,y:245},
+  // right arm (mirrors left arm y-levels, positioned after domain panel)
+  sys_it:       {x:1005, y:470},
+  sys_qt:       {x:1070, y:395},
+  item_it:      {x:1135, y:320},
+  item_qt:      {x:1200, y:245},
 };
 const SVC_PNL_X = 475, SVC_PNL_Y = 510;
-const SVC_PNL_W = 340, SVC_PNL_H = 280;
+const SVC_PNL_W = 500, SVC_PNL_H = 400;   // wide+tall panel so inner diagram is readable
 const SVC_PNL_HDR = 28, SVC_PNL_TABS = 32;
 const SVC_PNL_DOM_H = SVC_PNL_H - SVC_PNL_HDR - SVC_PNL_TABS;
-const SVC_W = 1200, SVC_H = SVC_PNL_Y + SVC_PNL_H + 30;
+const SVC_W = 1380, SVC_H = SVC_PNL_Y + SVC_PNL_H + 30;
+
+// Per-session node position overrides (reset on page reload)
+const _svcNodePosOverride = {}; // { [sysId]: { [nodeId]: {x, y} } }
 
 function buildSysCanvas(sys, sysViewLinks, nodeMap, stLsMap, stBadgeOff,
-                        domainLinks, dPosMap, domainStats, domBadgeOff) {
+                        domainLinks, dPosMap, domainStats, domBadgeOff, nodePosOverride) {
   const DC = {
     system:  {fill:'#e8f0fe',stroke:'#4285f4',text:'#1a56db'},
     sw:      {fill:'#e6f4ea',stroke:'#34a853',text:'#1e7e34'},
@@ -53,13 +58,15 @@ function buildSysCanvas(sys, sysViewLinks, nodeMap, stLsMap, stBadgeOff,
   const nodeDivs = [...placed]
     .filter(id => { const n = nodeMap[id]; return n && !SUB_DOM.has(n.domain) && SVC_POS[id]; })
     .map(id => {
-      const n = nodeMap[id], p = SVC_POS[id], c = DC[n.domain] || DC.system;
+      const n = nodeMap[id];
+      const p = (nodePosOverride || {})[id] || SVC_POS[id];
+      const c = DC[n.domain] || DC.system;
       return `<div class="tdb-sv-node" data-nid="${esc(id)}"
-        style="left:${p.x}px;top:${p.y}px;background:${c.fill};border-color:${c.stroke};color:${c.text}">
+        style="left:${p.x}px;top:${p.y}px;background:${c.fill};border-color:${c.stroke};color:${c.text};cursor:grab">
         ${esc(n.label)}</div>`;
     }).join('');
 
-  const svgLinks = _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, stBadgeOff, dPosMap, markerId);
+  const svgLinks = _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, stBadgeOff, dPosMap, markerId, nodePosOverride);
 
   const initDls = domainStats[sys.id]?.[initD] || [];
   const initIds = new Set(domainLinks[initD].flatMap(l => [l.from, l.to]));
@@ -104,7 +111,7 @@ function buildSysCanvas(sys, sysViewLinks, nodeMap, stLsMap, stBadgeOff,
     </div>`;
 }
 
-function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId) {
+function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId, nodePosOverride) {
   const SUB_DOM = new Set(['sw','hw','mech']);
   const _pctCol = p => p===null?'#9ca3af':p===100?'#34a853':p>=50?'#fbbc04':'#ea4335';
 
@@ -114,7 +121,7 @@ function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId) {
       const p = (dPosMap[n.domain] || {})[id];
       return p ? {x:SVC_PNL_X+p.x, y:SVC_PNL_Y+SVC_PNL_HDR+SVC_PNL_TABS+p.y} : null;
     }
-    return SVC_POS[id] || null;
+    return (nodePosOverride || {})[id] || SVC_POS[id] || null;
   }
 
   const drawnCross = new Set();
@@ -154,11 +161,15 @@ function _buildSvcLinks(links, nodeMap, lsMap, badgeOff, dPosMap, markerId) {
     const ft=fwd?`→ ${fwd.linked}/${fwd.total} (${fp2??'N/A'}%)`:'→ N/A';
     const bt=bwd?`← ${bwd.linked}/${bwd.total} (${bp2??'N/A'}%)`:'← N/A';
     const BW=Math.max(ft.length,bt.length)*6.2+10, BH=28, BR=4;
-    const bo=(badgeOff||{})[`${link.from}__${link.to}`]||{dx:0,dy:0};
+    const badgeKey=`${link.from}__${link.to}`;
+    const bo=(badgeOff||{})[badgeKey]||{dx:0,dy:0};
     const bmx=mx+bo.dx, bmy=my+bo.dy, bx=bmx-BW/2, by=bmy-BH/2;
+    const tetherVis = (bo.dx!==0||bo.dy!==0) ? '0.7' : '0';
     return `<path d="${dPath}" stroke="${lc}" stroke-width="2" fill="none" stroke-dasharray="5,3" opacity="0.75"/>
+      <line data-tether="${badgeKey}" x1="${mx}" y1="${my}" x2="${bmx}" y2="${bmy}"
+            stroke="#aaa" stroke-width="1" stroke-dasharray="3,3" opacity="${tetherVis}" pointer-events="none"/>
       <g class="tdb-link-badge tdb-link-badge--clickable"
-         data-from="${link.from}" data-to="${link.to}" data-mx="${mx}" data-my="${my}" style="cursor:pointer">
+         data-from="${link.from}" data-to="${link.to}" data-mx="${mx}" data-my="${my}" style="cursor:grab">
         <rect x="${bx}" y="${by}" width="${BW}" height="${BH}" rx="${BR}"
               fill="white" stroke="${lc}" stroke-width="1.5" opacity="0.97"/>
         <text x="${bmx}" y="${by+11}" text-anchor="middle" font-size="9" font-weight="600"
@@ -546,7 +557,8 @@ async function loadDashboard(project, item, systems) {
     const stMap = {};
     for (const ls of stls) stMap[`${ls.link.from}__${ls.link.to}`] = ls;
     const canvasHtml = buildSysCanvas(sys, sysViewLinks, nodeMap, stMap, sysTopBadgeOff[sys.id],
-                                      domainLinks, dPosMap, domainStats, sysDomBadgeOff[sys.id]);
+                                      domainLinks, dPosMap, domainStats, sysDomBadgeOff[sys.id],
+                                      _svcNodePosOverride[sys.id]);
     return `
       <div class="tdb-main-panel" id="tdb-panel-${esc(sys.id)}" style="display:none">
         <div class="card" style="overflow:hidden">
@@ -700,8 +712,8 @@ async function loadDashboard(project, item, systems) {
         const markerId = `sv-arr-${sys.id.replace(/[^a-z0-9]/gi,'_')}`;
         svgEl.innerHTML = `<defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
           <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/></marker></defs>` +
-          _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sys.id], dPosMap, markerId);
-        wireSysCanvasBadges(sys.id, sys, stls);
+          _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sys.id], dPosMap, markerId, _svcNodePosOverride[sys.id]);
+        wireSysCanvasDrag(sys.id, sys, stls);
       }
       // Refresh active domain SVG
       const activeWrap = document.getElementById(`tdb-dsvg-${sys.id}-active`);
@@ -729,7 +741,7 @@ async function loadDashboard(project, item, systems) {
   // Per-system canvas wiring
   for (const sys of systems) {
     const stls = sysTopLinkStats[sys.id] || [];
-    wireSysCanvasBadges(sys.id, sys, stls);
+    wireSysCanvasDrag(sys.id, sys, stls);
     wireSysCanvasZoom(sys.id);
 
     // Wire initial active domain SVG
@@ -744,21 +756,128 @@ async function loadDashboard(project, item, systems) {
     }
   }
 
-  // ── Canvas badge wiring ────────────────────────────────────────────────────
-  function wireSysCanvasBadges(sysId, sys, stls) {
+  // ── Canvas drag wiring (nodes + badges) ───────────────────────────────────
+  function wireSysCanvasDrag(sysId, sys, stls) {
+    const outer  = document.getElementById(`tdb-svo-${sysId}`);
+    const canvas = document.getElementById(`tdb-svc-${sysId}`);
+    if (!outer || !canvas) return;
+
+    outer._svcDragAbort?.abort();
+    const ac = new AbortController();
+    outer._svcDragAbort = ac;
+    const sig = ac.signal;
+
+    let drag = null;
+
+    function getScale() { return parseFloat(outer.dataset.svcScale || '1'); }
+    function clientToCanvas(cx, cy) {
+      const rect = canvas.getBoundingClientRect();
+      const sc = getScale();
+      return { x: (cx - rect.left) / sc, y: (cy - rect.top) / sc };
+    }
+
+    canvas.addEventListener('mousedown', e => {
+      // Badge drag takes priority
+      const badge = e.target.closest('.tdb-link-badge');
+      if (badge) {
+        e.preventDefault(); e.stopPropagation();
+        const key = `${badge.dataset.from}__${badge.dataset.to}`;
+        const boffs = sysTopBadgeOff[sysId] || {};
+        const orig = boffs[key] || { dx:0, dy:0 };
+        const cp = clientToCanvas(e.clientX, e.clientY);
+        drag = { type:'badge', key, el:badge, startCX:cp.x, startCY:cp.y,
+                 origDx:orig.dx, origDy:orig.dy, moved:false,
+                 startX:e.clientX, startY:e.clientY };
+        badge.style.cursor = 'grabbing';
+        return;
+      }
+      // Node drag
+      const nd = e.target.closest('.tdb-sv-node');
+      if (!nd) return;
+      e.preventDefault();
+      const nodeId = nd.dataset.nid;
+      const cp = clientToCanvas(e.clientX, e.clientY);
+      const curPos = (_svcNodePosOverride[sysId] || {})[nodeId] || SVC_POS[nodeId];
+      if (!curPos) return;
+      drag = { type:'node', nodeId, el:nd, offX:cp.x - curPos.x, offY:cp.y - curPos.y,
+               moved:false, startX:e.clientX, startY:e.clientY };
+      nd.style.cursor = 'grabbing';
+    }, { signal: sig });
+
+    window.addEventListener('mousemove', e => {
+      if (!drag) return;
+      const dx = e.clientX - drag.startX, dy = e.clientY - drag.startY;
+      if (Math.hypot(dx, dy) > 3) drag.moved = true;
+      if (!drag.moved) return;
+
+      if (drag.type === 'node') {
+        const cp = clientToCanvas(e.clientX, e.clientY);
+        drag.el.style.left = Math.max(0, cp.x - drag.offX) + 'px';
+        drag.el.style.top  = Math.max(0, cp.y - drag.offY) + 'px';
+      } else if (drag.type === 'badge') {
+        const cp = clientToCanvas(e.clientX, e.clientY);
+        const ddx = cp.x - drag.startCX, ddy = cp.y - drag.startCY;
+        drag.el.setAttribute('transform', `translate(${drag.origDx+ddx},${drag.origDy+ddy})`);
+        const svg = canvas.querySelector('.tdb-svc-svg');
+        const tether = svg?.querySelector(`[data-tether="${drag.key}"]`);
+        if (tether) {
+          tether.setAttribute('x2', parseFloat(tether.getAttribute('x1')) + drag.origDx + ddx);
+          tether.setAttribute('y2', parseFloat(tether.getAttribute('y1')) + drag.origDy + ddy);
+          tether.setAttribute('opacity', '0.7');
+        }
+      }
+    }, { signal: sig });
+
+    window.addEventListener('mouseup', e => {
+      if (!drag) return;
+      const d = drag; drag = null;
+
+      if (d.type === 'node') {
+        d.el.style.cursor = 'grab';
+        if (!d.moved) return;
+        const cp = clientToCanvas(e.clientX, e.clientY);
+        if (!_svcNodePosOverride[sysId]) _svcNodePosOverride[sysId] = {};
+        _svcNodePosOverride[sysId][d.nodeId] = {
+          x: Math.round(Math.max(0, cp.x - d.offX)),
+          y: Math.round(Math.max(0, cp.y - d.offY)),
+        };
+        _rebuildSvcSvg(sysId, sys, stls);
+      } else if (d.type === 'badge') {
+        if (!d.moved) {
+          // Treat as click — open link panel
+          const ls = stls.find(l => l.link.from === d.el.dataset.from && l.link.to === d.el.dataset.to);
+          if (ls) {
+            const hasMissing = (ls.forward?.missing||0) + (ls.backward?.missing||0) > 0;
+            openLinkPanel(ls, allLinkStats, item, [sys], itemCache, nodeMap, project, allTraceLinks,
+              allActiveIds, sysViewPosMap, hasMissing ? 'missing' : 'browse', sysTopBadgeOff[sysId], refreshAllDiagrams);
+          }
+          ac.abort();
+          wireSysCanvasDrag(sysId, sys, stls);
+          return;
+        }
+        const cp = clientToCanvas(e.clientX, e.clientY);
+        const ddx = cp.x - d.startCX, ddy = cp.y - d.startCY;
+        if (!sysTopBadgeOff[sysId]) sysTopBadgeOff[sysId] = {};
+        sysTopBadgeOff[sysId][d.key] = {
+          dx: Math.round(d.origDx + ddx),
+          dy: Math.round(d.origDy + ddy),
+        };
+        _rebuildSvcSvg(sysId, sys, stls);
+        ac.abort();
+        wireSysCanvasDrag(sysId, sys, stls);
+      }
+    }, { signal: sig });
+  }
+
+  function _rebuildSvcSvg(sysId, sys, stls) {
     const svgEl = document.querySelector(`#tdb-svc-${sysId} .tdb-svc-svg`);
     if (!svgEl) return;
-    svgEl.removeEventListener('click', svgEl._badgeHandler);
-    svgEl._badgeHandler = e => {
-      const badge = e.target.closest('.tdb-link-badge--clickable');
-      if (!badge) return;
-      const ls = stls.find(l => l.link.from === badge.dataset.from && l.link.to === badge.dataset.to);
-      if (!ls) return;
-      const hasMissing = (ls.forward?.missing||0) + (ls.backward?.missing||0) > 0;
-      openLinkPanel(ls, allLinkStats, item, [sys], itemCache, nodeMap, project, allTraceLinks,
-        allActiveIds, sysViewPosMap, hasMissing ? 'missing' : 'browse', sysTopBadgeOff[sysId], refreshAllDiagrams);
-    };
-    svgEl.addEventListener('click', svgEl._badgeHandler);
+    const stLsMap = {};
+    for (const ls of stls) stLsMap[`${ls.link.from}__${ls.link.to}`] = ls;
+    const markerId = `sv-arr-${sysId.replace(/[^a-z0-9]/gi,'_')}`;
+    svgEl.innerHTML = `<defs><marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#9ca3af" opacity="0.8"/></marker></defs>` +
+      _buildSvcLinks(sysViewLinks, nodeMap, stLsMap, sysTopBadgeOff[sysId], dPosMap, markerId, _svcNodePosOverride[sysId]);
   }
 
   // ── Canvas zoom wiring ─────────────────────────────────────────────────────
@@ -772,6 +891,7 @@ async function loadDashboard(project, item, systems) {
       canvas.style.transform = `scale(${scale})`;
       canvas.style.transformOrigin = '0 0';
       outer.style.height = Math.ceil(SVC_H * scale + 4) + 'px';
+      outer.dataset.svcScale = String(scale);
     }
     outer.querySelector('[data-zoom="+"]')?.addEventListener('click', () => { scale = Math.min(MAX, scale+STEP); applyScale(); });
     outer.querySelector('[data-zoom="-"]')?.addEventListener('click', () => { scale = Math.max(MIN, scale-STEP); applyScale(); });
