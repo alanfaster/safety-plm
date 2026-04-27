@@ -142,7 +142,6 @@ export async function renderReviewFindings(container, ctx) {
                 <th>Severity</th>
                 <th>Title</th>
                 <th>Status</th>
-                <th>Due</th>
                 <th>Resolution Note</th>
                 <th style="width:160px">Actions</th>
               </tr>
@@ -213,7 +212,6 @@ export async function renderReviewFindings(container, ctx) {
         <td>
           <span class="badge ${STATUS_CLASSES[f.status] || ''}">${STATUS_LABELS[f.status] || f.status}</span>
         </td>
-        <td class="text-muted">${f.due_date ? escHtml(f.due_date) : '—'}</td>
         <td>
           <input class="form-input rvf-resolution-input" data-finding-id="${f.id}"
             value="${escHtml(f.resolution_note || '')}" placeholder="Resolution note…" style="font-size:12px"/>

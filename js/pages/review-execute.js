@@ -328,7 +328,6 @@ export async function renderReviewExecute(container, ctx) {
         </div>
         <div class="rve-fcard-title">${escHtml(f.title)}</div>
         ${f.description ? `<div class="rve-fcard-desc text-muted">${escHtml(f.description)}</div>` : ''}
-        ${f.due_date ? `<div class="rve-fcard-due text-muted">Due: ${escHtml(f.due_date)}</div>` : ''}
 
         ${transitions.length ? `
           <div class="rve-fcard-transitions">
@@ -559,10 +558,7 @@ export async function renderReviewExecute(container, ctx) {
             <label class="form-label">Description</label>
             <textarea class="form-input" id="fnd-desc" rows="3" placeholder="Detailed description…">${escHtml(comment)}</textarea>
           </div>
-          <div class="form-group">
-            <label class="form-label">Due Date</label>
-            <input type="date" class="form-input" id="fnd-due"/>
-          </div>
+
         </div>`,
       footer: `<button class="btn btn-secondary" id="fnd-cancel">Cancel</button>
                <button class="btn btn-primary" id="fnd-save">⚑ Raise Finding</button>`,
@@ -588,7 +584,6 @@ export async function renderReviewExecute(container, ctx) {
         title,
         severity:    document.getElementById('fnd-severity').value,
         description: document.getElementById('fnd-desc').value.trim(),
-        due_date:    document.getElementById('fnd-due').value || null,
         status:      'open',
         created_by:  currentUserId,
       }).select().single();
