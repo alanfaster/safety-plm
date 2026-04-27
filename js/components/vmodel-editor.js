@@ -545,11 +545,10 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       btn.addEventListener('click', e => {
         e.stopPropagation();
         _domainTab = btn.dataset.tab;
-        _panelScale = 1;
-        if (_panelCanvas) { _panelCanvas.style.transform = ''; }
         panelDiv.querySelectorAll('.vme-dp-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === _domainTab));
         renderDomainCanvas();
         renderDomainSVG();
+        requestAnimationFrame(panelAutofit);
       });
     });
 
@@ -609,6 +608,7 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
     // Render domain nodes & links for current tab
     renderDomainCanvas();
     renderDomainSVG();
+    requestAnimationFrame(panelAutofit);
 
     // Panel can be a link target from main canvas
     if (_connectFrom && !_nodes.find(n => n.id === _connectFrom)?.panelDomain) {
