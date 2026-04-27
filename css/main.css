@@ -5830,3 +5830,26 @@ th.col-th-dragging * { pointer-events: none; }
 .rvck-stamp-nogo        { border-color: #d93025 !important; background: #fce8e6 !important; color: #d93025 !important; }
 .rvck-stamp-comment     { width: 100%; font-size: 12px; margin-bottom: 8px; }
 .rvck-stamp-other       { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── Review checklist: artifact detail ──────────────────────────────── */
+.rvck-artifact-detail         { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+.rvck-artifact-detail-header  { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.rvck-snap-code               { font-family: monospace; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.rvck-snap-title              { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; }
+.rvck-snap-at                 { font-size: 11px; }
+.rvck-artifact-detail-fields  { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.rvck-detail-field            { display: flex; flex-direction: column; gap: 2px; }
+.rvck-detail-field-label      { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 600; }
+.rvck-detail-field-value      { font-size: 12px; color: var(--text); }
+
+/* ── Review checklist: bottom panel progress ────────────────────────── */
+.rvck-bp-progress             { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-left: 6px; }
+.rvck-checklist-bp            { flex-shrink: 0; }
+
+/* ── Review session wizard: checklist mode selector ─────────────────── */
+.wiz-checklist-mode-options   { display: flex; gap: 12px; margin-top: 6px; }
+.wiz-mode-option              { flex: 1; border: 2px solid var(--border); border-radius: 8px; padding: 12px 14px; cursor: pointer; display: flex; gap: 10px; align-items: flex-start; transition: border-color .15s; }
+.wiz-mode-option input        { margin-top: 2px; flex-shrink: 0; }
+.wiz-mode-option.selected     { border-color: var(--accent); background: var(--accent-bg, #f0f4ff); }
+.wiz-mode-option strong       { display: block; font-size: 13px; margin-bottom: 2px; }
+.wiz-mode-option p            { font-size: 11px; color: var(--text-muted); margin: 0; }

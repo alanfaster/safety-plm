@@ -18,6 +18,7 @@
  */
 
 import { sb } from '../config.js';
+import { wireBottomPanel } from '../utils/bottom-panel.js';
 
 const VERDICT_LABELS  = { ok:'OK', nok:'NOK', partially_ok:'Partially OK', na:'N/A' };
 const VERDICT_CLASSES = { ok:'rv-v-ok', nok:'rv-v-nok', partially_ok:'rv-v-partial', na:'rv-v-na' };
@@ -105,6 +106,11 @@ export function mountReviewChecklist(container, opts) {
     const data   = snapshot.snapshot_data || {};
     const fields = ARTIFACT_DISPLAY_FIELDS[snapshot.artifact_type] || ['title','status'];
 
+    // Total checklist items for bottom panel title
+    const totalItems = sections.reduce((s, sec) => s + (sec.items?.length || 0), 0);
+    const myDoneTotal = sections.reduce((s, sec) =>
+      s + (sec.items || []).filter(i => responseIndex[i.id]?.[currentUserId]).length, 0);
+
     container.innerHTML = `
       <div class="rvck-wrap">
 
@@ -117,62 +123,74 @@ export function mountReviewChecklist(container, opts) {
             </div>
           </div>` : ''}
 
-        <!-- Artifact header -->
-        <div class="rvck-snapshot-card">
-          <div class="rvck-snap-header">
+        <!-- 1. Artifact details (all snapshot fields) -->
+        <div class="rvck-artifact-detail">
+          <div class="rvck-artifact-detail-header">
             <span class="rvck-snap-code">${escHtml(snapshot.artifact_code || snapshot.artifact_type)}</span>
             <span class="rvck-snap-title">${escHtml(snapshot.artifact_title || '')}</span>
             <span class="badge badge-${escHtml(data.status || 'draft')}">${escHtml(data.status || '—')}</span>
             <span class="rvck-snap-at text-muted">Snapshot: ${formatDate(snapshot.snapshotted_at)}</span>
           </div>
-          <div class="rvck-snap-fields">
-            ${fields.map(f => data[f] ? `
-              <div class="rvck-snap-field">
-                <span class="rvck-snap-field-label">${escHtml(f.replace(/_/g,' '))}</span>
-                <span class="rvck-snap-field-value">${escHtml(String(data[f]))}</span>
-              </div>` : '').join('')}
+          <div class="rvck-artifact-detail-fields">
+            ${fields.filter(f => data[f] != null && data[f] !== '').map(f => `
+              <div class="rvck-detail-field">
+                <span class="rvck-detail-field-label">${escHtml(f.replace(/_/g,' '))}</span>
+                <span class="rvck-detail-field-value">${escHtml(String(data[f]))}</span>
+              </div>`).join('')}
           </div>
         </div>
 
-        <!-- Checklist sections from template -->
-        ${sections.length ? sections.map(sec => renderSection(sec)).join('') : `
-          <div class="rvck-no-template text-muted">No checklist template attached to this session.</div>`}
-
-        <!-- Open Points (free findings not tied to a checklist item) -->
-        <div class="rvck-open-points" id="rvck-open-points">
-          <button class="rvck-section-header rvck-open-points-toggle" id="rvck-op-toggle">
-            <span class="rvck-sec-chevron">${_openPointsCollapsed ? '▶' : '▼'}</span>
-            <span class="rvck-sec-name">Open Points</span>
-            <span class="rvck-sec-badge">${(findingsByItem['__open__'] || []).length}</span>
-            <span style="flex:1"></span>
-            <span class="rvck-op-add-btn">+ Add Open Point</span>
-          </button>
-          <div class="rvck-open-points-body" id="rvck-op-body" style="${_openPointsCollapsed ? 'display:none' : ''}">
-            ${renderOpenPointsList()}
-          </div>
-        </div>
-
-        <!-- Final verdict stamp -->
+        <!-- 2. GO / NO-GO verdict (above checklist) -->
         <div class="rvck-verdict-stamp" id="rvck-verdict-stamp">
           <div class="rvck-stamp-label">Reviewer Verdict</div>
-          <div class="rvck-stamp-btns">
-            ${['go','conditional','no_go'].map(v => `
-              <button class="rvck-stamp-btn ${_myVerdict === v ? ARTIFACT_FINAL_CLASSES[v] + ' active' : ''}"
-                      id="rvck-stamp-${v}" data-verdict="${v}">
-                ${v === 'go' ? '✓' : v === 'no_go' ? '✗' : '⚑'} ${ARTIFACT_FINAL_LABELS[v]}
-              </button>`).join('')}
+          <div class="rvck-stamp-row">
+            <div class="rvck-stamp-btns">
+              ${['go','conditional','no_go'].map(v => `
+                <button class="rvck-stamp-btn ${_myVerdict === v ? ARTIFACT_FINAL_CLASSES[v] + ' active' : ''}"
+                        data-verdict="${v}">
+                  ${v === 'go' ? '✓' : v === 'no_go' ? '✗' : '⚑'} ${ARTIFACT_FINAL_LABELS[v]}
+                </button>`).join('')}
+            </div>
+            ${(opts.otherVerdicts || []).length ? `
+              <div class="rvck-stamp-other">
+                ${(opts.otherVerdicts || []).map(ov => `
+                  <span class="rvck-rv-pill ${ov.verdict || ''}" title="${escHtml(ov.display_name)}">
+                    ${escHtml(ov.display_name.charAt(0))}: ${ARTIFACT_FINAL_LABELS[ov.verdict] || '—'}
+                  </span>`).join('')}
+              </div>` : ''}
           </div>
           <textarea class="form-input rvck-stamp-comment" id="rvck-stamp-comment"
             rows="2" placeholder="Closing comment (optional)…">${escHtml(_myVerdictComment)}</textarea>
-          <div class="rvck-stamp-other">
-            ${reviewers.filter(r => r.user_id !== currentUserId).map(r => {
-              // parent passes artifactVerdicts array; we get it via opts
-              return ''; // filled by parent via opts.otherVerdicts
-            }).join('')}
-            ${(opts.otherVerdicts || []).map(ov => `
-              <span class="rvck-rv-pill ${ov.verdict || ''}" title="${escHtml(ov.display_name)}">
-                ${escHtml(ov.display_name.charAt(0))}: ${ARTIFACT_FINAL_LABELS[ov.verdict] || '—'}
-              </span>`).join('')}
+        </div>
+
+        <!-- 3. Checklist — bottom panel (collapsible/resizable) -->
+        <div class="bp-bar bp-collapsed rvck-checklist-bp" id="rvck-bp">
+          <div class="bp-resize-handle"></div>
+          <div class="bp-hdr">
+            <span class="bp-title">
+              Checklist
+              ${totalItems ? `<span class="rvck-bp-progress">${myDoneTotal}/${totalItems}</span>` : ''}
+              ${(findingsByItem['__open__'] || []).length ? `<span class="rve-main-tab-badge" style="margin-left:6px">${(findingsByItem['__open__'] || []).length}</span>` : ''}
+            </span>
+            <span class="bp-toggle">▲</span>
+          </div>
+          <div class="bp-body" id="rvck-bp-body">
+            ${sections.length ? sections.map(sec => renderSection(sec)).join('') : `
+              <div class="rvck-no-template text-muted" style="padding:20px">No checklist template attached to this session.</div>`}
+
+            <!-- Open Points -->
+            <div class="rvck-open-points" id="rvck-open-points">
+              <button class="rvck-section-header rvck-open-points-toggle" id="rvck-op-toggle">
+                <span class="rvck-sec-chevron">${_openPointsCollapsed ? '▶' : '▼'}</span>
+                <span class="rvck-sec-name">Open Points</span>
+                <span class="rvck-sec-badge">${(findingsByItem['__open__'] || []).length}</span>
+                <span style="flex:1"></span>
+                <span class="rvck-op-add-btn">+ Add Open Point</span>
+              </button>
+              <div class="rvck-open-points-body" id="rvck-op-body" style="${_openPointsCollapsed ? 'display:none' : ''}">
+                ${renderOpenPointsList()}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -320,6 +338,9 @@ export function mountReviewChecklist(container, opts) {
   // ── Wire everything ─────────────────────────────────────────────────────────
 
   function wire() {
+    // Bottom panel (collapsible checklist)
+    wireBottomPanel(container.querySelector('#rvck-bp'), { key: 'rvck-checklist-h', defaultH: 320 });
+
     // Drift buttons
     container.querySelector('#rvck-compare')?.addEventListener('click', openDiffModal);
     container.querySelector('#rvck-resnap')?.addEventListener('click', () => onReSnapshotRequest?.());
