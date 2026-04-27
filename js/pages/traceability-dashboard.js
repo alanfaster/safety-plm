@@ -145,15 +145,30 @@ async function loadDashboard(project, item, systems) {
   const nodeMap = Object.fromEntries(VMODEL_NODES.map(n => [n.id, n]));
 
   // 3. Classify links
-  const TOP_DOMAINS = new Set(['customer', 'safety', 'item', 'system']);
+  const TOP_DOMAINS    = new Set(['customer', 'safety', 'item', 'system']);
   const SUB_DOMAINS_LIST = ['sw', 'hw', 'mech'];
+  const CROSS_DOMAINS  = new Set([...TOP_DOMAINS]); // system/item nodes that cross into domain diagrams
 
-  function isDomainPanel(nodeId) {
-    return nodeId === 'domain_panel';
+  // Expand domain_panel placeholder links → per-domain req node links (deduped)
+  const _seenLinks = new Set();
+  const allExpandedLinks = [];
+  for (const link of allTraceLinks) {
+    const hasDomainPanel = link.from === 'domain_panel' || link.to === 'domain_panel';
+    if (hasDomainPanel) {
+      for (const d of SUB_DOMAINS_LIST) {
+        const expanded = link.to === 'domain_panel'
+          ? { ...link, to: `${d}_req` }
+          : { ...link, from: `${d}_req` };
+        const key = `${expanded.from}__${expanded.to}`;
+        if (!_seenLinks.has(key)) { _seenLinks.add(key); allExpandedLinks.push(expanded); }
+      }
+    } else {
+      const key = `${link.from}__${link.to}`;
+      if (!_seenLinks.has(key)) { _seenLinks.add(key); allExpandedLinks.push(link); }
+    }
   }
 
-  const topLinks = allTraceLinks.filter(l => {
-    if (isDomainPanel(l.from) || isDomainPanel(l.to)) return false;
+  const topLinks = allExpandedLinks.filter(l => {
     const fn = nodeMap[l.from], tn = nodeMap[l.to];
     if (!fn || !tn) return false;
     return TOP_DOMAINS.has(fn.domain) && TOP_DOMAINS.has(tn.domain);
@@ -161,11 +176,14 @@ async function loadDashboard(project, item, systems) {
 
   const domainLinks = {};
   for (const d of SUB_DOMAINS_LIST) {
-    domainLinks[d] = allTraceLinks.filter(l => {
-      if (isDomainPanel(l.from) || isDomainPanel(l.to)) return false;
+    // Include pure-domain links AND cross-level links (system/item → domain req)
+    domainLinks[d] = allExpandedLinks.filter(l => {
       const fn = nodeMap[l.from], tn = nodeMap[l.to];
       if (!fn || !tn) return false;
-      return fn.domain === d && tn.domain === d;
+      const fd = fn.domain, td = tn.domain;
+      return (fd === d && td === d) ||
+             (fd === d && CROSS_DOMAINS.has(td)) ||
+             (td === d && CROSS_DOMAINS.has(fd));
     });
   }
 
@@ -184,6 +202,16 @@ async function loadDashboard(project, item, systems) {
     hw_ut:{x:360,y:148}, hw_it:{x:430,y:78},    hw_qt:{x:505,y:8},
     mech_req:{x:10,y:8}, mech_arch:{x:80,y:78}, mech_design:{x:150,y:148},
     mech_ut:{x:360,y:148}, mech_it:{x:430,y:78}, mech_qt:{x:505,y:8},
+  };
+
+  // Default positions for cross-level nodes (sys/item) appearing in domain diagrams
+  const DOMAIN_CROSS_DEFAULT_POS = {
+    sys_req:   { x: -190, y:  8  },
+    sys_arch:  { x: -190, y:  78 },
+    item_req:  { x: -190, y: -62 },
+    item_arch: { x: -190, y: 148 },
+    fsr:       { x: -190, y: -132 },
+    tsr:       { x: -190, y: -202 },
   };
 
   const ASPICE_TOP_POS = {
@@ -216,7 +244,7 @@ async function loadDashboard(project, item, systems) {
     const ids = new Set(domainLinks[d].flatMap(l => [l.from, l.to]));
     dPosMap[d] = {};
     for (const id of ids) {
-      dPosMap[d][id] = domainPos[id] || DOMAIN_DEFAULT_POS[id] || { x: 0, y: 0 };
+      dPosMap[d][id] = domainPos[id] || DOMAIN_DEFAULT_POS[id] || DOMAIN_CROSS_DEFAULT_POS[id] || { x: 0, y: 0 };
     }
   }
 
