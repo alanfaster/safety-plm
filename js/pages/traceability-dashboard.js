@@ -542,11 +542,7 @@ async function loadDashboard(project, item, systems) {
                                       domainLinks, dPosMap, domainStats, sysDomBadgeOff[sys.id]);
     return `
       <div class="tdb-main-panel" id="tdb-panel-${esc(sys.id)}" style="display:none">
-        <div class="card">
-          <div class="card-header" style="cursor:pointer" id="tdb-systop-hdr-${esc(sys.id)}">
-            <h3 style="font-size:14px">${esc(sys.system_code || sys.code || '')} · ${esc(sys.name || '')}
-              <span style="font-size:11px;font-weight:400;color:var(--color-text-muted)">— click to view coverage</span></h3>
-          </div>
+        <div class="card" style="overflow:hidden">
           ${canvasHtml}
         </div>
       </div>`;
@@ -583,6 +579,9 @@ async function loadDashboard(project, item, systems) {
 
     ${sysPanelsHtml}`;
 
+  // Track which system canvases have been autofitted
+  const _sysFitted = new Set();
+
   // 10. Wire tab switching + coverage update
   body.querySelectorAll('.tdb-main-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -592,7 +591,6 @@ async function loadDashboard(project, item, systems) {
         p.style.display = p.id === tab.dataset.panel ? '' : 'none';
       });
       document.getElementById('tdb-bp')?._bp?.collapse();
-      // Update coverage table for the newly shown panel
       if (tab.dataset.panel === 'tdb-panel-overview') {
         showCoverageTable(topLinkStats, '🌐 Overview — all systems');
       } else {
@@ -600,9 +598,14 @@ async function loadDashboard(project, item, systems) {
         const sys   = systems.find(s => s.id === sysId);
         const stls  = sysTopLinkStats[sysId] || [];
         showCoverageTable(stls, `${sys?.system_code || sys?.name || 'System'} — item & system level`);
+        // Autofit canvas on first show (panel is now visible so clientWidth is correct)
+        if (!_sysFitted.has(sysId)) {
+          _sysFitted.add(sysId);
+          requestAnimationFrame(() => {
+            document.querySelector(`#tdb-svo-${sysId} [data-zoom="fit"]`)?.click();
+          });
+        }
       }
-      // Clear domain selection highlight
-      body.querySelectorAll('.tdb-dom-col--selected').forEach(el => el.classList.remove('tdb-dom-col--selected'));
     });
   });
 
@@ -765,13 +768,11 @@ async function loadDashboard(project, item, systems) {
     }
     outer.querySelector('[data-zoom="+"]')?.addEventListener('click', () => { scale = Math.min(MAX, scale+STEP); applyScale(); });
     outer.querySelector('[data-zoom="-"]')?.addEventListener('click', () => { scale = Math.max(MIN, scale-STEP); applyScale(); });
-    const fitBtn = outer.querySelector('[data-zoom="fit"]');
-    fitBtn?.addEventListener('click', () => {
+    outer.querySelector('[data-zoom="fit"]')?.addEventListener('click', () => {
       const avail = outer.clientWidth - 4;
       scale = Math.min(1, avail / SVC_W);
       applyScale();
     });
-    requestAnimationFrame(() => fitBtn?.click());
   }
 
   _refreshDiagrams = refreshAllDiagrams;
