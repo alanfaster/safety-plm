@@ -14,18 +14,25 @@ const NODE_W = 148;
 const NODE_H = 34;
 
 // ── Per-system canvas (HTML nodes + SVG lines + embedded domain panel) ────────
+// V-shape layout: left arm descends diagonally, domain panel at bottom, right arm ascends
 const SVC_POS = {
-  customer_req:{x:20,  y:20}, fsr:{x:20,  y:82},  tsr:{x:20,  y:144},
-  item_req:    {x:185, y:20}, item_arch:{x:185, y:82},
-  item_it:     {x:900, y:82}, item_qt:{x:900, y:20},
-  sys_req:     {x:350, y:82}, sys_arch:{x:350, y:144},
-  sys_it:      {x:735, y:144}, sys_qt:{x:735, y:82},
+  customer_req: {x:20,  y:20 },
+  fsr:          {x:85,  y:95 },
+  tsr:          {x:150, y:170},
+  item_req:     {x:215, y:245},
+  item_arch:    {x:280, y:320},
+  sys_req:      {x:345, y:395},
+  sys_arch:     {x:410, y:470},
+  sys_it:       {x:825, y:470},
+  sys_qt:       {x:890, y:395},
+  item_it:      {x:955, y:320},
+  item_qt:      {x:1020,y:245},
 };
-const SVC_PNL_X = 350, SVC_PNL_Y = 236;
-const SVC_PNL_W = 580, SVC_PNL_H = 320;
+const SVC_PNL_X = 475, SVC_PNL_Y = 510;
+const SVC_PNL_W = 340, SVC_PNL_H = 280;
 const SVC_PNL_HDR = 28, SVC_PNL_TABS = 32;
 const SVC_PNL_DOM_H = SVC_PNL_H - SVC_PNL_HDR - SVC_PNL_TABS;
-const SVC_W = 1090, SVC_H = SVC_PNL_Y + SVC_PNL_H + 30;
+const SVC_W = 1200, SVC_H = SVC_PNL_Y + SVC_PNL_H + 30;
 
 function buildSysCanvas(sys, sysViewLinks, nodeMap, stLsMap, stBadgeOff,
                         domainLinks, dPosMap, domainStats, domBadgeOff) {
