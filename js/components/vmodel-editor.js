@@ -670,31 +670,13 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
 
   function renderDomainSVG() {
     if (!_panelSVG) return;
-    _panelSVG.querySelectorAll('.vme-link, .vme-link-hit, .vme-bend-handle, .vme-rubber, .vme-ghost-node').forEach(el => el.remove());
+    _panelSVG.querySelectorAll('.vme-link, .vme-link-hit, .vme-bend-handle, .vme-rubber').forEach(el => el.remove());
     const tabIds  = new Set(_nodes.filter(n => n.panelDomain === _domainTab).map(n => n.id));
     const nodeMap = Object.fromEntries(_nodes.filter(n => n.panelDomain === _domainTab).map(n => [n.id, n]));
 
-    // Identify cross-level links: one side is a tab node, other is a non-panel main-canvas node
-    const ghostIds = new Set();
-    _links.forEach(link => {
-      const aIn = tabIds.has(link.from), bIn = tabIds.has(link.to);
-      if (aIn === bIn) return; // both in / both out — skip here
-      const mainId = aIn ? link.to : link.from;
-      if (_nodes.find(n => n.id === mainId)?.panelDomain) return; // other side is in another domain tab
-      if (DOMAIN_GHOST_POS[mainId]) ghostIds.add(mainId);
-    });
-
-    // Build ghost node objects (fixed positions, non-interactive)
-    const ghostMap = {};
-    for (const gId of ghostIds) {
-      const pos = DOMAIN_GHOST_POS[gId];
-      ghostMap[gId] = { ...ALL_NODE_DEFS[gId], x: pos.x, y: pos.y };
-    }
-    const allNodeMap = { ...nodeMap, ...ghostMap };
-
-    // Compute bounding box to set viewBox (accommodate ghost nodes above)
+    // Fit viewBox to domain nodes only
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const n of Object.values(allNodeMap)) {
+    for (const n of Object.values(nodeMap)) {
       minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
       maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + NODE_H);
     }
@@ -703,34 +685,12 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
       _panelSVG.setAttribute('viewBox', `${minX-PAD} ${minY-PAD} ${maxX-minX+PAD*2} ${maxY-minY+PAD*2}`);
     }
 
-    // Draw ghost node rects + labels
-    for (const gn of Object.values(ghostMap)) {
-      const rect = mkSVG('rect');
-      rect.setAttribute('x', gn.x); rect.setAttribute('y', gn.y);
-      rect.setAttribute('width', NODE_W); rect.setAttribute('height', NODE_H);
-      rect.setAttribute('rx', '4'); rect.setAttribute('fill', '#eef2ff');
-      rect.setAttribute('stroke', '#4285f4'); rect.setAttribute('stroke-dasharray', '5 3');
-      rect.setAttribute('opacity', '0.75'); rect.classList.add('vme-ghost-node');
-      _panelSVG.insertBefore(rect, _panelSVG.firstChild);
-
-      const txt = mkSVG('text');
-      txt.setAttribute('x', gn.x + NODE_W / 2); txt.setAttribute('y', gn.y + NODE_H / 2 + 4);
-      txt.setAttribute('text-anchor', 'middle'); txt.setAttribute('font-size', '10');
-      txt.setAttribute('fill', '#3b5bdb'); txt.setAttribute('pointer-events', 'none');
-      txt.classList.add('vme-ghost-node');
-      txt.textContent = gn.label;
-      _panelSVG.appendChild(txt);
-    }
-
-    // Draw all links (pure domain + cross-level to ghost nodes)
+    // Draw only pure domain links (both endpoints inside the panel tab)
     _links.forEach(link => {
-      const a = allNodeMap[link.from], b = allNodeMap[link.to];
+      if (!tabIds.has(link.from) || !tabIds.has(link.to)) return;
+      const a = nodeMap[link.from], b = nodeMap[link.to];
       if (!a || !b) return;
-      if (!tabIds.has(link.from) && !tabIds.has(link.to)) return; // neither side is in tab
-      // Cross-level links carry a main-canvas bend that is meaningless in panel coordinates — strip it
-      const isCrossLevel = !tabIds.has(link.from) || !tabIds.has(link.to);
-      const panelLink = isCrossLevel && link.bend ? { ...link, bend: null } : link;
-      drawLinkIn(_panelSVG, panelLink, a, b, true);
+      drawLinkIn(_panelSVG, link, a, b, true);
     });
     renderDomainRubberBand();
   }
