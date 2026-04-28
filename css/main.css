@@ -5822,9 +5822,16 @@ th.col-th-dragging * { pointer-events: none; }
 .rvck-comment-wrap      { }
 .rvck-comment           { width: 100%; font-size: 11px; min-height: 44px; resize: vertical; }
 
+/* Findings toggle bar */
+.rvck-findings-toggle   { display: flex; align-items: center; gap: 5px;
+  width: 100%; padding: 4px 12px; font-size: 11px; font-weight: 500;
+  color: var(--text-muted); background: var(--bg); border: none; border-top: 1px solid var(--border);
+  cursor: pointer; text-align: left; transition: background .12s; }
+.rvck-findings-toggle:hover { background: var(--bg-hover); color: var(--text); }
+.rvck-findings-toggle-chevron { font-size: 10px; width: 10px; flex-shrink: 0; }
+
 /* Item findings — full width strip below the item row */
-.rvck-item-findings     { display: flex; flex-direction: column; gap: 0;
-  border-top: 1px solid var(--border); }
+.rvck-item-findings     { display: flex; flex-direction: column; gap: 0; }
 .rvck-item-findings:empty { display: none; }
 
 /* ============================================================
@@ -5850,20 +5857,22 @@ th.col-th-dragging * { pointer-events: none; }
    ============================================================ */
 /* Inline finding — compact full-width row */
 .rvck-inline-finding    { background: var(--bg); font-size: 12px;
-  border-bottom: 1px solid var(--border-light, #f0f0f0); }
-.rvck-inline-finding:last-child { border-bottom: none; }
-.rvck-inline-finding-header { display: flex; align-items: center; gap: 6px;
-  padding: 5px 12px; flex-wrap: wrap; }
+  border-top: 1px solid var(--border-light, #f0f0f0); }
+.rvck-inline-finding-header { display: flex; align-items: center; gap: 5px;
+  padding: 4px 12px; flex-wrap: wrap; }
 .rvck-inline-finding-code  { font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
-.rvck-inline-finding-title { font-size: 12px; font-weight: 500; flex: 1; min-width: 0; }
-.rvck-inline-finding-desc  { font-size: 11px; padding: 0 12px 4px; color: var(--text-muted); }
-.rvck-inline-transitions   { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px 12px 6px; }
+.rvck-inline-finding-title { font-size: 12px; font-weight: 500; }
+.rvck-inline-finding-desc-inline { font-size: 11px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.rvck-inline-status-group  { display: flex; align-items: center; gap: 4px; margin-left: auto; flex-shrink: 0; }
+.rvck-inline-finding-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+/* Collapsible thread */
+.rvck-inline-thread-wrap { border-top: 1px solid var(--border-light, #f0f0f0); }
 .rvck-inline-thread     { display: flex; flex-direction: column; }
-.rvck-inline-thread:not(:empty) { border-top: 1px solid var(--border-light, #f0f0f0); }
-.rvck-inline-thread .rve-fcard-comment { padding: 3px 12px; }
+.rvck-inline-thread .rve-fcard-comment { padding: 2px 12px; }
 .rvck-inline-reply      { display: flex; gap: 6px; align-items: center;
-  padding: 4px 12px 6px; border-top: 1px solid var(--border-light, #f0f0f0); }
-.rvck-inline-reply-input { flex: 1; font-size: 11px; min-height: 28px; max-height: 60px; resize: none; padding: 3px 7px; }
+  padding: 4px 12px 5px; border-top: 1px solid var(--border-light, #f0f0f0); }
+.rvck-inline-reply-input { flex: 1; font-size: 11px; min-height: 26px; max-height: 60px; resize: none; padding: 3px 7px; }
 .rvck-inline-reply-btn  { flex-shrink: 0; font-size: 11px; }
 
 /* ============================================================
@@ -6022,3 +6031,6 @@ th.col-th-dragging * { pointer-events: none; }
 /* ── Finding close pending indicator ───────────────────────────────── */
 .rve-fcard-pending-close { font-size:11px; color:var(--text-muted); font-style:italic;
   white-space:nowrap; padding:2px 4px; }
+
+/* btn-xs — smaller than btn-sm */
+.btn-xs { font-size: 10px; padding: 2px 7px; line-height: 1.4; }

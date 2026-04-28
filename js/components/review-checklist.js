@@ -216,7 +216,12 @@ export function mountReviewChecklist(container, opts) {
         </div>
 
         ${itemFindings.length ? `
-          <div class="rvck-item-findings" id="rvck-item-findings-${item.id}">
+          <button class="rvck-findings-toggle" data-item-id="${item.id}">
+            <span class="rvck-findings-toggle-chevron">▶</span>
+            ⚑ ${itemFindings.length} finding${itemFindings.length > 1 ? 's' : ''}
+            <span class="badge ${FINDING_STATUS_CLASSES[itemFindings[0].status] || ''}" style="margin-left:4px">${FINDING_STATUS_LABELS[itemFindings[0].status] || itemFindings[0].status}${itemFindings.length > 1 ? ` +${itemFindings.length - 1}` : ''}</span>
+          </button>
+          <div class="rvck-item-findings" id="rvck-item-findings-${item.id}" style="display:none">
             ${itemFindings.map(f => renderInlineFinding(f)).join('')}
           </div>` : `<div class="rvck-item-findings" id="rvck-item-findings-${item.id}"></div>`}
       </div>
@@ -234,9 +239,21 @@ export function mountReviewChecklist(container, opts) {
   // ── Inline finding card (inside checklist or open points) ───────────────────
 
   function renderInlineFinding(f, withThread = false) {
-    const transitions = TRANSITIONS[f.status] || [];
-    const comments    = _commentCache[f.id] || [];
-    const isAuthor    = f.created_by === currentUserId;
+    const transitions  = TRANSITIONS[f.status] || [];
+    const comments     = _commentCache[f.id] || [];
+    const isAuthor     = f.created_by === currentUserId;
+    const commentCount = comments.length;
+
+    const transitionBtns = [
+      ...transitions.filter(to => to !== 'closed').map(to =>
+        `<button class="btn btn-xs rvck-inline-trans-btn rve-trans-${to}" data-finding-id="${f.id}" data-to="${to}">${TRANSITION_LABELS[to]}</button>`
+      ),
+      transitions.includes('closed')
+        ? (isAuthor
+            ? `<button class="btn btn-xs rvck-inline-trans-btn rve-trans-closed" data-finding-id="${f.id}" data-to="closed">${TRANSITION_LABELS['closed']}</button>`
+            : `<span class="rve-fcard-pending-close">⏳ Awaiting creator</span>`)
+        : '',
+    ].join('');
 
     return `
       <div class="rvck-inline-finding" data-finding-id="${f.id}">
@@ -244,34 +261,28 @@ export function mountReviewChecklist(container, opts) {
           <span class="mono rvck-inline-finding-code">${escHtml(f.finding_code)}</span>
           <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}">${SEVERITY_LABELS[f.severity] || f.severity}</span>
           <span class="rvck-inline-finding-title">${escHtml(f.title)}</span>
-          <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
-          ${isAuthor ? `<button class="btn btn-ghost btn-sm rvck-inline-edit-btn" data-finding-id="${f.id}" title="Edit finding">✎</button>` : ''}
-          ${isAuthor ? `<button class="btn btn-ghost btn-sm rvck-inline-del-btn" data-finding-id="${f.id}" title="Delete finding" style="color:var(--color-danger,#e53e3e)">✕</button>` : ''}
-        </div>
-        ${f.description ? `<div class="rvck-inline-finding-desc text-muted">${escHtml(f.description)}</div>` : ''}
-
-        ${transitions.length ? `
-          <div class="rvck-inline-transitions">
-            ${transitions.filter(to => to !== 'closed').map(to => `
-              <button class="btn btn-sm rvck-inline-trans-btn rve-trans-${to}"
-                      data-finding-id="${f.id}" data-to="${to}">
-                ${TRANSITION_LABELS[to] || FINDING_STATUS_LABELS[to]}
-              </button>`).join('')}
-            ${transitions.includes('closed')
-              ? (f.created_by === currentUserId
-                  ? `<button class="btn btn-sm rvck-inline-trans-btn rve-trans-closed" data-finding-id="${f.id}" data-to="closed">${TRANSITION_LABELS['closed']}</button>`
-                  : `<span class="rve-fcard-pending-close" title="Only the finding creator can close this">⏳ Awaiting creator confirmation</span>`)
-              : ''}
-          </div>` : ''}
-
-        <div class="rvck-inline-thread" id="rvck-thread-${f.id}">
-          ${comments.map(c => renderComment(c)).join('')}
+          ${f.description ? `<span class="rvck-inline-finding-desc-inline text-muted">— ${escHtml(f.description)}</span>` : ''}
+          <span class="rvck-inline-status-group">
+            <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
+            ${transitionBtns}
+          </span>
+          <span class="rvck-inline-finding-actions">
+            <button class="btn btn-ghost btn-xs rvck-comments-toggle" data-finding-id="${f.id}"
+                    title="${commentCount ? commentCount + ' comment(s)' : 'Add comment'}">💬${commentCount ? ' ' + commentCount : ''}</button>
+            ${isAuthor ? `<button class="btn btn-ghost btn-xs rvck-inline-edit-btn" data-finding-id="${f.id}" title="Edit">✎</button>` : ''}
+            ${isAuthor ? `<button class="btn btn-ghost btn-xs rvck-inline-del-btn" data-finding-id="${f.id}" title="Delete" style="color:var(--color-danger,#e53e3e)">✕</button>` : ''}
+          </span>
         </div>
 
-        <div class="rvck-inline-reply">
-          <textarea class="form-input rvck-inline-reply-input" data-finding-id="${f.id}"
-            rows="1" placeholder="Reply…"></textarea>
-          <button class="btn btn-secondary btn-sm rvck-inline-reply-btn" data-finding-id="${f.id}">Reply</button>
+        <div class="rvck-inline-thread-wrap" id="rvck-thread-wrap-${f.id}" style="display:none">
+          <div class="rvck-inline-thread" id="rvck-thread-${f.id}">
+            ${comments.map(c => renderComment(c)).join('')}
+          </div>
+          <div class="rvck-inline-reply">
+            <textarea class="form-input rvck-inline-reply-input" data-finding-id="${f.id}"
+              rows="1" placeholder="Reply…"></textarea>
+            <button class="btn btn-secondary btn-xs rvck-inline-reply-btn" data-finding-id="${f.id}">Send</button>
+          </div>
         </div>
       </div>
     `;
@@ -398,18 +409,37 @@ export function mountReviewChecklist(container, opts) {
         onFindingCreated?.(newFinding);
 
         const slot = container.querySelector(`#rvck-item-findings-${itemId}`);
-        if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(newFinding)); wireInlineTransitions(container); wireInlineEdits(container); wireInlineDeletes(container); wireInlineReplies(container); }
+        if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(newFinding)); wireInlineFinding(container); }
 
         // Hide raise form — finding already exists
         form.style.display = 'none';
       });
     });
 
-    // Inline finding transitions, edits, deletes, replies
-    wireInlineTransitions(container);
-    wireInlineEdits(container);
-    wireInlineDeletes(container);
-    wireInlineReplies(container);
+    // Findings toggle (per checklist item)
+    container.querySelectorAll('.rvck-findings-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const itemId  = btn.dataset.itemId;
+        const list    = container.querySelector(`#rvck-item-findings-${itemId}`);
+        const chevron = btn.querySelector('.rvck-findings-toggle-chevron');
+        const open    = list?.style.display !== 'none';
+        if (list)    list.style.display    = open ? 'none' : '';
+        if (chevron) chevron.textContent   = open ? '▶' : '▼';
+      });
+    });
+
+    // Comments toggle (per finding)
+    container.querySelectorAll('.rvck-comments-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const fid  = btn.dataset.findingId;
+        const wrap = container.querySelector(`#rvck-thread-wrap-${fid}`);
+        if (!wrap) return;
+        const open = wrap.style.display !== 'none';
+        wrap.style.display = open ? 'none' : '';
+      });
+    });
+
+    wireInlineFinding(container);
 
     // Load comments for visible findings
     loadVisibleComments();
@@ -469,13 +499,25 @@ export function mountReviewChecklist(container, opts) {
 
           Object.assign(f, { title, severity, description });
           card.outerHTML = renderInlineFinding(f);
-          wireInlineTransitions(root);
-          wireInlineEdits(root);
-          wireInlineDeletes(root);
-          wireInlineReplies(root);
+          wireInlineFinding(root);
         });
       });
     });
+  }
+
+  function wireInlineFinding(root) {
+    // Comments toggle
+    root.querySelectorAll('.rvck-comments-toggle:not([data-wired])').forEach(btn => {
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', () => {
+        const wrap = root.querySelector(`#rvck-thread-wrap-${btn.dataset.findingId}`);
+        if (wrap) wrap.style.display = wrap.style.display !== 'none' ? 'none' : '';
+      });
+    });
+    wireInlineTransitions(root);
+    wireInlineEdits(root);
+    wireInlineDeletes(root);
+    wireInlineReplies(root);
   }
 
   function wireInlineTransitions(root) {
@@ -538,10 +580,7 @@ export function mountReviewChecklist(container, opts) {
 
           f.status = toStatus;
           card.outerHTML = renderInlineFinding(f);
-          wireInlineTransitions(root);
-          wireInlineEdits(root);
-          wireInlineDeletes(root);
-          wireInlineReplies(root);
+          wireInlineFinding(root);
           loadVisibleComments();
         });
       });
@@ -614,11 +653,17 @@ export function mountReviewChecklist(container, opts) {
     _commentCache[findingId].push(comment);
     ta.value = '';
 
+    // Ensure thread is visible
+    const wrap = root.querySelector(`#rvck-thread-wrap-${findingId}`);
+    if (wrap) wrap.style.display = '';
     const thread = root.querySelector(`#rvck-thread-${findingId}`);
     if (thread) {
       thread.insertAdjacentHTML('beforeend', renderComment(comment));
       thread.lastElementChild?.scrollIntoView({ behavior:'smooth', block:'nearest' });
     }
+    // Update comment count badge on toggle button
+    const toggle = root.querySelector(`.rvck-comments-toggle[data-finding-id="${findingId}"]`);
+    if (toggle) toggle.textContent = `💬 ${(_commentCache[findingId] || []).length}`;
   }
 
   async function loadVisibleComments() {
@@ -694,12 +739,12 @@ export function mountReviewChecklist(container, opts) {
 
     if (finding.template_item_id) {
       const slot = container.querySelector(`#rvck-item-findings-${finding.template_item_id}`);
-      if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(finding)); wireInlineTransitions(container); wireInlineEdits(container); wireInlineReplies(container); }
+      if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(finding)); wireInlineFinding(container); }
     } else {
       _openPointsCollapsed = false;
       const body    = container.querySelector('#rvck-op-body');
       const chevron = container.querySelector('#rvck-op-toggle .rvck-sec-chevron');
-      if (body)    { body.style.display = ''; body.innerHTML = renderOpenPointsList(); wireInlineTransitions(container); wireInlineEdits(container); wireInlineReplies(container); }
+      if (body)    { body.style.display = ''; body.innerHTML = renderOpenPointsList(); wireInlineFinding(container); }
       if (chevron) chevron.textContent = '▼';
       // Update badge
       const badge = container.querySelector('#rvck-open-points .rvck-sec-badge');
