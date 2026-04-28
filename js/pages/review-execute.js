@@ -48,6 +48,51 @@ const TRANSITION_LABELS = {
 const FINAL_VERDICT_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-GO' };
 const FINAL_VERDICT_CLASSES = { go:'rve-artcard-go', conditional:'rve-artcard-conditional', no_go:'rve-artcard-nogo' };
 
+const ARTIFACT_DISPLAY_FIELDS = {
+  requirements:         ['req_code','title','description','type','status','priority','asil','dal'],
+  arch_spec_items:      ['spec_code','title','type','status'],
+  test_specs:           ['test_code','name','description','level','status','method'],
+  safety_analysis_rows: ['analysis_code','title','analysis_type','status'],
+};
+
+function openDiffModal(snap) {
+  const tableMap = { requirements:'requirements', arch_spec_items:'arch_spec_items', test_specs:'test_specs', safety_analysis_rows:'safety_analyses' };
+  const table = tableMap[snap.artifact_type];
+  if (!table) return;
+  import('../config.js').then(({ sb }) => {
+    sb.from(table).select('*').eq('id', snap.artifact_id).single().then(({ data: live }) => {
+      if (!live) return;
+      showDiffModal(snap.snapshot_data, live, snap);
+    });
+  });
+}
+
+function showDiffModal(frozen, live, snap) {
+  document.querySelector('.rvck-diff-overlay')?.remove();
+  const allKeys = new Set([...Object.keys(frozen), ...Object.keys(live)]);
+  const skipKeys = new Set(['id','created_at','updated_at','project_id','parent_id','parent_type']);
+  const rows = [...allKeys].filter(k => !skipKeys.has(k)).map(k => {
+    const a = String(frozen[k] ?? '—'); const b = String(live[k] ?? '—');
+    const changed = a !== b;
+    return `<tr class="${changed ? 'rvck-diff-changed' : ''}">
+      <td class="rvck-diff-key">${escHtml(k)}</td>
+      <td class="rvck-diff-old">${escHtml(a)}</td>
+      <td class="rvck-diff-new">${changed ? `<strong>${escHtml(b)}</strong>` : escHtml(b)}</td></tr>`;
+  }).join('');
+  const overlay = document.createElement('div');
+  overlay.className = 'rvck-diff-overlay';
+  overlay.innerHTML = `<div class="rvck-diff-modal">
+    <div class="rvck-diff-header"><strong>Compare: Snapshot v${snap.artifact_version ?? '?'} vs Current</strong>
+      <button class="btn btn-ghost btn-sm rvck-diff-close">✕</button></div>
+    <table class="rvck-diff-table">
+      <thead><tr><th>Field</th><th>Snapshot</th><th>Current</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.rvck-diff-close').onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+}
+
 export async function renderReviewExecute(container, ctx) {
   const { project, item, sessionId } = ctx;
   const base = `/project/${project.id}/item/${item.id}`;
@@ -168,7 +213,7 @@ export async function renderReviewExecute(container, ctx) {
     _activeTab === 'review' ? wireReviewTab() : wireFindingsTab();
   }
 
-  // ── Tab 1: Review ─────────────────────────────────────────────────────────────
+  // ── Tab 1: Review (3-column layout) ──────────────────────────────────────────
 
   function renderReviewTab() {
     return `
@@ -177,8 +222,11 @@ export async function renderReviewExecute(container, ctx) {
           ${(snapshots || []).map(snap => renderArtifactCard(snap)).join('')}
           ${!snapshots?.length ? '<p class="rv-empty" style="padding:16px">No artifacts in this session.</p>' : ''}
         </div>
-        <div class="rve-checklist-panel" id="rve-checklist-panel">
-          ${_selectedSnapshot ? '' : '<div class="rve-checklist-empty">Select an artifact to start reviewing.</div>'}
+        <div class="rve-checklist-col" id="rve-checklist-col">
+          ${sections.length ? '' : '<div class="rve-checklist-empty text-muted" style="padding:24px;text-align:center">No checklist template attached to this session.</div>'}
+        </div>
+        <div class="rve-props-panel" id="rve-props-panel">
+          <div class="rve-props-placeholder text-muted">Select an artifact to view its properties.</div>
         </div>
       </div>
     `;
@@ -195,8 +243,10 @@ export async function renderReviewExecute(container, ctx) {
     });
     if (_selectedSnapshot) {
       container.querySelector(`[data-snap-id="${_selectedSnapshot.id}"]`)?.classList.add('active');
-      loadArtifactPanel();
     }
+    // Always mount checklist (it's always visible); load first artifact properties
+    mountChecklist();
+    if (_selectedSnapshot) loadPropsPanel();
   }
 
   function renderArtifactCard(snap) {
@@ -233,51 +283,149 @@ export async function renderReviewExecute(container, ctx) {
     `;
   }
 
-  function loadArtifactPanel() {
-    const panel = document.getElementById('rve-checklist-panel');
-    if (!_selectedSnapshot || !panel) return;
+  // Mounts the checklist once in the middle column — stays mounted across artifact switches
+  function mountChecklist() {
+    const col = document.getElementById('rve-checklist-col');
+    if (!col || !sections.length) return;
 
-    const snap     = _selectedSnapshot;
+    const snap     = _selectedSnapshot || snapshots?.[0];
     const isShared = session.checklist_mode === 'shared';
-    // In shared mode all responses are stored against the first snapshot
     const ckSnap   = isShared ? (snapshots?.[0] || snap) : snap;
+    if (!snap) return;
 
     const snapResponses = _allResponses.filter(r => r.snapshot_id === ckSnap.id);
     const snapFindings  = _findings.filter(f => f.snapshot_id === snap.id);
-    const myVerdict     = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
+
+    mountReviewChecklist(col, {
+      session, snapshot: snap, sections,
+      responseSnapshot: isShared ? ckSnap : undefined,
+      allResponses: snapResponses,
+      currentUserId, reviewers: reviewerList,
+      findings: snapFindings,
+      onSaved: ({ snapshotId, itemId, verdict }) => {
+        const existing = _allResponses.find(r => r.snapshot_id === snapshotId && r.template_item_id === itemId && r.reviewer_id === currentUserId);
+        if (existing) existing.verdict = verdict;
+        else _allResponses.push({ snapshot_id: snapshotId, template_item_id: itemId, reviewer_id: currentUserId, verdict, session_id: sessionId });
+        if (isShared) (snapshots || []).forEach(s => refreshArtifactCard(s));
+        else refreshArtifactCard(snap);
+      },
+      onFindingRaise: opts => openRaiseFindingModal(opts),
+      onReSnapshotRequest: async () => { await reSnapshot(snap); loadPropsPanel(); },
+    });
+  }
+
+  // Refreshes the right properties panel when the selected artifact changes
+  function loadArtifactPanel() {
+    // Remount checklist with updated responses for the new artifact (individual mode)
+    if (session.checklist_mode !== 'shared') mountChecklist();
+    loadPropsPanel();
+  }
+
+  function loadPropsPanel() {
+    const panel = document.getElementById('rve-props-panel');
+    if (!panel || !_selectedSnapshot) return;
+
+    const snap        = _selectedSnapshot;
+    const data        = snap.snapshot_data || {};
+    const fields      = ARTIFACT_DISPLAY_FIELDS[snap.artifact_type] || ['title','status'];
+    const myVerdict   = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
+    const mv          = myVerdict?.verdict || null;
+    const mvc         = myVerdict?.verdict_comment || '';
     const otherVerdicts = reviewerList
       .filter(r => r.user_id !== currentUserId)
       .map(r => {
         const v = _artifactVerdicts.find(x => x.snapshot_id === snap.id && x.reviewer_id === r.user_id);
         return v ? { display_name: r.display_name, verdict: v.verdict } : null;
       }).filter(Boolean);
+    const drifted = !!driftMap[snap.artifact_id];
 
-    mountReviewChecklist(panel, {
-      session, snapshot: snap, sections,
-      responseSnapshot: isShared ? ckSnap : undefined,
-      allResponses: snapResponses,
-      currentUserId, reviewers: reviewerList,
-      findings: snapFindings,
-      artifactVerdict: myVerdict || null,
-      otherVerdicts,
-      isDrifted: !!driftMap[snap.artifact_id],
-      onSaved: ({ snapshotId, itemId, verdict }) => {
-        const existing = _allResponses.find(r => r.snapshot_id === snapshotId && r.template_item_id === itemId && r.reviewer_id === currentUserId);
-        if (existing) existing.verdict = verdict;
-        else _allResponses.push({ snapshot_id: snapshotId, template_item_id: itemId, reviewer_id: currentUserId, verdict, session_id: sessionId });
-        // In shared mode refresh all artifact cards (shared progress)
-        if (isShared) (snapshots || []).forEach(s => refreshArtifactCard(s));
-        else refreshArtifactCard(snap);
-      },
-      onFindingRaise: opts => openRaiseFindingModal(opts),
-      onReSnapshotRequest: async () => reSnapshot(snap),
-      onVerdictSaved: ({ verdict }) => {
-        const existing = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
-        if (existing) existing.verdict = verdict;
-        else _artifactVerdicts.push({ snapshot_id: snap.id, reviewer_id: currentUserId, verdict, session_id: sessionId });
-        refreshArtifactCard(snap);
-      },
+    panel.innerHTML = `
+      <div class="rve-props-inner">
+        <div class="rve-props-artifact-header">
+          <span class="rve-art-code">${escHtml(snap.artifact_code || snap.artifact_type)}</span>
+          ${snap.artifact_version != null ? `<span class="artifact-version-badge">v${snap.artifact_version}</span>` : ''}
+          <span class="badge badge-${escHtml(data.status || 'draft')}">${escHtml(data.status || '—')}</span>
+        </div>
+        <div class="rve-props-title">${escHtml(snap.artifact_title || '')}</div>
+
+        ${drifted ? `
+          <div class="rve-props-drift">
+            ⚠ Changed since snapshot
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn btn-ghost btn-sm" id="rve-props-compare">Compare</button>
+              <button class="btn btn-secondary btn-sm" id="rve-props-resnap">Update Snapshot</button>
+            </div>
+          </div>` : ''}
+
+        <div class="rve-props-fields">
+          ${fields.filter(f => data[f] != null && data[f] !== '').map(f => `
+            <div class="rve-props-field">
+              <div class="rve-props-field-label">${escHtml(f.replace(/_/g,' '))}</div>
+              <div class="rve-props-field-value">${escHtml(String(data[f]))}</div>
+            </div>`).join('')}
+        </div>
+
+        <div class="rve-props-divider"></div>
+
+        <div class="rve-props-verdict-section">
+          <div class="rve-props-verdict-label">Reviewer Verdict</div>
+          <div class="rve-props-verdict-btns">
+            ${['go','conditional','no_go'].map(v => `
+              <button class="rve-props-vbtn ${mv === v ? 'rve-props-vbtn-' + v + ' active' : ''}"
+                      data-verdict="${v}">
+                ${v === 'go' ? '✓ GO' : v === 'no_go' ? '✗ NO-GO' : '⚑ Conditional'}
+              </button>`).join('')}
+          </div>
+          ${otherVerdicts.length ? `
+            <div class="rve-props-other-verdicts">
+              ${otherVerdicts.map(ov => `
+                <span class="rvck-rv-pill ${ov.verdict || ''}" title="${escHtml(ov.display_name)}">
+                  ${escHtml(ov.display_name.charAt(0))}: ${FINAL_VERDICT_LABELS[ov.verdict] || '—'}
+                </span>`).join('')}
+            </div>` : ''}
+          <textarea class="form-input rve-props-verdict-comment" rows="3"
+            placeholder="Closing comment (optional)…">${escHtml(mvc)}</textarea>
+        </div>
+      </div>
+    `;
+
+    // Wire drift buttons
+    panel.querySelector('#rve-props-compare')?.addEventListener('click', () => openDiffModal(snap));
+    panel.querySelector('#rve-props-resnap')?.addEventListener('click', async () => { await reSnapshot(snap); loadPropsPanel(); });
+
+    // Wire verdict buttons
+    let _currentVerdict = mv;
+    panel.querySelectorAll('.rve-props-vbtn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        _currentVerdict = btn.dataset.verdict;
+        panel.querySelectorAll('.rve-props-vbtn').forEach(b => {
+          b.className = `rve-props-vbtn${b.dataset.verdict === _currentVerdict ? ' rve-props-vbtn-' + _currentVerdict + ' active' : ''}`;
+        });
+        const comment = panel.querySelector('.rve-props-verdict-comment')?.value?.trim() || '';
+        await saveArtifactVerdict(snap, _currentVerdict, comment);
+      });
     });
+    panel.querySelector('.rve-props-verdict-comment')?.addEventListener('input', debounce(async () => {
+      if (!_currentVerdict) return;
+      const comment = panel.querySelector('.rve-props-verdict-comment')?.value?.trim() || '';
+      await saveArtifactVerdict(snap, _currentVerdict, comment);
+    }, 600));
+  }
+
+  async function saveArtifactVerdict(snap, verdict, comment) {
+    const { data, error } = await sb.from('review_artifact_verdicts')
+      .upsert({
+        session_id: sessionId, snapshot_id: snap.id,
+        reviewer_id: currentUserId, verdict,
+        verdict_comment: comment, updated_at: new Date().toISOString(),
+      }, { onConflict: 'snapshot_id,reviewer_id' })
+      .select().single();
+    if (!error && data) {
+      const existing = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
+      if (existing) { existing.verdict = verdict; existing.verdict_comment = comment; }
+      else _artifactVerdicts.push({ snapshot_id: snap.id, reviewer_id: currentUserId, verdict, verdict_comment: comment, session_id: sessionId });
+      refreshArtifactCard(snap);
+    }
   }
 
   function refreshArtifactCard(snap) {
