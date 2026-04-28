@@ -27,8 +27,8 @@ const ARTIFACT_FINAL_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-G
 const ARTIFACT_FINAL_CLASSES = { go:'rvck-stamp-go', conditional:'rvck-stamp-conditional', no_go:'rvck-stamp-nogo' };
 
 const FINDING_STATUS_LABELS  = {
-  open:'Open', accepted:'Accepted', in_progress:'In Progress', deferred:'Deferred',
-  fixed:'Fixed', verified:'Verified', closed:'Closed', duplicate:'Duplicate', rejected:'Rejected',
+  open:'Open', accepted:'Accepted', fixed:'Fixed – pending confirm', closed:'Closed', rejected:'Rejected',
+  in_progress:'In Progress', deferred:'Deferred', verified:'Verified', duplicate:'Duplicate',
 };
 const FINDING_STATUS_CLASSES = {
   open:'rv-fs-open', accepted:'rv-fs-accepted', in_progress:'rv-fs-in-progress',
@@ -47,7 +47,7 @@ const TRANSITIONS = {
   closed:[], rejected:[],
 };
 const TRANSITION_LABELS = {
-  accepted:'✓ Accept', fixed:'✔ Mark Fixed', closed:'✓ Close', rejected:'✕ Reject',
+  accepted:'✓ Accept', fixed:'✔ Fixed – pending confirm', closed:'✓ Close', rejected:'✕ Reject',
 };
 
 const ARTIFACT_DISPLAY_FIELDS = {

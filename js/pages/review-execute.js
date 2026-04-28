@@ -25,13 +25,13 @@ const SEVERITY_LABELS  = { critical:'Critical', major:'Major', minor:'Minor', ob
 const SEVERITY_CLASSES = { critical:'rv-sev-critical', major:'rv-sev-major', minor:'rv-sev-minor', observation:'rv-sev-observation' };
 
 const FINDING_STATUS_LABELS = {
-  open:'Open', accepted:'Accepted', in_progress:'In Progress', deferred:'Deferred',
-  fixed:'Fixed', verified:'Verified', closed:'Closed', duplicate:'Duplicate', rejected:'Rejected',
+  open:'Open', accepted:'Accepted', fixed:'Fixed – pending confirm', closed:'Closed', rejected:'Rejected',
+  in_progress:'In Progress', deferred:'Deferred', verified:'Verified', duplicate:'Duplicate',
 };
 const FINDING_STATUS_CLASSES = {
-  open:'rv-fs-open', accepted:'rv-fs-accepted', in_progress:'rv-fs-in-progress',
-  deferred:'rv-fs-deferred', fixed:'rv-fs-fixed', verified:'rv-fs-verified',
-  closed:'rv-fs-closed', duplicate:'rv-fs-closed', rejected:'rv-fs-closed',
+  open:'rv-fs-open', accepted:'rv-fs-accepted', fixed:'rv-fs-fixed',
+  closed:'rv-fs-closed', rejected:'rv-fs-closed',
+  in_progress:'rv-fs-in-progress', deferred:'rv-fs-deferred', verified:'rv-fs-verified', duplicate:'rv-fs-closed',
 };
 const TRANSITIONS = {
   open:     ['accepted', 'rejected'],
@@ -40,7 +40,7 @@ const TRANSITIONS = {
   closed:[], rejected:[],
 };
 const TRANSITION_LABELS = {
-  accepted:'✓ Accept', fixed:'✔ Mark Fixed', closed:'✓ Close', rejected:'✕ Reject',
+  accepted:'✓ Accept', fixed:'✔ Fixed – pending confirm', closed:'✓ Close', rejected:'✕ Reject',
 };
 
 const FINAL_VERDICT_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-GO' };
@@ -616,38 +616,36 @@ export async function renderReviewExecute(container, ctx) {
 
     return `
       <div class="rve-fcard" data-finding-id="${f.id}">
-        <div class="rve-fcard-header">
-          <div class="rve-fcard-meta">
+
+        <div class="rve-fcard-row">
+          <div class="rve-fcard-left">
             <span class="rve-fcard-code mono">${escHtml(f.finding_code)}</span>
             <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}">${SEVERITY_LABELS[f.severity] || f.severity}</span>
-            ${snap ? `<span class="rv-art-code">${escHtml(snap.artifact_code || snap.artifact_type)}</span>` : '<span class="text-muted" style="font-size:11px">General</span>'}
+            ${snap ? `<span class="rve-fcard-artifact">${escHtml(snap.artifact_code || snap.artifact_type)}</span>` : ''}
+            <span class="rve-fcard-title">${escHtml(f.title)}</span>
+            ${f.description ? `<span class="rve-fcard-desc-inline text-muted">— ${escHtml(f.description)}</span>` : ''}
           </div>
-          <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
-          ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-edit-btn" data-finding-id="${f.id}" title="Edit finding" style="margin-left:4px">✎</button>` : ''}
-          ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-del-btn" data-finding-id="${f.id}" title="Delete finding" style="margin-left:2px;color:var(--color-danger,#e53e3e)">✕</button>` : ''}
-        </div>
-        <div class="rve-fcard-title-wrap">
-          <div class="rve-fcard-title">${escHtml(f.title)}</div>
-          ${f.description ? `<div class="rve-fcard-desc text-muted">${escHtml(f.description)}</div>` : ''}
-        </div>
-
-        ${transitions.length ? `
-          <div class="rve-fcard-transitions">
+          <div class="rve-fcard-right">
+            <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
             ${transitions.map(to => `
               <button class="btn btn-sm rve-fcard-trans-btn rve-trans-${to}" data-finding-id="${f.id}" data-to="${to}">
-                ${TRANSITION_LABELS[to] || FINDING_STATUS_LABELS[to]}
+                ${TRANSITION_LABELS[to]}
               </button>`).join('')}
-          </div>` : ''}
+            ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-edit-btn" data-finding-id="${f.id}" title="Edit">✎</button>` : ''}
+            ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-del-btn" data-finding-id="${f.id}" title="Delete" style="color:var(--color-danger,#e53e3e)">✕</button>` : ''}
+          </div>
+        </div>
 
         <div class="rve-fcard-thread" id="rve-fthread-${f.id}">
-          <div class="rve-fcard-thread-loading text-muted" style="font-size:11px;padding:4px 0">Loading…</div>
+          <span class="text-muted" style="font-size:11px">Loading…</span>
         </div>
 
         <div class="rve-fcard-reply">
           <textarea class="form-input rve-fcard-reply-input" data-finding-id="${f.id}"
-            rows="2" placeholder="Write a comment… (Ctrl+Enter to send)"></textarea>
-          <button class="btn btn-secondary btn-sm rve-fcard-reply-btn" data-finding-id="${f.id}">Reply</button>
+            rows="1" placeholder="Comment… (Ctrl+Enter to send)"></textarea>
+          <button class="btn btn-secondary btn-sm rve-fcard-reply-btn" data-finding-id="${f.id}">Send</button>
         </div>
+
       </div>
     `;
   }
@@ -900,7 +898,9 @@ export async function renderReviewExecute(container, ctx) {
   function renderComment(c) {
     const name = c.user_profiles?.display_name || c.author_id?.slice(0, 8) || '?';
     const dt   = formatDateTime(c.created_at);
-    return `<div class="rve-fcard-comment"><span class="rve-fcard-comment-author">${escHtml(name)}, ${escHtml(dt)}:</span><span class="rve-fcard-comment-text"> ${escHtml(c.comment)}</span></div>`;
+    // Highlight transition-prefix comments like "[Accepted] ..."
+    const isStatus = /^\[.+?\]/.test(c.comment);
+    return `<div class="rve-fcard-comment${isStatus ? ' rve-fcard-comment-status' : ''}"><span class="rve-fcard-comment-meta">${escHtml(name)} · ${escHtml(dt)}</span><span class="rve-fcard-comment-text">${escHtml(c.comment)}</span></div>`;
   }
 
   async function postComment(findingId) {

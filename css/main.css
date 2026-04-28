@@ -5731,20 +5731,22 @@ th.col-th-dragging * { pointer-events: none; }
 /* ============================================================
    FINDING CARDS (Findings tab)
    ============================================================ */
-.rve-fcard              { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
-  margin-bottom: 12px; overflow: hidden; }
-.rve-fcard-header       { display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 14px; border-bottom: 1px solid var(--border); gap: 10px; }
-.rve-fcard-meta         { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.rve-fcard-code         { font-size: 12px; font-weight: 700; color: var(--text-muted); }
-.rve-fcard-title        { font-size: 13px; font-weight: 600; padding: 8px 14px 2px; }
-.rve-fcard-desc         { font-size: 12px; padding: 2px 14px 6px; line-height: 1.5; }
-.rve-fcard-due          { font-size: 11px; padding: 2px 14px 6px; }
+.rve-fcard              { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
+  margin-bottom: 6px; overflow: hidden; }
+/* Single-line main row */
+.rve-fcard-row          { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 8px 12px; min-height: 40px; }
+.rve-fcard-left         { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0;
+  flex-wrap: wrap; }
+.rve-fcard-right        { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.rve-fcard-code         { font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
+.rve-fcard-artifact     { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.rve-fcard-title        { font-size: 13px; font-weight: 600; color: var(--text); }
+.rve-fcard-desc-inline  { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 340px; }
 
 /* Status transition buttons */
-.rve-fcard-transitions  { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 14px;
-  border-top: 1px solid var(--border); background: var(--bg); }
-.rve-fcard-trans-btn    { font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer;
+.rve-fcard-trans-btn    { font-size: 11px; padding: 3px 9px; border-radius: 4px; cursor: pointer;
   border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
   transition: all .15s; white-space: nowrap; }
 .rve-fcard-trans-btn:hover   { border-color: var(--accent); color: var(--accent); }
@@ -5758,17 +5760,21 @@ th.col-th-dragging * { pointer-events: none; }
 .rve-trans-rejected     { border-color: #f5c6c4; color: #d93025; }
 .rve-trans-duplicate    { border-color: #dadce0; color: #5f6368; }
 
-/* Comment thread */
-.rve-fcard-thread       { padding: 0 14px; display: flex; flex-direction: column; gap: 6px; }
-.rve-fcard-thread:not(:empty) { padding: 10px 14px; border-top: 1px solid var(--border); }
-.rve-fcard-comment      { font-size: 12px; line-height: 1.6; }
-.rve-fcard-comment-author { font-weight: 700; color: var(--text); }
-.rve-fcard-comment-text   { color: var(--text); font-weight: 400; }
+/* Comment thread — compact */
+.rve-fcard-thread       { display: flex; flex-direction: column; gap: 0; }
+.rve-fcard-thread:not(:empty) { border-top: 1px solid var(--border); }
+.rve-fcard-comment      { display: flex; align-items: baseline; gap: 6px; font-size: 11px;
+  line-height: 1.5; padding: 3px 12px; border-bottom: 1px solid var(--border-light, #f0f0f0); }
+.rve-fcard-comment:last-child { border-bottom: none; }
+.rve-fcard-comment-meta { color: var(--text-muted); white-space: nowrap; flex-shrink: 0; font-size: 10px; }
+.rve-fcard-comment-text { color: var(--text); word-break: break-word; }
+.rve-fcard-comment-status .rve-fcard-comment-text { font-style: italic; color: var(--text-muted); }
+.rve-fcard-comment-status { background: var(--bg, #fafafa); }
 
 /* Reply input */
-.rve-fcard-reply        { display: flex; gap: 8px; align-items: flex-end;
-  padding: 8px 14px 10px; border-top: 1px solid var(--border); background: var(--bg); }
-.rve-fcard-reply-input  { flex: 1; font-size: 12px; min-height: 38px; resize: vertical; }
+.rve-fcard-reply        { display: flex; gap: 6px; align-items: center;
+  padding: 5px 12px 7px; border-top: 1px solid var(--border); background: var(--bg); }
+.rve-fcard-reply-input  { flex: 1; font-size: 12px; min-height: 32px; max-height: 80px; resize: none; padding: 4px 8px; }
 .rve-fcard-reply-btn    { flex-shrink: 0; white-space: nowrap; }
 
 /* ============================================================
