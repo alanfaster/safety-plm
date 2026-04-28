@@ -7,33 +7,42 @@
  */
 
 const ASPICE_DEFAULT_ROLES = [
-  // Development
-  { name: 'Requirements Engineer',   code: 'REQ',  category: 'development', description: 'Responsible for eliciting, documenting and managing requirements (ASPICE SYS.2 / SWE.1)', sort_order: 10 },
-  { name: 'Systems Engineer',        code: 'SYS',  category: 'development', description: 'Responsible for system architecture and system requirements (ASPICE SYS.3)', sort_order: 20 },
-  { name: 'Software Architect',      code: 'ARCH', category: 'development', description: 'Responsible for software architectural design (ASPICE SWE.2)', sort_order: 30 },
-  { name: 'Software Developer',      code: 'SWE',  category: 'development', description: 'Responsible for detailed design and implementation (ASPICE SWE.3/4)', sort_order: 40 },
-  { name: 'Integration Engineer',    code: 'INT',  category: 'development', description: 'Responsible for software integration and integration testing (ASPICE SWE.5)', sort_order: 50 },
-  { name: 'Test Engineer',           code: 'TST',  category: 'development', description: 'Responsible for verification and validation activities (ASPICE SWE.6 / SYS.5)', sort_order: 60 },
-  { name: 'Safety Manager',          code: 'SAF',  category: 'development', description: 'Responsible for functional safety activities (ISO 26262 / DO-178C safety processes)', sort_order: 70 },
+  // Development — Requirements & Systems
+  { name: 'Requirements Engineer',      code: 'REQ',     category: 'development', description: 'Elicits, documents and manages requirements (ASPICE SYS.2 / SWE.1)', sort_order: 10 },
+  { name: 'Systems Engineer',           code: 'SYS',     category: 'development', description: 'System architecture and system-level requirements (ASPICE SYS.3)', sort_order: 20 },
+  // Development — Architecture (per domain)
+  { name: 'SW Architect',               code: 'SW-ARCH', category: 'development', description: 'Software architectural design (ASPICE SWE.2)', sort_order: 30 },
+  { name: 'HW Architect',               code: 'HW-ARCH', category: 'development', description: 'Hardware architectural design', sort_order: 35 },
+  { name: 'Mech Architect',             code: 'ME-ARCH', category: 'development', description: 'Mechanical / structural architectural design', sort_order: 37 },
+  // Development — Developer (per domain)
+  { name: 'SW Developer',               code: 'SW-DEV',  category: 'development', description: 'Software detailed design and implementation (ASPICE SWE.3/4)', sort_order: 40 },
+  { name: 'HW Developer',               code: 'HW-DEV',  category: 'development', description: 'Hardware detailed design and layout', sort_order: 45 },
+  { name: 'Mech Developer',             code: 'ME-DEV',  category: 'development', description: 'Mechanical detailed design and manufacturing specs', sort_order: 47 },
+  // Development — Integration (per domain)
+  { name: 'SW Integration Engineer',    code: 'SW-INT',  category: 'development', description: 'Software integration and integration testing (ASPICE SWE.5)', sort_order: 50 },
+  { name: 'HW Integration Engineer',    code: 'HW-INT',  category: 'development', description: 'Hardware integration and bring-up', sort_order: 55 },
+  { name: 'Mech Integration Engineer',  code: 'ME-INT',  category: 'development', description: 'Mechanical assembly and integration', sort_order: 57 },
+  // Development — Test (per domain + general)
+  { name: 'SW Test Engineer',           code: 'SW-TST',  category: 'development', description: 'Software verification and validation (ASPICE SWE.6)', sort_order: 60 },
+  { name: 'HW Test Engineer',           code: 'HW-TST',  category: 'development', description: 'Hardware verification and validation', sort_order: 63 },
+  { name: 'Mech Test Engineer',         code: 'ME-TST',  category: 'development', description: 'Mechanical / environmental test and validation', sort_order: 66 },
+  { name: 'System Test Engineer',       code: 'SYS-TST', category: 'development', description: 'System-level verification and validation (ASPICE SYS.5)', sort_order: 68 },
+  // Safety
+  { name: 'Functional Safety Manager',  code: 'FSM',     category: 'development', description: 'Manages functional safety activities and safety case (ISO 26262 / IEC 61508)', sort_order: 70 },
   // Quality & Process
-  { name: 'Quality Assurance Engineer', code: 'QA',  category: 'quality', description: 'Ensures process and product quality (ASPICE SUP.1)', sort_order: 80 },
-  { name: 'Configuration Manager',   code: 'CM',   category: 'quality', description: 'Manages configuration items and change control (ASPICE SUP.8)', sort_order: 90 },
-  { name: 'Problem Resolution Manager', code: 'PRM', category: 'quality', description: 'Manages problem and change requests (ASPICE SUP.9 / SUP.10)', sort_order: 100 },
+  { name: 'Quality Assurance Engineer', code: 'QA',      category: 'quality', description: 'Ensures process and product quality (ASPICE SUP.1)', sort_order: 80 },
+  { name: 'Configuration Manager',      code: 'CM',      category: 'quality', description: 'Manages configuration items and baselines (ASPICE SUP.8)', sort_order: 90 },
+  { name: 'Change Request Manager',     code: 'CRM',     category: 'quality', description: 'Manages change requests and problem reports (ASPICE SUP.10)', sort_order: 95 },
+  { name: 'Problem Resolution Manager', code: 'PRM',     category: 'quality', description: 'Manages problem resolution and corrective actions (ASPICE SUP.9)', sort_order: 100 },
   // Management
-  { name: 'Project Manager',         code: 'PM',   category: 'management', description: 'Plans and monitors the project (ASPICE MAN.3)', sort_order: 110 },
-  { name: 'Technical Lead',          code: 'TL',   category: 'management', description: 'Technical leadership and decision-making authority', sort_order: 120 },
-  // Review (IEEE 1028 / ASPICE MAN.5)
-  { name: 'Review Moderator',        code: 'MOD',  category: 'review', description: 'Plans and leads the review meeting; enforces the process (IEEE 1028 §4.1.4)', sort_order: 130 },
-  { name: 'Review Author',           code: 'AUT',  category: 'review', description: 'Owner of the artifact under review; presents the work product', sort_order: 140 },
-  { name: 'Reviewer',                code: 'REV',  category: 'review', description: 'Performs the review and records findings (IEEE 1028 §4.1.4)', sort_order: 150 },
-  { name: 'Scribe / Recorder',       code: 'SCR',  category: 'review', description: 'Records defects and action items during the review meeting', sort_order: 160 },
+  { name: 'Project Manager',            code: 'PM',      category: 'management', description: 'Plans and monitors the project (ASPICE MAN.3)', sort_order: 110 },
+  { name: 'Technical Lead',             code: 'TL',      category: 'management', description: 'Technical leadership and decision-making authority', sort_order: 120 },
 ];
 
 const CATEGORY_LABELS = {
   development: 'Development',
   quality:     'Quality & Process',
   management:  'Management',
-  review:      'Review (IEEE 1028)',
 };
 
 function escHtml(str) {
