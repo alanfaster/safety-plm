@@ -638,19 +638,21 @@ export async function renderReviewExecute(container, ctx) {
           </div>
           <div class="rve-fcard-right">
             ${buildStatusSelectHtml(f, isAuthor)}
+            <button class="btn btn-ghost btn-sm rve-fcard-comments-toggle" data-finding-id="${f.id}" title="Toggle comments">💬</button>
             ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-edit-btn" data-finding-id="${f.id}" title="Edit">✎</button>` : ''}
             ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-del-btn" data-finding-id="${f.id}" title="Delete" style="color:var(--color-danger,#e53e3e)">✕</button>` : ''}
           </div>
         </div>
 
-        <div class="rve-fcard-thread" id="rve-fthread-${f.id}">
-          <span class="text-muted" style="font-size:11px">Loading…</span>
-        </div>
-
-        <div class="rve-fcard-reply">
-          <textarea class="form-input rve-fcard-reply-input" data-finding-id="${f.id}"
-            rows="1" placeholder="Comment… (Ctrl+Enter to send)"></textarea>
-          <button class="btn btn-secondary btn-sm rve-fcard-reply-btn" data-finding-id="${f.id}">Send</button>
+        <div class="rve-fcard-comments-wrap" id="rve-fcomments-${f.id}" style="display:none">
+          <div class="rve-fcard-thread" id="rve-fthread-${f.id}">
+            <span class="text-muted" style="font-size:11px">Loading…</span>
+          </div>
+          <div class="rve-fcard-reply">
+            <textarea class="form-input rve-fcard-reply-input" data-finding-id="${f.id}"
+              rows="1" placeholder="Comment… (Ctrl+Enter to send)"></textarea>
+            <button class="btn btn-secondary btn-sm rve-fcard-reply-btn" data-finding-id="${f.id}">Send</button>
+          </div>
         </div>
 
       </div>
@@ -690,6 +692,14 @@ export async function renderReviewExecute(container, ctx) {
         thread.innerHTML = threadComments.length
           ? threadComments.map(c => renderComment(c)).join('')
           : '<span class="text-muted" style="font-size:11px">No comments yet.</span>';
+        const n = threadComments.length;
+        const toggleBtn = container.querySelector(`.rve-fcard-comments-toggle[data-finding-id="${f.id}"]`);
+        if (toggleBtn) toggleBtn.innerHTML = `💬${n ? ' ' + n : ''}`;
+        // Auto-expand if there are comments (transition comments are always present)
+        if (n) {
+          const wrap = container.querySelector(`#rve-fcomments-${f.id}`);
+          if (wrap) wrap.style.display = '';
+        }
       });
     }
 
@@ -721,6 +731,14 @@ export async function renderReviewExecute(container, ctx) {
           container.querySelector('.rve-findings-wrap')
             ?.insertAdjacentHTML('beforeend', `<div class="rv-empty" style="padding:40px 0"><p>No findings yet.</p></div>`);
         }
+      });
+    });
+
+    // Comments toggle
+    container.querySelectorAll('.rve-fcard-comments-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const wrap = container.querySelector(`#rve-fcomments-${btn.dataset.findingId}`);
+        if (wrap) wrap.style.display = wrap.style.display === 'none' ? '' : 'none';
       });
     });
 
@@ -874,10 +892,24 @@ export async function renderReviewExecute(container, ctx) {
         (profiles || []).forEach(p => { profileMap[p.id] = p.display_name; });
       }
       const comments = rows.map(c => ({ ...c, user_profiles: { display_name: profileMap[c.author_id] || null } }));
-      thread.innerHTML = comments.length
+      const n = comments.length;
+      thread.innerHTML = n
         ? comments.map(c => renderComment(c)).join('')
         : '<span class="text-muted" style="font-size:11px">No comments yet.</span>';
+      const toggleBtn = container.querySelector(`.rve-fcard-comments-toggle[data-finding-id="${findingId}"]`);
+      if (toggleBtn) toggleBtn.innerHTML = `💬${n ? ' ' + n : ''}`;
+      if (n) {
+        const wrap = container.querySelector(`#rve-fcomments-${findingId}`);
+        if (wrap) wrap.style.display = '';
+      }
     }
+
+    // Wire toggle for this card
+    container.querySelector(`.rve-fcard-comments-toggle[data-finding-id="${findingId}"]`)
+      ?.addEventListener('click', function() {
+        const wrap = container.querySelector(`#rve-fcomments-${findingId}`);
+        if (wrap) wrap.style.display = wrap.style.display === 'none' ? '' : 'none';
+      });
 
     wireFindingEditBtns(container, snapMap);
     wireFindingTransitionBtns(container, snapMap);
@@ -935,10 +967,17 @@ export async function renderReviewExecute(container, ctx) {
     ta.value = '';
     const thread = container.querySelector(`#rve-fthread-${findingId}`);
     if (thread) {
-      // Remove "No comments yet" placeholder if present
       if (thread.querySelector('.text-muted')) thread.innerHTML = '';
       thread.insertAdjacentHTML('beforeend', renderComment(comment));
       thread.lastElementChild?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    }
+    // Ensure wrap is visible and update count badge
+    const wrap = container.querySelector(`#rve-fcomments-${findingId}`);
+    if (wrap) wrap.style.display = '';
+    const toggleBtn = container.querySelector(`.rve-fcard-comments-toggle[data-finding-id="${findingId}"]`);
+    if (toggleBtn) {
+      const n = thread?.querySelectorAll('.rve-fcard-comment').length || 0;
+      toggleBtn.innerHTML = `💬${n ? ' ' + n : ''}`;
     }
   }
 
