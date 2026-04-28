@@ -51,7 +51,7 @@ export async function mountMembersTab(container, project, sb, toast) {
   ] = await Promise.all([
     sb.from('project_roles').select('*').eq('project_id', project.id).order('sort_order'),
     sb.from('project_members').select('*, user_profiles(display_name)').eq('project_id', project.id),
-    sb.from('user_profiles').select('id, display_name'),
+    sb.from('user_profiles').select('user_id, display_name'),
   ]);
 
   let roles   = rolesRaw   || [];
@@ -93,7 +93,7 @@ export async function mountMembersTab(container, project, sb, toast) {
           <div id="mem-add-member-form" style="display:none" class="members-add-form">
             <select class="form-input form-select" id="mem-user-select">
               <option value="">— Select user —</option>
-              ${allUsers.map(u => `<option value="${u.id}">${escHtml(u.display_name || u.id.slice(0,8))}</option>`).join('')}
+              ${allUsers.map(u => `<option value="${u.user_id}">${escHtml(u.display_name || u.user_id.slice(0,8))}</option>`).join('')}
             </select>
             <select class="form-input form-select" id="mem-role-select">
               <option value="">— Select role —</option>
