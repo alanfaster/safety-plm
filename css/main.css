@@ -5998,3 +5998,13 @@ th.col-th-dragging * { pointer-events: none; }
 .rvck-raise-save-btn      { flex-shrink:0; }
 .rvck-raise-desc          { font-size:12px; resize:vertical; min-height:48px; }
 .rvck-raise-title.input-error { border-color:var(--danger,#e53e3e); outline:1px solid var(--danger,#e53e3e); }
+
+/* ── Finding transition confirm form ───────────────────────────────── */
+.rvck-trans-confirm-form,
+.rve-trans-confirm-form  { display:flex; flex-direction:column; gap:6px; margin:6px 0;
+  padding:8px 10px; background:var(--bg-alt,#f9fafb);
+  border:1px solid var(--border-accent,#d4a500); border-radius:6px; }
+.rvck-trans-confirm-label,
+.rve-trans-confirm-label { font-size:12px; font-weight:600; color:var(--text); }
+.rvck-trans-confirm-btns,
+.rve-trans-confirm-btns  { display:flex; gap:8px; }

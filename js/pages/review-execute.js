@@ -685,24 +685,8 @@ export async function renderReviewExecute(container, ctx) {
       openRaiseFindingModal({ snapshotId: null, templateItemId: null, criterion: '', verdict: '', comment: '', responseId: null });
     });
 
-    // Status transitions
-    container.querySelectorAll('.rve-fcard-trans-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const findingId = btn.dataset.findingId;
-        const toStatus  = btn.dataset.to;
-        const f = _findings.find(x => x.id === findingId);
-        if (!f) return;
-        btn.disabled = true;
-        const { error } = await sb.from('review_findings').update({ status: toStatus, updated_at: new Date().toISOString() }).eq('id', findingId);
-        if (error) { toast('Error: ' + error.message, 'error'); btn.disabled = false; return; }
-        f.status = toStatus;
-        toast(`Finding ${f.finding_code}: ${FINDING_STATUS_LABELS[toStatus]}`, 'success');
-        // Re-render this card (preserves loaded comments via re-load)
-        const card = container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
-        if (card) { card.outerHTML = renderFindingCard(f, snapMap); await wireFindingCard(findingId, snapMap); }
-        updateFindingsBadge();
-      });
-    });
+    // Status transitions — require a mandatory comment before applying
+    wireFindingTransitionBtns(container, snapMap);
 
     // Edit (inline)
     wireFindingEditBtns(container, snapMap);
@@ -735,6 +719,68 @@ export async function renderReviewExecute(container, ctx) {
     container.querySelectorAll('.rve-fcard-reply-input').forEach(ta => {
       ta.addEventListener('keydown', e => {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); postComment(ta.dataset.findingId); }
+      });
+    });
+  }
+
+  function wireFindingTransitionBtns(root, snapMap) {
+    root.querySelectorAll('.rve-fcard-trans-btn').forEach(btn => {
+      if (btn._transWired) return;
+      btn._transWired = true;
+      btn.addEventListener('click', () => {
+        const findingId = btn.dataset.findingId;
+        const toStatus  = btn.dataset.to;
+        const f = _findings.find(x => x.id === findingId);
+        if (!f) return;
+        const card = root.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
+        if (!card || card.querySelector('.rve-trans-confirm-form')) return;
+
+        // Hide transition buttons while confirming
+        card.querySelectorAll('.rve-fcard-trans-btn').forEach(b => b.style.display = 'none');
+
+        const label = TRANSITION_LABELS[toStatus] || FINDING_STATUS_LABELS[toStatus] || toStatus;
+        const form  = document.createElement('div');
+        form.className = 'rve-trans-confirm-form';
+        form.innerHTML = `
+          <span class="rve-trans-confirm-label">${escHtml(label)} — add a comment <span style="color:var(--color-danger,#e53e3e)">*</span></span>
+          <textarea class="form-input rve-trans-comment" rows="2" placeholder="Required…"></textarea>
+          <div class="rve-trans-confirm-btns">
+            <button class="btn btn-primary btn-sm rve-trans-ok-btn">${escHtml(label)}</button>
+            <button class="btn btn-ghost btn-sm rve-trans-cancel-btn">Cancel</button>
+          </div>`;
+
+        card.querySelector('.rve-fcard-transitions')?.insertAdjacentElement('afterend', form);
+        form.querySelector('.rve-trans-comment').focus();
+
+        form.querySelector('.rve-trans-cancel-btn').addEventListener('click', () => {
+          form.remove();
+          card.querySelectorAll('.rve-fcard-trans-btn').forEach(b => b.style.display = '');
+        });
+
+        form.querySelector('.rve-trans-ok-btn').addEventListener('click', async () => {
+          const comment = form.querySelector('.rve-trans-comment').value.trim();
+          const ta = form.querySelector('.rve-trans-comment');
+          if (!comment) { ta.focus(); ta.classList.add('input-error'); return; }
+          ta.classList.remove('input-error');
+
+          const okBtn = form.querySelector('.rve-trans-ok-btn');
+          okBtn.disabled = true;
+
+          const { error } = await sb.from('review_findings')
+            .update({ status: toStatus, updated_at: new Date().toISOString() }).eq('id', findingId);
+          if (error) { toast('Error: ' + error.message, 'error'); okBtn.disabled = false; return; }
+
+          await sb.from('review_finding_comments').insert({
+            finding_id: findingId, author_id: currentUserId,
+            comment: `[${FINDING_STATUS_LABELS[toStatus]}] ${comment}`,
+          });
+
+          f.status = toStatus;
+          toast(`Finding ${f.finding_code}: ${FINDING_STATUS_LABELS[toStatus]}`, 'success');
+          card.outerHTML = renderFindingCard(f, snapMap);
+          await wireFindingCard(findingId, snapMap);
+          updateFindingsBadge();
+        });
       });
     });
   }
@@ -807,23 +853,7 @@ export async function renderReviewExecute(container, ctx) {
     }
 
     wireFindingEditBtns(container, snapMap);
-
-    container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`)
-      ?.querySelectorAll('.rve-fcard-trans-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const toStatus = btn.dataset.to;
-          const f = _findings.find(x => x.id === findingId);
-          if (!f) return;
-          btn.disabled = true;
-          const { error } = await sb.from('review_findings').update({ status: toStatus, updated_at: new Date().toISOString() }).eq('id', findingId);
-          if (error) { btn.disabled = false; return; }
-          f.status = toStatus;
-          toast(`Finding ${f.finding_code}: ${FINDING_STATUS_LABELS[toStatus]}`, 'success');
-          const card = container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
-          if (card) { card.outerHTML = renderFindingCard(f, snapMap); await wireFindingCard(findingId, snapMap); }
-          updateFindingsBadge();
-        });
-      });
+    wireFindingTransitionBtns(container, snapMap);
 
     const thisCard = () => container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
 

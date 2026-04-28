@@ -481,23 +481,63 @@ export function mountReviewChecklist(container, opts) {
 
   function wireInlineTransitions(root) {
     root.querySelectorAll('.rvck-inline-trans-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         const findingId = btn.dataset.findingId;
         const toStatus  = btn.dataset.to;
         const f = findings.find(x => x.id === findingId);
         if (!f) return;
-        btn.disabled = true;
-        const { error } = await sb.from('review_findings').update({ status: toStatus, updated_at: new Date().toISOString() }).eq('id', findingId);
-        if (error) { btn.disabled = false; return; }
-        f.status = toStatus;
         const card = root.querySelector(`.rvck-inline-finding[data-finding-id="${findingId}"]`);
-        if (card) {
+        if (!card || card.querySelector('.rvck-trans-confirm-form')) return;
+
+        // Hide all transition buttons while confirming
+        card.querySelectorAll('.rvck-inline-trans-btn').forEach(b => b.style.display = 'none');
+
+        const label = TRANSITION_LABELS[toStatus] || FINDING_STATUS_LABELS[toStatus] || toStatus;
+        const form  = document.createElement('div');
+        form.className = 'rvck-trans-confirm-form';
+        form.innerHTML = `
+          <span class="rvck-trans-confirm-label">${escHtml(label)} — add a comment <span style="color:var(--color-danger,#e53e3e)">*</span></span>
+          <textarea class="form-input rvck-trans-comment" rows="2" placeholder="Required…"></textarea>
+          <div class="rvck-trans-confirm-btns">
+            <button class="btn btn-primary btn-sm rvck-trans-ok-btn">${escHtml(label)}</button>
+            <button class="btn btn-ghost btn-sm rvck-trans-cancel-btn">Cancel</button>
+          </div>`;
+
+        const transitionsDiv = card.querySelector('.rvck-inline-transitions');
+        transitionsDiv?.insertAdjacentElement('afterend', form);
+        form.querySelector('.rvck-trans-comment').focus();
+
+        form.querySelector('.rvck-trans-cancel-btn').addEventListener('click', () => {
+          form.remove();
+          card.querySelectorAll('.rvck-inline-trans-btn').forEach(b => b.style.display = '');
+        });
+
+        form.querySelector('.rvck-trans-ok-btn').addEventListener('click', async () => {
+          const comment = form.querySelector('.rvck-trans-comment').value.trim();
+          if (!comment) { form.querySelector('.rvck-trans-comment').focus(); form.querySelector('.rvck-trans-comment').classList.add('input-error'); return; }
+          form.querySelector('.rvck-trans-comment').classList.remove('input-error');
+
+          const okBtn = form.querySelector('.rvck-trans-ok-btn');
+          okBtn.disabled = true;
+
+          const { error: statusErr } = await sb.from('review_findings')
+            .update({ status: toStatus, updated_at: new Date().toISOString() }).eq('id', findingId);
+          if (statusErr) { okBtn.disabled = false; return; }
+
+          // Save mandatory comment with status prefix
+          await sb.from('review_finding_comments').insert({
+            finding_id: findingId, author_id: currentUserId,
+            comment: `[${FINDING_STATUS_LABELS[toStatus]}] ${comment}`,
+          });
+
+          f.status = toStatus;
           card.outerHTML = renderInlineFinding(f);
           wireInlineTransitions(root);
           wireInlineEdits(root);
           wireInlineDeletes(root);
           wireInlineReplies(root);
-        }
+          loadVisibleComments();
+        });
       });
     });
   }
