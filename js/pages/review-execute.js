@@ -321,16 +321,16 @@ export async function renderReviewExecute(container, ctx) {
     loadPropsPanel();
   }
 
-  function loadPropsPanel() {
+  async function loadPropsPanel() {
     const panel = document.getElementById('rve-props-panel');
     if (!panel || !_selectedSnapshot) return;
 
-    const snap        = _selectedSnapshot;
-    const data        = snap.snapshot_data || {};
-    const fields      = ARTIFACT_DISPLAY_FIELDS[snap.artifact_type] || ['title','status'];
+    const snap   = _selectedSnapshot;
+    const data   = snap.snapshot_data || {};
+    const fields = ARTIFACT_DISPLAY_FIELDS[snap.artifact_type] || ['title','status'];
+
     const myVerdict   = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
     const mv          = myVerdict?.verdict || null;
-    const mvc         = myVerdict?.verdict_comment || '';
     const otherVerdicts = reviewerList
       .filter(r => r.user_id !== currentUserId)
       .map(r => {
@@ -338,6 +338,14 @@ export async function renderReviewExecute(container, ctx) {
         return v ? { display_name: r.display_name, verdict: v.verdict } : null;
       }).filter(Boolean);
     const drifted = !!driftMap[snap.artifact_id];
+
+    // Load comment thread from DB
+    const { data: comments } = await sb
+      .from('review_artifact_comments')
+      .select('*, user_profiles(display_name)')
+      .eq('snapshot_id', snap.id)
+      .order('created_at');
+    const _comments = comments || [];
 
     panel.innerHTML = `
       <div class="rve-props-inner">
@@ -383,8 +391,22 @@ export async function renderReviewExecute(container, ctx) {
                   ${escHtml(ov.display_name.charAt(0))}: ${FINAL_VERDICT_LABELS[ov.verdict] || '—'}
                 </span>`).join('')}
             </div>` : ''}
-          <textarea class="form-input rve-props-verdict-comment" rows="3"
-            placeholder="Closing comment (optional)…">${escHtml(mvc)}</textarea>
+        </div>
+
+        <div class="rve-props-divider"></div>
+
+        <div class="rve-props-thread-section">
+          <div class="rve-props-verdict-label">Comments</div>
+          <div class="rve-props-thread" id="rve-props-thread">
+            ${_comments.length
+              ? _comments.map(c => renderArtifactComment(c)).join('')
+              : '<p class="rve-props-thread-empty text-muted">No comments yet.</p>'}
+          </div>
+          <div class="rve-props-reply">
+            <textarea class="form-input rve-props-reply-input" id="rve-props-reply-input"
+              rows="2" placeholder="Add a comment…"></textarea>
+            <button class="btn btn-secondary btn-sm rve-props-reply-btn" id="rve-props-reply-btn">Reply</button>
+          </div>
         </div>
       </div>
     `;
@@ -401,29 +423,59 @@ export async function renderReviewExecute(container, ctx) {
         panel.querySelectorAll('.rve-props-vbtn').forEach(b => {
           b.className = `rve-props-vbtn${b.dataset.verdict === _currentVerdict ? ' rve-props-vbtn-' + _currentVerdict + ' active' : ''}`;
         });
-        const comment = panel.querySelector('.rve-props-verdict-comment')?.value?.trim() || '';
-        await saveArtifactVerdict(snap, _currentVerdict, comment);
+        await saveArtifactVerdict(snap, _currentVerdict);
       });
     });
-    panel.querySelector('.rve-props-verdict-comment')?.addEventListener('input', debounce(async () => {
-      if (!_currentVerdict) return;
-      const comment = panel.querySelector('.rve-props-verdict-comment')?.value?.trim() || '';
-      await saveArtifactVerdict(snap, _currentVerdict, comment);
-    }, 600));
+
+    // Wire comment reply
+    const replyBtn   = panel.querySelector('#rve-props-reply-btn');
+    const replyInput = panel.querySelector('#rve-props-reply-input');
+    const postComment = async () => {
+      const text = replyInput?.value?.trim();
+      if (!text) { replyInput?.focus(); return; }
+      replyBtn.disabled = true;
+      const { data: saved, error } = await sb.from('review_artifact_comments').insert({
+        session_id: sessionId, snapshot_id: snap.id,
+        author_id: currentUserId, comment: text,
+      }).select('*, user_profiles(display_name)').single();
+      replyBtn.disabled = false;
+      if (error) return;
+      replyInput.value = '';
+      const thread = panel.querySelector('#rve-props-thread');
+      if (thread) {
+        const empty = thread.querySelector('.rve-props-thread-empty');
+        if (empty) empty.remove();
+        thread.insertAdjacentHTML('beforeend', renderArtifactComment(saved));
+        thread.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    };
+    replyBtn?.addEventListener('click', postComment);
+    replyInput?.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); postComment(); }
+    });
   }
 
-  async function saveArtifactVerdict(snap, verdict, comment) {
+  function renderArtifactComment(c) {
+    const name = c.user_profiles?.display_name || c.author_id?.slice(0, 8) || '?';
+    const dt   = formatDateTime(c.created_at);
+    return `<div class="rve-props-comment">
+      <span class="rve-props-comment-meta"><strong>${escHtml(name)}</strong>, ${escHtml(dt)}:</span>
+      <span class="rve-props-comment-text"> ${escHtml(c.comment)}</span>
+    </div>`;
+  }
+
+  async function saveArtifactVerdict(snap, verdict) {
     const { data, error } = await sb.from('review_artifact_verdicts')
       .upsert({
         session_id: sessionId, snapshot_id: snap.id,
         reviewer_id: currentUserId, verdict,
-        verdict_comment: comment, updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }, { onConflict: 'snapshot_id,reviewer_id' })
       .select().single();
     if (!error && data) {
       const existing = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
-      if (existing) { existing.verdict = verdict; existing.verdict_comment = comment; }
-      else _artifactVerdicts.push({ snapshot_id: snap.id, reviewer_id: currentUserId, verdict, verdict_comment: comment, session_id: sessionId });
+      if (existing) existing.verdict = verdict;
+      else _artifactVerdicts.push({ snapshot_id: snap.id, reviewer_id: currentUserId, verdict, session_id: sessionId });
       refreshArtifactCard(snap);
     }
   }
