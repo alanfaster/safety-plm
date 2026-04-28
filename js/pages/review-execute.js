@@ -25,7 +25,7 @@ const SEVERITY_LABELS  = { critical:'Critical', major:'Major', minor:'Minor', ob
 const SEVERITY_CLASSES = { critical:'rv-sev-critical', major:'rv-sev-major', minor:'rv-sev-minor', observation:'rv-sev-observation' };
 
 const FINDING_STATUS_LABELS = {
-  open:'Open', accepted:'Accepted', fixed:'Fixed – pending confirm', closed:'Closed', rejected:'Rejected',
+  open:'Open', accepted:'Accepted', fixed:'Implemented – pending review', closed:'Closed', rejected:'Rejected',
   in_progress:'In Progress', deferred:'Deferred', verified:'Verified', duplicate:'Duplicate',
 };
 const FINDING_STATUS_CLASSES = {
@@ -40,7 +40,7 @@ const TRANSITIONS = {
   closed:[], rejected:[],
 };
 const TRANSITION_LABELS = {
-  accepted:'✓ Accept', fixed:'✔ Fixed – pending confirm', closed:'✓ Close', rejected:'✕ Reject',
+  accepted:'✓ Accept', fixed:'✔ Mark as Implemented', closed:'✓ Confirm & Close', rejected:'✕ Reject',
 };
 
 const FINAL_VERDICT_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-GO' };
@@ -627,10 +627,15 @@ export async function renderReviewExecute(container, ctx) {
           </div>
           <div class="rve-fcard-right">
             <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
-            ${transitions.map(to => `
+            ${transitions.filter(to => to !== 'closed').map(to => `
               <button class="btn btn-sm rve-fcard-trans-btn rve-trans-${to}" data-finding-id="${f.id}" data-to="${to}">
                 ${TRANSITION_LABELS[to]}
               </button>`).join('')}
+            ${transitions.includes('closed')
+              ? isAuthor
+                ? `<button class="btn btn-sm rve-fcard-trans-btn rve-trans-closed" data-finding-id="${f.id}" data-to="closed">${TRANSITION_LABELS['closed']}</button>`
+                : `<span class="rve-fcard-pending-close" title="Only the finding creator can close this">⏳ Awaiting creator confirmation</span>`
+              : ''}
             ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-edit-btn" data-finding-id="${f.id}" title="Edit">✎</button>` : ''}
             ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-del-btn" data-finding-id="${f.id}" title="Delete" style="color:var(--color-danger,#e53e3e)">✕</button>` : ''}
           </div>
@@ -767,6 +772,14 @@ export async function renderReviewExecute(container, ctx) {
           const ta = form.querySelector('.rve-trans-comment');
           if (!comment) { ta.focus(); ta.classList.add('input-error'); return; }
           ta.classList.remove('input-error');
+
+          // Only the finding creator can close it
+          if (toStatus === 'closed' && f.created_by !== currentUserId) {
+            toast('Only the finding creator can close this finding.', 'error');
+            form.remove();
+            card.querySelectorAll('.rve-fcard-trans-btn').forEach(b => b.style.display = '');
+            return;
+          }
 
           const okBtn = form.querySelector('.rve-trans-ok-btn');
           okBtn.disabled = true;

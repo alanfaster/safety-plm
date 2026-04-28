@@ -27,7 +27,7 @@ const ARTIFACT_FINAL_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-G
 const ARTIFACT_FINAL_CLASSES = { go:'rvck-stamp-go', conditional:'rvck-stamp-conditional', no_go:'rvck-stamp-nogo' };
 
 const FINDING_STATUS_LABELS  = {
-  open:'Open', accepted:'Accepted', fixed:'Fixed – pending confirm', closed:'Closed', rejected:'Rejected',
+  open:'Open', accepted:'Accepted', fixed:'Implemented – pending review', closed:'Closed', rejected:'Rejected',
   in_progress:'In Progress', deferred:'Deferred', verified:'Verified', duplicate:'Duplicate',
 };
 const FINDING_STATUS_CLASSES = {
@@ -47,7 +47,7 @@ const TRANSITIONS = {
   closed:[], rejected:[],
 };
 const TRANSITION_LABELS = {
-  accepted:'✓ Accept', fixed:'✔ Fixed – pending confirm', closed:'✓ Close', rejected:'✕ Reject',
+  accepted:'✓ Accept', fixed:'✔ Mark as Implemented', closed:'✓ Confirm & Close', rejected:'✕ Reject',
 };
 
 const ARTIFACT_DISPLAY_FIELDS = {
@@ -251,11 +251,16 @@ export function mountReviewChecklist(container, opts) {
 
         ${transitions.length ? `
           <div class="rvck-inline-transitions">
-            ${transitions.map(to => `
+            ${transitions.filter(to => to !== 'closed').map(to => `
               <button class="btn btn-sm rvck-inline-trans-btn rve-trans-${to}"
                       data-finding-id="${f.id}" data-to="${to}">
                 ${TRANSITION_LABELS[to] || FINDING_STATUS_LABELS[to]}
               </button>`).join('')}
+            ${transitions.includes('closed')
+              ? (f.created_by === currentUserId
+                  ? `<button class="btn btn-sm rvck-inline-trans-btn rve-trans-closed" data-finding-id="${f.id}" data-to="closed">${TRANSITION_LABELS['closed']}</button>`
+                  : `<span class="rve-fcard-pending-close" title="Only the finding creator can close this">⏳ Awaiting creator confirmation</span>`)
+              : ''}
           </div>` : ''}
 
         <div class="rvck-inline-thread" id="rvck-thread-${f.id}">
@@ -509,8 +514,15 @@ export function mountReviewChecklist(container, opts) {
 
         form.querySelector('.rvck-trans-ok-btn').addEventListener('click', async () => {
           const comment = form.querySelector('.rvck-trans-comment').value.trim();
-          if (!comment) { form.querySelector('.rvck-trans-comment').focus(); form.querySelector('.rvck-trans-comment').classList.add('input-error'); return; }
-          form.querySelector('.rvck-trans-comment').classList.remove('input-error');
+          const ta = form.querySelector('.rvck-trans-comment');
+          if (!comment) { ta.focus(); ta.classList.add('input-error'); return; }
+          ta.classList.remove('input-error');
+
+          if (toStatus === 'closed' && f.created_by !== currentUserId) {
+            form.remove();
+            card.querySelectorAll('.rvck-inline-trans-btn').forEach(b => b.style.display = '');
+            return;
+          }
 
           const okBtn = form.querySelector('.rvck-trans-ok-btn');
           okBtn.disabled = true;

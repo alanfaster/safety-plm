@@ -6014,3 +6014,7 @@ th.col-th-dragging * { pointer-events: none; }
 .rve-trans-confirm-label { font-size:12px; font-weight:600; color:var(--text); }
 .rvck-trans-confirm-btns,
 .rve-trans-confirm-btns  { display:flex; gap:8px; }
+
+/* ── Finding close pending indicator ───────────────────────────────── */
+.rve-fcard-pending-close { font-size:11px; color:var(--text-muted); font-style:italic;
+  white-space:nowrap; padding:2px 4px; }
