@@ -131,7 +131,7 @@ export async function renderReviewDashboard(container, ctx) {
                 </td>
                 <td><span class="badge ${STATUS_CLASSES[s.status] || 'badge-draft'}">${STATUS_LABELS[s.status] || s.status}</span></td>
                 <td>${s.planned_date ? escHtml(s.planned_date) : '<span class="text-muted">—</span>'}</td>
-                <td class="text-muted">${s.created_by ? escHtml(authorMap[s.created_by] || s.created_by.slice(0,8)) : '<span class="text-muted">—</span>'}</td>
+                <td class="text-muted">${s.created_by ? escHtml(authorMap[s.created_by] || (s.created_by === currentUserId ? 'Me' : s.created_by.slice(0,8))) : '<span class="text-muted">—</span>'}</td>
                 <td class="text-muted">${formatDateTime(s.created_at)}</td>
                 <td class="rv-actions">
                   <button class="btn btn-secondary btn-sm rv-open-btn" data-id="${s.id}" title="Open checklist">Open</button>
