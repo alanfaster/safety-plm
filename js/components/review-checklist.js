@@ -240,6 +240,7 @@ export function mountReviewChecklist(container, opts) {
   function renderInlineFinding(f, withThread = false) {
     const transitions = TRANSITIONS[f.status] || [];
     const comments    = _commentCache[f.id] || [];
+    const isAuthor    = f.created_by === currentUserId;
 
     return `
       <div class="rvck-inline-finding" data-finding-id="${f.id}">
@@ -248,7 +249,8 @@ export function mountReviewChecklist(container, opts) {
           <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}">${SEVERITY_LABELS[f.severity] || f.severity}</span>
           <span class="rvck-inline-finding-title">${escHtml(f.title)}</span>
           <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
-          <button class="btn btn-ghost btn-sm rvck-inline-del-btn" data-finding-id="${f.id}" title="Delete finding">✕</button>
+          ${isAuthor ? `<button class="btn btn-ghost btn-sm rvck-inline-edit-btn" data-finding-id="${f.id}" title="Edit finding">✎</button>` : ''}
+          ${isAuthor ? `<button class="btn btn-ghost btn-sm rvck-inline-del-btn" data-finding-id="${f.id}" title="Delete finding" style="color:var(--color-danger,#e53e3e)">✕</button>` : ''}
         </div>
         ${f.description ? `<div class="rvck-inline-finding-desc text-muted">${escHtml(f.description)}</div>` : ''}
 
@@ -404,14 +406,77 @@ export function mountReviewChecklist(container, opts) {
       });
     });
 
-    // Inline finding transitions, deletes, replies
+    // Inline finding transitions, edits, deletes, replies
     wireInlineTransitions(container);
+    wireInlineEdits(container);
     wireInlineDeletes(container);
     wireInlineReplies(container);
 
     // Load comments for visible findings
     loadVisibleComments();
 
+  }
+
+  function wireInlineEdits(root) {
+    root.querySelectorAll('.rvck-inline-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const findingId = btn.dataset.findingId;
+        const f = findings.find(x => x.id === findingId);
+        if (!f) return;
+        const card = root.querySelector(`.rvck-inline-finding[data-finding-id="${findingId}"]`);
+        if (!card || card.querySelector('.rvck-inline-edit-form')) return; // already editing
+
+        const header = card.querySelector('.rvck-inline-finding-header');
+        const descEl = card.querySelector('.rvck-inline-finding-desc');
+        header.style.display = 'none';
+        if (descEl) descEl.style.display = 'none';
+
+        const form = document.createElement('div');
+        form.className = 'rvck-inline-edit-form';
+        form.innerHTML = `
+          <input class="form-input rvck-edit-title" value="${escHtml(f.title)}" placeholder="Finding title *"/>
+          <div class="rvck-raise-row">
+            <select class="form-input form-select rvck-edit-severity">
+              ${['critical','major','minor','observation'].map(s =>
+                `<option value="${s}" ${s === f.severity ? 'selected' : ''}>${SEVERITY_LABELS[s]}</option>`
+              ).join('')}
+            </select>
+            <button class="btn btn-primary btn-sm rvck-edit-save-btn">Save</button>
+            <button class="btn btn-ghost btn-sm rvck-edit-cancel-btn">Cancel</button>
+          </div>
+          <textarea class="form-input rvck-edit-desc" rows="2" placeholder="Description (optional)…">${escHtml(f.description || '')}</textarea>
+        `;
+        card.insertBefore(form, card.querySelector('.rvck-inline-transitions') || card.querySelector('.rvck-inline-thread'));
+
+        form.querySelector('.rvck-edit-cancel-btn').addEventListener('click', () => {
+          form.remove();
+          header.style.display = '';
+          if (descEl) descEl.style.display = '';
+        });
+
+        form.querySelector('.rvck-edit-save-btn').addEventListener('click', async () => {
+          const title = form.querySelector('.rvck-edit-title').value.trim();
+          if (!title) { form.querySelector('.rvck-edit-title').focus(); return; }
+          const severity = form.querySelector('.rvck-edit-severity').value;
+          const description = form.querySelector('.rvck-edit-desc').value.trim();
+
+          const saveBtn = form.querySelector('.rvck-edit-save-btn');
+          saveBtn.disabled = true;
+          const { error } = await sb.from('review_findings')
+            .update({ title, severity, description: description || null, updated_at: new Date().toISOString() })
+            .eq('id', findingId);
+          saveBtn.disabled = false;
+          if (error) return;
+
+          Object.assign(f, { title, severity, description });
+          card.outerHTML = renderInlineFinding(f);
+          wireInlineTransitions(root);
+          wireInlineEdits(root);
+          wireInlineDeletes(root);
+          wireInlineReplies(root);
+        });
+      });
+    });
   }
 
   function wireInlineTransitions(root) {
@@ -429,6 +494,7 @@ export function mountReviewChecklist(container, opts) {
         if (card) {
           card.outerHTML = renderInlineFinding(f);
           wireInlineTransitions(root);
+          wireInlineEdits(root);
           wireInlineDeletes(root);
           wireInlineReplies(root);
         }
@@ -572,12 +638,12 @@ export function mountReviewChecklist(container, opts) {
 
     if (finding.template_item_id) {
       const slot = container.querySelector(`#rvck-item-findings-${finding.template_item_id}`);
-      if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(finding)); wireInlineTransitions(container); wireInlineReplies(container); }
+      if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(finding)); wireInlineTransitions(container); wireInlineEdits(container); wireInlineReplies(container); }
     } else {
       _openPointsCollapsed = false;
       const body    = container.querySelector('#rvck-op-body');
       const chevron = container.querySelector('#rvck-op-toggle .rvck-sec-chevron');
-      if (body)    { body.style.display = ''; body.innerHTML = renderOpenPointsList(); wireInlineTransitions(container); wireInlineReplies(container); }
+      if (body)    { body.style.display = ''; body.innerHTML = renderOpenPointsList(); wireInlineTransitions(container); wireInlineEdits(container); wireInlineReplies(container); }
       if (chevron) chevron.textContent = '▼';
       // Update badge
       const badge = container.querySelector('#rvck-open-points .rvck-sec-badge');

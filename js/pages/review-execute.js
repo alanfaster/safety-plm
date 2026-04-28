@@ -614,6 +614,7 @@ export async function renderReviewExecute(container, ctx) {
   function renderFindingCard(f, snapMap) {
     const snap        = f.snapshot_id ? snapMap[f.snapshot_id] : null;
     const transitions = TRANSITIONS[f.status] || [];
+    const isAuthor    = f.created_by === currentUserId;
 
     return `
       <div class="rve-fcard" data-finding-id="${f.id}">
@@ -624,10 +625,13 @@ export async function renderReviewExecute(container, ctx) {
             ${snap ? `<span class="rv-art-code">${escHtml(snap.artifact_code || snap.artifact_type)}</span>` : '<span class="text-muted" style="font-size:11px">General</span>'}
           </div>
           <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
-          <button class="btn btn-ghost btn-sm rve-fcard-del-btn" data-finding-id="${f.id}" title="Delete finding" style="margin-left:4px">✕</button>
+          ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-edit-btn" data-finding-id="${f.id}" title="Edit finding" style="margin-left:4px">✎</button>` : ''}
+          ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-del-btn" data-finding-id="${f.id}" title="Delete finding" style="margin-left:2px;color:var(--color-danger,#e53e3e)">✕</button>` : ''}
         </div>
-        <div class="rve-fcard-title">${escHtml(f.title)}</div>
-        ${f.description ? `<div class="rve-fcard-desc text-muted">${escHtml(f.description)}</div>` : ''}
+        <div class="rve-fcard-title-wrap">
+          <div class="rve-fcard-title">${escHtml(f.title)}</div>
+          ${f.description ? `<div class="rve-fcard-desc text-muted">${escHtml(f.description)}</div>` : ''}
+        </div>
 
         ${transitions.length ? `
           <div class="rve-fcard-transitions">
@@ -700,6 +704,9 @@ export async function renderReviewExecute(container, ctx) {
       });
     });
 
+    // Edit (inline)
+    wireFindingEditBtns(container, snapMap);
+
     // Delete
     container.querySelectorAll('.rve-fcard-del-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -714,9 +721,8 @@ export async function renderReviewExecute(container, ctx) {
         container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`)?.remove();
         toast(`Finding deleted.`, 'success');
         updateFindingsBadge();
-        // Show empty state if no findings left
         if (!_findings.length) {
-          container.querySelector('.rve-findings-wrap')?.querySelector('.rve-fcard')?.closest('.rve-findings-wrap')
+          container.querySelector('.rve-findings-wrap')
             ?.insertAdjacentHTML('beforeend', `<div class="rv-empty" style="padding:40px 0"><p>No findings yet.</p></div>`);
         }
       });
@@ -733,6 +739,62 @@ export async function renderReviewExecute(container, ctx) {
     });
   }
 
+  function wireFindingEditBtns(root, snapMap) {
+    root.querySelectorAll('.rve-fcard-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const findingId = btn.dataset.findingId;
+        const f = _findings.find(x => x.id === findingId);
+        if (!f) return;
+        const card = root.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
+        if (!card || card.querySelector('.rve-fcard-edit-form')) return;
+
+        const titleWrap = card.querySelector('.rve-fcard-title-wrap');
+        titleWrap.style.display = 'none';
+
+        const form = document.createElement('div');
+        form.className = 'rve-fcard-edit-form';
+        form.innerHTML = `
+          <input class="form-input rve-fcard-edit-title" value="${escHtml(f.title)}" placeholder="Finding title *"/>
+          <div class="rvck-raise-row" style="margin:6px 0">
+            <select class="form-input form-select rve-fcard-edit-severity">
+              ${Object.entries(SEVERITY_LABELS).map(([v, l]) =>
+                `<option value="${v}" ${v === f.severity ? 'selected' : ''}>${l}</option>`).join('')}
+            </select>
+            <button class="btn btn-primary btn-sm rve-fcard-edit-save">Save</button>
+            <button class="btn btn-ghost btn-sm rve-fcard-edit-cancel">Cancel</button>
+          </div>
+          <textarea class="form-input rve-fcard-edit-desc" rows="2" placeholder="Description (optional)…">${escHtml(f.description || '')}</textarea>
+        `;
+        titleWrap.insertAdjacentElement('afterend', form);
+
+        form.querySelector('.rve-fcard-edit-cancel').addEventListener('click', () => {
+          form.remove();
+          titleWrap.style.display = '';
+        });
+
+        form.querySelector('.rve-fcard-edit-save').addEventListener('click', async () => {
+          const title = form.querySelector('.rve-fcard-edit-title').value.trim();
+          if (!title) { form.querySelector('.rve-fcard-edit-title').focus(); return; }
+          const severity    = form.querySelector('.rve-fcard-edit-severity').value;
+          const description = form.querySelector('.rve-fcard-edit-desc').value.trim();
+
+          const saveBtn = form.querySelector('.rve-fcard-edit-save');
+          saveBtn.disabled = true;
+          const { error } = await sb.from('review_findings')
+            .update({ title, severity, description: description || null, updated_at: new Date().toISOString() })
+            .eq('id', findingId);
+          saveBtn.disabled = false;
+          if (error) { toast('Error: ' + error.message, 'error'); return; }
+
+          Object.assign(f, { title, severity, description });
+          card.outerHTML = renderFindingCard(f, snapMap);
+          await wireFindingCard(findingId, snapMap);
+          wireFindingEditBtns(root, snapMap);
+        });
+      });
+    });
+  }
+
   async function wireFindingCard(findingId, snapMap) {
     // Load comments for this single card after re-render
     const thread = container.querySelector(`#rve-fthread-${findingId}`);
@@ -743,6 +805,8 @@ export async function renderReviewExecute(container, ctx) {
         ? (comments || []).map(c => renderComment(c)).join('')
         : '<span class="text-muted" style="font-size:11px">No comments yet.</span>';
     }
+
+    wireFindingEditBtns(container, snapMap);
 
     container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`)
       ?.querySelectorAll('.rve-fcard-trans-btn').forEach(btn => {
