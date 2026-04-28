@@ -47,6 +47,7 @@ export async function renderReviewSessionWizard(container, ctx) {
     checklist_mode: 'individual', // 'individual' | 'shared'
     selected: {},  // { [artifactType]: Set<id> }
     artifacts: {}, // { [artifactType]: [] }  loaded lazily
+    reviewers: [], // [{ user_id, role_id, role_name, display_name }]
   };
 
   container.innerHTML = `
@@ -64,9 +65,11 @@ export async function renderReviewSessionWizard(container, ctx) {
         <div class="wiz-steps" id="wiz-steps">
           <div class="wiz-step active" data-step="1"><span class="wiz-step-num">1</span> Setup</div>
           <div class="wiz-step-sep">›</div>
-          <div class="wiz-step" data-step="2"><span class="wiz-step-num">2</span> Select Artifacts</div>
+          <div class="wiz-step" data-step="2"><span class="wiz-step-num">2</span> Artifacts</div>
           <div class="wiz-step-sep">›</div>
-          <div class="wiz-step" data-step="3"><span class="wiz-step-num">3</span> Confirm &amp; Start</div>
+          <div class="wiz-step" data-step="3"><span class="wiz-step-num">3</span> Reviewers</div>
+          <div class="wiz-step-sep">›</div>
+          <div class="wiz-step" data-step="4"><span class="wiz-step-num">4</span> Confirm &amp; Start</div>
         </div>
         <div class="wiz-body" id="wiz-body"></div>
         <div class="wiz-footer">
@@ -95,11 +98,12 @@ export async function renderReviewSessionWizard(container, ctx) {
       s.classList.toggle('done',   parseInt(s.dataset.step) < state.step);
     });
     document.getElementById('wiz-btn-back').style.display  = state.step > 1 ? '' : 'none';
-    document.getElementById('wiz-btn-next').textContent = state.step === 3 ? '▶ Start Review' : 'Next ▶';
+    document.getElementById('wiz-btn-next').textContent = state.step === 4 ? '▶ Start Review' : 'Next ▶';
 
     if (state.step === 1) renderStep1(body);
     if (state.step === 2) renderStep2(body);
     if (state.step === 3) renderStep3(body);
+    if (state.step === 4) renderStep4(body);
   }
 
   function renderStep1(body) {
@@ -258,7 +262,112 @@ export async function renderReviewSessionWizard(container, ctx) {
     });
   }
 
-  function renderStep3(body) {
+  async function renderStep3(body) {
+    body.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
+
+    // Load project members with their roles
+    const { data: membersRaw } = await sb.from('project_members')
+      .select('*, project_roles(id,name,code,category), user_profiles(display_name)')
+      .eq('project_id', project.id);
+    const members = membersRaw || [];
+
+    // Pre-populate current user as reviewer if no reviewers yet
+    const { data: { user } } = await sb.auth.getUser();
+    if (!state.reviewers.length && user) {
+      const selfMember = members.find(m => m.user_id === user.id);
+      if (selfMember) {
+        state.reviewers.push({
+          user_id: selfMember.user_id,
+          role_id: selfMember.role_id,
+          role_name: selfMember.project_roles?.name || 'Reviewer',
+          display_name: selfMember.user_profiles?.display_name || user.id.slice(0, 8),
+        });
+      }
+    }
+
+    const memberOptions = members.map(m =>
+      `<option value="${m.user_id}|${m.role_id}">
+        ${escHtml(m.user_profiles?.display_name || m.user_id.slice(0,8))} — ${escHtml(m.project_roles?.name || '?')}
+       </option>`
+    ).join('');
+
+    function renderReviewerRows() {
+      if (!state.reviewers.length) return `<p class="text-muted" style="padding:12px 0">No reviewers assigned yet.</p>`;
+      return `<table class="data-table">
+        <thead><tr><th>Reviewer</th><th>Project Role</th><th style="width:48px"></th></tr></thead>
+        <tbody>
+          ${state.reviewers.map((rv, i) => `
+            <tr>
+              <td>${escHtml(rv.display_name)}</td>
+              <td><span class="members-role-pill">${escHtml(rv.role_name)}</span></td>
+              <td><button class="btn btn-ghost btn-xs wiz-del-reviewer" data-idx="${i}" title="Remove">✕</button></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+    }
+
+    function reRenderReviewers() {
+      body.querySelector('#wiz-reviewers-list').innerHTML = renderReviewerRows();
+      wireReviewerRows();
+    }
+
+    body.innerHTML = `
+      <div class="wiz-step-body">
+        <h3>Assign Reviewers</h3>
+        <p class="form-hint">
+          Select who will participate in this review. Members are drawn from the project team.
+          At least one reviewer is required for traceability.
+        </p>
+
+        <div class="wiz-reviewer-add-row">
+          <select class="form-input form-select" id="wiz-reviewer-select" style="flex:1">
+            <option value="">— Select a team member —</option>
+            ${memberOptions}
+          </select>
+          <button class="btn btn-primary btn-sm" id="wiz-add-reviewer-btn">+ Add</button>
+        </div>
+
+        ${!members.length ? `
+          <div class="wiz-no-members-hint">
+            ⚠ No project members defined yet.
+            <a href="/project/${project.id}/settings" target="_blank">Go to Project Settings → Team &amp; Roles</a> to add team members first.
+          </div>` : ''}
+
+        <div id="wiz-reviewers-list" style="margin-top:12px">
+          ${renderReviewerRows()}
+        </div>
+      </div>
+    `;
+
+    function wireReviewerRows() {
+      body.querySelectorAll('.wiz-del-reviewer').forEach(btn => {
+        btn.onclick = () => {
+          state.reviewers.splice(parseInt(btn.dataset.idx), 1);
+          reRenderReviewers();
+        };
+      });
+    }
+    wireReviewerRows();
+
+    body.querySelector('#wiz-add-reviewer-btn').onclick = () => {
+      const val = body.querySelector('#wiz-reviewer-select').value;
+      if (!val) return;
+      const [userId, roleId] = val.split('|');
+      const member = members.find(m => m.user_id === userId && m.role_id === roleId);
+      if (!member) return;
+      const already = state.reviewers.find(r => r.user_id === userId && r.role_id === roleId);
+      if (already) { return; }
+      state.reviewers.push({
+        user_id:      userId,
+        role_id:      roleId,
+        role_name:    member.project_roles?.name || 'Reviewer',
+        display_name: member.user_profiles?.display_name || userId.slice(0, 8),
+      });
+      reRenderReviewers();
+    };
+  }
+
+  function renderStep4(body) {
     const totalSelected = Object.values(state.selected).reduce((sum, s) => sum + s.size, 0);
     const tpl = templates?.find(t => t.id === state.template_id);
 
@@ -284,7 +393,21 @@ export async function renderReviewSessionWizard(container, ctx) {
           <div class="wiz-summary-row"><span>Protocol</span><strong>${tpl ? escHtml(tpl.name) : 'None'}</strong></div>
           <div class="wiz-summary-row"><span>Date</span><strong>${escHtml(state.planned_date)}</strong></div>
           <div class="wiz-summary-row"><span>Artifacts</span><strong>${totalSelected} selected</strong></div>
+          <div class="wiz-summary-row"><span>Reviewers</span><strong>${state.reviewers.length} assigned</strong></div>
         </div>
+
+        ${state.reviewers.length ? `
+          <h4 style="margin:16px 0 8px">Review Team</h4>
+          <table class="data-table">
+            <thead><tr><th>Reviewer</th><th>Role</th></tr></thead>
+            <tbody>
+              ${state.reviewers.map(r => `<tr>
+                <td>${escHtml(r.display_name)}</td>
+                <td><span class="members-role-pill">${escHtml(r.role_name)}</span></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>` : `<p class="rv-empty" style="margin:8px 0">No reviewers assigned.</p>`}
+
         ${totalSelected ? `
           <h4 style="margin:16px 0 8px">Selected Artifacts</h4>
           <table class="data-table">
@@ -304,6 +427,8 @@ export async function renderReviewSessionWizard(container, ctx) {
     } else if (state.step === 2) {
       state.step = 3;
     } else if (state.step === 3) {
+      state.step = 4;
+    } else if (state.step === 4) {
       const totalSelected = Object.values(state.selected).reduce((sum, s) => sum + s.size, 0);
       if (!totalSelected) { toast('Select at least one artifact.', 'error'); return; }
       await createSession();
@@ -364,6 +489,19 @@ export async function renderReviewSessionWizard(container, ctx) {
       const { error: snapErr } = await sb.from('review_artifact_snapshots').insert(snapshotInserts);
       if (snapErr) {
         toast('Session created but snapshots failed: ' + snapErr.message, 'error');
+      }
+    }
+
+    // 3. Assign reviewers
+    if (state.reviewers.length) {
+      const reviewerInserts = state.reviewers.map(r => ({
+        session_id: session.id,
+        user_id:    r.user_id,
+        role:       r.role_name,
+      }));
+      const { error: rvErr } = await sb.from('review_session_reviewers').insert(reviewerInserts);
+      if (rvErr) {
+        toast('Session created but reviewer assignments failed: ' + rvErr.message, 'error');
       }
     }
 

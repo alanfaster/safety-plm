@@ -6144,3 +6144,36 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 
 /* btn-xs — smaller than btn-sm */
 .btn-xs { font-size: 10px; padding: 2px 7px; line-height: 1.4; }
+
+/* ── Project Members Tab ────────────────────────────────────────────── */
+.members-wrap               { display:flex; gap:24px; align-items:flex-start; }
+.members-roles-col          { flex:0 0 340px; min-width:0; }
+.members-people-col         { flex:1; min-width:0; }
+.members-col-header         { display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:12px; }
+.members-col-title          { font-size:15px; font-weight:600; color:var(--text); }
+.members-roles-list         { display:flex; flex-direction:column; gap:4px; }
+.members-role-category      { margin-bottom:10px; }
+.members-role-cat-label     { font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--text-muted); margin-bottom:4px; padding:0 2px; }
+.members-role-item          { display:flex; align-items:center; gap:8px;
+  padding:6px 8px; border-radius:6px; background:var(--bg-alt,#f9fafb);
+  border:1px solid var(--border,#e2e8f0); }
+.members-role-item:hover    { background:var(--bg-hover,#f1f5f9); }
+.members-role-code          { font-size:11px; font-weight:700; color:var(--text-muted);
+  min-width:36px; font-family:monospace; }
+.members-role-name          { flex:1; font-size:13px; color:var(--text); }
+.members-role-actions       { flex-shrink:0; }
+.members-role-pill          { display:inline-flex; align-items:center; padding:2px 8px;
+  border-radius:99px; font-size:11px; font-weight:600; background:#e8f4fd; color:#1565c0; }
+.members-add-form           { display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  padding:10px; background:var(--bg-alt,#f9fafb); border:1px solid var(--border,#e2e8f0);
+  border-radius:8px; margin-bottom:12px; }
+.members-empty              { font-size:13px; padding:12px 0; }
+.members-table              { margin-top:0; }
+
+/* ── Wizard — Reviewer Step ─────────────────────────────────────────── */
+.wiz-reviewer-add-row       { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
+.wiz-no-members-hint        { padding:10px 14px; border-radius:6px; font-size:13px;
+  background:#fff8e1; color:#7c5700; border:1px solid #ffe082; margin-bottom:12px; }
+.wiz-no-members-hint a      { color:#1565c0; font-weight:600; }

@@ -9,6 +9,7 @@ import { setBreadcrumb } from '../components/topbar.js';
 import { renderSidebar } from '../components/sidebar.js';
 import { mountVmodelEditor, VMODEL_NODES as _VMODEL_NODES, PHASE_DB_SOURCE as _PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
 import { mountReviewTemplatesTab } from './review-templates.js';
+import { mountMembersTab } from './project-members.js';
 export { _VMODEL_NODES as VMODEL_NODES, _PHASE_DB_SOURCE as PHASE_DB_SOURCE };
 
 export async function renderProjectSettings(container, ctx) {
@@ -117,7 +118,7 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         <button class="settings-tab" data-tab="testtypes">Test Types</button>
         <button class="settings-tab" data-tab="vmodel">V-Model Links</button>
         <button class="settings-tab" data-tab="reviews">Review Protocols</button>
-        <button class="settings-tab" data-tab="members">Members <span class="badge-soon">soon</span></button>
+        <button class="settings-tab" data-tab="members">Team &amp; Roles</button>
       </div>
 
       <div id="tab-pha" class="settings-tab-panel">
@@ -357,26 +358,27 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
       </div>
 
       <div id="tab-members" class="settings-tab-panel" style="display:none">
-        <div class="settings-section">
-          <p class="settings-section-desc">Team member management coming soon.</p>
-        </div>
+        <div class="settings-section" id="tab-members-inner"></div>
       </div>
     </div>
   `;
 
   // Tabs
   let _reviewsMounted = false;
+  let _membersMounted = false;
   container.querySelectorAll('.settings-tab').forEach(tab => {
     tab.onclick = () => {
       container.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       container.querySelectorAll('.settings-tab-panel').forEach(p => p.style.display = 'none');
       container.querySelector(`#tab-${tab.dataset.tab}`).style.display = '';
-      // Lazy-mount review templates tab on first activation
       if (tab.dataset.tab === 'reviews' && !_reviewsMounted) {
         _reviewsMounted = true;
-        const reviewContainer = container.querySelector('#tab-reviews-inner');
-        mountReviewTemplatesTab(reviewContainer, project, sb, toast);
+        mountReviewTemplatesTab(container.querySelector('#tab-reviews-inner'), project, sb, toast);
+      }
+      if (tab.dataset.tab === 'members' && !_membersMounted) {
+        _membersMounted = true;
+        mountMembersTab(container.querySelector('#tab-members-inner'), project, sb, toast);
       }
     };
   });
