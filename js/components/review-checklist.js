@@ -67,8 +67,12 @@ export function mountReviewChecklist(container, opts) {
     session, snapshot, sections = [], allResponses = [], currentUserId,
     reviewers = [], findings = [], artifactVerdict = null,
     isDrifted = false,
+    responseSnapshot,        // if provided, responses are saved/read against this snapshot (shared mode)
     onSaved, onFindingRaise, onReSnapshotRequest, onVerdictSaved,
   } = opts;
+
+  // In shared mode the checklist snapshot (where responses are stored) differs from the display snapshot
+  const ckSnap = responseSnapshot || snapshot;
 
   // Response index: { [itemId]: { [reviewerId]: row } }
   const responseIndex = {};
@@ -362,7 +366,7 @@ export function mountReviewChecklist(container, opts) {
     container.querySelector('#rvck-op-toggle')?.addEventListener('click', e => {
       if (e.target.classList.contains('rvck-op-add-btn') || e.target.closest('.rvck-op-add-btn')) {
         e.stopPropagation();
-        onFindingRaise?.({ snapshotId: snapshot.id, templateItemId: null, criterion: '', verdict: '', comment: '', responseId: null, isOpenPoint: true });
+        onFindingRaise?.({ snapshotId: ckSnap.id, templateItemId: null, criterion: '', verdict: '', comment: '', responseId: null, isOpenPoint: true });
         return;
       }
       _openPointsCollapsed = !_openPointsCollapsed;
@@ -393,7 +397,7 @@ export function mountReviewChecklist(container, opts) {
 
         await saveResponse(itemId, verdict, comment);
         updateSectionProgress(itemId);
-        onSaved?.({ snapshotId: snapshot.id, itemId, verdict, comment });
+        onSaved?.({ snapshotId: ckSnap.id, itemId, verdict, comment });
       });
     });
 
@@ -416,7 +420,7 @@ export function mountReviewChecklist(container, opts) {
         const item    = sec?.items?.find(i => i.id === itemId);
         const resp    = responseIndex[itemId]?.[currentUserId];
         onFindingRaise?.({
-          snapshotId: snapshot.id, templateItemId: itemId,
+          snapshotId: ckSnap.id, templateItemId: itemId,
           criterion: item?.criterion || '', verdict: resp?.verdict || '',
           comment: resp?.comment || '', responseId: resp?.id || null,
         });
@@ -614,7 +618,7 @@ export function mountReviewChecklist(container, opts) {
     } else {
       const { data } = await sb.from('review_checklist_responses')
         .upsert({
-          session_id: session.id, snapshot_id: snapshot.id,
+          session_id: session.id, snapshot_id: ckSnap.id,
           template_item_id: itemId, reviewer_id: currentUserId,
           verdict, comment, updated_at: new Date().toISOString(),
         }, { onConflict: 'snapshot_id,template_item_id,reviewer_id' })

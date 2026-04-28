@@ -130,6 +130,7 @@ export async function renderReviewExecute(container, ctx) {
             <span class="rve-session-title">${escHtml(session.title)}</span>
             <span class="badge ${SESSION_STATUS_CLASSES[session.status] || 'badge-draft'}">${SESSION_STATUS_LABELS[session.status] || session.status}</span>
             ${session.review_protocol_templates ? `<span class="rve-tpl-tag">${escHtml(session.review_protocol_templates.name)}</span>` : ''}
+            ${session.checklist_mode === 'shared' ? `<span class="rve-tpl-tag" title="One checklist shared across all artifacts">⇔ Shared checklist</span>` : ''}
           </div>
           <div class="rve-topbar-right">
             ${session.status === 'in_progress' ? `<button class="btn btn-primary btn-sm" id="rve-btn-complete">✓ Complete Review</button>` : ''}
@@ -201,7 +202,9 @@ export async function renderReviewExecute(container, ctx) {
   function renderArtifactCard(snap) {
     const myVerdict = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
     const mv        = myVerdict?.verdict;
-    const snapResponses = _allResponses.filter(r => r.snapshot_id === snap.id);
+    const isShared  = session.checklist_mode === 'shared';
+    const ckSnapId  = isShared ? (snapshots?.[0]?.id || snap.id) : snap.id;
+    const snapResponses = _allResponses.filter(r => r.snapshot_id === ckSnapId);
     const totalItems    = sections.reduce((s, sec) => s + (sec.items?.length || 0), 0);
     const myDone        = snapResponses.filter(r => r.reviewer_id === currentUserId).length;
     const snapFindings  = _findings.filter(f => f.snapshot_id === snap.id);
@@ -234,8 +237,12 @@ export async function renderReviewExecute(container, ctx) {
     const panel = document.getElementById('rve-checklist-panel');
     if (!_selectedSnapshot || !panel) return;
 
-    const snap          = _selectedSnapshot;
-    const snapResponses = _allResponses.filter(r => r.snapshot_id === snap.id);
+    const snap     = _selectedSnapshot;
+    const isShared = session.checklist_mode === 'shared';
+    // In shared mode all responses are stored against the first snapshot
+    const ckSnap   = isShared ? (snapshots?.[0] || snap) : snap;
+
+    const snapResponses = _allResponses.filter(r => r.snapshot_id === ckSnap.id);
     const snapFindings  = _findings.filter(f => f.snapshot_id === snap.id);
     const myVerdict     = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
     const otherVerdicts = reviewerList
@@ -247,17 +254,20 @@ export async function renderReviewExecute(container, ctx) {
 
     mountReviewChecklist(panel, {
       session, snapshot: snap, sections,
+      responseSnapshot: isShared ? ckSnap : undefined,
       allResponses: snapResponses,
       currentUserId, reviewers: reviewerList,
       findings: snapFindings,
       artifactVerdict: myVerdict || null,
       otherVerdicts,
       isDrifted: !!driftMap[snap.artifact_id],
-      onSaved: ({ itemId, verdict }) => {
-        const existing = _allResponses.find(r => r.snapshot_id === snap.id && r.template_item_id === itemId && r.reviewer_id === currentUserId);
+      onSaved: ({ snapshotId, itemId, verdict }) => {
+        const existing = _allResponses.find(r => r.snapshot_id === snapshotId && r.template_item_id === itemId && r.reviewer_id === currentUserId);
         if (existing) existing.verdict = verdict;
-        else _allResponses.push({ snapshot_id: snap.id, template_item_id: itemId, reviewer_id: currentUserId, verdict, session_id: sessionId });
-        refreshArtifactCard(snap);
+        else _allResponses.push({ snapshot_id: snapshotId, template_item_id: itemId, reviewer_id: currentUserId, verdict, session_id: sessionId });
+        // In shared mode refresh all artifact cards (shared progress)
+        if (isShared) (snapshots || []).forEach(s => refreshArtifactCard(s));
+        else refreshArtifactCard(snap);
       },
       onFindingRaise: opts => openRaiseFindingModal(opts),
       onReSnapshotRequest: async () => reSnapshot(snap),
