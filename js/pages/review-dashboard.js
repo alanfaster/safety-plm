@@ -63,12 +63,18 @@ export async function renderReviewDashboard(container, ctx) {
   await loadSessions();
 
   async function loadSessions() {
-    const [{ data: sessions }, { data: snapshots }] = await Promise.all([
-      sb.from('review_sessions').select('*, review_protocol_templates(name, artifact_type, review_type)')
-        .eq('project_id', project.id).order('created_at', { ascending: false }),
-      sb.from('review_artifact_snapshots').select('id, session_id, artifact_code, artifact_title, artifact_type')
-        .in('session_id', (await sb.from('review_sessions').select('id').eq('project_id', project.id)).data?.map(s => s.id) || []),
-    ]);
+    const { data: sessions } = await sb.from('review_sessions')
+      .select('*, review_protocol_templates(name, artifact_type, review_type)')
+      .eq('project_id', project.id).order('created_at', { ascending: false });
+
+    const sessionIds = (sessions || []).map(s => s.id);
+    let snapshots = [];
+    if (sessionIds.length) {
+      const { data } = await sb.from('review_artifact_snapshots')
+        .select('id, session_id, artifact_code, artifact_title, artifact_type')
+        .in('session_id', sessionIds);
+      snapshots = data || [];
+    }
 
     const wrap = document.getElementById('rv-sessions-wrap');
     if (!sessions?.length) {
