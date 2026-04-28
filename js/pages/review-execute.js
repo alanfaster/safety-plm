@@ -434,12 +434,20 @@ export async function renderReviewExecute(container, ctx) {
       const text = replyInput?.value?.trim();
       if (!text) { replyInput?.focus(); return; }
       replyBtn.disabled = true;
-      const { data: saved, error } = await sb.from('review_artifact_comments').insert({
+
+      // Insert first, then fetch with join to avoid join failures blocking the save
+      const { data: inserted, error } = await sb.from('review_artifact_comments').insert({
         session_id: sessionId, snapshot_id: snap.id,
         author_id: currentUserId, comment: text,
-      }).select('*, user_profiles(display_name)').single();
+      }).select('id, author_id, comment, created_at').single();
+
       replyBtn.disabled = false;
-      if (error) return;
+      if (error) { toast('Error saving comment: ' + error.message, 'error'); return; }
+
+      // Fetch display name separately
+      const { data: profile } = await sb.from('user_profiles').select('display_name').eq('id', currentUserId).single();
+      const saved = { ...inserted, user_profiles: profile || null };
+
       replyInput.value = '';
       const thread = panel.querySelector('#rve-props-thread');
       if (thread) {
