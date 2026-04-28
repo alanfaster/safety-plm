@@ -189,7 +189,7 @@ export function mountReviewChecklist(container, opts) {
     // Other reviewers' verdict pills
     const otherPills = reviewers.filter(r => r.user_id !== currentUserId).map(r => {
       const rv    = responseIndex[item.id]?.[r.user_id];
-      const label = escHtml(roleShortLabel(r.role) || r.display_name?.charAt(0) || '?');
+      const label = escHtml(r.role || r.display_name?.charAt(0) || '?');
       const title = `${escHtml(r.display_name || r.role)}: `;
       if (!rv) return `<span class="rvck-rv-pill rvck-rv-pending" title="${title}pending">${label}: —</span>`;
       return `<span class="rvck-rv-pill ${rv.verdict}" title="${title}${VERDICT_LABELS[rv.verdict]}">${label}: ${VERDICT_LABELS[rv.verdict]}</span>`;
@@ -790,16 +790,6 @@ export function mountReviewChecklist(container, opts) {
 }
 
 // ── Module-level helpers ───────────────────────────────────────────────────────
-// If role looks like a short code (no spaces, ≤10 chars) use as-is.
-// Otherwise abbreviate: take first letter of each word → "HW Test Engineer" → "HW-TE"
-// Special case: "SW " / "HW " / "ME " prefix words get kept as-is.
-function roleShortLabel(role) {
-  if (!role) return '';
-  if (!role.includes(' ') && role.length <= 10) return role; // already a code
-  const words = role.trim().split(/\s+/);
-  return words.map(w => w.charAt(0).toUpperCase()).join('');
-}
-
 function debounce(fn, ms) {
   let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
