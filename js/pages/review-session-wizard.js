@@ -432,6 +432,14 @@ export async function renderReviewSessionWizard(container, ctx) {
     if (state.step === 1) {
       state.title = document.getElementById('wiz-title')?.value.trim() || state.title;
       if (!state.title) { toast('Please enter a session title.', 'error'); return; }
+      if (state.template_id) {
+        const { data: secs } = await sb.from('review_template_sections')
+          .select('id').eq('template_id', state.template_id).limit(1);
+        if (!secs?.length) {
+          toast('The selected protocol has no checklist sections. Add criteria in Project Settings → Review Protocols before using it.', 'error');
+          return;
+        }
+      }
       state.step = 2;
     } else if (state.step === 2) {
       state.step = 3;

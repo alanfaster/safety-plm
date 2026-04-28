@@ -212,6 +212,13 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
 
   // ── Publish a new version ──────────────────────────────────────────────
   async function publishVersion(tpl, notes) {
+    if (!_sections.length) {
+      toast('Add at least one section before publishing.', 'error'); return false;
+    }
+    const totalItems = _sections.reduce((n, s) => n + (_items[s.id]?.length || 0), 0);
+    if (!totalItems) {
+      toast('Add at least one criterion before publishing.', 'error'); return false;
+    }
     const newVersion = (tpl.current_version || 0) + 1;
     const snapshot = buildSnapshot(tpl);
 
