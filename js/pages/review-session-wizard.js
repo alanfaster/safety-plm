@@ -47,7 +47,7 @@ export async function renderReviewSessionWizard(container, ctx) {
     checklist_mode: 'individual', // 'individual' | 'shared'
     selected: {},  // { [artifactType]: Set<id> }
     artifacts: {}, // { [artifactType]: [] }  loaded lazily
-    reviewers: [], // [{ user_id, role_id, role_name, display_name }]
+    reviewers: [], // [{ user_id, role_id, role_name, role_code, display_name }]
   };
 
   container.innerHTML = `
@@ -289,6 +289,7 @@ export async function renderReviewSessionWizard(container, ctx) {
           user_id:      selfMember.user_id,
           role_id:      selfMember.role_id,
           role_name:    selfMember.project_roles?.name || 'Reviewer',
+          role_code:    selfMember.project_roles?.code || '',
           display_name: profileMap[user.id] || user.id.slice(0, 8),
         });
       }
@@ -370,6 +371,7 @@ export async function renderReviewSessionWizard(container, ctx) {
         user_id:      userId,
         role_id:      roleId,
         role_name:    member.project_roles?.name || 'Reviewer',
+        role_code:    member.project_roles?.code || '',
         display_name: member.user_profiles?.display_name || userId.slice(0, 8),
       });
       reRenderReviewers();
@@ -518,7 +520,7 @@ export async function renderReviewSessionWizard(container, ctx) {
       const reviewerInserts = state.reviewers.map(r => ({
         session_id: session.id,
         user_id:    r.user_id,
-        role:       r.role_name,
+        role:       r.role_code || r.role_name,
       }));
       const { error: rvErr } = await sb.from('review_session_reviewers').insert(reviewerInserts);
       if (rvErr) {

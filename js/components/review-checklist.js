@@ -188,9 +188,11 @@ export function mountReviewChecklist(container, opts) {
 
     // Other reviewers' verdict pills
     const otherPills = reviewers.filter(r => r.user_id !== currentUserId).map(r => {
-      const rv = responseIndex[item.id]?.[r.user_id];
-      if (!rv) return `<span class="rvck-rv-pill rvck-rv-pending" title="${escHtml(r.display_name)}: pending">${escHtml(r.display_name.charAt(0))}: —</span>`;
-      return `<span class="rvck-rv-pill ${rv.verdict}" title="${escHtml(r.display_name)}: ${VERDICT_LABELS[rv.verdict]}">${escHtml(r.display_name.charAt(0))}: ${VERDICT_LABELS[rv.verdict]}</span>`;
+      const rv    = responseIndex[item.id]?.[r.user_id];
+      const label = escHtml(r.role || r.display_name?.charAt(0) || '?');
+      const title = `${escHtml(r.display_name || r.role)}: `;
+      if (!rv) return `<span class="rvck-rv-pill rvck-rv-pending" title="${title}pending">${label}: —</span>`;
+      return `<span class="rvck-rv-pill ${rv.verdict}" title="${title}${VERDICT_LABELS[rv.verdict]}">${label}: ${VERDICT_LABELS[rv.verdict]}</span>`;
     }).join('');
 
     // Consensus
