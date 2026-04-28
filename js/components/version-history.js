@@ -46,20 +46,32 @@ export async function showVersionHistory(sb, { artifactType, artifactId, artifac
   overlay.querySelector('.avh-close').onclick = () => overlay.remove();
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
 
-  // Load history
-  const { data: rows } = await sb
-    .from('artifact_version_history')
-    .select('version, data, changed_at')
-    .eq('artifact_type', artifactType)
-    .eq('artifact_id', artifactId)
-    .order('version', { ascending: false });
+  // Fetch fresh live row and history in parallel — avoids stale cached data
+  const TABLE_MAP = {
+    requirements:         'requirements',
+    arch_spec_items:      'arch_spec_items',
+    test_specs:           'test_specs',
+    vcycle_docs:          'vcycle_docs',
+    safety_analysis_rows: 'safety_analysis_rows',
+  };
+  const table = TABLE_MAP[artifactType] || artifactType;
 
-  const history = rows || [];
+  const [{ data: liveRow }, { data: rows }] = await Promise.all([
+    sb.from(table).select('*').eq('id', artifactId).single(),
+    sb.from('artifact_version_history')
+      .select('version, data, changed_at')
+      .eq('artifact_type', artifactType)
+      .eq('artifact_id', artifactId)
+      .order('version', { ascending: false }),
+  ]);
 
-  // Build version list: history entries + current live row at the top
-  const currentVersion = currentData?.version ?? (history.length ? history[0].version + 1 : 1);
+  const liveData = liveRow || currentData;
+  const history  = rows || [];
+
+  // Build version list: live row at top + history entries below
+  const currentVersion = liveData?.version ?? (history.length ? history[0].version + 1 : 1);
   const entries = [
-    { version: currentVersion, data: currentData, changed_at: currentData?.updated_at || null, isCurrent: true },
+    { version: currentVersion, data: liveData, changed_at: liveData?.updated_at || null, isCurrent: true },
     ...history.map(r => ({ version: r.version, data: r.data, changed_at: r.changed_at, isCurrent: false })),
   ];
 
