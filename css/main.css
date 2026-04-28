@@ -5981,3 +5981,9 @@ th.col-th-dragging * { pointer-events: none; }
 .rve-props-reply          { display: flex; flex-direction: column; gap: 6px; }
 .rve-props-reply-input    { font-size: 12px; resize: vertical; min-height: 50px; }
 .rve-props-reply-btn      { align-self: flex-end; }
+
+/* ── Review artifact comment edit/delete ───────────────────────────── */
+.rve-props-comment-header  { display:flex; align-items:baseline; justify-content:space-between; gap:6px; margin-bottom:2px; }
+.rve-props-comment-actions { display:flex; gap:2px; flex-shrink:0; opacity:0; transition:opacity .15s; }
+.rve-props-comment:hover .rve-props-comment-actions { opacity:1; }
+.rve-props-comment-body    { font-size:12px; color:var(--text); white-space:pre-wrap; word-break:break-word; }

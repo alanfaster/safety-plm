@@ -406,7 +406,7 @@ export async function renderReviewExecute(container, ctx) {
           <div class="rve-props-verdict-label">Comments</div>
           <div class="rve-props-thread" id="rve-props-thread">
             ${_comments.length
-              ? _comments.map(c => renderArtifactComment(c)).join('')
+              ? _comments.map((c, i) => renderArtifactComment(c, i === _comments.length - 1)).join('')
               : '<p class="rve-props-thread-empty text-muted">No comments yet.</p>'}
           </div>
           <div class="rve-props-reply">
@@ -417,6 +417,10 @@ export async function renderReviewExecute(container, ctx) {
         </div>
       </div>
     `;
+
+    // Wire comment edit/delete actions
+    const thread0 = panel.querySelector('#rve-props-thread');
+    if (thread0) wireCommentActions(thread0);
 
     // Wire drift buttons
     panel.querySelector('#rve-props-compare')?.addEventListener('click', () => openDiffModal(snap));
@@ -460,7 +464,11 @@ export async function renderReviewExecute(container, ctx) {
       if (thread) {
         const empty = thread.querySelector('.rve-props-thread-empty');
         if (empty) empty.remove();
-        thread.insertAdjacentHTML('beforeend', renderArtifactComment(saved));
+        // Strip edit/delete from the previously last comment (no longer last)
+        thread.querySelector('.rve-props-comment:last-child .rve-props-comment-actions')?.remove();
+        // Append new comment as last (with edit buttons since it's ours)
+        thread.insertAdjacentHTML('beforeend', renderArtifactComment(saved, true));
+        wireCommentActions(thread);
         thread.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     };
@@ -470,13 +478,78 @@ export async function renderReviewExecute(container, ctx) {
     });
   }
 
-  function renderArtifactComment(c) {
-    const name = c.user_profiles?.display_name || c.author_id?.slice(0, 8) || '?';
-    const dt   = formatDateTime(c.created_at);
-    return `<div class="rve-props-comment">
-      <span class="rve-props-comment-meta"><strong>${escHtml(name)}</strong>, ${escHtml(dt)}:</span>
-      <span class="rve-props-comment-text"> ${escHtml(c.comment)}</span>
+  function renderArtifactComment(c, isLast = false) {
+    const name      = c.user_profiles?.display_name || c.author_id?.slice(0, 8) || '?';
+    const dt        = formatDateTime(c.created_at);
+    const canEdit   = isLast && c.author_id === currentUserId;
+    return `<div class="rve-props-comment" data-comment-id="${c.id}">
+      <div class="rve-props-comment-header">
+        <span class="rve-props-comment-meta"><strong>${escHtml(name)}</strong>, ${escHtml(dt)}</span>
+        ${canEdit ? `
+          <span class="rve-props-comment-actions">
+            <button class="btn btn-ghost btn-xs rve-comment-edit-btn" data-id="${c.id}" title="Edit">✎</button>
+            <button class="btn btn-ghost btn-xs rve-comment-del-btn" data-id="${c.id}" title="Delete" style="color:var(--color-danger)">✕</button>
+          </span>` : ''}
+      </div>
+      <div class="rve-props-comment-body" data-id="${c.id}">${escHtml(c.comment)}</div>
     </div>`;
+  }
+
+  function wireCommentActions(thread) {
+    // Edit button — replace body with inline textarea
+    thread.querySelectorAll('.rve-comment-edit-btn').forEach(btn => {
+      btn.onclick = () => {
+        const commentEl = thread.querySelector(`.rve-props-comment[data-comment-id="${btn.dataset.id}"]`);
+        const body      = commentEl?.querySelector('.rve-props-comment-body');
+        if (!body || body.querySelector('textarea')) return; // already editing
+        const original = body.textContent;
+        body.innerHTML = `
+          <textarea class="form-input rve-comment-edit-input" rows="2" style="width:100%;margin-top:4px">${escHtml(original)}</textarea>
+          <div style="display:flex;gap:6px;margin-top:4px;justify-content:flex-end">
+            <button class="btn btn-ghost btn-xs rve-comment-edit-cancel">Cancel</button>
+            <button class="btn btn-secondary btn-xs rve-comment-edit-save" data-id="${btn.dataset.id}">Save</button>
+          </div>`;
+        body.querySelector('.rve-comment-edit-cancel').onclick = () => { body.innerHTML = escHtml(original); };
+        body.querySelector('.rve-comment-edit-save').onclick = async () => {
+          const newText = body.querySelector('textarea')?.value?.trim();
+          if (!newText) return;
+          const { error } = await sb.from('review_artifact_comments')
+            .update({ comment: newText }).eq('id', btn.dataset.id);
+          if (error) { toast('Error: ' + error.message, 'error'); return; }
+          body.innerHTML = escHtml(newText);
+        };
+      };
+    });
+
+    // Delete button
+    thread.querySelectorAll('.rve-comment-del-btn').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('Delete this comment?')) return;
+        const { error } = await sb.from('review_artifact_comments').delete().eq('id', btn.dataset.id);
+        if (error) { toast('Error: ' + error.message, 'error'); return; }
+        const commentEl = thread.querySelector(`.rve-props-comment[data-comment-id="${btn.dataset.id}"]`);
+        commentEl?.remove();
+        if (!thread.querySelector('.rve-props-comment')) {
+          thread.innerHTML = '<p class="rve-props-thread-empty text-muted">No comments yet.</p>';
+        } else {
+          // Re-render previous comment without edit buttons (it's no longer the last)
+          // just remove actions from new last comment if it's not the current user's
+          rewireLastComment(thread);
+        }
+      };
+    });
+  }
+
+  function rewireLastComment(thread) {
+    // After a delete, re-evaluate which comment is last and update its action buttons
+    const allComments = [...thread.querySelectorAll('.rve-props-comment')];
+    if (!allComments.length) return;
+    // Remove all action spans first
+    thread.querySelectorAll('.rve-props-comment-actions').forEach(el => el.remove());
+    const last = allComments[allComments.length - 1];
+    const authorId = last.querySelector('.rve-comment-edit-btn, .rve-comment-del-btn')?.dataset?.id;
+    // We can't know the author_id from DOM alone after removal — reload the panel to be safe
+    loadPropsPanel();
   }
 
   async function saveArtifactVerdict(snap, verdict) {
