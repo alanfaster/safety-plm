@@ -433,8 +433,8 @@ export async function renderReviewExecute(container, ctx) {
     const authorIds = [...new Set(rows.map(c => c.author_id).filter(Boolean))];
     const profileMap = {};
     if (authorIds.length) {
-      const { data: profiles } = await sb.from('user_profiles').select('id, display_name').in('id', authorIds);
-      (profiles || []).forEach(p => { profileMap[p.id] = p.display_name; });
+      const { data: profiles } = await sb.from('user_profiles').select('user_id, display_name').in('user_id', authorIds);
+      (profiles || []).forEach(p => { profileMap[p.user_id] = p.display_name; });
     }
     const _comments = rows.map(c => ({ ...c, user_profiles: { display_name: profileMap[c.author_id] || null } }));
 
@@ -537,7 +537,7 @@ export async function renderReviewExecute(container, ctx) {
       if (error) { toast('Error saving comment: ' + error.message, 'error'); return; }
 
       // Fetch display name separately
-      const { data: profile } = await sb.from('user_profiles').select('display_name').eq('id', currentUserId).single();
+      const { data: profile } = await sb.from('user_profiles').select('display_name').eq('user_id', currentUserId).single();
       const saved = { ...inserted, user_profiles: profile || null };
 
       replyInput.value = '';
