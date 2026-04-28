@@ -265,22 +265,31 @@ export async function renderReviewSessionWizard(container, ctx) {
   async function renderStep3(body) {
     body.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
 
-    // Load project members with their roles
-    const { data: membersRaw } = await sb.from('project_members')
-      .select('*, project_roles(id,name,code,category), user_profiles(display_name)')
-      .eq('project_id', project.id);
-    const members = membersRaw || [];
+    // Load project members with their roles (split query — no FK between project_members and user_profiles)
+    const [
+      { data: membersRaw },
+      { data: profilesRaw },
+      { data: { user } },
+    ] = await Promise.all([
+      sb.from('project_members').select('*, project_roles(id,name,code,category)').eq('project_id', project.id),
+      sb.from('user_profiles').select('user_id, display_name'),
+      sb.auth.getUser(),
+    ]);
+    const profileMap = Object.fromEntries((profilesRaw || []).map(p => [p.user_id, p.display_name]));
+    const members = (membersRaw || []).map(m => ({
+      ...m,
+      user_profiles: { display_name: profileMap[m.user_id] || null },
+    }));
 
     // Pre-populate current user as reviewer if no reviewers yet
-    const { data: { user } } = await sb.auth.getUser();
     if (!state.reviewers.length && user) {
       const selfMember = members.find(m => m.user_id === user.id);
       if (selfMember) {
         state.reviewers.push({
-          user_id: selfMember.user_id,
-          role_id: selfMember.role_id,
-          role_name: selfMember.project_roles?.name || 'Reviewer',
-          display_name: selfMember.user_profiles?.display_name || user.id.slice(0, 8),
+          user_id:      selfMember.user_id,
+          role_id:      selfMember.role_id,
+          role_name:    selfMember.project_roles?.name || 'Reviewer',
+          display_name: profileMap[user.id] || user.id.slice(0, 8),
         });
       }
     }

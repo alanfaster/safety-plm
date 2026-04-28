@@ -52,19 +52,25 @@ function escHtml(str) {
 export async function mountMembersTab(container, project, sb, toast) {
   container.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
 
-  // Load roles, members and all user profiles in parallel
+  // Load roles, raw members and all user profiles in parallel
   const [
     { data: rolesRaw },
     { data: membersRaw },
     { data: profiles },
   ] = await Promise.all([
     sb.from('project_roles').select('*').eq('project_id', project.id).order('sort_order'),
-    sb.from('project_members').select('*, user_profiles(display_name)').eq('project_id', project.id),
+    sb.from('project_members').select('*').eq('project_id', project.id),
     sb.from('user_profiles').select('user_id, display_name'),
   ]);
 
-  let roles   = rolesRaw   || [];
-  let members = membersRaw || [];
+  const profileMap = Object.fromEntries((profiles || []).map(p => [p.user_id, p.display_name]));
+
+  let roles   = rolesRaw || [];
+  // Attach display_name manually (no FK between project_members and user_profiles)
+  let members = (membersRaw || []).map(m => ({
+    ...m,
+    user_profiles: { display_name: profileMap[m.user_id] || null },
+  }));
   const allUsers = profiles || [];
 
   // Auto-seed ASPICE defaults if no roles yet
@@ -264,9 +270,9 @@ export async function mountMembersTab(container, project, sb, toast) {
       if (already) { toast('This user already has this role.', 'error'); return; }
       const { data, error } = await sb.from('project_members')
         .insert({ project_id: project.id, user_id: userId, role_id: roleId })
-        .select('*, user_profiles(display_name)').single();
+        .select('*').single();
       if (error) { toast('Error: ' + error.message, 'error'); return; }
-      members.push(data);
+      members.push({ ...data, user_profiles: { display_name: profileMap[userId] || null } });
       render();
     };
 

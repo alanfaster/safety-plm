@@ -552,6 +552,16 @@ export function mountReviewChecklist(container, opts) {
     wireInlineReplies(root);
   }
 
+  function refreshToggleBadge(itemId) {
+    if (!itemId) return;
+    const btn = container.querySelector(`.rvck-findings-toggle[data-item-id="${itemId}"]`);
+    if (!btn) return;
+    const findings = findingsByItem[itemId] || [];
+    const count = findings.length;
+    const chevron = btn.querySelector('.rvck-findings-toggle-chevron')?.outerHTML || '<span class="rvck-findings-toggle-chevron">▶</span>';
+    btn.innerHTML = `${chevron} ⚑ ${count} finding${count !== 1 ? 's' : ''} ${buildFindingsSummaryBadges(findings)}`;
+  }
+
   function wireInlineTransitions(root) {
     root.querySelectorAll('.rve-status-select:not([data-wired])').forEach(sel => {
       sel.dataset.wired = '1';
@@ -613,6 +623,7 @@ export function mountReviewChecklist(container, opts) {
           f.status = toStatus;
           card.outerHTML = renderInlineFinding(f);
           wireInlineFinding(root);
+          refreshToggleBadge(f.template_item_id);
           loadVisibleComments();
         });
       });
