@@ -62,6 +62,15 @@ function buildStatusSelectHtml(f, isAuthor, extraClass = '') {
   </select>`;
 }
 
+function buildFindingsSummaryBadges(findings) {
+  const counts = {};
+  findings.forEach(f => { counts[f.status] = (counts[f.status] || 0) + 1; });
+  return Object.entries(counts)
+    .map(([status, n]) =>
+      `<span class="badge ${FINDING_STATUS_CLASSES[status] || ''}" style="margin-left:4px">${FINDING_STATUS_LABELS[status] || status}${n > 1 ? ` ×${n}` : ''}</span>`)
+    .join('');
+}
+
 const ARTIFACT_DISPLAY_FIELDS = {
   requirements:         ['req_code','title','description','type','status','priority','asil','dal'],
   arch_spec_items:      ['spec_code','title','type','status'],
@@ -239,7 +248,7 @@ export function mountReviewChecklist(container, opts) {
           <button class="rvck-findings-toggle" data-item-id="${item.id}">
             <span class="rvck-findings-toggle-chevron">▶</span>
             ⚑ ${itemFindings.length} finding${itemFindings.length > 1 ? 's' : ''}
-            <span class="badge ${FINDING_STATUS_CLASSES[itemFindings[0].status] || ''}" style="margin-left:4px">${FINDING_STATUS_LABELS[itemFindings[0].status] || itemFindings[0].status}${itemFindings.length > 1 ? ` +${itemFindings.length - 1}` : ''}</span>
+            ${buildFindingsSummaryBadges(itemFindings)}
           </button>
           <div class="rvck-item-findings" id="rvck-item-findings-${item.id}" style="display:none">
             ${itemFindings.map(f => renderInlineFinding(f)).join('')}
@@ -424,10 +433,9 @@ export function mountReviewChecklist(container, opts) {
         // Update (or create) the findings toggle bar count
         const itemEl       = container.querySelector(`.rvck-item[data-item-id="${itemId}"]`);
         const count        = findingsByItem[itemId].length;
-        const statusBadge  = `<span class="badge ${FINDING_STATUS_CLASSES[newFinding.status] || ''}" style="margin-left:4px">${FINDING_STATUS_LABELS[newFinding.status] || newFinding.status}${count > 1 ? ` +${count - 1}` : ''}</span>`;
+        const statusBadge  = buildFindingsSummaryBadges(findingsByItem[itemId]);
         let toggleBtn = itemEl?.querySelector('.rvck-findings-toggle');
         if (toggleBtn) {
-          // Update count
           toggleBtn.innerHTML = `<span class="rvck-findings-toggle-chevron">${slot?.style.display === 'none' ? '▶' : '▼'}</span> ⚑ ${count} finding${count > 1 ? 's' : ''} ${statusBadge}`;
         } else if (itemEl && slot) {
           // Create toggle for the first time and collapse the slot
