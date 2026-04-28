@@ -5408,6 +5408,23 @@ th.col-th-dragging * { pointer-events: none; }
 .rv-fs-verified    { background: #e0f2f1; color: #004d40; border: 1px solid #80cbc4; }
 .rv-fs-closed      { background: #f1f3f4; color: #5f6368; border: 1px solid #dadce0; }
 
+/* --- Finding status select (Jira-style combo) --- */
+.rve-status-select {
+  appearance: none; -webkit-appearance: none;
+  border-radius: 12px; border: 1px solid transparent;
+  font-size: 11px; font-weight: 600; padding: 2px 20px 2px 8px;
+  cursor: pointer; outline: none; line-height: 1.4;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 6px center; background-size: 8px 5px;
+  transition: opacity .15s;
+}
+.rve-status-select:disabled { opacity: .65; cursor: default; }
+.rve-status-select[data-status="open"]     { background-color: #fce8e6; color: #c5221f; border-color: #f5c6c4; }
+.rve-status-select[data-status="accepted"] { background-color: #e8f0fe; color: #1558d6; border-color: #c5d8fb; }
+.rve-status-select[data-status="fixed"]    { background-color: #e8f5e9; color: #1b5e20; border-color: #a5d6a7; }
+.rve-status-select[data-status="closed"]   { background-color: #f1f3f4; color: #5f6368; border-color: #dadce0; }
+.rve-status-select[data-status="rejected"] { background-color: #f1f3f4; color: #5f6368; border-color: #dadce0; }
+
 /* ============================================================
    REVIEW TEMPLATES (project-settings tab)
    ============================================================ */

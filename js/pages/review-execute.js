@@ -40,8 +40,20 @@ const TRANSITIONS = {
   closed:[], rejected:[],
 };
 const TRANSITION_LABELS = {
-  accepted:'✓ Accept', fixed:'✔ Mark as Implemented', closed:'✓ Confirm & Close', rejected:'✕ Reject',
+  accepted:'Accept', fixed:'Mark as Implemented', closed:'Confirm & Close', rejected:'Reject',
 };
+
+function buildStatusSelectHtml(f, isAuthor, extraClass = '') {
+  const transitions = TRANSITIONS[f.status] || [];
+  const visibleTransitions = transitions.filter(to => to !== 'closed' || isAuthor);
+  const disabled = visibleTransitions.length === 0 ? 'disabled' : '';
+  const closeBlocked = transitions.includes('closed') && !isAuthor;
+  return `<select class="rve-status-select ${extraClass}" data-finding-id="${f.id}" data-current="${f.status}" data-status="${f.status}" ${disabled}>
+    <option value="${f.status}" selected>${FINDING_STATUS_LABELS[f.status] || f.status}</option>
+    ${visibleTransitions.map(to => `<option value="${to}">${TRANSITION_LABELS[to] || FINDING_STATUS_LABELS[to]}</option>`).join('')}
+    ${closeBlocked ? `<option value="" disabled>Close (creator only)</option>` : ''}
+  </select>`
+}
 
 const FINAL_VERDICT_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-GO' };
 const FINAL_VERDICT_CLASSES = { go:'rve-artcard-go', conditional:'rve-artcard-conditional', no_go:'rve-artcard-nogo' };
@@ -610,9 +622,8 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   function renderFindingCard(f, snapMap) {
-    const snap        = f.snapshot_id ? snapMap[f.snapshot_id] : null;
-    const transitions = TRANSITIONS[f.status] || [];
-    const isAuthor    = f.created_by === currentUserId;
+    const snap     = f.snapshot_id ? snapMap[f.snapshot_id] : null;
+    const isAuthor = f.created_by === currentUserId;
 
     return `
       <div class="rve-fcard" data-finding-id="${f.id}">
@@ -626,16 +637,7 @@ export async function renderReviewExecute(container, ctx) {
             ${f.description ? `<span class="rve-fcard-desc-inline text-muted">— ${escHtml(f.description)}</span>` : ''}
           </div>
           <div class="rve-fcard-right">
-            <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
-            ${transitions.filter(to => to !== 'closed').map(to => `
-              <button class="btn btn-sm rve-fcard-trans-btn rve-trans-${to}" data-finding-id="${f.id}" data-to="${to}">
-                ${TRANSITION_LABELS[to]}
-              </button>`).join('')}
-            ${transitions.includes('closed')
-              ? isAuthor
-                ? `<button class="btn btn-sm rve-fcard-trans-btn rve-trans-closed" data-finding-id="${f.id}" data-to="closed">${TRANSITION_LABELS['closed']}</button>`
-                : `<span class="rve-fcard-pending-close" title="Only the finding creator can close this">⏳ Awaiting creator confirmation</span>`
-              : ''}
+            ${buildStatusSelectHtml(f, isAuthor)}
             ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-edit-btn" data-finding-id="${f.id}" title="Edit">✎</button>` : ''}
             ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-del-btn" data-finding-id="${f.id}" title="Delete" style="color:var(--color-danger,#e53e3e)">✕</button>` : ''}
           </div>
@@ -734,19 +736,18 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   function wireFindingTransitionBtns(root, snapMap) {
-    root.querySelectorAll('.rve-fcard-trans-btn:not([data-wired])').forEach(btn => {
-      btn.dataset.wired = '1';
-      btn.addEventListener('click', () => {
-        const findingId = btn.dataset.findingId;
-        const toStatus  = btn.dataset.to;
+    root.querySelectorAll('.rve-status-select:not([data-wired])').forEach(sel => {
+      sel.dataset.wired = '1';
+      sel.addEventListener('change', () => {
+        const findingId = sel.dataset.findingId;
+        const toStatus  = sel.value;
+        if (!toStatus || toStatus === sel.dataset.current) { sel.value = sel.dataset.current; return; }
         const f = _findings.find(x => x.id === findingId);
         if (!f) return;
         const card = root.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
-        if (!card || card.querySelector('.rve-trans-confirm-form')) return;
+        if (!card || card.querySelector('.rve-trans-confirm-form')) { sel.value = sel.dataset.current; return; }
 
-        // Hide all transition buttons in the right column while confirming
-        card.querySelectorAll('.rve-fcard-trans-btn').forEach(b => b.style.display = 'none');
-
+        sel.disabled = true;
         const label = TRANSITION_LABELS[toStatus] || FINDING_STATUS_LABELS[toStatus] || toStatus;
         const form  = document.createElement('div');
         form.className = 'rve-trans-confirm-form';
@@ -758,13 +759,13 @@ export async function renderReviewExecute(container, ctx) {
             <button class="btn btn-ghost btn-sm rve-trans-cancel-btn">Cancel</button>
           </div>`;
 
-        // Insert below the main row (no .rve-fcard-transitions div in compact layout)
         card.querySelector('.rve-fcard-row').insertAdjacentElement('afterend', form);
         form.querySelector('.rve-trans-comment').focus();
 
         form.querySelector('.rve-trans-cancel-btn').addEventListener('click', () => {
           form.remove();
-          card.querySelectorAll('.rve-fcard-trans-btn').forEach(b => b.style.display = '');
+          sel.value = sel.dataset.current;
+          sel.disabled = false;
         });
 
         form.querySelector('.rve-trans-ok-btn').addEventListener('click', async () => {
@@ -773,11 +774,11 @@ export async function renderReviewExecute(container, ctx) {
           if (!comment) { ta.focus(); ta.classList.add('input-error'); return; }
           ta.classList.remove('input-error');
 
-          // Only the finding creator can close it
           if (toStatus === 'closed' && f.created_by !== currentUserId) {
             toast('Only the finding creator can close this finding.', 'error');
             form.remove();
-            card.querySelectorAll('.rve-fcard-trans-btn').forEach(b => b.style.display = '');
+            sel.value = sel.dataset.current;
+            sel.disabled = false;
             return;
           }
 

@@ -47,8 +47,20 @@ const TRANSITIONS = {
   closed:[], rejected:[],
 };
 const TRANSITION_LABELS = {
-  accepted:'✓ Accept', fixed:'✔ Mark as Implemented', closed:'✓ Confirm & Close', rejected:'✕ Reject',
+  accepted:'Accept', fixed:'Mark as Implemented', closed:'Confirm & Close', rejected:'Reject',
 };
+
+function buildStatusSelectHtml(f, isAuthor, extraClass = '') {
+  const transitions = TRANSITIONS[f.status] || [];
+  const visibleTransitions = transitions.filter(to => to !== 'closed' || isAuthor);
+  const disabled = visibleTransitions.length === 0 ? 'disabled' : '';
+  const closeBlocked = transitions.includes('closed') && !isAuthor;
+  return `<select class="rve-status-select ${extraClass}" data-finding-id="${f.id}" data-current="${f.status}" data-status="${f.status}" ${disabled}>
+    <option value="${f.status}" selected>${FINDING_STATUS_LABELS[f.status] || f.status}</option>
+    ${visibleTransitions.map(to => `<option value="${to}">${TRANSITION_LABELS[to] || FINDING_STATUS_LABELS[to]}</option>`).join('')}
+    ${closeBlocked ? `<option value="" disabled>Close (creator only)</option>` : ''}
+  </select>`;
+}
 
 const ARTIFACT_DISPLAY_FIELDS = {
   requirements:         ['req_code','title','description','type','status','priority','asil','dal'],
@@ -239,21 +251,11 @@ export function mountReviewChecklist(container, opts) {
   // ── Inline finding card (inside checklist or open points) ───────────────────
 
   function renderInlineFinding(f, withThread = false) {
-    const transitions  = TRANSITIONS[f.status] || [];
     const comments     = _commentCache[f.id] || [];
     const isAuthor     = f.created_by === currentUserId;
     const commentCount = comments.length;
 
-    const transitionBtns = [
-      ...transitions.filter(to => to !== 'closed').map(to =>
-        `<button class="btn btn-xs rvck-inline-trans-btn rve-trans-${to}" data-finding-id="${f.id}" data-to="${to}">${TRANSITION_LABELS[to]}</button>`
-      ),
-      transitions.includes('closed')
-        ? (isAuthor
-            ? `<button class="btn btn-xs rvck-inline-trans-btn rve-trans-closed" data-finding-id="${f.id}" data-to="closed">${TRANSITION_LABELS['closed']}</button>`
-            : `<span class="rve-fcard-pending-close">⏳ Awaiting creator</span>`)
-        : '',
-    ].join('');
+    const statusSelect = buildStatusSelectHtml(f, isAuthor, 'rvck-status-select');
 
     return `
       <div class="rvck-inline-finding" data-finding-id="${f.id}" data-severity="${f.severity}">
@@ -262,10 +264,7 @@ export function mountReviewChecklist(container, opts) {
           <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}">${SEVERITY_LABELS[f.severity] || f.severity}</span>
           <span class="rvck-inline-finding-title">${escHtml(f.title)}</span>
           ${f.description ? `<span class="rvck-inline-finding-desc-inline text-muted">— ${escHtml(f.description)}</span>` : ''}
-          <span class="rvck-inline-status-group">
-            <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
-            ${transitionBtns}
-          </span>
+          <span class="rvck-inline-status-group">${statusSelect}</span>
           <span class="rvck-inline-finding-actions">
             <button class="btn btn-ghost btn-xs rvck-comments-toggle" data-finding-id="${f.id}"
                     title="${commentCount ? commentCount + ' comment(s)' : 'Add comment'}">💬${commentCount ? ' ' + commentCount : ''}</button>
@@ -548,18 +547,18 @@ export function mountReviewChecklist(container, opts) {
   }
 
   function wireInlineTransitions(root) {
-    root.querySelectorAll('.rvck-inline-trans-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const findingId = btn.dataset.findingId;
-        const toStatus  = btn.dataset.to;
+    root.querySelectorAll('.rve-status-select:not([data-wired])').forEach(sel => {
+      sel.dataset.wired = '1';
+      sel.addEventListener('change', () => {
+        const findingId = sel.dataset.findingId;
+        const toStatus  = sel.value;
+        if (!toStatus || toStatus === sel.dataset.current) { sel.value = sel.dataset.current; return; }
         const f = findings.find(x => x.id === findingId);
         if (!f) return;
         const card = root.querySelector(`.rvck-inline-finding[data-finding-id="${findingId}"]`);
-        if (!card || card.querySelector('.rvck-trans-confirm-form')) return;
+        if (!card || card.querySelector('.rvck-trans-confirm-form')) { sel.value = sel.dataset.current; return; }
 
-        // Hide all transition buttons while confirming
-        card.querySelectorAll('.rvck-inline-trans-btn').forEach(b => b.style.display = 'none');
-
+        sel.disabled = true;
         const label = TRANSITION_LABELS[toStatus] || FINDING_STATUS_LABELS[toStatus] || toStatus;
         const form  = document.createElement('div');
         form.className = 'rvck-trans-confirm-form';
@@ -571,13 +570,13 @@ export function mountReviewChecklist(container, opts) {
             <button class="btn btn-ghost btn-sm rvck-trans-cancel-btn">Cancel</button>
           </div>`;
 
-        const transitionsDiv = card.querySelector('.rvck-inline-transitions');
-        transitionsDiv?.insertAdjacentElement('afterend', form);
+        card.querySelector('.rvck-inline-finding-header').insertAdjacentElement('afterend', form);
         form.querySelector('.rvck-trans-comment').focus();
 
         form.querySelector('.rvck-trans-cancel-btn').addEventListener('click', () => {
           form.remove();
-          card.querySelectorAll('.rvck-inline-trans-btn').forEach(b => b.style.display = '');
+          sel.value = sel.dataset.current;
+          sel.disabled = false;
         });
 
         form.querySelector('.rvck-trans-ok-btn').addEventListener('click', async () => {
@@ -588,7 +587,8 @@ export function mountReviewChecklist(container, opts) {
 
           if (toStatus === 'closed' && f.created_by !== currentUserId) {
             form.remove();
-            card.querySelectorAll('.rvck-inline-trans-btn').forEach(b => b.style.display = '');
+            sel.value = sel.dataset.current;
+            sel.disabled = false;
             return;
           }
 
@@ -599,7 +599,6 @@ export function mountReviewChecklist(container, opts) {
             .update({ status: toStatus, updated_at: new Date().toISOString() }).eq('id', findingId);
           if (statusErr) { okBtn.disabled = false; return; }
 
-          // Save mandatory comment with status prefix
           await sb.from('review_finding_comments').insert({
             finding_id: findingId, author_id: currentUserId,
             comment: `[${FINDING_STATUS_LABELS[toStatus]}] ${comment}`,
