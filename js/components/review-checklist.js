@@ -595,12 +595,14 @@ export function mountReviewChecklist(container, opts) {
     if (!ta || !ta.value.trim()) { ta?.focus(); return; }
     if (btn) btn.disabled = true;
 
-    const { data: comment, error } = await sb.from('review_finding_comments').insert({
+    const { data: inserted, error } = await sb.from('review_finding_comments').insert({
       finding_id: findingId, author_id: currentUserId, comment: ta.value.trim(),
-    }).select('*, user_profiles(display_name)').single();
+    }).select('id, finding_id, author_id, comment, created_at').single();
 
     if (btn) btn.disabled = false;
     if (error) return;
+    const { data: profile } = await sb.from('user_profiles').select('display_name').eq('id', currentUserId).single();
+    const comment = { ...inserted, user_profiles: profile || null };
 
     if (!_commentCache[findingId]) _commentCache[findingId] = [];
     _commentCache[findingId].push(comment);
@@ -617,12 +619,20 @@ export function mountReviewChecklist(container, opts) {
     const visibleFindingIds = findings.map(f => f.id);
     if (!visibleFindingIds.length) return;
 
-    const { data: comments } = await sb.from('review_finding_comments')
-      .select('*, user_profiles(display_name)')
+    const { data: rawComments } = await sb.from('review_finding_comments')
+      .select('id, finding_id, author_id, comment, created_at')
       .in('finding_id', visibleFindingIds)
       .order('created_at');
+    const rows = rawComments || [];
+    const authorIds = [...new Set(rows.map(c => c.author_id).filter(Boolean))];
+    const profileMap = {};
+    if (authorIds.length) {
+      const { data: profiles } = await sb.from('user_profiles').select('id, display_name').in('id', authorIds);
+      (profiles || []).forEach(p => { profileMap[p.id] = p.display_name; });
+    }
+    const comments = rows.map(c => ({ ...c, user_profiles: { display_name: profileMap[c.author_id] || null } }));
 
-    (comments || []).forEach(c => {
+    comments.forEach(c => {
       if (!_commentCache[c.finding_id]) _commentCache[c.finding_id] = [];
       if (!_commentCache[c.finding_id].find(x => x.id === c.id)) _commentCache[c.finding_id].push(c);
     });

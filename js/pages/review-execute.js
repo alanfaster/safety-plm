@@ -658,15 +658,24 @@ export async function renderReviewExecute(container, ctx) {
     const snapMap = {};
     (snapshots || []).forEach(s => { snapMap[s.id] = s; });
 
-    // Load all comments for findings in session
+    // Load all comments for findings in session (split query — no embedded join)
     if (_findings.length) {
-      const { data: comments } = await sb.from('review_finding_comments')
-        .select('*, user_profiles(display_name)')
+      const { data: rawComments } = await sb.from('review_finding_comments')
+        .select('id, finding_id, author_id, comment, created_at')
         .in('finding_id', _findings.map(f => f.id))
         .order('created_at');
 
+      const rows = rawComments || [];
+      const authorIds = [...new Set(rows.map(c => c.author_id).filter(Boolean))];
+      const profileMap = {};
+      if (authorIds.length) {
+        const { data: profiles } = await sb.from('user_profiles').select('id, display_name').in('id', authorIds);
+        (profiles || []).forEach(p => { profileMap[p.id] = p.display_name; });
+      }
+      const comments = rows.map(c => ({ ...c, user_profiles: { display_name: profileMap[c.author_id] || null } }));
+
       const byFinding = {};
-      (comments || []).forEach(c => {
+      comments.forEach(c => {
         if (!byFinding[c.finding_id]) byFinding[c.finding_id] = [];
         byFinding[c.finding_id].push(c);
       });
@@ -842,13 +851,21 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   async function wireFindingCard(findingId, snapMap) {
-    // Load comments for this single card after re-render
+    // Load comments for this single card after re-render (split query — no embedded join)
     const thread = container.querySelector(`#rve-fthread-${findingId}`);
     if (thread) {
-      const { data: comments } = await sb.from('review_finding_comments')
-        .select('*, user_profiles(display_name)').eq('finding_id', findingId).order('created_at');
-      thread.innerHTML = (comments || []).length
-        ? (comments || []).map(c => renderComment(c)).join('')
+      const { data: rawComments } = await sb.from('review_finding_comments')
+        .select('id, finding_id, author_id, comment, created_at').eq('finding_id', findingId).order('created_at');
+      const rows = rawComments || [];
+      const authorIds = [...new Set(rows.map(c => c.author_id).filter(Boolean))];
+      const profileMap = {};
+      if (authorIds.length) {
+        const { data: profiles } = await sb.from('user_profiles').select('id, display_name').in('id', authorIds);
+        (profiles || []).forEach(p => { profileMap[p.id] = p.display_name; });
+      }
+      const comments = rows.map(c => ({ ...c, user_profiles: { display_name: profileMap[c.author_id] || null } }));
+      thread.innerHTML = comments.length
+        ? comments.map(c => renderComment(c)).join('')
         : '<span class="text-muted" style="font-size:11px">No comments yet.</span>';
     }
 
@@ -894,12 +911,14 @@ export async function renderReviewExecute(container, ctx) {
     if (!ta || !ta.value.trim()) { ta?.focus(); return; }
     if (btn) btn.disabled = true;
 
-    const { data: comment, error } = await sb.from('review_finding_comments').insert({
+    const { data: inserted, error } = await sb.from('review_finding_comments').insert({
       finding_id: findingId, author_id: currentUserId, comment: ta.value.trim(),
-    }).select('*, user_profiles(display_name)').single();
+    }).select('id, finding_id, author_id, comment, created_at').single();
 
     if (btn) btn.disabled = false;
     if (error) { toast('Error posting comment: ' + error.message, 'error'); return; }
+    const { data: profile } = await sb.from('user_profiles').select('display_name').eq('id', currentUserId).single();
+    const comment = { ...inserted, user_profiles: profile || null };
 
     ta.value = '';
     const thread = container.querySelector(`#rve-fthread-${findingId}`);
