@@ -127,7 +127,6 @@ export function mountReviewChecklist(container, opts) {
             <span class="rvck-drift-text">The artifact has changed since this snapshot was taken.</span>
             <span class="rvck-drift-actions">
               ${onCompareRequest ? `<button class="btn btn-ghost btn-xs rvck-drift-compare-btn">Compare versions</button>` : ''}
-              ${onReSnapshotRequest ? `<button class="btn btn-secondary btn-xs rvck-drift-resnap-btn">Update snapshot</button>` : ''}
             </span>
           </div>` : ''}
         <div class="rvck-sections-wrap" id="rvck-sections-wrap">
@@ -305,9 +304,8 @@ export function mountReviewChecklist(container, opts) {
   // ── Wire everything ─────────────────────────────────────────────────────────
 
   function wire() {
-    // Drift banner buttons
+    // Drift banner
     container.querySelector('.rvck-drift-compare-btn')?.addEventListener('click', () => onCompareRequest?.());
-    container.querySelector('.rvck-drift-resnap-btn')?.addEventListener('click', () => onReSnapshotRequest?.());
 
     // Section accordion
     container.querySelectorAll('.rvck-section-header[data-sec-id]').forEach(btn => {

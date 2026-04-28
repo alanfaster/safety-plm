@@ -5618,7 +5618,7 @@ th.col-th-dragging * { pointer-events: none; }
   color: #7c4f00; font-size: 11px; border-radius: 4px; margin-bottom: 12px; }
 .rvck-diff-overlay   { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200;
   display: flex; align-items: center; justify-content: center; }
-.rvck-diff-modal     { background: var(--bg-card); border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,.25);
+.rvck-diff-modal     { background: #fff; border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,.25);
   width: 860px; max-width: 96vw; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
 .rvck-diff-header    { padding: 14px 18px; border-bottom: 1px solid var(--border);
   display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }

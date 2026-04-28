@@ -267,7 +267,6 @@ export async function renderReviewExecute(container, ctx) {
       onFindingRaise: opts => openRaiseFindingModal(opts),
       onFindingCreated: f => { _findings.push(f); refreshArtifactCard(snap); },
       onCompareRequest: () => openDiffModal(snap),
-      onReSnapshotRequest: async () => { await reSnapshot(snap); loadPropsPanel(); },
     });
   }
 
@@ -341,8 +340,7 @@ export async function renderReviewExecute(container, ctx) {
           <div class="rve-props-drift">
             ⚠ Changed since snapshot
             <div style="display:flex;gap:6px;margin-top:6px">
-              <button class="btn btn-ghost btn-sm" id="rve-props-compare">Compare</button>
-              <button class="btn btn-secondary btn-sm" id="rve-props-resnap">Update Snapshot</button>
+              <button class="btn btn-ghost btn-sm" id="rve-props-compare">Compare versions</button>
             </div>
           </div>` : ''}
 
@@ -396,9 +394,7 @@ export async function renderReviewExecute(container, ctx) {
     const thread0 = panel.querySelector('#rve-props-thread');
     if (thread0) wireCommentActions(thread0);
 
-    // Wire drift buttons
     panel.querySelector('#rve-props-compare')?.addEventListener('click', () => openDiffModal(snap));
-    panel.querySelector('#rve-props-resnap')?.addEventListener('click', async () => { await reSnapshot(snap); loadPropsPanel(); });
 
     // Wire verdict buttons
     let _currentVerdict = mv;
@@ -643,33 +639,6 @@ export async function renderReviewExecute(container, ctx) {
     renderPage();
   }
 
-  // ── Re-snapshot ───────────────────────────────────────────────────────────────
-
-  async function reSnapshot(snap) {
-    const tableMap = { requirements:'requirements', arch_spec_items:'arch_spec_items', test_specs:'test_specs', safety_analysis_rows:'safety_analyses' };
-    const table = tableMap[snap.artifact_type];
-    if (!table) return;
-    const { data: live } = await sb.from(table).select('*').eq('id', snap.artifact_id).single();
-    if (!live) return;
-
-    await sb.from('review_artifact_snapshots').update({ is_current: false }).eq('id', snap.id);
-    await sb.from('review_checklist_responses').update({ is_stale: true }).eq('snapshot_id', snap.id);
-
-    const { data: newSnap } = await sb.from('review_artifact_snapshots').insert({
-      session_id: sessionId, artifact_type: snap.artifact_type, artifact_id: snap.artifact_id,
-      artifact_code: snap.artifact_code, artifact_title: live.title || live.name || snap.artifact_title,
-      snapshot_data: live, artifact_updated_at: live.updated_at, artifact_version: live.version ?? null, is_current: true,
-    }).select().single();
-
-    if (newSnap) {
-      const idx = snapshots?.findIndex(s => s.id === snap.id);
-      if (idx !== undefined && idx >= 0) snapshots.splice(idx, 1, newSnap);
-      _selectedSnapshot = newSnap;
-      delete driftMap[snap.artifact_id];
-      toast('Snapshot updated.', 'success');
-      renderPage();
-    }
-  }
 }
 
 // ── Drift detection ───────────────────────────────────────────────────────────
