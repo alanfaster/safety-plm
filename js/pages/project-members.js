@@ -156,23 +156,55 @@ export async function mountMembersTab(container, project, sb, toast) {
   }
 
   function wireMembersTab() {
-    // Add role form (inline)
+    // Add role — show picker with ASPICE suggestions + custom form
     container.querySelector('#mem-add-role-btn').onclick = () => {
       const existing = container.querySelector('#mem-new-role-form');
-      if (existing) return;
+      if (existing) { existing.remove(); return; }
+
+      const existingNames = new Set(roles.map(r => r.name));
+      const suggestions = ASPICE_DEFAULT_ROLES.filter(r => !existingNames.has(r.name));
+
       const form = document.createElement('div');
       form.id = 'mem-new-role-form';
-      form.className = 'members-add-form';
+      form.className = 'members-new-role-panel';
       form.innerHTML = `
-        <input class="form-input" id="mem-new-role-name" placeholder="Role name *" style="flex:1"/>
-        <input class="form-input" id="mem-new-role-code" placeholder="Code (e.g. SWE)" style="width:100px"/>
-        <select class="form-input form-select" id="mem-new-role-cat">
-          ${Object.entries(CATEGORY_LABELS).map(([v, l]) => `<option value="${v}">${escHtml(l)}</option>`).join('')}
-        </select>
-        <button class="btn btn-primary btn-sm" id="mem-new-role-save">Add</button>
-        <button class="btn btn-ghost btn-sm" id="mem-new-role-cancel">Cancel</button>
+        ${suggestions.length ? `
+          <div class="members-suggestions-label">Add a standard ASPICE role:</div>
+          <div class="members-suggestions-grid">
+            ${suggestions.map(r => `
+              <button class="members-suggestion-chip" data-name="${escHtml(r.name)}" data-code="${escHtml(r.code)}" data-cat="${escHtml(r.category)}" data-sort="${r.sort_order}" title="${escHtml(r.description || '')}">
+                <span class="members-role-code">${escHtml(r.code)}</span> ${escHtml(r.name)}
+              </button>`).join('')}
+          </div>
+          <div class="members-suggestions-sep">or add a custom role:</div>
+        ` : ''}
+        <div class="members-add-form" style="margin-top:0">
+          <input class="form-input" id="mem-new-role-name" placeholder="Role name *" style="flex:1"/>
+          <input class="form-input" id="mem-new-role-code" placeholder="Code (e.g. SWE)" style="width:100px"/>
+          <select class="form-input form-select" id="mem-new-role-cat">
+            ${Object.entries(CATEGORY_LABELS).map(([v, l]) => `<option value="${v}">${escHtml(l)}</option>`).join('')}
+          </select>
+          <button class="btn btn-primary btn-sm" id="mem-new-role-save">Add</button>
+          <button class="btn btn-ghost btn-sm" id="mem-new-role-cancel">Cancel</button>
+        </div>
       `;
       container.querySelector('#members-roles-list').before(form);
+
+      // Click on suggestion chip → fill form fields
+      form.querySelectorAll('.members-suggestion-chip').forEach(chip => {
+        chip.onclick = async () => {
+          const sort_order = (roles[roles.length - 1]?.sort_order || 0) + 10;
+          const def = ASPICE_DEFAULT_ROLES.find(r => r.name === chip.dataset.name);
+          const { data, error } = await sb.from('project_roles')
+            .insert({ project_id: project.id, name: def.name, code: def.code,
+                      category: def.category, description: def.description, sort_order }).select().single();
+          if (error) { toast('Error: ' + error.message, 'error'); return; }
+          roles.push(data);
+          form.remove();
+          render();
+        };
+      });
+
       form.querySelector('#mem-new-role-cancel').onclick = () => form.remove();
       form.querySelector('#mem-new-role-save').onclick = async () => {
         const name = form.querySelector('#mem-new-role-name').value.trim();

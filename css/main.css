@@ -6177,3 +6177,17 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .wiz-no-members-hint        { padding:10px 14px; border-radius:6px; font-size:13px;
   background:#fff8e1; color:#7c5700; border:1px solid #ffe082; margin-bottom:12px; }
 .wiz-no-members-hint a      { color:#1565c0; font-weight:600; }
+
+/* ── Members — ASPICE role suggestions ─────────────────────────────── */
+.members-new-role-panel     { background:var(--bg-alt,#f9fafb); border:1px solid var(--border,#e2e8f0);
+  border-radius:8px; padding:12px 14px; margin-bottom:12px; }
+.members-suggestions-label  { font-size:11px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.05em; color:var(--text-muted); margin-bottom:8px; }
+.members-suggestions-grid   { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
+.members-suggestion-chip    { display:inline-flex; align-items:center; gap:5px;
+  padding:4px 10px; border-radius:99px; font-size:12px; cursor:pointer;
+  background:#e8f4fd; color:#1565c0; border:1px solid #90caf9;
+  transition:background .15s; }
+.members-suggestion-chip:hover { background:#bbdefb; }
+.members-suggestions-sep    { font-size:11px; color:var(--text-muted); margin:10px 0 8px;
+  border-top:1px solid var(--border,#e2e8f0); padding-top:10px; }
