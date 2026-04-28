@@ -67,7 +67,7 @@ function buildFindingsSummaryBadges(findings) {
   findings.forEach(f => { counts[f.status] = (counts[f.status] || 0) + 1; });
   return Object.entries(counts)
     .map(([status, n]) =>
-      `<span class="badge ${FINDING_STATUS_CLASSES[status] || ''}" style="margin-left:4px">${FINDING_STATUS_LABELS[status] || status}${n > 1 ? ` ×${n}` : ''}</span>`)
+      `<span class="badge ${FINDING_STATUS_CLASSES[status] || ''}" style="margin-left:4px">${FINDING_STATUS_LABELS[status] || status} ×${n}</span>`)
     .join('');
 }
 
