@@ -409,8 +409,33 @@ export function mountReviewChecklist(container, opts) {
         findingsByItem[itemId].push(newFinding);
         onFindingCreated?.(newFinding);
 
+        // Insert finding card into slot
         const slot = container.querySelector(`#rvck-item-findings-${itemId}`);
         if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(newFinding)); wireInlineFinding(container); }
+
+        // Update (or create) the findings toggle bar count
+        const itemEl       = container.querySelector(`.rvck-item[data-item-id="${itemId}"]`);
+        const count        = findingsByItem[itemId].length;
+        const statusBadge  = `<span class="badge ${FINDING_STATUS_CLASSES[newFinding.status] || ''}" style="margin-left:4px">${FINDING_STATUS_LABELS[newFinding.status] || newFinding.status}${count > 1 ? ` +${count - 1}` : ''}</span>`;
+        let toggleBtn = itemEl?.querySelector('.rvck-findings-toggle');
+        if (toggleBtn) {
+          // Update count
+          toggleBtn.innerHTML = `<span class="rvck-findings-toggle-chevron">${slot?.style.display === 'none' ? '▶' : '▼'}</span> ⚑ ${count} finding${count > 1 ? 's' : ''} ${statusBadge}`;
+        } else if (itemEl && slot) {
+          // Create toggle for the first time and collapse the slot
+          toggleBtn = document.createElement('button');
+          toggleBtn.className = 'rvck-findings-toggle';
+          toggleBtn.dataset.itemId = itemId;
+          toggleBtn.innerHTML = `<span class="rvck-findings-toggle-chevron">▼</span> ⚑ 1 finding ${statusBadge}`;
+          itemEl.insertBefore(toggleBtn, slot);
+          toggleBtn.addEventListener('click', () => {
+            const list    = container.querySelector(`#rvck-item-findings-${itemId}`);
+            const chevron = toggleBtn.querySelector('.rvck-findings-toggle-chevron');
+            const open    = list?.style.display !== 'none';
+            if (list)    list.style.display  = open ? 'none' : '';
+            if (chevron) chevron.textContent = open ? '▶' : '▼';
+          });
+        }
 
         // Hide raise form — finding already exists
         form.style.display = 'none';
@@ -418,7 +443,8 @@ export function mountReviewChecklist(container, opts) {
     });
 
     // Findings toggle (per checklist item)
-    container.querySelectorAll('.rvck-findings-toggle').forEach(btn => {
+    container.querySelectorAll('.rvck-findings-toggle:not([data-wired])').forEach(btn => {
+      btn.dataset.wired = '1';
       btn.addEventListener('click', () => {
         const itemId  = btn.dataset.itemId;
         const list    = container.querySelector(`#rvck-item-findings-${itemId}`);
