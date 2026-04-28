@@ -180,7 +180,7 @@ export function mountReviewChecklist(container, opts) {
     const itemFindings = findingsByItem[item.id] || [];
 
     return `
-      <div class="rvck-item" data-item-id="${item.id}">
+      <div class="rvck-item" data-item-id="${item.id}" data-verdict="${myVerdict}">
         <div class="rvck-item-top-row">
           <div class="rvck-item-criterion">
             ${item.is_mandatory ? '<span class="rvck-mandatory" title="Mandatory">★</span>' : ''}
@@ -256,7 +256,7 @@ export function mountReviewChecklist(container, opts) {
     ].join('');
 
     return `
-      <div class="rvck-inline-finding" data-finding-id="${f.id}">
+      <div class="rvck-inline-finding" data-finding-id="${f.id}" data-severity="${f.severity}">
         <div class="rvck-inline-finding-header">
           <span class="mono rvck-inline-finding-code">${escHtml(f.finding_code)}</span>
           <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}">${SEVERITY_LABELS[f.severity] || f.severity}</span>
@@ -334,6 +334,7 @@ export function mountReviewChecklist(container, opts) {
 
         itemEl?.querySelectorAll('.rvck-vbtn').forEach(b => b.classList.remove(...Object.values(VERDICT_CLASSES), 'active'));
         btn.classList.add(VERDICT_CLASSES[verdict], 'active');
+        if (itemEl) itemEl.dataset.verdict = verdict;
 
         const raiseForm = itemEl?.querySelector(`.rvck-inline-raise-form[data-item-id="${itemId}"]`);
         const needsForm = verdict === 'nok' || verdict === 'partially_ok';
@@ -688,11 +689,18 @@ export function mountReviewChecklist(container, opts) {
       if (!_commentCache[c.finding_id].find(x => x.id === c.id)) _commentCache[c.finding_id].push(c);
     });
 
-    // Render loaded comments into thread divs
+    // Render loaded comments into thread divs and show wrap + update count badge
     visibleFindingIds.forEach(fid => {
+      const cached = _commentCache[fid] || [];
       const thread = container.querySelector(`#rvck-thread-${fid}`);
-      if (thread && _commentCache[fid]?.length) {
-        thread.innerHTML = _commentCache[fid].map(c => renderComment(c)).join('');
+      if (thread && cached.length) {
+        thread.innerHTML = cached.map(c => renderComment(c)).join('');
+        // Open the thread-wrap automatically
+        const wrap = container.querySelector(`#rvck-thread-wrap-${fid}`);
+        if (wrap) wrap.style.display = '';
+        // Update count badge on toggle button
+        const toggle = container.querySelector(`.rvck-comments-toggle[data-finding-id="${fid}"]`);
+        if (toggle) toggle.textContent = `💬 ${cached.length}`;
       }
     });
   }
