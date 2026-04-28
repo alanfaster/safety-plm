@@ -35,43 +35,6 @@ const ARTIFACT_DISPLAY_FIELDS = {
   safety_analysis_rows: ['analysis_code','title','analysis_type','status'],
 };
 
-function openDiffModal(snap) {
-  const tableMap = { requirements:'requirements', arch_spec_items:'arch_spec_items', test_specs:'test_specs', safety_analysis_rows:'safety_analyses' };
-  const table = tableMap[snap.artifact_type];
-  if (!table) return;
-  import('../config.js').then(({ sb }) => {
-    sb.from(table).select('*').eq('id', snap.artifact_id).single().then(({ data: live }) => {
-      if (!live) return;
-      showDiffModal(snap.snapshot_data, live, snap);
-    });
-  });
-}
-
-function showDiffModal(frozen, live, snap) {
-  document.querySelector('.rvck-diff-overlay')?.remove();
-  const allKeys = new Set([...Object.keys(frozen), ...Object.keys(live)]);
-  const skipKeys = new Set(['id','created_at','updated_at','project_id','parent_id','parent_type']);
-  const rows = [...allKeys].filter(k => !skipKeys.has(k)).map(k => {
-    const a = String(frozen[k] ?? '—'); const b = String(live[k] ?? '—');
-    const changed = a !== b;
-    return `<tr class="${changed ? 'rvck-diff-changed' : ''}">
-      <td class="rvck-diff-key">${escHtml(k)}</td>
-      <td class="rvck-diff-old">${escHtml(a)}</td>
-      <td class="rvck-diff-new">${changed ? `<strong>${escHtml(b)}</strong>` : escHtml(b)}</td></tr>`;
-  }).join('');
-  const overlay = document.createElement('div');
-  overlay.className = 'rvck-diff-overlay';
-  overlay.innerHTML = `<div class="rvck-diff-modal">
-    <div class="rvck-diff-header"><strong>Compare: Snapshot v${snap.artifact_version ?? '?'} vs Current</strong>
-      <button class="btn btn-ghost btn-sm rvck-diff-close">✕</button></div>
-    <table class="rvck-diff-table">
-      <thead><tr><th>Field</th><th>Snapshot</th><th>Current</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>`;
-  document.body.appendChild(overlay);
-  overlay.querySelector('.rvck-diff-close').onclick = () => overlay.remove();
-  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
-}
 
 export async function renderReviewExecute(container, ctx) {
   const { project, item, sessionId } = ctx;
@@ -139,6 +102,152 @@ export async function renderReviewExecute(container, ctx) {
   const _allResponses     = allResponses      ? [...allResponses]     : [];
 
   let _selectedSnapshot = snapshots?.[0] || null;
+
+  // ── Diff modal ───────────────────────────────────────────────────────────────
+
+  async function openDiffModal(snap) {
+    const tableMap = { requirements:'requirements', arch_spec_items:'arch_spec_items', test_specs:'test_specs', safety_analysis_rows:'safety_analyses' };
+    const table = tableMap[snap.artifact_type];
+    if (!table) return;
+    const { data: live } = await sb.from(table).select('*').eq('id', snap.artifact_id).single();
+    if (!live) return;
+
+    document.querySelector('.rvck-diff-overlay')?.remove();
+
+    const frozen   = snap.snapshot_data || {};
+    const skipKeys = new Set(['id','created_at','updated_at','project_id','parent_id','parent_type','session_id']);
+    const allKeys  = [...new Set([...Object.keys(frozen), ...Object.keys(live)])].filter(k => !skipKeys.has(k));
+    const changed  = allKeys.filter(k => String(frozen[k] ?? '') !== String(live[k] ?? ''));
+    const same     = allKeys.filter(k => String(frozen[k] ?? '') === String(live[k] ?? ''));
+
+    const fieldRow = (k, a, b, highlight) => `
+      <div class="diff-row${highlight ? ' diff-row-changed' : ''}">
+        <div class="diff-field-name">${escHtml(k.replace(/_/g,' '))}</div>
+        <div class="diff-col diff-col-old">${escHtml(String(a ?? '—'))}</div>
+        <div class="diff-col diff-col-new">${escHtml(String(b ?? '—'))}</div>
+      </div>`;
+
+    const changedRows = changed.map(k => fieldRow(k, frozen[k], live[k], true)).join('');
+    const sameRows    = same.map(k => fieldRow(k, frozen[k], live[k], false)).join('');
+
+    // Findings for this artifact that are closeable (open/accepted/fixed, current user is creator)
+    const snapFindings = _findings.filter(f => f.snapshot_id === snap.id && !['closed','rejected'].includes(f.status));
+
+    const findingRows = snapFindings.map(f => `
+      <div class="diff-finding-row" data-fid="${f.id}">
+        <div class="diff-finding-info">
+          <span class="mono diff-finding-code">${escHtml(f.finding_code)}</span>
+          <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}">${SEVERITY_LABELS[f.severity] || f.severity}</span>
+          <span class="diff-finding-title">${escHtml(f.title)}</span>
+          <span class="badge rv-fs-${f.status}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
+        </div>
+        ${f.created_by === currentUserId
+          ? `<button class="btn btn-primary btn-xs diff-close-finding-btn" data-fid="${f.id}">✓ Accept fix</button>`
+          : `<span class="text-muted" style="font-size:11px">Creator can close</span>`}
+      </div>`).join('');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'rvck-diff-overlay';
+    overlay.innerHTML = `
+      <div class="rvck-diff-modal">
+        <div class="rvck-diff-header">
+          <div class="rvck-diff-header-left">
+            <span class="rvck-diff-artifact-code">${escHtml(snap.artifact_code || snap.artifact_type)}</span>
+            <span class="rvck-diff-artifact-title">${escHtml(snap.artifact_title || '')}</span>
+          </div>
+          <button class="btn btn-ghost btn-sm rvck-diff-close" title="Close">✕</button>
+        </div>
+
+        <div class="rvck-diff-body">
+          <div class="diff-cols-header">
+            <div class="diff-field-name"></div>
+            <div class="diff-col-label">Snapshot (review baseline)</div>
+            <div class="diff-col-label diff-col-label-new">Current version</div>
+          </div>
+
+          ${changed.length ? `
+            <div class="diff-section-label diff-section-changed">
+              ${changed.length} field${changed.length > 1 ? 's' : ''} changed
+            </div>
+            ${changedRows}` : `<div class="diff-no-changes">No field changes detected.</div>`}
+
+          ${same.length ? `
+            <details class="diff-unchanged-details">
+              <summary class="diff-unchanged-summary">${same.length} unchanged field${same.length > 1 ? 's' : ''}</summary>
+              ${sameRows}
+            </details>` : ''}
+        </div>
+
+        ${snapFindings.length ? `
+          <div class="rvck-diff-findings">
+            <div class="diff-findings-label">Findings on this artifact</div>
+            <div class="diff-findings-list" id="diff-findings-list">
+              ${findingRows}
+            </div>
+          </div>` : ''}
+
+        <div class="rvck-diff-footer">
+          <button class="btn btn-ghost btn-sm rvck-diff-close">Close</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+    overlay.querySelectorAll('.rvck-diff-close').forEach(b => b.onclick = () => overlay.remove());
+    overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+
+    overlay.querySelectorAll('.diff-close-finding-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const fid = btn.dataset.fid;
+        const f   = _findings.find(x => x.id === fid);
+        if (!f) return;
+        const row = overlay.querySelector(`.diff-finding-row[data-fid="${fid}"]`);
+        if (row.querySelector('.diff-close-form')) return;
+
+        btn.style.display = 'none';
+        const form = document.createElement('div');
+        form.className = 'diff-close-form';
+        form.innerHTML = `
+          <textarea class="form-input diff-close-comment" rows="2"
+            placeholder="Comment on the fix (required)…" style="width:100%;margin-top:6px"></textarea>
+          <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
+            <button class="btn btn-ghost btn-xs diff-close-cancel">Cancel</button>
+            <button class="btn btn-primary btn-xs diff-close-ok">✓ Confirm fix & close</button>
+          </div>`;
+        row.appendChild(form);
+        form.querySelector('.diff-close-comment').focus();
+
+        form.querySelector('.diff-close-cancel').onclick = () => { form.remove(); btn.style.display = ''; };
+        form.querySelector('.diff-close-ok').onclick = async () => {
+          const comment = form.querySelector('.diff-close-comment').value.trim();
+          if (!comment) { form.querySelector('.diff-close-comment').focus(); return; }
+          const okBtn = form.querySelector('.diff-close-ok');
+          okBtn.disabled = true;
+
+          const { error } = await sb.from('review_findings')
+            .update({ status: 'closed', updated_at: new Date().toISOString() }).eq('id', fid);
+          if (error) { toast('Error: ' + error.message, 'error'); okBtn.disabled = false; return; }
+
+          await sb.from('review_finding_comments').insert({
+            finding_id: fid, author_id: currentUserId,
+            comment: `[Closed] ${comment}`,
+          });
+
+          f.status = 'closed';
+          toast(`${f.finding_code} closed.`, 'success');
+          row.innerHTML = `<div class="diff-finding-info">
+            <span class="mono diff-finding-code">${escHtml(f.finding_code)}</span>
+            <span class="badge rv-fs-closed">Closed</span>
+            <span class="diff-finding-title">${escHtml(f.title)}</span>
+          </div>`;
+          refreshArtifactCard(snap);
+        };
+      });
+    });
+  }
+
+  const FINDING_STATUS_LABELS = {
+    open:'Open', accepted:'Accepted', fixed:'Implemented – pending review', closed:'Closed', rejected:'Rejected',
+  };
 
   renderPage();
 
@@ -232,6 +341,7 @@ export async function renderReviewExecute(container, ctx) {
             <span class="text-muted">${myDone}/${totalItems} items</span>
             ${openFnds ? `<span class="rv-fs-open" style="font-size:10px;padding:1px 5px;border-radius:8px;border:1px solid">⚑ ${openFnds}</span>` : ''}
           </div>` : '<span class="text-muted" style="font-size:11px">No checklist</span>'}
+        ${drifted ? `<div class="rve-obsolete-badge">OBSOLETE</div>` : ''}
       </div>
     `;
   }
