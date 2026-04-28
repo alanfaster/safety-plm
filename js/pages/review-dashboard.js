@@ -76,6 +76,15 @@ export async function renderReviewDashboard(container, ctx) {
       snapshots = data || [];
     }
 
+    // Load author display names
+    const authorIds = [...new Set((sessions || []).map(s => s.created_by).filter(Boolean))];
+    const authorMap = {};
+    if (authorIds.length) {
+      const { data: authorProfiles } = await sb.from('user_profiles')
+        .select('user_id, display_name').in('user_id', authorIds);
+      (authorProfiles || []).forEach(p => { authorMap[p.user_id] = p.display_name; });
+    }
+
     const wrap = document.getElementById('rv-sessions-wrap');
     if (!sessions?.length) {
       wrap.innerHTML = `<div class="rv-empty">
@@ -102,6 +111,7 @@ export async function renderReviewDashboard(container, ctx) {
             <th>Artifacts</th>
             <th>Status</th>
             <th>Planned Date</th>
+            <th>Author</th>
             <th>Created</th>
             <th></th>
           </tr>
@@ -121,7 +131,8 @@ export async function renderReviewDashboard(container, ctx) {
                 </td>
                 <td><span class="badge ${STATUS_CLASSES[s.status] || 'badge-draft'}">${STATUS_LABELS[s.status] || s.status}</span></td>
                 <td>${s.planned_date ? escHtml(s.planned_date) : '<span class="text-muted">—</span>'}</td>
-                <td class="text-muted">${formatDate(s.created_at)}</td>
+                <td class="text-muted">${s.created_by ? escHtml(authorMap[s.created_by] || s.created_by.slice(0,8)) : '<span class="text-muted">—</span>'}</td>
+                <td class="text-muted">${formatDateTime(s.created_at)}</td>
                 <td class="rv-actions">
                   <button class="btn btn-secondary btn-sm rv-open-btn" data-id="${s.id}" title="Open checklist">Open</button>
                   <button class="btn btn-ghost btn-sm rv-findings-btn" data-id="${s.id}" title="View findings">Findings</button>
@@ -164,6 +175,10 @@ export async function renderReviewDashboard(container, ctx) {
 function formatDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+function formatDateTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 function escHtml(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
