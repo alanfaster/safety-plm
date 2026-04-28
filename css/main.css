@@ -6256,3 +6256,9 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 
 /* ── Reviews table row hover ────────────────────────────────────────── */
 .rv-sessions-table tbody tr:hover td { background: #f0f6ff; cursor: pointer; }
+
+/* ── Checklist — block-level sections (Checklist + Open Points) ─────── */
+.rvck-block              { border:1px solid var(--border,#e2e8f0); border-radius:8px;
+  margin-bottom:12px; overflow:hidden; }
+.rvck-block .rvck-col-header { border-bottom:1px solid var(--border,#e2e8f0);
+  background:var(--bg-alt,#f9fafb); border-radius:0; padding:10px 14px; }

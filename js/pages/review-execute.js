@@ -293,9 +293,7 @@ export async function renderReviewExecute(container, ctx) {
           ${(snapshots || []).map(snap => renderArtifactCard(snap)).join('')}
           ${!snapshots?.length ? '<p class="rv-empty" style="padding:16px">No artifacts in this session.</p>' : ''}
         </div>
-        <div class="rve-checklist-col" id="rve-checklist-col">
-          ${sections.length ? '' : '<div class="rve-checklist-empty text-muted" style="padding:24px;text-align:center">No checklist template attached to this session.</div>'}
-        </div>
+        <div class="rve-checklist-col" id="rve-checklist-col"></div>
         <div class="rve-props-panel" id="rve-props-panel">
           <div class="rve-props-placeholder text-muted">Select an artifact to view its properties.</div>
         </div>
@@ -358,7 +356,7 @@ export async function renderReviewExecute(container, ctx) {
   // Mounts the checklist once in the middle column — stays mounted across artifact switches
   function mountChecklist(snap) {
     const col = document.getElementById('rve-checklist-col');
-    if (!col || !sections.length) return;
+    if (!col) return;
 
     snap = snap || _selectedSnapshot || snapshots?.[0];
     const isShared = session.checklist_mode === 'shared';

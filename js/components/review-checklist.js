@@ -111,9 +111,6 @@ export function mountReviewChecklist(container, opts) {
   // Collapsed state for accordion sections (all open by default)
   const _collapsed = {};
 
-  // Open Points section collapsed by default if no open points yet
-  let _openPointsCollapsed = !(findingsByItem['__open__']?.length);
-
   render();
 
   // ── Main render ─────────────────────────────────────────────────────────────
@@ -125,11 +122,6 @@ export function mountReviewChecklist(container, opts) {
 
     container.innerHTML = `
       <div class="rvck-wrap">
-        <div class="rvck-col-header">
-          <span class="rvck-col-title">Checklist</span>
-          ${totalItems ? `<span class="rvck-bp-progress">${myDoneTotal}/${totalItems}</span>` : ''}
-          ${(findingsByItem['__open__'] || []).length ? `<span class="rve-main-tab-badge" style="margin-left:6px">${(findingsByItem['__open__'] || []).length}</span>` : ''}
-        </div>
         ${isDrifted ? `
           <div class="rvck-drift-banner">
             <span class="rvck-drift-icon">⚠</span>
@@ -138,21 +130,27 @@ export function mountReviewChecklist(container, opts) {
               ${onCompareRequest ? `<button class="btn btn-ghost btn-xs rvck-drift-compare-btn">Compare versions</button>` : ''}
             </span>
           </div>` : ''}
-        <div class="rvck-sections-wrap" id="rvck-sections-wrap">
-          ${sections.length ? sections.map(sec => renderSection(sec)).join('') : `
-            <div class="rvck-no-template text-muted" style="padding:20px;text-align:center">No checklist template attached.</div>`}
 
-          <div class="rvck-open-points" id="rvck-open-points">
-            <button class="rvck-section-header rvck-open-points-toggle" id="rvck-op-toggle">
-              <span class="rvck-sec-chevron">${_openPointsCollapsed ? '▶' : '▼'}</span>
-              <span class="rvck-sec-name">Open Points</span>
-              <span class="rvck-sec-badge">${(findingsByItem['__open__'] || []).length}</span>
-              <span style="flex:1"></span>
-              <span class="rvck-op-add-btn">+ Add Open Point</span>
-            </button>
-            <div class="rvck-open-points-body" id="rvck-op-body" style="${_openPointsCollapsed ? 'display:none' : ''}">
-              ${renderOpenPointsList()}
+        ${sections.length ? `
+          <div class="rvck-block">
+            <div class="rvck-col-header">
+              <span class="rvck-col-title">Checklist</span>
+              ${totalItems ? `<span class="rvck-bp-progress">${myDoneTotal}/${totalItems}</span>` : ''}
             </div>
+            <div class="rvck-sections-wrap" id="rvck-sections-wrap">
+              ${sections.map(sec => renderSection(sec)).join('')}
+            </div>
+          </div>` : ''}
+
+        <div class="rvck-block" id="rvck-open-points">
+          <div class="rvck-col-header">
+            <span class="rvck-col-title">Open Points</span>
+            <span class="rvck-sec-badge" id="rvck-op-badge">${(findingsByItem['__open__'] || []).length || ''}</span>
+            <span style="flex:1"></span>
+            <button class="btn btn-ghost btn-xs rvck-op-add-btn">+ Add</button>
+          </div>
+          <div id="rvck-op-body">
+            ${renderOpenPointsList()}
           </div>
         </div>
       </div>
@@ -328,18 +326,9 @@ export function mountReviewChecklist(container, opts) {
       });
     });
 
-    // Open points toggle + "Add Open Point"
-    container.querySelector('#rvck-op-toggle')?.addEventListener('click', e => {
-      if (e.target.classList.contains('rvck-op-add-btn') || e.target.closest('.rvck-op-add-btn')) {
-        e.stopPropagation();
-        onFindingRaise?.({ snapshotId: ckSnap.id, templateItemId: null, criterion: '', verdict: '', comment: '', responseId: null, isOpenPoint: true });
-        return;
-      }
-      _openPointsCollapsed = !_openPointsCollapsed;
-      const body    = container.querySelector('#rvck-op-body');
-      const chevron = container.querySelector('#rvck-op-toggle .rvck-sec-chevron');
-      if (body)    body.style.display  = _openPointsCollapsed ? 'none' : '';
-      if (chevron) chevron.textContent = _openPointsCollapsed ? '▶' : '▼';
+    // Open points — "Add" button
+    container.querySelector('.rvck-op-add-btn')?.addEventListener('click', () => {
+      onFindingRaise?.({ snapshotId: ckSnap.id, templateItemId: null, criterion: '', verdict: '', comment: '', responseId: null, isOpenPoint: true });
     });
 
     // Verdict pills
@@ -655,12 +644,11 @@ export function mountReviewChecklist(container, opts) {
 
         // Update open-points badge
         if (!f?.template_item_id) {
-          const badge = container.querySelector('#rvck-open-points .rvck-sec-badge');
-          if (badge) badge.textContent = (findingsByItem['__open__'] || []).length;
-          const body = container.querySelector('#rvck-op-body');
-          if (body && !(findingsByItem['__open__'] || []).length) {
+          const badge = container.querySelector('#rvck-op-badge');
+          const body  = container.querySelector('#rvck-op-body');
+          if (badge) badge.textContent = (findingsByItem['__open__'] || []).length || '';
+          if (body && !(findingsByItem['__open__'] || []).length)
             body.innerHTML = `<p class="rvck-op-empty text-muted">No open points yet.</p>`;
-          }
         }
       });
     });
@@ -791,14 +779,10 @@ export function mountReviewChecklist(container, opts) {
       const slot = container.querySelector(`#rvck-item-findings-${finding.template_item_id}`);
       if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(finding)); wireInlineFinding(container); }
     } else {
-      _openPointsCollapsed = false;
-      const body    = container.querySelector('#rvck-op-body');
-      const chevron = container.querySelector('#rvck-op-toggle .rvck-sec-chevron');
-      if (body)    { body.style.display = ''; body.innerHTML = renderOpenPointsList(); wireInlineFinding(container); }
-      if (chevron) chevron.textContent = '▼';
-      // Update badge
-      const badge = container.querySelector('#rvck-open-points .rvck-sec-badge');
-      if (badge) badge.textContent = (findingsByItem['__open__'] || []).length;
+      const body  = container.querySelector('#rvck-op-body');
+      const badge = container.querySelector('#rvck-op-badge');
+      if (body)  { body.innerHTML = renderOpenPointsList(); wireInlineFinding(container); }
+      if (badge) badge.textContent = (findingsByItem['__open__'] || []).length || '';
     }
   };
 }
