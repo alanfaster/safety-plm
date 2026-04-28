@@ -457,10 +457,12 @@ export async function renderReviewSessionWizard(container, ctx) {
 
     // 1. Create session
     const tpl = (templates || []).find(t => t.id === state.template_id);
+    const { data: { user: currentUser } } = await sb.auth.getUser();
     const { data: session, error: se } = await sb.from('review_sessions').insert({
       project_id:       project.id,
       template_id:      state.template_id || null,
       template_version: tpl?.current_version || null,
+      created_by:       currentUser?.id || null,
       title:            state.title,
       review_type:      state.review_type,
       status:           'in_progress',

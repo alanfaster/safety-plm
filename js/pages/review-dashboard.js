@@ -126,7 +126,7 @@ export async function renderReviewDashboard(container, ctx) {
                   <button class="btn btn-secondary btn-sm rv-open-btn" data-id="${s.id}" title="Open checklist">Open</button>
                   <button class="btn btn-ghost btn-sm rv-findings-btn" data-id="${s.id}" title="View findings">Findings</button>
                   ${s.status !== 'completed' && s.status !== 'cancelled' ? `<button class="btn btn-ghost btn-sm rv-cancel-btn" data-id="${s.id}" title="Cancel">Cancel</button>` : ''}
-                  ${s.created_by === currentUserId ? `<button class="btn btn-ghost btn-sm rv-delete-btn" data-id="${s.id}" title="Delete review">Delete</button>` : ''}
+                  ${(!s.created_by || s.created_by === currentUserId) ? `<button class="btn btn-ghost btn-sm rv-delete-btn" data-id="${s.id}" title="Delete review">Delete</button>` : ''}
                 </td>
               </tr>`;
           }).join('')}
