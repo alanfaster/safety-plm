@@ -5987,3 +5987,14 @@ th.col-th-dragging * { pointer-events: none; }
 .rve-props-comment-actions { display:flex; gap:2px; flex-shrink:0; opacity:0; transition:opacity .15s; }
 .rve-props-comment:hover .rve-props-comment-actions { opacity:1; }
 .rve-props-comment-body    { font-size:12px; color:var(--text); white-space:pre-wrap; word-break:break-word; }
+
+/* ── Inline finding raise form (checklist item) ────────────────────── */
+.rvck-inline-raise-form   { display:flex; flex-direction:column; gap:6px; margin-top:6px;
+  padding:8px 10px; background:var(--bg); border:1px solid var(--border-accent,#d4a500);
+  border-radius:6px; }
+.rvck-raise-title         { font-size:12px; }
+.rvck-raise-row           { display:flex; align-items:center; gap:8px; }
+.rvck-raise-severity      { font-size:12px; flex:0 0 auto; width:130px; }
+.rvck-raise-save-btn      { flex-shrink:0; }
+.rvck-raise-desc          { font-size:12px; resize:vertical; min-height:48px; }
+.rvck-raise-title.input-error { border-color:var(--danger,#e53e3e); outline:1px solid var(--danger,#e53e3e); }

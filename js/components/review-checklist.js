@@ -201,13 +201,21 @@ export function mountReviewChecklist(container, opts) {
                 <button class="rvck-vbtn ${myVerdict === v ? VERDICT_CLASSES[v] + ' active' : ''}"
                         data-verdict="${v}" data-item-id="${item.id}">${VERDICT_LABELS[v]}</button>`).join('')}
             </div>
-            ${myVerdict === 'nok' || myVerdict === 'partially_ok' ? `
-              <button class="btn btn-ghost btn-sm rvck-raise-btn" data-item-id="${item.id}" title="Raise finding">⚑ Raise</button>` : ''}
           </div>
 
-          <div class="rvck-comment-wrap" ${needsComment ? '' : 'style="display:none"'}>
-            <textarea class="form-input rvck-comment" data-item-id="${item.id}" rows="2"
-              placeholder="Comment on this finding…">${escHtml(myComment)}</textarea>
+          <div class="rvck-inline-raise-form" data-item-id="${item.id}"
+               ${needsComment ? '' : 'style="display:none"'}>
+            <input  class="form-input rvck-raise-title" placeholder="Finding title *" data-item-id="${item.id}"/>
+            <div class="rvck-raise-row">
+              <select class="form-input form-select rvck-raise-severity" data-item-id="${item.id}">
+                ${['critical','major','minor','observation'].map(s =>
+                  `<option value="${s}" ${s === 'major' ? 'selected' : ''}>${SEVERITY_LABELS[s]}</option>`
+                ).join('')}
+              </select>
+              <button class="btn btn-secondary btn-sm rvck-raise-save-btn" data-item-id="${item.id}">⚑ Save Finding</button>
+            </div>
+            <textarea class="form-input rvck-raise-desc" rows="2" placeholder="Description (optional)…"
+                      data-item-id="${item.id}">${escHtml(myComment)}</textarea>
           </div>
 
           ${itemFindings.length ? `
@@ -309,48 +317,89 @@ export function mountReviewChecklist(container, opts) {
         const itemId  = btn.dataset.itemId;
         const verdict = btn.dataset.verdict;
         const itemEl  = container.querySelector(`.rvck-item[data-item-id="${itemId}"]`);
-        const comment = itemEl?.querySelector('.rvck-comment')?.value || '';
 
         itemEl?.querySelectorAll('.rvck-vbtn').forEach(b => b.classList.remove(...Object.values(VERDICT_CLASSES), 'active'));
         btn.classList.add(VERDICT_CLASSES[verdict], 'active');
 
-        const commentWrap = itemEl?.querySelector('.rvck-comment-wrap');
-        if (commentWrap) commentWrap.style.display = (verdict === 'nok' || verdict === 'partially_ok') ? '' : 'none';
+        const raiseForm = itemEl?.querySelector(`.rvck-inline-raise-form[data-item-id="${itemId}"]`);
+        const needsForm = verdict === 'nok' || verdict === 'partially_ok';
+        if (raiseForm) raiseForm.style.display = needsForm ? '' : 'none';
 
-        updateRaiseBtn(itemEl, verdict, itemId);
         if (!responseIndex[itemId]) responseIndex[itemId] = {};
         if (!responseIndex[itemId][currentUserId]) responseIndex[itemId][currentUserId] = {};
         responseIndex[itemId][currentUserId].verdict = verdict;
 
-        await saveResponse(itemId, verdict, comment);
+        const desc = itemEl?.querySelector(`.rvck-raise-desc[data-item-id="${itemId}"]`)?.value || '';
+        await saveResponse(itemId, verdict, desc);
         updateSectionProgress(itemId);
-        onSaved?.({ snapshotId: ckSnap.id, itemId, verdict, comment });
+        onSaved?.({ snapshotId: ckSnap.id, itemId, verdict, comment: desc });
       });
     });
 
-    // Comments
-    container.querySelectorAll('.rvck-comment').forEach(ta => {
+    // Inline finding description auto-save to checklist response comment
+    container.querySelectorAll('.rvck-raise-desc').forEach(ta => {
       ta.addEventListener('input', debounce(async () => {
         const itemId  = ta.dataset.itemId;
         const verdict = responseIndex[itemId]?.[currentUserId]?.verdict || '';
         if (!verdict) return;
+        if (!responseIndex[itemId]) responseIndex[itemId] = {};
+        if (!responseIndex[itemId][currentUserId]) responseIndex[itemId][currentUserId] = {};
         responseIndex[itemId][currentUserId].comment = ta.value;
         await saveResponse(itemId, verdict, ta.value);
       }, 600));
     });
 
-    // Raise finding (from checklist item)
-    container.querySelectorAll('.rvck-raise-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const itemId  = btn.dataset.itemId;
-        const sec     = sections.find(s => s.items?.some(i => i.id === itemId));
-        const item    = sec?.items?.find(i => i.id === itemId);
-        const resp    = responseIndex[itemId]?.[currentUserId];
-        onFindingRaise?.({
-          snapshotId: ckSnap.id, templateItemId: itemId,
-          criterion: item?.criterion || '', verdict: resp?.verdict || '',
-          comment: resp?.comment || '', responseId: resp?.id || null,
-        });
+    // Save Finding button — inline finding form
+    container.querySelectorAll('.rvck-raise-save-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const itemId   = btn.dataset.itemId;
+        const form     = container.querySelector(`.rvck-inline-raise-form[data-item-id="${itemId}"]`);
+        const titleEl  = form?.querySelector(`.rvck-raise-title`);
+        const title    = titleEl?.value?.trim();
+        if (!title) { titleEl?.focus(); titleEl?.classList.add('input-error'); return; }
+        titleEl?.classList.remove('input-error');
+
+        const severity = form?.querySelector(`.rvck-raise-severity`)?.value || 'major';
+        const desc     = form?.querySelector(`.rvck-raise-desc`)?.value?.trim() || '';
+        const resp     = responseIndex[itemId]?.[currentUserId];
+
+        btn.disabled = true;
+        btn.textContent = '…';
+
+        // Auto-generate finding code: FND-{seq} by counting existing findings + 1
+        const seqNum = (findings.length + 1).toString().padStart(3, '0');
+        const finding_code = `FND-${seqNum}`;
+
+        const { data: newFinding, error } = await sb.from('review_findings').insert({
+          session_id: session.id,
+          snapshot_id: ckSnap.id,
+          response_id: resp?.id || null,
+          template_item_id: itemId,
+          finding_code,
+          severity,
+          title,
+          description: desc || null,
+          status: 'open',
+          created_by: currentUserId,
+        }).select().single();
+
+        btn.disabled = false;
+        btn.textContent = '⚑ Save Finding';
+
+        if (error) { console.error('Failed to save finding', error); return; }
+
+        // Add to local state + render
+        findings.push(newFinding);
+        if (!findingsByItem[itemId]) findingsByItem[itemId] = [];
+        findingsByItem[itemId].push(newFinding);
+
+        const slot = container.querySelector(`#rvck-item-findings-${itemId}`);
+        if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(newFinding)); wireInlineTransitions(container); wireInlineDeletes(container); wireInlineReplies(container); }
+
+        // Clear form
+        if (titleEl) titleEl.value = '';
+        const descEl = form?.querySelector(`.rvck-raise-desc`);
+        if (descEl) descEl.value = '';
       });
     });
 
@@ -481,30 +530,6 @@ export function mountReviewChecklist(container, opts) {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
-
-  function updateRaiseBtn(itemEl, verdict, itemId) {
-    if (!itemEl) return;
-    const verdictRow = itemEl.querySelector('.rvck-verdict-row');
-    let raiseBtn = verdictRow?.querySelector('.rvck-raise-btn');
-    if (verdict === 'nok' || verdict === 'partially_ok') {
-      if (!raiseBtn) {
-        raiseBtn = document.createElement('button');
-        raiseBtn.className = 'btn btn-ghost btn-sm rvck-raise-btn';
-        raiseBtn.dataset.itemId = itemId;
-        raiseBtn.title = 'Raise finding';
-        raiseBtn.textContent = '⚑ Raise';
-        verdictRow?.appendChild(raiseBtn);
-        raiseBtn.addEventListener('click', () => {
-          const sec  = sections.find(s => s.items?.some(i => i.id === itemId));
-          const item = sec?.items?.find(i => i.id === itemId);
-          const resp = responseIndex[itemId]?.[currentUserId];
-          onFindingRaise?.({ snapshotId: snapshot.id, templateItemId: itemId, criterion: item?.criterion || '', verdict, comment: resp?.comment || '', responseId: resp?.id || null });
-        });
-      }
-    } else {
-      raiseBtn?.remove();
-    }
-  }
 
   function updateSectionProgress(itemId) {
     const sec = sections.find(s => s.items?.some(i => i.id === itemId));
