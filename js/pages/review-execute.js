@@ -60,7 +60,7 @@ export async function renderReviewExecute(container, ctx) {
   ] = await Promise.all([
     sb.from('review_sessions').select('*, review_protocol_templates(id,name,artifact_type,review_type)').eq('id', sessionId).single(),
     sb.from('review_artifact_snapshots').select('*').eq('session_id', sessionId).eq('is_current', true).order('snapshotted_at'),
-    sb.from('review_session_reviewers').select('*, user_profiles(display_name)').eq('session_id', sessionId),
+    sb.from('review_session_reviewers').select('*').eq('session_id', sessionId),
     sb.from('review_checklist_responses').select('*').eq('session_id', sessionId),
     sb.from('review_findings').select('*').eq('session_id', sessionId).order('created_at'),
     sb.from('review_artifact_verdicts').select('*').eq('session_id', sessionId),
@@ -71,10 +71,18 @@ export async function renderReviewExecute(container, ctx) {
   const { data: { user } } = await sb.auth.getUser();
   const currentUserId = user?.id;
 
+  // Fetch reviewer display names separately (no FK between review_session_reviewers and user_profiles)
+  const reviewerUserIds = (reviewers || []).map(r => r.user_id).filter(Boolean);
+  let reviewerProfileMap = {};
+  if (reviewerUserIds.length) {
+    const { data: rvProfiles } = await sb.from('user_profiles')
+      .select('user_id, display_name').in('user_id', reviewerUserIds);
+    (rvProfiles || []).forEach(p => { reviewerProfileMap[p.user_id] = p.display_name; });
+  }
   const reviewerList = (reviewers || []).map(r => ({
     user_id:      r.user_id,
     role:         r.role,
-    display_name: r.user_profiles?.display_name || r.user_id?.slice(0, 8),
+    display_name: reviewerProfileMap[r.user_id] || r.user_id?.slice(0, 8),
   }));
 
   // Template sections + items
