@@ -130,7 +130,7 @@ export function mountReviewChecklist(container, opts) {
             ${snapshot.artifact_version != null ? `<span class="artifact-version-badge">v${snapshot.artifact_version}</span>` : ''}
             <span class="rvck-snap-title">${escHtml(snapshot.artifact_title || '')}</span>
             <span class="badge badge-${escHtml(data.status || 'draft')}">${escHtml(data.status || '—')}</span>
-            <span class="rvck-snap-at text-muted">Snapshot: ${formatDate(snapshot.snapshotted_at)}</span>
+            <span class="rvck-snap-at text-muted">${snapshot.artifact_version != null ? `Reviewed at v${snapshot.artifact_version}` : `Snapshot: ${formatDate(snapshot.snapshotted_at)}`}</span>
           </div>
           <div class="rvck-artifact-detail-fields">
             ${fields.filter(f => data[f] != null && data[f] !== '').map(f => `
