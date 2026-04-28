@@ -339,13 +339,20 @@ export async function renderReviewExecute(container, ctx) {
       }).filter(Boolean);
     const drifted = !!driftMap[snap.artifact_id];
 
-    // Load comment thread from DB
-    const { data: comments } = await sb
+    // Load comment thread — fetch rows then resolve display names separately
+    const { data: rawComments } = await sb
       .from('review_artifact_comments')
-      .select('*, user_profiles(display_name)')
+      .select('id, author_id, comment, created_at')
       .eq('snapshot_id', snap.id)
       .order('created_at');
-    const _comments = comments || [];
+    const rows = rawComments || [];
+    const authorIds = [...new Set(rows.map(c => c.author_id).filter(Boolean))];
+    const profileMap = {};
+    if (authorIds.length) {
+      const { data: profiles } = await sb.from('user_profiles').select('id, display_name').in('id', authorIds);
+      (profiles || []).forEach(p => { profileMap[p.id] = p.display_name; });
+    }
+    const _comments = rows.map(c => ({ ...c, user_profiles: { display_name: profileMap[c.author_id] || null } }));
 
     panel.innerHTML = `
       <div class="rve-props-inner">
