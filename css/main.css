@@ -5807,9 +5807,10 @@ th.col-th-dragging * { pointer-events: none; }
 .rvck-section-body      { border-top: 1px solid var(--border); }
 
 /* Checklist item */
-.rvck-item              { display: flex; gap: 12px; padding: 10px 12px;
+.rvck-item              { display: flex; flex-direction: column;
   border-bottom: 1px solid var(--border); }
 .rvck-item:last-child   { border-bottom: none; }
+.rvck-item-top-row      { display: flex; gap: 12px; padding: 10px 12px; }
 .rvck-item-criterion    { flex: 1; min-width: 0; }
 .rvck-criterion-text    { font-size: 12px; line-height: 1.55; }
 .rvck-guidance          { font-size: 11px; color: var(--text-muted); margin-top: 4px;
@@ -5821,8 +5822,10 @@ th.col-th-dragging * { pointer-events: none; }
 .rvck-comment-wrap      { }
 .rvck-comment           { width: 100%; font-size: 11px; min-height: 44px; resize: vertical; }
 
-/* Item findings (inline tags below item) */
-.rvck-item-findings     { display: flex; flex-direction: column; gap: 4px; }
+/* Item findings — full width strip below the item row */
+.rvck-item-findings     { display: flex; flex-direction: column; gap: 0;
+  border-top: 1px solid var(--border); }
+.rvck-item-findings:empty { display: none; }
 
 /* ============================================================
    OPEN POINTS section
@@ -5845,21 +5848,22 @@ th.col-th-dragging * { pointer-events: none; }
 /* ============================================================
    INLINE FINDING CARD (inside checklist or open points)
    ============================================================ */
-.rvck-inline-finding    { border: 1px solid var(--border); border-radius: 6px;
-  overflow: hidden; background: var(--bg-card); font-size: 12px; }
-.rvck-inline-finding-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  padding: 6px 10px; background: var(--bg); border-bottom: 1px solid var(--border); }
-.rvck-inline-finding-code  { font-size: 11px; font-weight: 700; color: var(--text-muted); }
-.rvck-inline-finding-title { font-size: 12px; font-weight: 500; flex: 1; min-width: 0;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rvck-inline-finding-desc  { font-size: 11px; padding: 4px 10px; color: var(--text-muted); }
-.rvck-inline-transitions   { display: flex; gap: 4px; flex-wrap: wrap; padding: 6px 10px;
-  border-top: 1px solid var(--border); background: var(--bg); }
-.rvck-inline-thread     { padding: 0 10px; }
-.rvck-inline-thread:not(:empty) { padding: 6px 10px; border-top: 1px solid var(--border); }
-.rvck-inline-reply      { display: flex; gap: 6px; align-items: flex-end;
-  padding: 6px 10px; border-top: 1px solid var(--border); background: var(--bg); }
-.rvck-inline-reply-input { flex: 1; font-size: 11px; min-height: 30px; resize: vertical; }
+/* Inline finding — compact full-width row */
+.rvck-inline-finding    { background: var(--bg); font-size: 12px;
+  border-bottom: 1px solid var(--border-light, #f0f0f0); }
+.rvck-inline-finding:last-child { border-bottom: none; }
+.rvck-inline-finding-header { display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px; flex-wrap: wrap; }
+.rvck-inline-finding-code  { font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
+.rvck-inline-finding-title { font-size: 12px; font-weight: 500; flex: 1; min-width: 0; }
+.rvck-inline-finding-desc  { font-size: 11px; padding: 0 12px 4px; color: var(--text-muted); }
+.rvck-inline-transitions   { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px 12px 6px; }
+.rvck-inline-thread     { display: flex; flex-direction: column; }
+.rvck-inline-thread:not(:empty) { border-top: 1px solid var(--border-light, #f0f0f0); }
+.rvck-inline-thread .rve-fcard-comment { padding: 3px 12px; }
+.rvck-inline-reply      { display: flex; gap: 6px; align-items: center;
+  padding: 4px 12px 6px; border-top: 1px solid var(--border-light, #f0f0f0); }
+.rvck-inline-reply-input { flex: 1; font-size: 11px; min-height: 28px; max-height: 60px; resize: none; padding: 3px 7px; }
 .rvck-inline-reply-btn  { flex-shrink: 0; font-size: 11px; }
 
 /* ============================================================

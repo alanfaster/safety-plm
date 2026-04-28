@@ -181,43 +181,44 @@ export function mountReviewChecklist(container, opts) {
 
     return `
       <div class="rvck-item" data-item-id="${item.id}">
-        <div class="rvck-item-criterion">
-          ${item.is_mandatory ? '<span class="rvck-mandatory" title="Mandatory">★</span>' : ''}
-          <span class="rvck-criterion-text">${escHtml(item.criterion)}</span>
-          ${item.guidance ? `<div class="rvck-guidance">${escHtml(item.guidance)}</div>` : ''}
-        </div>
-
-        <div class="rvck-item-controls">
-          ${otherPills ? `<div class="rvck-other-pills">${otherPills} ${consensus}</div>` : ''}
-
-          <div class="rvck-verdict-row">
-            <div class="rvck-verdict-pills">
-              ${['ok','nok','partially_ok','na'].map(v => `
-                <button class="rvck-vbtn ${myVerdict === v ? VERDICT_CLASSES[v] + ' active' : ''}"
-                        data-verdict="${v}" data-item-id="${item.id}">${VERDICT_LABELS[v]}</button>`).join('')}
-            </div>
+        <div class="rvck-item-top-row">
+          <div class="rvck-item-criterion">
+            ${item.is_mandatory ? '<span class="rvck-mandatory" title="Mandatory">★</span>' : ''}
+            <span class="rvck-criterion-text">${escHtml(item.criterion)}</span>
+            ${item.guidance ? `<div class="rvck-guidance">${escHtml(item.guidance)}</div>` : ''}
           </div>
 
-          <div class="rvck-inline-raise-form" data-item-id="${item.id}"
-               ${needsComment ? '' : 'style="display:none"'}>
-            <input  class="form-input rvck-raise-title" placeholder="Finding title *" data-item-id="${item.id}"/>
-            <div class="rvck-raise-row">
-              <select class="form-input form-select rvck-raise-severity" data-item-id="${item.id}">
-                ${['critical','major','minor','observation'].map(s =>
-                  `<option value="${s}" ${s === 'major' ? 'selected' : ''}>${SEVERITY_LABELS[s]}</option>`
-                ).join('')}
-              </select>
-              <button class="btn btn-secondary btn-sm rvck-raise-save-btn" data-item-id="${item.id}">⚑ Save Finding</button>
+          <div class="rvck-item-controls">
+            ${otherPills ? `<div class="rvck-other-pills">${otherPills} ${consensus}</div>` : ''}
+            <div class="rvck-verdict-row">
+              <div class="rvck-verdict-pills">
+                ${['ok','nok','partially_ok','na'].map(v => `
+                  <button class="rvck-vbtn ${myVerdict === v ? VERDICT_CLASSES[v] + ' active' : ''}"
+                          data-verdict="${v}" data-item-id="${item.id}">${VERDICT_LABELS[v]}</button>`).join('')}
+              </div>
             </div>
-            <textarea class="form-input rvck-raise-desc" rows="2" placeholder="Description (optional)…"
-                      data-item-id="${item.id}">${escHtml(myComment)}</textarea>
-          </div>
 
-          ${itemFindings.length ? `
-            <div class="rvck-item-findings" id="rvck-item-findings-${item.id}">
-              ${itemFindings.map(f => renderInlineFinding(f)).join('')}
-            </div>` : `<div class="rvck-item-findings" id="rvck-item-findings-${item.id}"></div>`}
+            <div class="rvck-inline-raise-form" data-item-id="${item.id}"
+                 ${needsComment && !itemFindings.length ? '' : 'style="display:none"'}>
+              <input  class="form-input rvck-raise-title" placeholder="Finding title *" data-item-id="${item.id}"/>
+              <div class="rvck-raise-row">
+                <select class="form-input form-select rvck-raise-severity" data-item-id="${item.id}">
+                  ${['critical','major','minor','observation'].map(s =>
+                    `<option value="${s}" ${s === 'major' ? 'selected' : ''}>${SEVERITY_LABELS[s]}</option>`
+                  ).join('')}
+                </select>
+                <button class="btn btn-secondary btn-sm rvck-raise-save-btn" data-item-id="${item.id}">⚑ Save Finding</button>
+              </div>
+              <textarea class="form-input rvck-raise-desc" rows="2" placeholder="Description (optional)…"
+                        data-item-id="${item.id}">${escHtml(myComment)}</textarea>
+            </div>
+          </div>
         </div>
+
+        ${itemFindings.length ? `
+          <div class="rvck-item-findings" id="rvck-item-findings-${item.id}">
+            ${itemFindings.map(f => renderInlineFinding(f)).join('')}
+          </div>` : `<div class="rvck-item-findings" id="rvck-item-findings-${item.id}"></div>`}
       </div>
     `;
   }
@@ -397,12 +398,10 @@ export function mountReviewChecklist(container, opts) {
         onFindingCreated?.(newFinding);
 
         const slot = container.querySelector(`#rvck-item-findings-${itemId}`);
-        if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(newFinding)); wireInlineTransitions(container); wireInlineDeletes(container); wireInlineReplies(container); }
+        if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(newFinding)); wireInlineTransitions(container); wireInlineEdits(container); wireInlineDeletes(container); wireInlineReplies(container); }
 
-        // Clear form
-        if (titleEl) titleEl.value = '';
-        const descEl = form?.querySelector(`.rvck-raise-desc`);
-        if (descEl) descEl.value = '';
+        // Hide raise form — finding already exists
+        form.style.display = 'none';
       });
     });
 
