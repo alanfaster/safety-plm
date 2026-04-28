@@ -101,6 +101,7 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
   let _selectedId = null;
   let _sections = [];   // sections for selected template
   let _items = {};      // { sectionId: [items] }
+  let _versions = [];   // versions for selected template
 
   container.innerHTML = `
     <div class="rt-wrap">
@@ -126,7 +127,6 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
       .select('*').eq('project_id', project.id).order('created_at');
     _templates = data || [];
 
-    // Seed defaults on first use
     if (!_templates.length) {
       await seedDefaults();
       const { data: d2 } = await sb.from('review_protocol_templates')
@@ -144,6 +144,7 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
         artifact_type: tpl.artifact_type,
         review_type:   tpl.review_type,
         description:   tpl.description || '',
+        current_version: 0,
       }).select().single();
       if (error || !t) continue;
 
@@ -185,6 +186,53 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
     }
   }
 
+  async function loadVersions(templateId) {
+    const { data } = await sb.from('review_template_versions')
+      .select('*').eq('template_id', templateId).order('version', { ascending: false });
+    _versions = data || [];
+  }
+
+  // ── Snapshot builder (current editor state → JSONB) ────────────────────
+  function buildSnapshot(tpl) {
+    return {
+      name:          tpl.name,
+      artifact_type: tpl.artifact_type,
+      review_type:   tpl.review_type,
+      description:   tpl.description || '',
+      sections: _sections.map(sec => ({
+        name:  sec.name,
+        items: (_items[sec.id] || []).map(item => ({
+          criterion:    item.criterion,
+          guidance:     item.guidance || '',
+          is_mandatory: item.is_mandatory || false,
+        })),
+      })),
+    };
+  }
+
+  // ── Publish a new version ──────────────────────────────────────────────
+  async function publishVersion(tpl, notes) {
+    const newVersion = (tpl.current_version || 0) + 1;
+    const snapshot = buildSnapshot(tpl);
+
+    const { error: ve } = await sb.from('review_template_versions').insert({
+      template_id: tpl.id,
+      version:     newVersion,
+      notes:       notes || null,
+      snapshot,
+    });
+    if (ve) { toast('Failed to publish: ' + ve.message, 'error'); return false; }
+
+    const { error: te } = await sb.from('review_protocol_templates')
+      .update({ current_version: newVersion, updated_at: new Date().toISOString() })
+      .eq('id', tpl.id);
+    if (te) { toast('Version saved but counter failed: ' + te.message, 'error'); return false; }
+
+    tpl.current_version = newVersion;
+    await loadVersions(tpl.id);
+    return true;
+  }
+
   // ── List rendering ─────────────────────────────────────────────────────
   function renderList() {
     const el = container.querySelector('#rt-list');
@@ -197,6 +245,7 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
         <div class="rt-list-item-main">
           <span class="rt-list-item-name">${escHtml(t.name)}</span>
           <span class="badge rt-atype-badge">${escHtml(ARTIFACT_TYPE_LABELS[t.artifact_type] || t.artifact_type)}</span>
+          ${t.current_version ? `<span class="rt-version-badge">v${t.current_version}</span>` : `<span class="rt-version-badge rt-version-draft">draft</span>`}
         </div>
         <span class="rt-rtype-tag">${escHtml(REVIEW_TYPE_LABELS[t.review_type] || t.review_type)}</span>
         <button class="rt-del-btn" data-id="${t.id}" title="Delete protocol">✕</button>
@@ -230,13 +279,17 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
     renderList();
     const tpl = _templates.find(t => t.id === id);
     if (!tpl) return;
-    await loadSections(id);
+    await Promise.all([loadSections(id), loadVersions(id)]);
     renderEditor(tpl);
   }
 
   // ── Editor rendering ───────────────────────────────────────────────────
   function renderEditor(tpl) {
     const ed = container.querySelector('#rt-editor');
+    const versionLabel = tpl.current_version
+      ? `<span class="rt-version-badge">v${tpl.current_version}</span> <span class="rt-version-hint">published</span>`
+      : `<span class="rt-version-badge rt-version-draft">draft</span> <span class="rt-version-hint">not yet published</span>`;
+
     ed.innerHTML = `
       <div class="rt-editor-inner">
         <div class="rt-editor-header">
@@ -254,17 +307,26 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
             </select>
           </div>
           <textarea class="form-input rt-desc-input" placeholder="Description (optional)" rows="2">${escHtml(tpl.description || '')}</textarea>
+          <div class="rt-version-bar">
+            <div class="rt-version-status">${versionLabel}</div>
+            <button class="btn btn-primary btn-sm" id="rt-btn-publish">↑ Publish Version</button>
+          </div>
         </div>
 
         <div class="rt-sections" id="rt-sections"></div>
-
         <button class="btn btn-secondary btn-sm rt-add-section-btn" id="rt-btn-add-section">＋ Add Section</button>
+
+        <div class="rt-history-panel" id="rt-history-panel">
+          <div class="rt-history-header">
+            <span class="rt-history-title">Version History</span>
+          </div>
+          <div id="rt-history-list">${renderVersionList()}</div>
+        </div>
       </div>
     `;
 
     renderSections();
 
-    // Auto-save meta fields on change
     const save = debounce(() => saveTemplateMeta(tpl.id), 600);
     ed.querySelector('.rt-name-input').addEventListener('input', save);
     ed.querySelector('.rt-atype-select').addEventListener('change', save);
@@ -272,8 +334,294 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
     ed.querySelector('.rt-desc-input').addEventListener('input', save);
 
     ed.querySelector('#rt-btn-add-section').addEventListener('click', () => addSection(tpl.id));
+
+    ed.querySelector('#rt-btn-publish').addEventListener('click', () => {
+      showPublishModal(tpl);
+    });
+
+    wireVersionHistory(tpl);
   }
 
+  // ── Version list (inside editor) ───────────────────────────────────────
+  function renderVersionList() {
+    if (!_versions.length) {
+      return `<p class="rt-history-empty">No versions published yet.</p>`;
+    }
+    return `<table class="data-table rt-history-table">
+      <thead><tr><th>Version</th><th>Date</th><th>Notes</th><th style="width:120px"></th></tr></thead>
+      <tbody>
+        ${_versions.map(v => `
+          <tr data-ver-id="${v.id}" data-ver-num="${v.version}">
+            <td><span class="rt-version-badge">v${v.version}</span></td>
+            <td class="text-muted">${new Date(v.created_at).toLocaleDateString()}</td>
+            <td>${escHtml(v.notes || '—')}</td>
+            <td>
+              <button class="btn btn-ghost btn-xs rt-view-ver-btn" data-ver-id="${v.id}">View</button>
+              <button class="btn btn-ghost btn-xs rt-compare-ver-btn" data-ver-id="${v.id}" data-ver-num="${v.version}">Compare</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+  }
+
+  function wireVersionHistory(tpl) {
+    const panel = container.querySelector('#rt-history-list');
+    if (!panel) return;
+
+    panel.querySelectorAll('.rt-view-ver-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const ver = _versions.find(v => v.id === btn.dataset.verId);
+        if (ver) openVersionModal(ver, null);
+      });
+    });
+
+    panel.querySelectorAll('.rt-compare-ver-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const ver = _versions.find(v => v.id === btn.dataset.verId);
+        if (!ver) return;
+        // If only one version, nothing to compare
+        if (_versions.length < 2) { toast('Need at least 2 versions to compare.', 'error'); return; }
+        openComparePickerModal(ver, tpl);
+      });
+    });
+  }
+
+  // ── Publish modal ──────────────────────────────────────────────────────
+  function showPublishModal(tpl) {
+    const overlay = document.createElement('div');
+    overlay.className = 'rt-modal-overlay';
+    const nextVer = (tpl.current_version || 0) + 1;
+    overlay.innerHTML = `
+      <div class="rt-modal">
+        <div class="rt-modal-header">
+          <span>Publish Version v${nextVer}</span>
+          <button class="btn btn-ghost btn-xs rt-modal-close">✕</button>
+        </div>
+        <div class="rt-modal-body">
+          <p class="form-hint">Publishing creates an immutable snapshot of the current checklist. Existing review sessions are not affected.</p>
+          <label class="form-label">Change notes (optional)</label>
+          <textarea class="form-input" id="rt-publish-notes" rows="3" placeholder="What changed in this version?"></textarea>
+        </div>
+        <div class="rt-modal-footer">
+          <button class="btn btn-secondary rt-modal-close">Cancel</button>
+          <button class="btn btn-primary" id="rt-confirm-publish">↑ Publish v${nextVer}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelectorAll('.rt-modal-close').forEach(b => b.onclick = () => overlay.remove());
+    overlay.querySelector('#rt-confirm-publish').onclick = async () => {
+      const notes = overlay.querySelector('#rt-publish-notes').value.trim();
+      const ok = await publishVersion(tpl, notes);
+      if (ok) {
+        overlay.remove();
+        toast(`v${tpl.current_version} published.`, 'success');
+        renderEditor(tpl);
+        renderList();
+      }
+    };
+  }
+
+  // ── View version modal ─────────────────────────────────────────────────
+  function openVersionModal(ver, compareVer) {
+    const overlay = document.createElement('div');
+    overlay.className = 'rt-modal-overlay';
+    overlay.innerHTML = `
+      <div class="rt-modal rt-modal-wide">
+        <div class="rt-modal-header">
+          <span>${escHtml(ver.snapshot.name)} — v${ver.version}
+            <span class="text-muted" style="font-weight:400;font-size:12px;margin-left:8px">${new Date(ver.created_at).toLocaleDateString()}</span>
+          </span>
+          <button class="btn btn-ghost btn-xs rt-modal-close">✕</button>
+        </div>
+        <div class="rt-modal-body rt-version-view-body">
+          ${renderSnapshotView(ver.snapshot)}
+        </div>
+        <div class="rt-modal-footer">
+          <button class="btn btn-secondary rt-modal-close">Close</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelectorAll('.rt-modal-close').forEach(b => b.onclick = () => overlay.remove());
+  }
+
+  function renderSnapshotView(snap) {
+    if (!snap.sections?.length) return `<p class="text-muted">No sections in this version.</p>`;
+    return snap.sections.map(sec => `
+      <div class="rt-snap-section">
+        <div class="rt-snap-sec-name">${escHtml(sec.name)}</div>
+        <ol class="rt-snap-items">
+          ${(sec.items || []).map(item => `
+            <li class="rt-snap-item ${item.is_mandatory ? 'rt-snap-mandatory' : ''}">
+              ${item.is_mandatory ? '<span class="rt-mandatory-star" title="Mandatory">★</span>' : ''}
+              <span>${escHtml(item.criterion)}</span>
+              ${item.guidance ? `<span class="rt-snap-guidance">${escHtml(item.guidance)}</span>` : ''}
+            </li>`).join('')}
+        </ol>
+      </div>`).join('');
+  }
+
+  // ── Compare picker modal ───────────────────────────────────────────────
+  function openComparePickerModal(baseVer, tpl) {
+    const otherVersions = _versions.filter(v => v.id !== baseVer.id);
+    const overlay = document.createElement('div');
+    overlay.className = 'rt-modal-overlay';
+    overlay.innerHTML = `
+      <div class="rt-modal">
+        <div class="rt-modal-header">
+          <span>Compare versions</span>
+          <button class="btn btn-ghost btn-xs rt-modal-close">✕</button>
+        </div>
+        <div class="rt-modal-body">
+          <p class="form-hint">Compare <strong>v${baseVer.version}</strong> against:</p>
+          <select class="form-input form-select" id="rt-compare-target">
+            ${otherVersions.map(v => `<option value="${v.id}">v${v.version} — ${new Date(v.created_at).toLocaleDateString()}${v.notes ? ' · ' + v.notes : ''}</option>`).join('')}
+          </select>
+        </div>
+        <div class="rt-modal-footer">
+          <button class="btn btn-secondary rt-modal-close">Cancel</button>
+          <button class="btn btn-primary" id="rt-confirm-compare">Compare ▶</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelectorAll('.rt-modal-close').forEach(b => b.onclick = () => overlay.remove());
+    overlay.querySelector('#rt-confirm-compare').onclick = () => {
+      const targetId = overlay.querySelector('#rt-compare-target').value;
+      const targetVer = _versions.find(v => v.id === targetId);
+      if (!targetVer) return;
+      overlay.remove();
+      openCompareDiffModal(baseVer, targetVer);
+    };
+  }
+
+  // ── Diff modal ────────────────────────────────────────────────────────
+  function openCompareDiffModal(verA, verB) {
+    // Ensure A is the older version
+    const [older, newer] = verA.version < verB.version ? [verA, verB] : [verB, verA];
+    const diff = computeDiff(older.snapshot, newer.snapshot);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'rt-modal-overlay';
+    overlay.innerHTML = `
+      <div class="rt-modal rt-modal-wide">
+        <div class="rt-modal-header">
+          <span>Compare: <span class="rt-version-badge">v${older.version}</span> → <span class="rt-version-badge">v${newer.version}</span></span>
+          <button class="btn btn-ghost btn-xs rt-modal-close">✕</button>
+        </div>
+        <div class="rt-modal-body rt-diff-body">
+          <div class="rt-diff-legend">
+            <span class="rt-diff-added-chip">+ Added</span>
+            <span class="rt-diff-removed-chip">− Removed</span>
+            <span class="rt-diff-changed-chip">~ Changed</span>
+          </div>
+          ${renderDiffView(diff, older.version, newer.version)}
+        </div>
+        <div class="rt-modal-footer">
+          <button class="btn btn-secondary rt-modal-close">Close</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelectorAll('.rt-modal-close').forEach(b => b.onclick = () => overlay.remove());
+  }
+
+  function computeDiff(snapA, snapB) {
+    const secMapA = Object.fromEntries((snapA.sections || []).map(s => [s.name, s]));
+    const secMapB = Object.fromEntries((snapB.sections || []).map(s => [s.name, s]));
+    const allSecs = [...new Set([...Object.keys(secMapA), ...Object.keys(secMapB)])];
+
+    const metaChanges = [];
+    if (snapA.name !== snapB.name) metaChanges.push({ field: 'Name', old: snapA.name, new: snapB.name });
+    if (snapA.artifact_type !== snapB.artifact_type) metaChanges.push({ field: 'Artifact Type', old: snapA.artifact_type, new: snapB.artifact_type });
+    if (snapA.review_type !== snapB.review_type) metaChanges.push({ field: 'Review Type', old: snapA.review_type, new: snapB.review_type });
+
+    const sections = allSecs.map(secName => {
+      const sA = secMapA[secName];
+      const sB = secMapB[secName];
+      if (!sA) return { name: secName, status: 'added', items: (sB.items || []).map(i => ({ ...i, status: 'added' })) };
+      if (!sB) return { name: secName, status: 'removed', items: (sA.items || []).map(i => ({ ...i, status: 'removed' })) };
+
+      const itemsA = sA.items || [];
+      const itemsB = sB.items || [];
+      const criteriaA = new Map(itemsA.map(i => [i.criterion, i]));
+      const criteriaB = new Map(itemsB.map(i => [i.criterion, i]));
+
+      const items = [];
+      // Removed items
+      itemsA.forEach(i => {
+        if (!criteriaB.has(i.criterion)) items.push({ ...i, status: 'removed' });
+      });
+      // Added or changed items (preserve order from B)
+      itemsB.forEach(i => {
+        if (!criteriaA.has(i.criterion)) {
+          items.push({ ...i, status: 'added' });
+        } else {
+          const oldItem = criteriaA.get(i.criterion);
+          const changed = oldItem.guidance !== i.guidance || oldItem.is_mandatory !== i.is_mandatory;
+          items.push({ ...i, status: changed ? 'changed' : 'unchanged',
+            old_guidance: oldItem.guidance, old_mandatory: oldItem.is_mandatory });
+        }
+      });
+
+      const secStatus = items.every(i => i.status === 'unchanged') ? 'unchanged' : 'changed';
+      return { name: secName, status: secStatus, items };
+    });
+
+    return { metaChanges, sections };
+  }
+
+  function renderDiffView(diff, vA, vB) {
+    let html = '';
+
+    if (diff.metaChanges.length) {
+      html += `<div class="rt-diff-section">
+        <div class="rt-diff-sec-name">Protocol metadata</div>
+        <table class="rt-diff-table">
+          ${diff.metaChanges.map(c => `
+            <tr class="rt-diff-row-changed">
+              <td class="rt-diff-field">${escHtml(c.field)}</td>
+              <td class="rt-diff-old">v${vA}: ${escHtml(c.old)}</td>
+              <td class="rt-diff-new">v${vB}: ${escHtml(c.new)}</td>
+            </tr>`).join('')}
+        </table>
+      </div>`;
+    }
+
+    diff.sections.forEach(sec => {
+      if (sec.status === 'unchanged') return;
+      const secClass = sec.status === 'added' ? 'rt-diff-sec-added'
+                     : sec.status === 'removed' ? 'rt-diff-sec-removed' : '';
+      html += `<div class="rt-diff-section ${secClass}">
+        <div class="rt-diff-sec-name">
+          ${sec.status === 'added' ? '+ ' : sec.status === 'removed' ? '− ' : ''}${escHtml(sec.name)}
+        </div>
+        <table class="rt-diff-table">
+          ${sec.items.filter(i => i.status !== 'unchanged').map(item => {
+            const rowClass = item.status === 'added' ? 'rt-diff-row-added'
+                           : item.status === 'removed' ? 'rt-diff-row-removed' : 'rt-diff-row-changed';
+            const prefix = item.status === 'added' ? '+ ' : item.status === 'removed' ? '− ' : '~ ';
+            let detail = '';
+            if (item.status === 'changed') {
+              if (item.old_mandatory !== item.is_mandatory)
+                detail += `<div class="rt-diff-detail">Mandatory: ${item.old_mandatory ? 'yes' : 'no'} → ${item.is_mandatory ? 'yes' : 'no'}</div>`;
+              if (item.old_guidance !== item.guidance)
+                detail += `<div class="rt-diff-detail">Guidance changed</div>`;
+            }
+            return `<tr class="${rowClass}">
+              <td>${prefix}${escHtml(item.criterion)}${detail}</td>
+            </tr>`;
+          }).join('')}
+        </table>
+      </div>`;
+    });
+
+    if (!html) html = `<p class="text-muted" style="padding:16px 0">No differences found between these versions.</p>`;
+    return html;
+  }
+
+  // ── Sections rendering ─────────────────────────────────────────────────
   function renderSections() {
     const el = container.querySelector('#rt-sections');
     if (!el) return;
@@ -295,14 +643,12 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
       </div>
     `).join('');
 
-    // Section name save
     el.querySelectorAll('.rt-sec-name').forEach(inp => {
       inp.addEventListener('change', async () => {
         await sb.from('review_template_sections').update({ name: inp.value.trim() }).eq('id', inp.dataset.secId);
       });
     });
 
-    // Section delete
     el.querySelectorAll('.rt-sec-del').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('Delete this section and all its criteria?')) return;
@@ -313,12 +659,10 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
       });
     });
 
-    // Add item
     el.querySelectorAll('.rt-add-item-btn').forEach(btn => {
       btn.addEventListener('click', () => addItem(_selectedId, btn.dataset.secId));
     });
 
-    // Item interactions (via delegation)
     el.querySelectorAll('.rt-item-row').forEach(row => wireItemRow(row));
   }
 
@@ -370,11 +714,12 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
   function wireNew() {
     container.querySelector('#rt-btn-new').addEventListener('click', async () => {
       const { data: t, error } = await sb.from('review_protocol_templates').insert({
-        project_id:    project.id,
-        name:          'New Protocol',
-        artifact_type: 'requirements',
-        review_type:   'inspection',
-        description:   '',
+        project_id:      project.id,
+        name:            'New Protocol',
+        artifact_type:   'requirements',
+        review_type:     'inspection',
+        description:     '',
+        current_version: 0,
       }).select().single();
       if (error) { toast('Create failed: ' + error.message, 'error'); return; }
       _templates.push(t);
@@ -385,12 +730,14 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
 
   async function saveTemplateMeta(id) {
     const ed = container.querySelector('#rt-editor');
-    const name         = ed.querySelector('.rt-name-input')?.value.trim();
+    const name          = ed.querySelector('.rt-name-input')?.value.trim();
     const artifact_type = ed.querySelector('.rt-atype-select')?.value;
     const review_type   = ed.querySelector('.rt-rtype-select')?.value;
     const description   = ed.querySelector('.rt-desc-input')?.value.trim();
     if (!name) return;
-    await sb.from('review_protocol_templates').update({ name, artifact_type, review_type, description, updated_at: new Date().toISOString() }).eq('id', id);
+    await sb.from('review_protocol_templates')
+      .update({ name, artifact_type, review_type, description, updated_at: new Date().toISOString() })
+      .eq('id', id);
     const tpl = _templates.find(t => t.id === id);
     if (tpl) { tpl.name = name; tpl.artifact_type = artifact_type; tpl.review_type = review_type; }
     renderList();
@@ -405,7 +752,6 @@ export async function mountReviewTemplatesTab(container, project, sb, toast) {
     _sections.push(s);
     _items[s.id] = [];
     renderSections();
-    // Focus new section name
     const inp = container.querySelector(`[data-sec-id="${s.id}"].rt-sec-name`);
     if (inp) { inp.focus(); inp.select(); }
   }

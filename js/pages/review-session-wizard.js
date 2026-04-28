@@ -130,7 +130,7 @@ export async function renderReviewSessionWizard(container, ctx) {
               <option value="">— No template (free review) —</option>
               ${(templates || []).map(t => `
                 <option value="${t.id}" ${state.template_id === t.id ? 'selected' : ''}>
-                  ${escHtml(t.name)} (${escHtml(ARTIFACT_TYPE_LABELS[t.artifact_type] || t.artifact_type)})
+                  ${escHtml(t.name)} (${escHtml(ARTIFACT_TYPE_LABELS[t.artifact_type] || t.artifact_type)})${t.current_version ? ' · v' + t.current_version : ' · draft'}
                 </option>`).join('')}
             </select>
             <p class="form-hint">Templates define the checklist criteria reviewers will evaluate. Managed in Project Settings → Review Protocols.</p>
@@ -390,7 +390,7 @@ export async function renderReviewSessionWizard(container, ctx) {
         <div class="wiz-summary">
           <div class="wiz-summary-row"><span>Title</span><strong>${escHtml(state.title)}</strong></div>
           <div class="wiz-summary-row"><span>Review Type</span><strong>${escHtml(REVIEW_TYPE_LABELS[state.review_type] || state.review_type)}</strong></div>
-          <div class="wiz-summary-row"><span>Protocol</span><strong>${tpl ? escHtml(tpl.name) : 'None'}</strong></div>
+          <div class="wiz-summary-row"><span>Protocol</span><strong>${tpl ? escHtml(tpl.name) + (tpl.current_version ? ' v' + tpl.current_version : ' (draft)') : 'None'}</strong></div>
           <div class="wiz-summary-row"><span>Date</span><strong>${escHtml(state.planned_date)}</strong></div>
           <div class="wiz-summary-row"><span>Artifacts</span><strong>${totalSelected} selected</strong></div>
           <div class="wiz-summary-row"><span>Reviewers</span><strong>${state.reviewers.length} assigned</strong></div>
@@ -447,14 +447,16 @@ export async function renderReviewSessionWizard(container, ctx) {
     btn.textContent = 'Creating…';
 
     // 1. Create session
+    const tpl = (templates || []).find(t => t.id === state.template_id);
     const { data: session, error: se } = await sb.from('review_sessions').insert({
-      project_id:      project.id,
-      template_id:     state.template_id || null,
-      title:           state.title,
-      review_type:     state.review_type,
-      status:          'in_progress',
-      planned_date:    state.planned_date || null,
-      checklist_mode:  state.checklist_mode,
+      project_id:       project.id,
+      template_id:      state.template_id || null,
+      template_version: tpl?.current_version || null,
+      title:            state.title,
+      review_type:      state.review_type,
+      status:           'in_progress',
+      planned_date:     state.planned_date || null,
+      checklist_mode:   state.checklist_mode,
     }).select().single();
 
     if (se || !session) {
