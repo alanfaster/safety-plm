@@ -5546,10 +5546,12 @@ th.col-th-dragging * { pointer-events: none; }
    REVIEW CHECKLIST COMPONENT
    ============================================================ */
 .rvck-wrap           { padding: 16px 20px; }
-.rvck-drift-banner   { display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 14px; margin-bottom: 14px; border-radius: 6px; gap: 12px;
+.rvck-drift-banner   { display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px; margin-bottom: 14px; border-radius: 6px;
   background: #fef3e2; border: 1px solid #f8d7a0; color: #7c4f00; font-size: 12px; }
-.rvck-drift-banner-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.rvck-drift-icon     { font-size: 14px; flex-shrink: 0; }
+.rvck-drift-text     { flex: 1; font-weight: 500; }
+.rvck-drift-actions  { display: flex; gap: 6px; flex-shrink: 0; }
 .rvck-snapshot-card  { padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border);
   background: var(--bg-card); margin-bottom: 16px; font-size: 12px; }
 .rvck-snap-title     { font-weight: 600; font-size: 13px; margin-bottom: 6px; }

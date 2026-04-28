@@ -237,17 +237,18 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   // Mounts the checklist once in the middle column — stays mounted across artifact switches
-  function mountChecklist() {
+  function mountChecklist(snap) {
     const col = document.getElementById('rve-checklist-col');
     if (!col || !sections.length) return;
 
-    const snap     = _selectedSnapshot || snapshots?.[0];
+    snap = snap || _selectedSnapshot || snapshots?.[0];
     const isShared = session.checklist_mode === 'shared';
     const ckSnap   = isShared ? (snapshots?.[0] || snap) : snap;
     if (!snap) return;
 
     const snapResponses = _allResponses.filter(r => r.snapshot_id === ckSnap.id);
     const snapFindings  = _findings.filter(f => f.snapshot_id === snap.id);
+    const isDrifted     = !!driftMap[snap.artifact_id];
 
     mountReviewChecklist(col, {
       session, snapshot: snap, sections,
@@ -255,6 +256,7 @@ export async function renderReviewExecute(container, ctx) {
       allResponses: snapResponses,
       currentUserId, reviewers: reviewerList,
       findings: snapFindings,
+      isDrifted,
       onSaved: ({ snapshotId, itemId, verdict }) => {
         const existing = _allResponses.find(r => r.snapshot_id === snapshotId && r.template_item_id === itemId && r.reviewer_id === currentUserId);
         if (existing) existing.verdict = verdict;
@@ -264,15 +266,33 @@ export async function renderReviewExecute(container, ctx) {
       },
       onFindingRaise: opts => openRaiseFindingModal(opts),
       onFindingCreated: f => { _findings.push(f); refreshArtifactCard(snap); },
+      onCompareRequest: () => openDiffModal(snap),
       onReSnapshotRequest: async () => { await reSnapshot(snap); loadPropsPanel(); },
     });
   }
 
   // Refreshes the right properties panel when the selected artifact changes
-  function loadArtifactPanel() {
-    // Remount checklist with updated responses for the new artifact (individual mode)
-    if (session.checklist_mode !== 'shared') mountChecklist();
+  async function loadArtifactPanel() {
+    const snap = _selectedSnapshot;
+    if (snap) await recheckDrift(snap);
+    if (session.checklist_mode !== 'shared') mountChecklist(snap);
     loadPropsPanel();
+  }
+
+  // Re-fetches updated_at for one artifact and updates driftMap + card badge
+  async function recheckDrift(snap) {
+    const tableMap = { requirements:'requirements', arch_spec_items:'arch_spec_items', test_specs:'test_specs', safety_analysis_rows:'safety_analyses' };
+    const table = tableMap[snap.artifact_type];
+    if (!table) return;
+    const { data: live } = await sb.from(table).select('updated_at').eq('id', snap.artifact_id).single();
+    if (!live) return;
+    const wasDrifted  = !!driftMap[snap.artifact_id];
+    const nowDrifted  = snap.artifact_updated_at ? live.updated_at > snap.artifact_updated_at : false;
+    if (nowDrifted !== wasDrifted) {
+      if (nowDrifted) driftMap[snap.artifact_id] = true;
+      else delete driftMap[snap.artifact_id];
+      refreshArtifactCard(snap);
+    }
   }
 
   async function loadPropsPanel() {

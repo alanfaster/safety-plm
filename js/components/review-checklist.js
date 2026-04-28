@@ -74,8 +74,8 @@ export function mountReviewChecklist(container, opts) {
     session, snapshot, sections = [], allResponses = [], currentUserId,
     reviewers = [], findings = [], artifactVerdict = null,
     isDrifted = false,
-    responseSnapshot,        // if provided, responses are saved/read against this snapshot (shared mode)
-    onSaved, onFindingRaise, onFindingCreated, onReSnapshotRequest, onVerdictSaved,
+    responseSnapshot,
+    onSaved, onFindingRaise, onFindingCreated, onCompareRequest, onReSnapshotRequest, onVerdictSaved,
   } = opts;
 
   // In shared mode the checklist snapshot (where responses are stored) differs from the display snapshot
@@ -121,6 +121,15 @@ export function mountReviewChecklist(container, opts) {
           ${totalItems ? `<span class="rvck-bp-progress">${myDoneTotal}/${totalItems}</span>` : ''}
           ${(findingsByItem['__open__'] || []).length ? `<span class="rve-main-tab-badge" style="margin-left:6px">${(findingsByItem['__open__'] || []).length}</span>` : ''}
         </div>
+        ${isDrifted ? `
+          <div class="rvck-drift-banner">
+            <span class="rvck-drift-icon">⚠</span>
+            <span class="rvck-drift-text">The artifact has changed since this snapshot was taken.</span>
+            <span class="rvck-drift-actions">
+              ${onCompareRequest ? `<button class="btn btn-ghost btn-xs rvck-drift-compare-btn">Compare versions</button>` : ''}
+              ${onReSnapshotRequest ? `<button class="btn btn-secondary btn-xs rvck-drift-resnap-btn">Update snapshot</button>` : ''}
+            </span>
+          </div>` : ''}
         <div class="rvck-sections-wrap" id="rvck-sections-wrap">
           ${sections.length ? sections.map(sec => renderSection(sec)).join('') : `
             <div class="rvck-no-template text-muted" style="padding:20px;text-align:center">No checklist template attached.</div>`}
@@ -296,7 +305,9 @@ export function mountReviewChecklist(container, opts) {
   // ── Wire everything ─────────────────────────────────────────────────────────
 
   function wire() {
-    // (drift + resnap handled by parent props panel)
+    // Drift banner buttons
+    container.querySelector('.rvck-drift-compare-btn')?.addEventListener('click', () => onCompareRequest?.());
+    container.querySelector('.rvck-drift-resnap-btn')?.addEventListener('click', () => onReSnapshotRequest?.());
 
     // Section accordion
     container.querySelectorAll('.rvck-section-header[data-sec-id]').forEach(btn => {
