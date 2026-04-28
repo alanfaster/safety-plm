@@ -240,6 +240,7 @@ export async function renderReviewExecute(container, ctx) {
             <span class="diff-finding-title">${escHtml(f.title)}</span>
           </div>`;
           refreshArtifactCard(snap);
+          mountChecklist(snap);
         };
       });
     });
