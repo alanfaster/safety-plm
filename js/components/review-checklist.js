@@ -454,17 +454,6 @@ export function mountReviewChecklist(container, opts) {
       });
     });
 
-    // Comments toggle (per finding)
-    container.querySelectorAll('.rvck-comments-toggle').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const fid  = btn.dataset.findingId;
-        const wrap = container.querySelector(`#rvck-thread-wrap-${fid}`);
-        if (!wrap) return;
-        const open = wrap.style.display !== 'none';
-        wrap.style.display = open ? 'none' : '';
-      });
-    });
-
     wireInlineFinding(container);
 
     // Load comments for visible findings

@@ -24,36 +24,6 @@ const SESSION_STATUS_LABELS = {
 const SEVERITY_LABELS  = { critical:'Critical', major:'Major', minor:'Minor', observation:'Observation' };
 const SEVERITY_CLASSES = { critical:'rv-sev-critical', major:'rv-sev-major', minor:'rv-sev-minor', observation:'rv-sev-observation' };
 
-const FINDING_STATUS_LABELS = {
-  open:'Open', accepted:'Accepted', fixed:'Implemented – pending review', closed:'Closed', rejected:'Rejected',
-  in_progress:'In Progress', deferred:'Deferred', verified:'Verified', duplicate:'Duplicate',
-};
-const FINDING_STATUS_CLASSES = {
-  open:'rv-fs-open', accepted:'rv-fs-accepted', fixed:'rv-fs-fixed',
-  closed:'rv-fs-closed', rejected:'rv-fs-closed',
-  in_progress:'rv-fs-in-progress', deferred:'rv-fs-deferred', verified:'rv-fs-verified', duplicate:'rv-fs-closed',
-};
-const TRANSITIONS = {
-  open:     ['accepted', 'rejected'],
-  accepted: ['fixed'],
-  fixed:    ['closed'],
-  closed:[], rejected:[],
-};
-const TRANSITION_LABELS = {
-  accepted:'Accept', fixed:'Mark as Implemented', closed:'Confirm & Close', rejected:'Reject',
-};
-
-function buildStatusSelectHtml(f, isAuthor, extraClass = '') {
-  const transitions = TRANSITIONS[f.status] || [];
-  const visibleTransitions = transitions.filter(to => to !== 'closed' || isAuthor);
-  const disabled = visibleTransitions.length === 0 ? 'disabled' : '';
-  const closeBlocked = transitions.includes('closed') && !isAuthor;
-  return `<select class="rve-status-select ${extraClass}" data-finding-id="${f.id}" data-current="${f.status}" data-status="${f.status}" ${disabled}>
-    <option value="${f.status}" selected>${FINDING_STATUS_LABELS[f.status] || f.status}</option>
-    ${visibleTransitions.map(to => `<option value="${to}">${TRANSITION_LABELS[to] || FINDING_STATUS_LABELS[to]}</option>`).join('')}
-    ${closeBlocked ? `<option value="" disabled>Close (creator only)</option>` : ''}
-  </select>`
-}
 
 const FINAL_VERDICT_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-GO' };
 const FINAL_VERDICT_CLASSES = { go:'rve-artcard-go', conditional:'rve-artcard-conditional', no_go:'rve-artcard-nogo' };
@@ -169,15 +139,12 @@ export async function renderReviewExecute(container, ctx) {
   const _allResponses     = allResponses      ? [...allResponses]     : [];
 
   let _selectedSnapshot = snapshots?.[0] || null;
-  let _activeTab        = 'review';
 
   renderPage();
 
   // ── Main render ──────────────────────────────────────────────────────────────
 
   function renderPage() {
-    const openCount = _findings.filter(f => f.status === 'open').length;
-
     container.innerHTML = `
       <div class="rve-wrap">
         <div class="rve-topbar">
@@ -191,36 +158,12 @@ export async function renderReviewExecute(container, ctx) {
             ${session.status === 'in_progress' ? `<button class="btn btn-primary btn-sm" id="rve-btn-complete">✓ Complete Review</button>` : ''}
           </div>
         </div>
-
-        <div class="rve-main-tabs">
-          <button class="rve-main-tab ${_activeTab === 'review'   ? 'active' : ''}" data-tab="review">
-            📋 Review
-          </button>
-          <button class="rve-main-tab ${_activeTab === 'findings' ? 'active' : ''}" data-tab="findings">
-            ⚑ Findings
-            ${openCount ? `<span class="rve-main-tab-badge">${openCount}</span>` : ''}
-          </button>
-        </div>
-
-        <div class="rve-tab-body" id="rve-tab-body">
-          ${_activeTab === 'review' ? renderReviewTab() : renderFindingsTab()}
-        </div>
+        <div class="rve-tab-body" id="rve-tab-body">${renderReviewTab()}</div>
       </div>
     `;
 
     document.getElementById('rve-btn-complete')?.addEventListener('click', completeSession);
-
-    container.querySelectorAll('.rve-main-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
-        _activeTab = btn.dataset.tab;
-        container.querySelectorAll('.rve-main-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === _activeTab));
-        const body = document.getElementById('rve-tab-body');
-        body.innerHTML = _activeTab === 'review' ? renderReviewTab() : renderFindingsTab();
-        _activeTab === 'review' ? wireReviewTab() : wireFindingsTab();
-      });
-    });
-
-    _activeTab === 'review' ? wireReviewTab() : wireFindingsTab();
+    wireReviewTab();
   }
 
   // ── Tab 1: Review (3-column layout) ──────────────────────────────────────────
@@ -320,7 +263,7 @@ export async function renderReviewExecute(container, ctx) {
         else refreshArtifactCard(snap);
       },
       onFindingRaise: opts => openRaiseFindingModal(opts),
-      onFindingCreated: f => { _findings.push(f); updateFindingsBadge(); refreshArtifactCard(snap); },
+      onFindingCreated: f => { _findings.push(f); refreshArtifactCard(snap); },
       onReSnapshotRequest: async () => { await reSnapshot(snap); loadPropsPanel(); },
     });
   }
@@ -593,405 +536,6 @@ export async function renderReviewExecute(container, ctx) {
     });
   }
 
-  // ── Tab 2: Findings (cross-artifact management) ───────────────────────────────
-
-  function renderFindingsTab() {
-    const snapMap = {};
-    (snapshots || []).forEach(s => { snapMap[s.id] = s; });
-
-    const openCount   = _findings.filter(f => f.status === 'open').length;
-    const activeCount = _findings.filter(f => ['accepted','in_progress','deferred'].includes(f.status)).length;
-    const doneCount   = _findings.filter(f => ['fixed','verified','closed','rejected','duplicate'].includes(f.status)).length;
-
-    return `
-      <div class="rve-findings-wrap">
-        <div class="rve-findings-header">
-          <div class="rve-findings-stats">
-            <span class="rv-fs-open rve-stat-pill">${openCount} Open</span>
-            <span class="rv-fs-in-progress rve-stat-pill">${activeCount} Active</span>
-            <span class="rv-fs-closed rve-stat-pill">${doneCount} Done</span>
-          </div>
-          <button class="btn btn-primary btn-sm" id="rve-raise-general">⚑ Add Finding</button>
-        </div>
-
-        ${!_findings.length
-          ? `<div class="rv-empty" style="padding:40px 0"><p>No findings yet.</p></div>`
-          : _findings.map(f => renderFindingCard(f, snapMap)).join('')}
-      </div>
-    `;
-  }
-
-  function renderFindingCard(f, snapMap) {
-    const snap     = f.snapshot_id ? snapMap[f.snapshot_id] : null;
-    const isAuthor = f.created_by === currentUserId;
-
-    return `
-      <div class="rve-fcard" data-finding-id="${f.id}">
-
-        <div class="rve-fcard-row">
-          <div class="rve-fcard-left">
-            <span class="rve-fcard-code mono">${escHtml(f.finding_code)}</span>
-            <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}">${SEVERITY_LABELS[f.severity] || f.severity}</span>
-            ${snap ? `<span class="rve-fcard-artifact">${escHtml(snap.artifact_code || snap.artifact_type)}</span>` : ''}
-            <span class="rve-fcard-title">${escHtml(f.title)}</span>
-            ${f.description ? `<span class="rve-fcard-desc-inline text-muted">— ${escHtml(f.description)}</span>` : ''}
-          </div>
-          <div class="rve-fcard-right">
-            ${buildStatusSelectHtml(f, isAuthor)}
-            <button class="btn btn-ghost btn-sm rve-fcard-comments-toggle" data-finding-id="${f.id}" title="Toggle comments">💬</button>
-            ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-edit-btn" data-finding-id="${f.id}" title="Edit">✎</button>` : ''}
-            ${isAuthor ? `<button class="btn btn-ghost btn-sm rve-fcard-del-btn" data-finding-id="${f.id}" title="Delete" style="color:var(--color-danger,#e53e3e)">✕</button>` : ''}
-          </div>
-        </div>
-
-        <div class="rve-fcard-comments-wrap" id="rve-fcomments-${f.id}" style="display:none">
-          <div class="rve-fcard-thread" id="rve-fthread-${f.id}">
-            <span class="text-muted" style="font-size:11px">Loading…</span>
-          </div>
-          <div class="rve-fcard-reply">
-            <textarea class="form-input rve-fcard-reply-input" data-finding-id="${f.id}"
-              rows="1" placeholder="Comment… (Ctrl+Enter to send)"></textarea>
-            <button class="btn btn-secondary btn-sm rve-fcard-reply-btn" data-finding-id="${f.id}">Send</button>
-          </div>
-        </div>
-
-      </div>
-    `;
-  }
-
-  async function wireFindingsTab() {
-    const snapMap = {};
-    (snapshots || []).forEach(s => { snapMap[s.id] = s; });
-
-    // Load all comments for findings in session (split query — no embedded join)
-    if (_findings.length) {
-      const { data: rawComments } = await sb.from('review_finding_comments')
-        .select('id, finding_id, author_id, comment, created_at')
-        .in('finding_id', _findings.map(f => f.id))
-        .order('created_at');
-
-      const rows = rawComments || [];
-      const authorIds = [...new Set(rows.map(c => c.author_id).filter(Boolean))];
-      const profileMap = {};
-      if (authorIds.length) {
-        const { data: profiles } = await sb.from('user_profiles').select('id, display_name').in('id', authorIds);
-        (profiles || []).forEach(p => { profileMap[p.id] = p.display_name; });
-      }
-      const comments = rows.map(c => ({ ...c, user_profiles: { display_name: profileMap[c.author_id] || null } }));
-
-      const byFinding = {};
-      comments.forEach(c => {
-        if (!byFinding[c.finding_id]) byFinding[c.finding_id] = [];
-        byFinding[c.finding_id].push(c);
-      });
-
-      _findings.forEach(f => {
-        const thread = container.querySelector(`#rve-fthread-${f.id}`);
-        if (!thread) return;
-        const threadComments = byFinding[f.id] || [];
-        thread.innerHTML = threadComments.length
-          ? threadComments.map(c => renderComment(c)).join('')
-          : '<span class="text-muted" style="font-size:11px">No comments yet.</span>';
-        const n = threadComments.length;
-        const toggleBtn = container.querySelector(`.rve-fcard-comments-toggle[data-finding-id="${f.id}"]`);
-        if (toggleBtn) toggleBtn.innerHTML = `💬${n ? ' ' + n : ''}`;
-        // Auto-expand if there are comments (transition comments are always present)
-        if (n) {
-          const wrap = container.querySelector(`#rve-fcomments-${f.id}`);
-          if (wrap) wrap.style.display = '';
-        }
-      });
-    }
-
-    document.getElementById('rve-raise-general')?.addEventListener('click', () => {
-      openRaiseFindingModal({ snapshotId: null, templateItemId: null, criterion: '', verdict: '', comment: '', responseId: null });
-    });
-
-    // Status transitions — require a mandatory comment before applying
-    wireFindingTransitionBtns(container, snapMap);
-
-    // Edit (inline)
-    wireFindingEditBtns(container, snapMap);
-
-    // Delete
-    container.querySelectorAll('.rve-fcard-del-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const findingId = btn.dataset.findingId;
-        const f = _findings.find(x => x.id === findingId);
-        if (!confirm(`Delete finding ${f?.finding_code || ''}? This cannot be undone.`)) return;
-        btn.disabled = true;
-        const { error } = await sb.from('review_findings').delete().eq('id', findingId);
-        if (error) { toast('Error: ' + error.message, 'error'); btn.disabled = false; return; }
-        const idx = _findings.findIndex(x => x.id === findingId);
-        if (idx >= 0) _findings.splice(idx, 1);
-        container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`)?.remove();
-        toast(`Finding deleted.`, 'success');
-        updateFindingsBadge();
-        if (!_findings.length) {
-          container.querySelector('.rve-findings-wrap')
-            ?.insertAdjacentHTML('beforeend', `<div class="rv-empty" style="padding:40px 0"><p>No findings yet.</p></div>`);
-        }
-      });
-    });
-
-    // Comments toggle
-    container.querySelectorAll('.rve-fcard-comments-toggle').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const wrap = container.querySelector(`#rve-fcomments-${btn.dataset.findingId}`);
-        if (wrap) wrap.style.display = wrap.style.display === 'none' ? '' : 'none';
-      });
-    });
-
-    // Reply
-    container.querySelectorAll('.rve-fcard-reply-btn').forEach(btn => {
-      btn.addEventListener('click', () => postComment(btn.dataset.findingId));
-    });
-    container.querySelectorAll('.rve-fcard-reply-input').forEach(ta => {
-      ta.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); postComment(ta.dataset.findingId); }
-      });
-    });
-  }
-
-  function wireFindingTransitionBtns(root, snapMap) {
-    root.querySelectorAll('.rve-status-select:not([data-wired])').forEach(sel => {
-      sel.dataset.wired = '1';
-      sel.addEventListener('change', () => {
-        const findingId = sel.dataset.findingId;
-        const toStatus  = sel.value;
-        if (!toStatus || toStatus === sel.dataset.current) { sel.value = sel.dataset.current; return; }
-        const f = _findings.find(x => x.id === findingId);
-        if (!f) return;
-        const card = root.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
-        if (!card || card.querySelector('.rve-trans-confirm-form')) { sel.value = sel.dataset.current; return; }
-
-        sel.disabled = true;
-        const label = TRANSITION_LABELS[toStatus] || FINDING_STATUS_LABELS[toStatus] || toStatus;
-        const form  = document.createElement('div');
-        form.className = 'rve-trans-confirm-form';
-        form.innerHTML = `
-          <span class="rve-trans-confirm-label">${escHtml(label)} — add a comment <span style="color:var(--color-danger,#e53e3e)">*</span></span>
-          <textarea class="form-input rve-trans-comment" rows="2" placeholder="Required…"></textarea>
-          <div class="rve-trans-confirm-btns">
-            <button class="btn btn-primary btn-sm rve-trans-ok-btn">${escHtml(label)}</button>
-            <button class="btn btn-ghost btn-sm rve-trans-cancel-btn">Cancel</button>
-          </div>`;
-
-        card.querySelector('.rve-fcard-row').insertAdjacentElement('afterend', form);
-        form.querySelector('.rve-trans-comment').focus();
-
-        form.querySelector('.rve-trans-cancel-btn').addEventListener('click', () => {
-          form.remove();
-          sel.value = sel.dataset.current;
-          sel.disabled = false;
-        });
-
-        form.querySelector('.rve-trans-ok-btn').addEventListener('click', async () => {
-          const comment = form.querySelector('.rve-trans-comment').value.trim();
-          const ta = form.querySelector('.rve-trans-comment');
-          if (!comment) { ta.focus(); ta.classList.add('input-error'); return; }
-          ta.classList.remove('input-error');
-
-          if (toStatus === 'closed' && f.created_by !== currentUserId) {
-            toast('Only the finding creator can close this finding.', 'error');
-            form.remove();
-            sel.value = sel.dataset.current;
-            sel.disabled = false;
-            return;
-          }
-
-          const okBtn = form.querySelector('.rve-trans-ok-btn');
-          okBtn.disabled = true;
-
-          const { error } = await sb.from('review_findings')
-            .update({ status: toStatus, updated_at: new Date().toISOString() }).eq('id', findingId);
-          if (error) { toast('Error: ' + error.message, 'error'); okBtn.disabled = false; return; }
-
-          await sb.from('review_finding_comments').insert({
-            finding_id: findingId, author_id: currentUserId,
-            comment: `[${FINDING_STATUS_LABELS[toStatus]}] ${comment}`,
-          });
-
-          f.status = toStatus;
-          toast(`Finding ${f.finding_code}: ${FINDING_STATUS_LABELS[toStatus]}`, 'success');
-          card.outerHTML = renderFindingCard(f, snapMap);
-          await wireFindingCard(findingId, snapMap);
-          updateFindingsBadge();
-        });
-      });
-    });
-  }
-
-  function wireFindingEditBtns(root, snapMap) {
-    root.querySelectorAll('.rve-fcard-edit-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const findingId = btn.dataset.findingId;
-        const f = _findings.find(x => x.id === findingId);
-        if (!f) return;
-        const card = root.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
-        if (!card || card.querySelector('.rve-fcard-edit-form')) return;
-
-        const titleWrap = card.querySelector('.rve-fcard-title-wrap');
-        titleWrap.style.display = 'none';
-
-        const form = document.createElement('div');
-        form.className = 'rve-fcard-edit-form';
-        form.innerHTML = `
-          <input class="form-input rve-fcard-edit-title" value="${escHtml(f.title)}" placeholder="Finding title *"/>
-          <div class="rvck-raise-row" style="margin:6px 0">
-            <select class="form-input form-select rve-fcard-edit-severity">
-              ${Object.entries(SEVERITY_LABELS).map(([v, l]) =>
-                `<option value="${v}" ${v === f.severity ? 'selected' : ''}>${l}</option>`).join('')}
-            </select>
-            <button class="btn btn-primary btn-sm rve-fcard-edit-save">Save</button>
-            <button class="btn btn-ghost btn-sm rve-fcard-edit-cancel">Cancel</button>
-          </div>
-          <textarea class="form-input rve-fcard-edit-desc" rows="2" placeholder="Description (optional)…">${escHtml(f.description || '')}</textarea>
-        `;
-        titleWrap.insertAdjacentElement('afterend', form);
-
-        form.querySelector('.rve-fcard-edit-cancel').addEventListener('click', () => {
-          form.remove();
-          titleWrap.style.display = '';
-        });
-
-        form.querySelector('.rve-fcard-edit-save').addEventListener('click', async () => {
-          const title = form.querySelector('.rve-fcard-edit-title').value.trim();
-          if (!title) { form.querySelector('.rve-fcard-edit-title').focus(); return; }
-          const severity    = form.querySelector('.rve-fcard-edit-severity').value;
-          const description = form.querySelector('.rve-fcard-edit-desc').value.trim();
-
-          const saveBtn = form.querySelector('.rve-fcard-edit-save');
-          saveBtn.disabled = true;
-          const { error } = await sb.from('review_findings')
-            .update({ title, severity, description: description || null, updated_at: new Date().toISOString() })
-            .eq('id', findingId);
-          saveBtn.disabled = false;
-          if (error) { toast('Error: ' + error.message, 'error'); return; }
-
-          Object.assign(f, { title, severity, description });
-          card.outerHTML = renderFindingCard(f, snapMap);
-          await wireFindingCard(findingId, snapMap);
-          wireFindingEditBtns(root, snapMap);
-        });
-      });
-    });
-  }
-
-  async function wireFindingCard(findingId, snapMap) {
-    // Load comments for this single card after re-render (split query — no embedded join)
-    const thread = container.querySelector(`#rve-fthread-${findingId}`);
-    if (thread) {
-      const { data: rawComments } = await sb.from('review_finding_comments')
-        .select('id, finding_id, author_id, comment, created_at').eq('finding_id', findingId).order('created_at');
-      const rows = rawComments || [];
-      const authorIds = [...new Set(rows.map(c => c.author_id).filter(Boolean))];
-      const profileMap = {};
-      if (authorIds.length) {
-        const { data: profiles } = await sb.from('user_profiles').select('id, display_name').in('id', authorIds);
-        (profiles || []).forEach(p => { profileMap[p.id] = p.display_name; });
-      }
-      const comments = rows.map(c => ({ ...c, user_profiles: { display_name: profileMap[c.author_id] || null } }));
-      const n = comments.length;
-      thread.innerHTML = n
-        ? comments.map(c => renderComment(c)).join('')
-        : '<span class="text-muted" style="font-size:11px">No comments yet.</span>';
-      const toggleBtn = container.querySelector(`.rve-fcard-comments-toggle[data-finding-id="${findingId}"]`);
-      if (toggleBtn) toggleBtn.innerHTML = `💬${n ? ' ' + n : ''}`;
-      if (n) {
-        const wrap = container.querySelector(`#rve-fcomments-${findingId}`);
-        if (wrap) wrap.style.display = '';
-      }
-    }
-
-    // Wire toggle for this card
-    container.querySelector(`.rve-fcard-comments-toggle[data-finding-id="${findingId}"]`)
-      ?.addEventListener('click', function() {
-        const wrap = container.querySelector(`#rve-fcomments-${findingId}`);
-        if (wrap) wrap.style.display = wrap.style.display === 'none' ? '' : 'none';
-      });
-
-    wireFindingEditBtns(container, snapMap);
-    wireFindingTransitionBtns(container, snapMap);
-
-    const thisCard = () => container.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
-
-    thisCard()?.querySelectorAll('.rve-fcard-del-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const f = _findings.find(x => x.id === findingId);
-        if (!confirm(`Delete finding ${f?.finding_code || ''}? This cannot be undone.`)) return;
-        btn.disabled = true;
-        const { error } = await sb.from('review_findings').delete().eq('id', findingId);
-        if (error) { toast('Error: ' + error.message, 'error'); btn.disabled = false; return; }
-        const idx = _findings.findIndex(x => x.id === findingId);
-        if (idx >= 0) _findings.splice(idx, 1);
-        thisCard()?.remove();
-        toast('Finding deleted.', 'success');
-        updateFindingsBadge();
-      });
-    });
-
-    thisCard()?.querySelectorAll('.rve-fcard-reply-btn').forEach(btn => {
-      btn.addEventListener('click', () => postComment(findingId));
-    });
-    thisCard()?.querySelectorAll('.rve-fcard-reply-input').forEach(ta => {
-      ta.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); postComment(findingId); }
-      });
-    });
-  }
-
-  function renderComment(c) {
-    const name = c.user_profiles?.display_name || c.author_id?.slice(0, 8) || '?';
-    const dt   = formatDateTime(c.created_at);
-    // Highlight transition-prefix comments like "[Accepted] ..."
-    const isStatus = /^\[.+?\]/.test(c.comment);
-    return `<div class="rve-fcard-comment${isStatus ? ' rve-fcard-comment-status' : ''}"><span class="rve-fcard-comment-meta">${escHtml(name)} · ${escHtml(dt)}</span><span class="rve-fcard-comment-text">${escHtml(c.comment)}</span></div>`;
-  }
-
-  async function postComment(findingId) {
-    const ta  = container.querySelector(`.rve-fcard-reply-input[data-finding-id="${findingId}"]`);
-    const btn = container.querySelector(`.rve-fcard-reply-btn[data-finding-id="${findingId}"]`);
-    if (!ta || !ta.value.trim()) { ta?.focus(); return; }
-    if (btn) btn.disabled = true;
-
-    const { data: inserted, error } = await sb.from('review_finding_comments').insert({
-      finding_id: findingId, author_id: currentUserId, comment: ta.value.trim(),
-    }).select('id, finding_id, author_id, comment, created_at').single();
-
-    if (btn) btn.disabled = false;
-    if (error) { toast('Error posting comment: ' + error.message, 'error'); return; }
-    const { data: profile } = await sb.from('user_profiles').select('display_name').eq('id', currentUserId).single();
-    const comment = { ...inserted, user_profiles: profile || null };
-
-    ta.value = '';
-    const thread = container.querySelector(`#rve-fthread-${findingId}`);
-    if (thread) {
-      if (thread.querySelector('.text-muted')) thread.innerHTML = '';
-      thread.insertAdjacentHTML('beforeend', renderComment(comment));
-      thread.lastElementChild?.scrollIntoView({ behavior:'smooth', block:'nearest' });
-    }
-    // Ensure wrap is visible and update count badge
-    const wrap = container.querySelector(`#rve-fcomments-${findingId}`);
-    if (wrap) wrap.style.display = '';
-    const toggleBtn = container.querySelector(`.rve-fcard-comments-toggle[data-finding-id="${findingId}"]`);
-    if (toggleBtn) {
-      const n = thread?.querySelectorAll('.rve-fcard-comment').length || 0;
-      toggleBtn.innerHTML = `💬${n ? ' ' + n : ''}`;
-    }
-  }
-
-  function updateFindingsBadge() {
-    const tab = container.querySelector('[data-tab="findings"]');
-    if (!tab) return;
-    const openCount = _findings.filter(f => f.status === 'open').length;
-    let badge = tab.querySelector('.rve-main-tab-badge');
-    if (openCount > 0) {
-      if (!badge) { badge = document.createElement('span'); badge.className = 'rve-main-tab-badge'; tab.appendChild(badge); }
-      badge.textContent = openCount;
-    } else { badge?.remove(); }
-  }
-
   // ── Raise Finding modal ──────────────────────────────────────────────────────
 
   function openRaiseFindingModal({ snapshotId, templateItemId, criterion, verdict, comment, responseId, isOpenPoint }) {
@@ -1061,19 +605,6 @@ export async function renderReviewExecute(container, ctx) {
       const panel = document.getElementById('rve-checklist-panel');
       if (panel?._addFinding) panel._addFinding(finding);
 
-      if (_activeTab === 'findings') {
-        const snapMap = {};
-        (snapshots || []).forEach(s => { snapMap[s.id] = s; });
-        const wrap = container.querySelector('.rve-findings-wrap');
-        if (wrap) {
-          wrap.querySelector('.rve-findings-header + *')?.remove?.();
-          const newCard = document.createElement('div');
-          newCard.innerHTML = renderFindingCard(finding, snapMap);
-          wrap.querySelector('.rve-findings-header')?.insertAdjacentHTML('afterend', renderFindingCard(finding, snapMap));
-          wireFindingCard(finding.id, snapMap);
-        }
-      }
-      updateFindingsBadge();
       refreshArtifactCard(_selectedSnapshot);
     };
     document.getElementById('fnd-title').focus();
