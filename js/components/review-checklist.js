@@ -41,18 +41,13 @@ const SEVERITY_CLASSES = {
 const SEVERITY_LABELS  = { critical:'Critical', major:'Major', minor:'Minor', observation:'Observation' };
 
 const TRANSITIONS = {
-  open:        ['accepted','rejected','duplicate'],
-  accepted:    ['in_progress','deferred','rejected'],
-  in_progress: ['fixed','deferred'],
-  deferred:    ['in_progress','rejected'],
-  fixed:       ['verified','in_progress'],
-  verified:    ['closed','in_progress'],
-  closed:[], duplicate:[], rejected:[],
+  open:     ['accepted', 'rejected'],
+  accepted: ['fixed'],
+  fixed:    ['closed'],
+  closed:[], rejected:[],
 };
 const TRANSITION_LABELS = {
-  accepted:'✓ Accept', in_progress:'▶ Start', deferred:'⏸ Defer',
-  fixed:'✔ Mark Fixed', verified:'★ Verify', closed:'✓ Close',
-  rejected:'✕ Reject', duplicate:'⊘ Duplicate',
+  accepted:'✓ Accept', fixed:'✔ Mark Fixed', closed:'✓ Close', rejected:'✕ Reject',
 };
 
 const ARTIFACT_DISPLAY_FIELDS = {

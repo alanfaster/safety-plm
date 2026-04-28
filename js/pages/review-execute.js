@@ -34,15 +34,13 @@ const FINDING_STATUS_CLASSES = {
   closed:'rv-fs-closed', duplicate:'rv-fs-closed', rejected:'rv-fs-closed',
 };
 const TRANSITIONS = {
-  open:['accepted','rejected','duplicate'], accepted:['in_progress','deferred','rejected'],
-  in_progress:['fixed','deferred'], deferred:['in_progress','rejected'],
-  fixed:['verified','in_progress'], verified:['closed','in_progress'],
-  closed:[], duplicate:[], rejected:[],
+  open:     ['accepted', 'rejected'],
+  accepted: ['fixed'],
+  fixed:    ['closed'],
+  closed:[], rejected:[],
 };
 const TRANSITION_LABELS = {
-  accepted:'✓ Accept', in_progress:'▶ Start', deferred:'⏸ Defer',
-  fixed:'✔ Mark Fixed', verified:'★ Verify', closed:'✓ Close',
-  rejected:'✕ Reject', duplicate:'⊘ Duplicate',
+  accepted:'✓ Accept', fixed:'✔ Mark Fixed', closed:'✓ Close', rejected:'✕ Reject',
 };
 
 const FINAL_VERDICT_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-GO' };
