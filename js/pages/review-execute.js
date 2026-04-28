@@ -734,9 +734,8 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   function wireFindingTransitionBtns(root, snapMap) {
-    root.querySelectorAll('.rve-fcard-trans-btn').forEach(btn => {
-      if (btn._transWired) return;
-      btn._transWired = true;
+    root.querySelectorAll('.rve-fcard-trans-btn:not([data-wired])').forEach(btn => {
+      btn.dataset.wired = '1';
       btn.addEventListener('click', () => {
         const findingId = btn.dataset.findingId;
         const toStatus  = btn.dataset.to;
@@ -745,7 +744,7 @@ export async function renderReviewExecute(container, ctx) {
         const card = root.querySelector(`.rve-fcard[data-finding-id="${findingId}"]`);
         if (!card || card.querySelector('.rve-trans-confirm-form')) return;
 
-        // Hide transition buttons while confirming
+        // Hide all transition buttons in the right column while confirming
         card.querySelectorAll('.rve-fcard-trans-btn').forEach(b => b.style.display = 'none');
 
         const label = TRANSITION_LABELS[toStatus] || FINDING_STATUS_LABELS[toStatus] || toStatus;
@@ -759,7 +758,8 @@ export async function renderReviewExecute(container, ctx) {
             <button class="btn btn-ghost btn-sm rve-trans-cancel-btn">Cancel</button>
           </div>`;
 
-        card.querySelector('.rve-fcard-transitions')?.insertAdjacentElement('afterend', form);
+        // Insert below the main row (no .rve-fcard-transitions div in compact layout)
+        card.querySelector('.rve-fcard-row').insertAdjacentElement('afterend', form);
         form.querySelector('.rve-trans-comment').focus();
 
         form.querySelector('.rve-trans-cancel-btn').addEventListener('click', () => {
