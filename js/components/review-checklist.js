@@ -68,7 +68,7 @@ export function mountReviewChecklist(container, opts) {
     reviewers = [], findings = [], artifactVerdict = null,
     isDrifted = false,
     responseSnapshot,        // if provided, responses are saved/read against this snapshot (shared mode)
-    onSaved, onFindingRaise, onReSnapshotRequest, onVerdictSaved,
+    onSaved, onFindingRaise, onFindingCreated, onReSnapshotRequest, onVerdictSaved,
   } = opts;
 
   // In shared mode the checklist snapshot (where responses are stored) differs from the display snapshot
@@ -388,10 +388,11 @@ export function mountReviewChecklist(container, opts) {
 
         if (error) { console.error('Failed to save finding', error); return; }
 
-        // Add to local state + render
+        // Add to local state + notify parent
         findings.push(newFinding);
         if (!findingsByItem[itemId]) findingsByItem[itemId] = [];
         findingsByItem[itemId].push(newFinding);
+        onFindingCreated?.(newFinding);
 
         const slot = container.querySelector(`#rvck-item-findings-${itemId}`);
         if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(newFinding)); wireInlineTransitions(container); wireInlineDeletes(container); wireInlineReplies(container); }

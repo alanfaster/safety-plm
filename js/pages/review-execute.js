@@ -310,6 +310,7 @@ export async function renderReviewExecute(container, ctx) {
         else refreshArtifactCard(snap);
       },
       onFindingRaise: opts => openRaiseFindingModal(opts),
+      onFindingCreated: f => { _findings.push(f); updateFindingsBadge(); refreshArtifactCard(snap); },
       onReSnapshotRequest: async () => { await reSnapshot(snap); loadPropsPanel(); },
     });
   }
