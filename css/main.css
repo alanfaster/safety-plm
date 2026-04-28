@@ -6253,3 +6253,6 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rt-diff-old             { color:#c5221f; width:40%; }
 .rt-diff-new             { color:#1b6e2e; width:40%; }
 .rt-diff-detail          { font-size:11px; color:var(--text-muted); margin-top:2px; }
+
+/* ── Reviews table row hover ────────────────────────────────────────── */
+.rv-sessions-table tbody tr:hover td { background: #f0f6ff; cursor: pointer; }
