@@ -857,6 +857,15 @@ export async function renderReviewExecute(container, ctx) {
     const drifted       = driftMap[snap.artifact_id];
     const pct           = totalItems ? Math.round(myDone / totalItems * 100) : 0;
 
+    // All reviewers' artifact-level verdicts as mini pills
+    const verdictPills = reviewerList.map(r => {
+      const v = _artifactVerdicts.find(x => x.snapshot_id === snap.id && x.reviewer_id === r.user_id)?.verdict;
+      const initial = (r.display_name || r.role || '?').charAt(0).toUpperCase();
+      const title   = `${r.display_name || r.role}: ${v ? FINAL_VERDICT_LABELS[v] : 'Pending'}`;
+      if (!v) return `<span class="rve-rv-mini rve-rv-mini--pending" title="${escHtml(title)}">${escHtml(initial)}</span>`;
+      return `<span class="rve-rv-mini rve-rv-mini--${v}" title="${escHtml(title)}">${escHtml(initial)}</span>`;
+    }).join('');
+
     return `
       <div class="rve-art-card ${mv ? FINAL_VERDICT_CLASSES[mv] : ''}" data-snap-id="${snap.id}">
         <div class="rve-art-card-header">
@@ -864,7 +873,6 @@ export async function renderReviewExecute(container, ctx) {
           ${snap.artifact_version != null ? `<span class="artifact-version-badge">v${snap.artifact_version}</span>` : ''}
           <div style="display:flex;gap:4px;align-items:center;margin-left:auto">
             ${drifted ? `<span class="rve-drift-badge" title="Changed since snapshot">⚠</span>` : ''}
-            ${mv ? `<span class="rve-artcard-verdict-badge rve-artcard-verdict-${mv}">${mv === 'go' ? '✓ GO' : mv === 'no_go' ? '✗ NO-GO' : '⚑ Cond.'}</span>` : ''}
           </div>
         </div>
         <div class="rve-art-title">${escHtml(snap.artifact_title || '—')}</div>
@@ -874,6 +882,7 @@ export async function renderReviewExecute(container, ctx) {
             <span class="text-muted">${myDone}/${totalItems} items</span>
             ${openFnds ? `<span class="rv-fs-open" style="font-size:10px;padding:1px 5px;border-radius:8px;border:1px solid">⚑ ${openFnds}</span>` : ''}
           </div>` : '<span class="text-muted" style="font-size:11px">No checklist</span>'}
+        ${verdictPills ? `<div class="rve-rv-mini-row">${verdictPills}</div>` : ''}
         ${drifted ? `<div class="rve-obsolete-badge">OBSOLETE</div>` : ''}
       </div>
     `;
@@ -945,15 +954,9 @@ export async function renderReviewExecute(container, ctx) {
     const data   = snap.snapshot_data || {};
     const fields = ARTIFACT_DISPLAY_FIELDS[snap.artifact_type] || ['title','status'];
 
-    const myVerdict   = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
-    const mv          = myVerdict?.verdict || null;
-    const otherVerdicts = reviewerList
-      .filter(r => r.user_id !== currentUserId)
-      .map(r => {
-        const v = _artifactVerdicts.find(x => x.snapshot_id === snap.id && x.reviewer_id === r.user_id);
-        return v ? { display_name: r.display_name, verdict: v.verdict } : null;
-      }).filter(Boolean);
-    const drifted = !!driftMap[snap.artifact_id];
+    const myVerdict = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
+    const mv        = myVerdict?.verdict || null;
+    const drifted   = !!driftMap[snap.artifact_id];
 
     // Load comment thread — fetch rows then resolve display names separately
     const { data: rawComments } = await sb
@@ -1002,7 +1005,7 @@ export async function renderReviewExecute(container, ctx) {
         <div class="rve-props-divider"></div>
 
         <div class="rve-props-verdict-section">
-          <div class="rve-props-verdict-label">Reviewer Verdict</div>
+          <div class="rve-props-verdict-label">My Verdict</div>
           <div class="rve-props-verdict-btns">
             ${['go','conditional','no_go'].map(v => `
               <button class="rve-props-vbtn ${mv === v ? 'rve-props-vbtn-' + v + ' active' : ''}"
@@ -1010,12 +1013,21 @@ export async function renderReviewExecute(container, ctx) {
                 ${v === 'go' ? '✓ GO' : v === 'no_go' ? '✗ NO-GO' : '⚑ Conditional'}
               </button>`).join('')}
           </div>
-          ${otherVerdicts.length ? `
-            <div class="rve-props-other-verdicts">
-              ${otherVerdicts.map(ov => `
-                <span class="rvck-rv-pill ${ov.verdict || ''}" title="${escHtml(ov.display_name)}">
-                  ${escHtml(ov.display_name.charAt(0))}: ${FINAL_VERDICT_LABELS[ov.verdict] || '—'}
-                </span>`).join('')}
+
+          ${reviewerList.length > 1 ? `
+            <div class="rve-props-verdict-label" style="margin-top:10px">All Reviewer Verdicts</div>
+            <div class="rve-props-reviewers-table">
+              ${reviewerList.map(r => {
+                const rv = _artifactVerdicts.find(x => x.snapshot_id === snap.id && x.reviewer_id === r.user_id);
+                const v  = rv?.verdict;
+                const isMe = r.user_id === currentUserId;
+                return `<div class="rve-props-rv-row">
+                  <span class="rve-props-rv-name ${isMe ? 'rve-props-rv-me' : ''}">${escHtml(r.display_name || r.role || '?')}${isMe ? ' (me)' : ''}</span>
+                  ${v
+                    ? `<span class="rve-props-rv-verdict rve-props-rv-verdict--${v}">${FINAL_VERDICT_LABELS[v]}</span>`
+                    : `<span class="rve-props-rv-pending">Pending</span>`}
+                </div>`;
+              }).join('')}
             </div>` : ''}
         </div>
 

@@ -188,25 +188,6 @@ export function mountReviewChecklist(container, opts) {
     const myComment = myResp?.comment || '';
     const needsComment = myVerdict === 'nok' || myVerdict === 'partially_ok';
 
-    // Other reviewers' verdict pills
-    const otherPills = reviewers.filter(r => r.user_id !== currentUserId).map(r => {
-      const rv    = responseIndex[item.id]?.[r.user_id];
-      const label = escHtml(r.role || r.display_name?.charAt(0) || '?');
-      const title = `${escHtml(r.display_name || r.role)}: `;
-      if (!rv) return `<span class="rvck-rv-pill rvck-rv-pending" title="${title}pending">${label}: —</span>`;
-      return `<span class="rvck-rv-pill ${rv.verdict}" title="${title}${VERDICT_LABELS[rv.verdict]}">${label}: ${VERDICT_LABELS[rv.verdict]}</span>`;
-    }).join('');
-
-    // Consensus
-    const allV = reviewers.map(r => responseIndex[item.id]?.[r.user_id]?.verdict).filter(Boolean);
-    let consensus = '';
-    if (allV.length && allV.length === reviewers.length) {
-      const allSame = allV.every(v => v === allV[0]);
-      consensus = allSame
-        ? `<span class="rvck-consensus ${VERDICT_CLASSES[allV[0]] || ''}" title="All agree">✓ ${VERDICT_LABELS[allV[0]]}</span>`
-        : `<span class="rvck-consensus rvck-consensus-split">⚡ Split</span>`;
-    }
-
     // Item-linked findings
     const itemFindings = findingsByItem[item.id] || [];
 
@@ -220,7 +201,6 @@ export function mountReviewChecklist(container, opts) {
           </div>
 
           <div class="rvck-item-controls">
-            ${otherPills ? `<div class="rvck-other-pills">${otherPills} ${consensus}</div>` : ''}
             <div class="rvck-verdict-row">
               <div class="rvck-verdict-pills">
                 ${['ok','nok','partially_ok','na'].map(v => `
