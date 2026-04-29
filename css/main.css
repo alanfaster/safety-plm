@@ -592,6 +592,12 @@ input, select, textarea { font-family: var(--font); }
 .page-header h1 { font-size: var(--text-2xl); font-weight: 700; color: var(--color-text); }
 .page-header p { font-size: var(--text-sm); color: var(--color-text-muted); margin-top: 4px; }
 
+.page-tabs-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 16px; padding-right: 4px;
+}
+.page-tabs-bar .page-tabs { margin-top: 0; }
+
 .page-tabs {
   display: flex; gap: 0; border-bottom: none;
   margin-top: 16px;

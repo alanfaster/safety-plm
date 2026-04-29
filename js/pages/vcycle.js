@@ -60,7 +60,6 @@ export async function renderVcycle(container, { project, item, system, phase, do
 
   if (phase === 'item_definition') {
     await renderItemDefinition(container, { project, item, system, domain, pageId });
-    if (REVIEWABLE_PHASES.has(phase)) injectReviewActions(project, item, system, phase, domain, pageId);
     return;
   }
 
@@ -71,7 +70,6 @@ export async function renderVcycle(container, { project, item, system, phase, do
     // SW / HW / MECH domains always use the Architecture Specification table layout
     if (domain === 'sw' || domain === 'hw' || domain === 'mech') {
       await renderArchSpec(container, { project, item, system, parentType, parentId, domain, pageId });
-      injectReviewActions(project, item, system, phase, domain, pageId);
       return;
     }
 
@@ -80,18 +78,15 @@ export async function renderVcycle(container, { project, item, system, phase, do
       const { data: pg } = await sb.from('nav_pages').select('name').eq('id', pageId).maybeSingle();
       if (pg?.name?.toLowerCase().includes('specification')) {
         await renderArchSpec(container, { project, item, system, parentType, parentId, domain, pageId });
-        injectReviewActions(project, item, system, phase, domain, pageId);
         return;
       }
     }
     await renderArchitecture(container, { project, item, system, domain, pageId });
-    injectReviewActions(project, item, system, phase, domain, pageId);
     return;
   }
 
   if (['unit_testing', 'integration_testing', 'system_testing'].includes(phase)) {
     await renderTestSpecs(container, { project, item, system, phase, domain, pageId });
-    injectReviewActions(project, item, system, phase, domain, pageId);
     return;
   }
 
@@ -99,7 +94,6 @@ export async function renderVcycle(container, { project, item, system, phase, do
     const parentType = system ? 'system' : 'item';
     const parentId   = system ? system.id : item.id;
     await renderRequirements(container, { project, item, system, parentType, parentId, domain, pageId });
-    injectReviewActions(project, item, system, phase, domain, pageId);
     return;
   }
 
@@ -161,8 +155,6 @@ export async function renderVcycle(container, { project, item, system, phase, do
       </div>
     </div>
   `;
-
-  if (REVIEWABLE_PHASES.has(phase)) injectReviewActions(project, item, system, phase, domain, pageId);
 
   document.getElementById('btn-save-doc').onclick = async () => {
     const text      = document.getElementById('doc-text').value;

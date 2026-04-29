@@ -95,11 +95,13 @@ export async function renderRequirements(container, { project, item, system, par
         </div>
         <div></div>
       </div>
-      ${!typeFilter ? `
-      <div class="page-tabs">
-        <button class="page-tab active" data-tab="list">All Requirements</button>
-        <button class="page-tab" data-tab="matrix">Traceability</button>
-      </div>` : ''}
+      <div class="page-tabs-bar">
+        <div class="page-tabs">
+          <button class="page-tab active" data-tab="list">All Requirements</button>
+          <button class="page-tab" data-tab="reviews">Reviews</button>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-start-review-page">✓ Start Review</button>
+      </div>
     </div>
     <div class="page-body spec-page-body" id="req-outer">
       <nav class="spec-nav" id="req-nav">
@@ -142,20 +144,27 @@ export async function renderRequirements(container, { project, item, system, par
   document.getElementById('req-nav-expand').onclick     = () => toggleReqNav(true);
   document.getElementById('req-trace-panel-close').onclick = () => closeTracePanel();
 
-  if (!typeFilter) {
-    container.querySelectorAll('.page-tab').forEach(tab => {
-      tab.onclick = () => {
-        container.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        const isMatrix = tab.dataset.tab === 'matrix';
-        document.getElementById('req-nav')?.classList.toggle('spec-nav--hidden', isMatrix);
-        const fab = document.getElementById('req-fab');
-        if (fab) fab.style.display = isMatrix ? 'none' : '';
-        if (isMatrix) renderTraceability();
-        else loadData();
-      };
-    });
-  }
+  container.querySelectorAll('.page-tab').forEach(tab => {
+    tab.onclick = () => {
+      container.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const isReviews = tab.dataset.tab === 'reviews';
+      document.getElementById('req-nav')?.classList.toggle('spec-nav--hidden', isReviews);
+      const fab = document.getElementById('req-fab');
+      if (fab) fab.style.display = isReviews ? 'none' : '';
+      if (isReviews) renderPageReviews();
+      else loadData();
+    };
+  });
+
+  document.getElementById('btn-start-review-page').onclick = () => {
+    const base = `/project/${project.id}/item/${item.id}`;
+    const parentTypePfx = system ? 'system' : 'item';
+    const parentIdCtx   = system ? system.id : item.id;
+    let url = `${base}/reviews/new?phase=requirements&domain=${encodeURIComponent(domainKey)}&parentType=${parentTypePfx}&parentId=${parentIdCtx}`;
+    if (pageId) url += `&pageId=${pageId}`;
+    navigate(url);
+  };
 
   await loadData();
   applyGotoTarget();
@@ -2158,21 +2167,85 @@ function openReqModal({ project, parentType, parentId, projectType, existing, de
   };
 }
 
-// ── Traceability placeholder ──────────────────────────────────────────────────
+// ── Reviews tab ───────────────────────────────────────────────────────────────
 
-function renderTraceability() {
+async function renderPageReviews() {
   const body = document.getElementById('req-body');
   if (!body) return;
+  body.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
+
+  const { project, item, system, parentType, parentId, pageId } = _ctx;
+  const base = `/project/${project.id}/item/${item.id}`;
+
+  // Find sessions that contain snapshots for any requirement belonging to this page
+  const reqIds = _data.filter(r => r.type !== 'title' && r.type !== 'info').map(r => r.id);
+
+  let sessions = [];
+  if (reqIds.length) {
+    const { data: snaps } = await sb.from('review_artifact_snapshots')
+      .select('session_id')
+      .eq('artifact_type', 'requirements')
+      .in('artifact_id', reqIds);
+    const sessionIds = [...new Set((snaps || []).map(s => s.session_id))];
+    if (sessionIds.length) {
+      const { data } = await sb.from('review_sessions')
+        .select('*, review_protocol_templates(name)')
+        .in('id', sessionIds)
+        .order('created_at', { ascending: false });
+      sessions = data || [];
+    }
+  }
+
+  const STATUS_BADGE = {
+    planned: 'badge-draft', in_progress: 'badge-review',
+    completed: 'badge-approved', cancelled: 'badge-deprecated',
+  };
+
+  if (!sessions.length) {
+    body.innerHTML = `
+      <div class="card">
+        <div class="card-body">
+          <div class="diagram-area">
+            <div class="diagram-area-icon">📋</div>
+            <p>No reviews yet for this page.</p>
+            <p class="text-muted" style="font-size:12px">Click <strong>✓ Start Review</strong> to create one.</p>
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
+
   body.innerHTML = `
     <div class="card">
-      <div class="card-body">
-        <div class="diagram-area">
-          <div class="diagram-area-icon">🔗</div>
-          <p>Traceability matrix — coming in next version.</p>
-          <p class="text-muted" style="font-size:12px">Links requirements to test cases, architecture elements, and safety goals.</p>
-        </div>
+      <div class="card-body" style="padding:0">
+        <table class="data-table">
+          <thead><tr>
+            <th>Title</th><th>Type</th><th>Template</th><th>Status</th><th>Date</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${sessions.map(s => `
+              <tr>
+                <td>${esc(s.title)}</td>
+                <td><span class="badge" style="text-transform:capitalize">${esc(s.review_type || '')}</span></td>
+                <td>${esc(s.review_protocol_templates?.name || '—')}</td>
+                <td><span class="badge ${STATUS_BADGE[s.status] || ''}">${esc(s.status || '')}</span></td>
+                <td>${s.planned_date || '—'}</td>
+                <td>
+                  <button class="btn btn-ghost btn-xs rv-open-btn" data-id="${s.id}">Open</button>
+                  <button class="btn btn-ghost btn-xs rv-findings-btn" data-id="${s.id}">Findings</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
       </div>
     </div>`;
+
+  body.querySelectorAll('.rv-open-btn').forEach(btn => {
+    btn.onclick = () => navigate(`${base}/reviews/${btn.dataset.id}/execute`);
+  });
+  body.querySelectorAll('.rv-findings-btn').forEach(btn => {
+    btn.onclick = () => navigate(`${base}/reviews/${btn.dataset.id}/findings`);
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
