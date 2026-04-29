@@ -5594,6 +5594,21 @@ th.col-th-dragging * { pointer-events: none; }
 .rve-artlist-title   { font-size: 12px; font-weight: 600; flex: 1; }
 .rve-artlist-count   { color: var(--text-muted); font-weight: 400; }
 .rve-artlist-actions { display: flex; gap: 4px; flex-shrink: 0; margin-left: auto; }
+
+/* Bulk verdict bar */
+.rve-bulk-verdict-bar   { display: flex; align-items: center; gap: 5px; width: 100%;
+  padding: 4px 2px 2px; border-top: 1px solid var(--border); margin-top: 2px; }
+.rve-bulk-verdict-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.rve-bulk-btn           { font-size: 11px; font-weight: 700; padding: 3px 9px;
+  border-radius: 12px; border: 1px solid transparent; cursor: pointer;
+  transition: opacity .12s; white-space: nowrap; }
+.rve-bulk-btn:disabled  { opacity: .5; cursor: default; }
+.rve-bulk-btn--go        { background: #1e8e3e; color: #fff; border-color: #1e8e3e; }
+.rve-bulk-btn--go:hover  { background: #1a7a36; }
+.rve-bulk-btn--no_go     { background: #d93025; color: #fff; border-color: #d93025; }
+.rve-bulk-btn--no_go:hover { background: #c0271e; }
+.rve-bulk-btn--conditional { background: #e37400; color: #fff; border-color: #e37400; }
+.rve-bulk-btn--conditional:hover { background: #cc6900; }
 .rve-filter-active-badge { font-size: 10px; background: #e8f0fe; color: #1558d6;
   border: 1px solid #c5d8fb; border-radius: 10px; padding: 1px 7px; white-space: nowrap; }
 

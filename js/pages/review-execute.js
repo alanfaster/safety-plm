@@ -136,10 +136,22 @@ export async function renderReviewExecute(container, ctx) {
     return [...seen];
   }
 
+  function buildBulkVerdictBar() {
+    return `
+      <div class="rve-bulk-verdict-bar" id="rve-bulk-verdict-bar">
+        <span class="rve-bulk-verdict-label">All:</span>
+        <button class="rve-bulk-btn rve-bulk-btn--go"          data-bulk-verdict="go">✓ GO</button>
+        <button class="rve-bulk-btn rve-bulk-btn--conditional" data-bulk-verdict="conditional">⚑ Cond.</button>
+        <button class="rve-bulk-btn rve-bulk-btn--no_go"       data-bulk-verdict="no_go">✗ NO-GO</button>
+        <button class="btn btn-ghost btn-xs rve-bulk-cancel-btn" title="Cancel">✕</button>
+      </div>`;
+  }
+
   function buildExpandedToolbar() {
     return `
       <div class="rve-artlist-actions">
         <button class="btn btn-ghost btn-xs" id="rve-col-picker-btn" title="Show/hide columns">⊞ Columns</button>
+        <button class="btn btn-ghost btn-xs" id="rve-bulk-verdict-btn" title="Set verdict for all artifacts">⊟ Bulk verdict</button>
         <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Collapse list">⊟ Collapse</button>
       </div>`;
   }
@@ -330,6 +342,7 @@ export async function renderReviewExecute(container, ctx) {
           <div class="rve-artlist-toolbar" id="rve-artlist-toolbar">
             ${_listExpanded ? buildExpandedToolbar() : `
               <span class="rve-artlist-title">Artifacts <span class="rve-artlist-count">(${(snapshots||[]).length})</span></span>
+              <button class="btn btn-ghost btn-xs" id="rve-bulk-verdict-btn" title="Set verdict for all artifacts">⊟ Bulk verdict</button>
               <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Expand artifact table">⊞ Expand</button>`}
           </div>
           <div id="rve-artlist-body">
@@ -502,6 +515,7 @@ export async function renderReviewExecute(container, ctx) {
     list.querySelector('#rve-artlist-toolbar').innerHTML = _listExpanded
       ? buildExpandedToolbar()
       : `<span class="rve-artlist-title">Artifacts <span class="rve-artlist-count">(${(snapshots||[]).length})</span></span>
+         <button class="btn btn-ghost btn-xs" id="rve-bulk-verdict-btn" title="Set verdict for all artifacts">⊟ Bulk verdict</button>
          <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Expand">⊞ Expand</button>`;
     list.querySelector('#rve-artlist-body').innerHTML = renderArtifactListBody();
 
@@ -533,6 +547,28 @@ export async function renderReviewExecute(container, ctx) {
       }
       rebuildArtifactList();
       if (!_listExpanded && _selectedSnapshot) loadPropsPanel();
+    });
+
+    // Bulk verdict button — injects a verdict bar inside the toolbar
+    root.querySelector('#rve-bulk-verdict-btn')?.addEventListener('click', e => {
+      e.stopPropagation();
+      const toolbar = root.querySelector('#rve-artlist-toolbar');
+      if (!toolbar || toolbar.querySelector('#rve-bulk-verdict-bar')) return;
+      toolbar.insertAdjacentHTML('beforeend', buildBulkVerdictBar());
+
+      toolbar.querySelector('.rve-bulk-cancel-btn').addEventListener('click', () => {
+        toolbar.querySelector('#rve-bulk-verdict-bar')?.remove();
+      });
+
+      toolbar.querySelectorAll('[data-bulk-verdict]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const verdict = btn.dataset.bulkVerdict;
+          btn.disabled = true;
+          btn.textContent = '…';
+          await applyBulkVerdict(verdict);
+          toolbar.querySelector('#rve-bulk-verdict-bar')?.remove();
+        });
+      });
     });
 
     // Resize handle drag
@@ -1180,6 +1216,14 @@ export async function renderReviewExecute(container, ctx) {
     const authorId = last.querySelector('.rve-comment-edit-btn, .rve-comment-del-btn')?.dataset?.id;
     // We can't know the author_id from DOM alone after removal — reload the panel to be safe
     loadPropsPanel();
+  }
+
+  async function applyBulkVerdict(verdict) {
+    const snaps = snapshots || [];
+    await Promise.all(snaps.map(snap => saveArtifactVerdict(snap, verdict)));
+    // Refresh props panel if open so verdict buttons update
+    if (_selectedSnapshot && !_propsCollapsed) await loadPropsPanel();
+    toast(`Verdict set to ${FINAL_VERDICT_LABELS[verdict]} for ${snaps.length} artifact${snaps.length !== 1 ? 's' : ''}.`, 'success');
   }
 
   async function saveArtifactVerdict(snap, verdict) {
