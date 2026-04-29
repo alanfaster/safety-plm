@@ -831,7 +831,7 @@ export async function renderReviewSessionWizard(container, ctx) {
     // ── Context mode: launched from a specific page — show flat artifact list ──
 
     if (_ctxPhase && _ctxParentId) {
-      renderContextMode(body);
+      await renderContextMode(body);
       return;
     }
 
@@ -851,35 +851,56 @@ export async function renderReviewSessionWizard(container, ctx) {
 
     wireStep2(body);
 
-    function renderContextMode(root) {
-      // Get the relevant artifacts for this context
-      const pPrefix = _ctxParentType === 'system' ? 'sys' : 'item';
+    async function renderContextMode(root) {
+      root.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
 
-      // Build artifact list for this context
       let ctxArtifacts = [];
       let baseType = '';
 
-      if (_ctxPageId) {
-        // Sub-page: use getReqsForPage equivalent
-        const page = Object.values(state.navPages).flat().find(p => p.id === _ctxPageId);
-        if (page) {
-          const reqs = getReqsForPage(page);
-          if (reqs !== null) {
-            ctxArtifacts = reqs;
-            baseType = 'requirements';
-          }
+      // Direct DB query mirroring the exact filters each page renderer uses
+      if (_ctxPhase === 'requirements') {
+        baseType = 'requirements';
+        // Mirror requirements.js loadData: domain + parent, exclude structural rows
+        // For a sub-page with a name, derive typeFilter the same way
+        let pageName = '';
+        if (_ctxPageId) {
+          const pg = Object.values(state.navPages).flat().find(p => p.id === _ctxPageId);
+          pageName = (pg?.name || '').toLowerCase();
         }
-      } else {
-        // Phase-level: pick artifacts from artsByLeaf for this parent
-        const artType = PHASE_ART_TYPE[_ctxPhase];
-        if (artType) {
-          const [bt, lvl] = artType.split(':');
-          baseType = bt;
-          const key = lvl
-            ? `art:${pPrefix}:${_ctxParentId}:${bt}:${lvl}`
-            : `art:${pPrefix}:${_ctxParentId}:${artType}`;
-          ctxArtifacts = artsByLeaf[key] || [];
-        }
+        let typeFilter = null;
+        if (pageName.includes('interface'))   typeFilter = ['interface'];
+        else if (pageName.includes('safety')) typeFilter = ['safety', 'safety-independency'];
+
+        const domainKey = _ctxParentType === 'system' ? (_ctxDomain || 'system') : 'item';
+        let q = sb.from('requirements')
+          .select('id, req_code, title, status, type, domain, parent_type, parent_id')
+          .eq('parent_type', _ctxParentType).eq('parent_id', _ctxParentId)
+          .eq('domain', domainKey)
+          .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+
+        if (typeFilter)         q = q.in('type', typeFilter);
+        else                    q = q.not('type', 'in', '("interface","safety-independency","title","info")');
+
+        const { data } = await q;
+        ctxArtifacts = (data || []).map(r => ({ ...r, code: r.req_code }));
+
+      } else if (_ctxPhase === 'architecture') {
+        baseType = 'arch_spec_items';
+        const { data } = await sb.from('arch_spec_items')
+          .select('id, spec_code, title, status, type, parent_type, parent_id')
+          .eq('parent_type', _ctxParentType).eq('parent_id', _ctxParentId)
+          .order('spec_code');
+        ctxArtifacts = (data || []).map(r => ({ ...r, code: r.spec_code }));
+
+      } else if (['unit_testing','integration_testing','system_testing','validation'].includes(_ctxPhase)) {
+        baseType = 'test_specs';
+        const levelMap = { unit_testing:'unit', integration_testing:'integration', system_testing:'system', validation:'validation' };
+        const { data } = await sb.from('test_specs')
+          .select('id, test_code, name, status, level, parent_type, parent_id')
+          .eq('parent_type', _ctxParentType).eq('parent_id', _ctxParentId)
+          .eq('level', levelMap[_ctxPhase])
+          .order('test_code');
+        ctxArtifacts = (data || []).map(r => ({ ...r, code: r.test_code, title: r.name }));
       }
 
       if (!state.selected[baseType]) state.selected[baseType] = new Set();
