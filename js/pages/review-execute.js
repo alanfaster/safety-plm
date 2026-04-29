@@ -273,6 +273,7 @@ export async function renderReviewExecute(container, ctx) {
             ${session.checklist_mode === 'shared' ? `<span class="rve-tpl-tag" title="One checklist shared across all artifacts">⇔ Shared checklist</span>` : ''}
           </div>
           <div class="rve-topbar-right">
+            <button class="btn btn-ghost btn-sm" id="rve-btn-refresh" title="Refresh responses and findings from other reviewers">↺ Refresh</button>
             ${session.status === 'in_progress' ? `<button class="btn btn-primary btn-sm" id="rve-btn-complete">✓ Complete Review</button>` : ''}
           </div>
         </div>
@@ -281,6 +282,7 @@ export async function renderReviewExecute(container, ctx) {
     `;
 
     document.getElementById('rve-btn-complete')?.addEventListener('click', completeSession);
+    document.getElementById('rve-btn-refresh')?.addEventListener('click', () => refreshFromServer());
     wireReviewTab();
   }
 
@@ -744,6 +746,53 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   // ── Complete session ──────────────────────────────────────────────────────────
+
+  // ── Live refresh (parallel reviewers) ───────────────────────────────────────
+  let _refreshTimer = null;
+
+  async function refreshFromServer(silent = false) {
+    const btn = document.getElementById('rve-btn-refresh');
+    if (btn && !silent) { btn.disabled = true; btn.textContent = '↺ …'; }
+
+    const [{ data: freshResponses }, { data: freshFindings }] = await Promise.all([
+      sb.from('review_checklist_responses').select('*').eq('session_id', sessionId),
+      sb.from('review_findings').select('*').eq('session_id', sessionId).order('created_at'),
+    ]);
+
+    let changed = false;
+
+    // Merge new responses (don't overwrite current user's in-flight edits)
+    (freshResponses || []).forEach(r => {
+      if (r.reviewer_id === currentUserId) return; // skip own — already up to date
+      const existing = _allResponses.find(x =>
+        x.snapshot_id === r.snapshot_id && x.template_item_id === r.template_item_id && x.reviewer_id === r.reviewer_id);
+      if (!existing) { _allResponses.push(r); changed = true; }
+      else if (existing.verdict !== r.verdict || existing.comment !== r.comment) {
+        existing.verdict = r.verdict; existing.comment = r.comment; changed = true;
+      }
+    });
+
+    // Merge new findings
+    (freshFindings || []).forEach(f => {
+      const existing = _findings.find(x => x.id === f.id);
+      if (!existing) { _findings.push(f); changed = true; }
+      else if (existing.status !== f.status) { existing.status = f.status; changed = true; }
+    });
+
+    if (changed && _selectedSnapshot) mountChecklist(_selectedSnapshot);
+    if (changed) (snapshots || []).forEach(s => refreshArtifactCard(s));
+
+    if (btn && !silent) { btn.disabled = false; btn.textContent = '↺ Refresh'; }
+    if (!silent && changed) toast('Updated with latest responses.', 'success');
+  }
+
+  // Auto-poll every 30s while session is in_progress
+  if (session.status === 'in_progress') {
+    _refreshTimer = setInterval(() => refreshFromServer(true), 30000);
+    // Stop polling when user navigates away
+    const stopPoll = () => { clearInterval(_refreshTimer); window.removeEventListener('hashchange', stopPoll); };
+    window.addEventListener('hashchange', stopPoll);
+  }
 
   async function completeSession() {
     if (!confirm('Mark this review session as completed? This cannot be undone.')) return;
