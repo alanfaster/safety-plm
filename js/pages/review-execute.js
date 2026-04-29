@@ -152,14 +152,17 @@ export async function renderReviewExecute(container, ctx) {
     const dis = n === 0 ? 'disabled' : '';
     return `
       <div class="rve-bulk-verdict-bar" id="rve-bulk-verdict-bar">
-        <span class="rve-bulk-verdict-label" id="rve-bulk-count">${n} selected</span>
-        <button class="btn btn-ghost btn-xs rve-bulk-select-all">All</button>
-        <button class="btn btn-ghost btn-xs rve-bulk-select-none">None</button>
-        <span class="rve-bulk-sep"></span>
-        <button class="rve-bulk-btn rve-bulk-btn--go"          data-bulk-verdict="ok"          ${dis}>✓ OK</button>
-        <button class="rve-bulk-btn rve-bulk-btn--conditional" data-bulk-verdict="partially_ok" ${dis}>⚑ Partly</button>
-        <button class="rve-bulk-btn rve-bulk-btn--no_go"       data-bulk-verdict="nok"          ${dis}>✗ NOK</button>
-        <button class="btn btn-ghost btn-xs rve-bulk-cancel-btn" title="Exit bulk mode">✕</button>
+        <div class="rve-bulk-bar-row1">
+          <span class="rve-bulk-verdict-label" id="rve-bulk-count">${n} selected</span>
+          <button class="btn btn-ghost btn-xs rve-bulk-select-all">All</button>
+          <button class="btn btn-ghost btn-xs rve-bulk-select-none">None</button>
+          <button class="btn btn-ghost btn-xs rve-bulk-cancel-btn" title="Exit bulk mode">✕</button>
+        </div>
+        <div class="rve-bulk-bar-row2">
+          <button class="rve-bulk-btn rve-bulk-btn--go"          data-bulk-verdict="ok"          ${dis}>✓ OK</button>
+          <button class="rve-bulk-btn rve-bulk-btn--conditional" data-bulk-verdict="partially_ok" ${dis}>⚑ Partly</button>
+          <button class="rve-bulk-btn rve-bulk-btn--no_go"       data-bulk-verdict="nok"          ${dis}>✗ NOK</button>
+        </div>
       </div>`;
   }
 

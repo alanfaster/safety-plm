@@ -5696,10 +5696,12 @@ th.col-th-dragging * { pointer-events: none; }
 .rve-artlist-actions { display: flex; gap: 4px; flex-shrink: 0; margin-left: auto; }
 
 /* Bulk verdict bar */
-.rve-bulk-verdict-bar   { display: flex; align-items: center; gap: 5px; width: 100%;
-  padding: 4px 2px 2px; border-top: 1px solid var(--border); margin-top: 2px; }
-.rve-bulk-verdict-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-.rve-bulk-btn           { font-size: 11px; font-weight: 700; padding: 3px 9px;
+.rve-bulk-verdict-bar   { display: flex; flex-direction: column; gap: 4px; width: 100%;
+  padding: 5px 2px 3px; border-top: 1px solid var(--border); margin-top: 2px; }
+.rve-bulk-bar-row1 { display: flex; align-items: center; gap: 5px; }
+.rve-bulk-bar-row2 { display: flex; align-items: center; gap: 5px; }
+.rve-bulk-verdict-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; flex: 1; }
+.rve-bulk-btn           { font-size: 11px; font-weight: 700; padding: 3px 9px; flex: 1;
   border-radius: 12px; border: 1px solid transparent; cursor: pointer;
   transition: opacity .12s; white-space: nowrap; }
 .rve-bulk-btn:disabled  { opacity: .5; cursor: default; }
@@ -5709,7 +5711,6 @@ th.col-th-dragging * { pointer-events: none; }
 .rve-bulk-btn--no_go:hover { background: #c0271e; }
 .rve-bulk-btn--conditional { background: #e37400; color: #fff; border-color: #e37400; }
 .rve-bulk-btn--conditional:hover { background: #cc6900; }
-.rve-bulk-sep { width: 1px; background: var(--border, #ddd); align-self: stretch; margin: 0 2px; flex-shrink: 0; }
 .rve-filter-active-badge { font-size: 10px; background: #e8f0fe; color: #1558d6;
   border: 1px solid #c5d8fb; border-radius: 10px; padding: 1px 7px; white-space: nowrap; }
 
