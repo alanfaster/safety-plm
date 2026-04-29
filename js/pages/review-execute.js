@@ -115,14 +115,15 @@ export async function renderReviewExecute(container, ctx) {
   let _listExpanded    = false;
   let _propsCollapsed  = false;
   let _artlistWidth    = parseInt(localStorage.getItem('alm_artlist_width') || '750', 10);
-  let _colFilters      = {};   // { [colName]: string }  — per-column filter values
+  let _colFilters      = {};   // { [colName]: string | Set }  — per-column filter values
   // Columns visible in expanded table mode
   const SKIP_FIELDS = new Set(['id','created_at','updated_at','project_id','parent_id','parent_type','domain','session_id']);
   const ALL_COLS    = buildAvailableColumns(snapshots || []);
   // Default: show a useful subset; user can toggle
   const DEFAULT_VIS = new Set(['code','title','status','type','priority']);
-  let _visCols = new Set(ALL_COLS.filter(c => DEFAULT_VIS.has(c)));
+  let _visCols   = new Set(ALL_COLS.filter(c => DEFAULT_VIS.has(c)));
   if (!_visCols.size) ALL_COLS.slice(0, 4).forEach(c => _visCols.add(c));
+  let _colOrder  = [...ALL_COLS];  // mutable display order, drag-reorderable
 
   function buildAvailableColumns(snaps) {
     const seen = new Set(['code','title']); // always first
@@ -384,7 +385,7 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   function renderArtifactTable() {
-    const visArr      = ALL_COLS.filter(c => _visCols.has(c));
+    const visArr      = _colOrder.filter(c => _visCols.has(c));
     const showProgress = sections.length > 0;
     const colPretty    = c => c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
@@ -400,7 +401,10 @@ export async function renderReviewExecute(container, ctx) {
 
     const labelRow = [
       '<th class="rve-atbl-status-col"></th>',
-      ...visArr.map(c => `<th data-col="${c}">${escHtml(colPretty(c))}</th>`),
+      ...visArr.map(c => `<th class="rve-atbl-th-drag" draggable="true" data-col="${c}">
+        <span class="rve-atbl-th-label">${escHtml(colPretty(c))}</span>
+        <span class="rve-atbl-th-grip" title="Drag to reorder">⠿</span>
+      </th>`),
       showProgress ? '<th>Progress</th>' : '',
       '<th>Findings</th>',
     ].join('');
@@ -579,6 +583,8 @@ export async function renderReviewExecute(container, ctx) {
       });
     });
 
+    wireColDrag(root);
+
     // Clear-all-filters button (shown when results are empty)
     root.querySelector('.rve-clear-filters-btn')?.addEventListener('click', () => {
       _colFilters = {};
@@ -696,6 +702,61 @@ export async function renderReviewExecute(container, ctx) {
 
     const closeOut = e => { if (!popover.contains(e.target) && e.target !== anchor) { popover.remove(); document.removeEventListener('click', closeOut); } };
     setTimeout(() => document.addEventListener('click', closeOut), 0);
+  }
+
+  function wireColDrag(root) {
+    const headers = [...root.querySelectorAll('.rve-atbl-th-drag')];
+    if (!headers.length) return;
+
+    let dragSrc = null;
+
+    headers.forEach(th => {
+      th.addEventListener('dragstart', e => {
+        dragSrc = th.dataset.col;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', dragSrc);
+        th.classList.add('rve-atbl-th--dragging');
+      });
+
+      th.addEventListener('dragend', () => {
+        headers.forEach(h => h.classList.remove('rve-atbl-th--dragging', 'rve-atbl-th--drag-over'));
+        dragSrc = null;
+      });
+
+      th.addEventListener('dragover', e => {
+        if (!dragSrc || th.dataset.col === dragSrc) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        headers.forEach(h => h.classList.remove('rve-atbl-th--drag-over'));
+        th.classList.add('rve-atbl-th--drag-over');
+      });
+
+      th.addEventListener('dragleave', () => th.classList.remove('rve-atbl-th--drag-over'));
+
+      th.addEventListener('drop', e => {
+        e.preventDefault();
+        const targetCol = th.dataset.col;
+        if (!dragSrc || dragSrc === targetCol) return;
+
+        // Reorder _colOrder: move dragSrc to position of targetCol
+        const fromIdx = _colOrder.indexOf(dragSrc);
+        const toIdx   = _colOrder.indexOf(targetCol);
+        if (fromIdx === -1 || toIdx === -1) return;
+        _colOrder.splice(fromIdx, 1);
+        _colOrder.splice(toIdx, 0, dragSrc);
+
+        // Rebuild the whole table body + header (preserve filter state)
+        const body = root.querySelector('#rve-artlist-body');
+        if (body) {
+          body.innerHTML = renderArtifactListBody();
+          wireArtifactListInteractions(root);
+          if (_selectedSnapshot) {
+            root.querySelectorAll(`[data-snap-id="${_selectedSnapshot.id}"]`)
+              .forEach(el => el.classList.add('rve-atbl-row--active'));
+          }
+        }
+      });
+    });
   }
 
   function wirePropsPanel() {
