@@ -123,6 +123,8 @@ export async function renderReviewExecute(container, ctx) {
   // Artifact list panel state
   let _listExpanded    = false;
   let _propsCollapsed  = false;
+  let _bulkMode        = false;
+  let _bulkSelected    = new Set();
   let _artlistWidth    = parseInt(localStorage.getItem('alm_artlist_width') || '750', 10);
   let _colFilters      = {};   // { [colName]: string | Set }  — per-column filter values
   // Columns visible in expanded table mode
@@ -146,14 +148,60 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   function buildBulkVerdictBar() {
+    const n   = _bulkSelected.size;
+    const dis = n === 0 ? 'disabled' : '';
     return `
       <div class="rve-bulk-verdict-bar" id="rve-bulk-verdict-bar">
-        <span class="rve-bulk-verdict-label">All:</span>
-        <button class="rve-bulk-btn rve-bulk-btn--go"          data-bulk-verdict="ok">✓ OK</button>
-        <button class="rve-bulk-btn rve-bulk-btn--conditional" data-bulk-verdict="partially_ok">⚑ Partially OK</button>
-        <button class="rve-bulk-btn rve-bulk-btn--no_go"       data-bulk-verdict="nok">✗ NOK</button>
-        <button class="btn btn-ghost btn-xs rve-bulk-cancel-btn" title="Cancel">✕</button>
+        <span class="rve-bulk-verdict-label" id="rve-bulk-count">${n} selected</span>
+        <button class="btn btn-ghost btn-xs rve-bulk-select-all">All</button>
+        <button class="btn btn-ghost btn-xs rve-bulk-select-none">None</button>
+        <span class="rve-bulk-sep"></span>
+        <button class="rve-bulk-btn rve-bulk-btn--go"          data-bulk-verdict="ok"          ${dis}>✓ OK</button>
+        <button class="rve-bulk-btn rve-bulk-btn--conditional" data-bulk-verdict="partially_ok" ${dis}>⚑ Partly</button>
+        <button class="rve-bulk-btn rve-bulk-btn--no_go"       data-bulk-verdict="nok"          ${dis}>✗ NOK</button>
+        <button class="btn btn-ghost btn-xs rve-bulk-cancel-btn" title="Exit bulk mode">✕</button>
       </div>`;
+  }
+
+  function wireBulkBar(toolbar) {
+    const bar = toolbar.querySelector('#rve-bulk-verdict-bar');
+    if (!bar) return;
+
+    const allSnapIds = (snapshots || []).map(s => s.id);
+
+    const updateCount = () => {
+      const lbl = bar.querySelector('#rve-bulk-count');
+      if (lbl) lbl.textContent = `${_bulkSelected.size} selected`;
+      const hasAny = _bulkSelected.size > 0;
+      bar.querySelectorAll('[data-bulk-verdict]').forEach(b => { b.disabled = !hasAny; });
+    };
+
+    bar.querySelector('.rve-bulk-select-all').addEventListener('click', () => {
+      _bulkSelected = new Set(allSnapIds);
+      document.querySelectorAll('.rve-bulk-chk').forEach(chk => { chk.checked = true; });
+      updateCount();
+    });
+
+    bar.querySelector('.rve-bulk-select-none').addEventListener('click', () => {
+      _bulkSelected = new Set();
+      document.querySelectorAll('.rve-bulk-chk').forEach(chk => { chk.checked = false; });
+      updateCount();
+    });
+
+    bar.querySelector('.rve-bulk-cancel-btn').addEventListener('click', () => {
+      _bulkMode = false; _bulkSelected = new Set();
+      rebuildArtifactList();
+    });
+
+    bar.querySelectorAll('[data-bulk-verdict]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!_bulkSelected.size) return;
+        btn.disabled = true; btn.textContent = '…';
+        await applyBulkVerdict(btn.dataset.bulkVerdict);
+        _bulkMode = false; _bulkSelected = new Set();
+        rebuildArtifactList();
+      });
+    });
   }
 
   function buildExpandedToolbar() {
@@ -490,7 +538,7 @@ export async function renderReviewExecute(container, ctx) {
     });
 
     const labelRow = [
-      '<th class="rve-atbl-status-col"></th>',
+      _bulkMode ? '<th class="rve-atbl-chk-col"></th>' : '<th class="rve-atbl-status-col"></th>',
       ...visArr.map(c => `<th class="rve-atbl-th-drag" draggable="true" data-col="${c}">
         <div class="rve-atbl-th-inner">
           <span class="rve-atbl-th-label">${escHtml(colPretty(c))}</span>
@@ -502,7 +550,7 @@ export async function renderReviewExecute(container, ctx) {
     ].join('');
 
     const filterRow = [
-      '<th class="rve-atbl-filter-spacer"></th>',
+      _bulkMode ? '<th class="rve-atbl-filter-spacer"></th>' : '<th class="rve-atbl-filter-spacer"></th>',
       ...visArr.map(c => {
         if (isListCol(c)) {
           const active = _colFilters[c] instanceof Set ? _colFilters[c] : null;
@@ -558,7 +606,9 @@ export async function renderReviewExecute(container, ctx) {
         : '<span class="text-muted" style="font-size:11px">—</span>'}</td>`;
 
       return `<tr class="rve-atbl-row ${isActive ? 'rve-atbl-row--active' : ''}" data-snap-id="${snap.id}">
-        <td class="rve-atbl-status-col">${verdictIndicator}${driftIndicator}</td>
+        ${_bulkMode
+          ? `<td class="rve-atbl-chk-col"><input type="checkbox" class="rve-bulk-chk" data-snap-id="${snap.id}" ${_bulkSelected.has(snap.id) ? 'checked' : ''}></td>`
+          : `<td class="rve-atbl-status-col">${verdictIndicator}${driftIndicator}</td>`}
         ${dataCells}${progressCell}${findingsCell}
       </tr>`;
     }).join('');
@@ -603,6 +653,16 @@ export async function renderReviewExecute(container, ctx) {
     }
 
     wireArtifactListInteractions(list);
+
+    // Re-inject bulk bar if still in bulk mode
+    if (_bulkMode) {
+      const toolbar = list.querySelector('#rve-artlist-toolbar');
+      if (toolbar && !toolbar.querySelector('#rve-bulk-verdict-bar')) {
+        toolbar.insertAdjacentHTML('beforeend', buildBulkVerdictBar());
+        wireBulkBar(toolbar);
+      }
+    }
+
     if (_selectedSnapshot) {
       list.querySelectorAll(`[data-snap-id="${_selectedSnapshot.id}"]`).forEach(el => {
         el.classList.add('active'); el.classList.add('rve-atbl-row--active');
@@ -623,25 +683,25 @@ export async function renderReviewExecute(container, ctx) {
       if (!_listExpanded && _selectedSnapshot) loadPropsPanel();
     });
 
-    // Bulk verdict button — injects a verdict bar inside the toolbar
+    // Bulk verdict button — enters bulk-selection mode
     root.querySelector('#rve-bulk-verdict-btn')?.addEventListener('click', e => {
       e.stopPropagation();
-      const toolbar = root.querySelector('#rve-artlist-toolbar');
-      if (!toolbar || toolbar.querySelector('#rve-bulk-verdict-bar')) return;
-      toolbar.insertAdjacentHTML('beforeend', buildBulkVerdictBar());
+      _bulkMode = true; _bulkSelected = new Set();
+      rebuildArtifactList();
+    });
 
-      toolbar.querySelector('.rve-bulk-cancel-btn').addEventListener('click', () => {
-        toolbar.querySelector('#rve-bulk-verdict-bar')?.remove();
-      });
-
-      toolbar.querySelectorAll('[data-bulk-verdict]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const verdict = btn.dataset.bulkVerdict;
-          btn.disabled = true;
-          btn.textContent = '…';
-          await applyBulkVerdict(verdict);
-          toolbar.querySelector('#rve-bulk-verdict-bar')?.remove();
-        });
+    // Checkbox interactions (card and table mode)
+    root.querySelectorAll('.rve-bulk-chk').forEach(chk => {
+      chk.addEventListener('click', e => e.stopPropagation());
+      chk.addEventListener('change', () => {
+        const sid = chk.dataset.snapId;
+        if (chk.checked) _bulkSelected.add(sid); else _bulkSelected.delete(sid);
+        // Sync sibling checkboxes with same snap-id (card + table row may both exist)
+        root.querySelectorAll(`.rve-bulk-chk[data-snap-id="${sid}"]`).forEach(c => { c.checked = chk.checked; });
+        const lbl = root.querySelector('#rve-bulk-count');
+        if (lbl) lbl.textContent = `${_bulkSelected.size} selected`;
+        const bar = root.querySelector('#rve-bulk-verdict-bar');
+        if (bar) bar.querySelectorAll('[data-bulk-verdict]').forEach(b => { b.disabled = _bulkSelected.size === 0; });
       });
     });
 
@@ -712,9 +772,9 @@ export async function renderReviewExecute(container, ctx) {
 
   function wireRowClicks(root) {
     root.querySelectorAll('[data-snap-id]').forEach(el => {
-      // Skip filter inputs that happen to be inside a [data-snap-id] ancestor
       if (el.tagName === 'INPUT') return;
-      el.addEventListener('click', () => {
+      el.addEventListener('click', e => {
+        if (e.target.classList.contains('rve-bulk-chk')) return; // checkbox handles itself
         const snapId = el.dataset.snapId;
         _selectedSnapshot = (snapshots || []).find(s => s.id === snapId);
         root.querySelectorAll('.rve-art-card').forEach(c => c.classList.toggle('active', c.dataset.snapId === snapId));
@@ -978,7 +1038,10 @@ export async function renderReviewExecute(container, ctx) {
     }).join('');
 
     return `
-      <div class="rve-art-card ${mv ? FINAL_VERDICT_CLASSES[mv] : ''}" data-snap-id="${snap.id}">
+      <div class="rve-art-card ${mv ? FINAL_VERDICT_CLASSES[mv] : ''} ${_bulkMode ? 'rve-art-card--bulk' : ''}" data-snap-id="${snap.id}">
+        ${_bulkMode ? `<label class="rve-bulk-chk-wrap" title="Select for bulk verdict">
+          <input type="checkbox" class="rve-bulk-chk" data-snap-id="${snap.id}" ${_bulkSelected.has(snap.id) ? 'checked' : ''}>
+        </label>` : ''}
         <div class="rve-art-card-header">
           <span class="rve-art-code">${escHtml(snap.artifact_code || snap.artifact_type)}</span>
           ${snap.artifact_version != null ? `<span class="artifact-version-badge">v${snap.artifact_version}</span>` : ''}
@@ -1395,9 +1458,9 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   async function applyBulkVerdict(verdict) {
-    const snaps = snapshots || [];
+    const snaps = (snapshots || []).filter(s => _bulkSelected.has(s.id));
+    if (!snaps.length) return;
     await Promise.all(snaps.map(snap => saveArtifactVerdict(snap, verdict)));
-    // Refresh props panel if open so verdict buttons update
     if (_selectedSnapshot && !_propsCollapsed) await loadPropsPanel();
     toast(`Verdict set to ${FINAL_VERDICT_LABELS[verdict]} for ${snaps.length} artifact${snaps.length !== 1 ? 's' : ''}.`, 'success');
   }
