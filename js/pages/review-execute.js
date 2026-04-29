@@ -133,30 +133,11 @@ export async function renderReviewExecute(container, ctx) {
     return [...seen];
   }
 
-  function isSidebarCollapsed() {
-    return !!document.getElementById('sidebar')?.classList.contains('collapsed');
-  }
-  function toggleNav() {
-    document.getElementById('sidebar-toggle')?.click();
-    // Rebuild toolbar to update the nav button label
-    setTimeout(() => {
-      const list = document.getElementById('rve-artifact-list');
-      if (list) {
-        list.querySelector('#rve-artlist-toolbar').innerHTML = buildExpandedToolbar();
-        wireArtifactListInteractions(list);
-      }
-    }, 250); // after CSS transition
-  }
   function buildExpandedToolbar() {
-    const navCollapsed = isSidebarCollapsed();
     return `
-      <button class="btn btn-ghost btn-xs rve-nav-toggle-btn" id="rve-nav-toggle-btn"
-        title="${navCollapsed ? 'Show navigation sidebar' : 'Hide navigation sidebar'}">
-        ${navCollapsed ? '⊞ Nav' : '⊟ Nav'}
-      </button>
       <div class="rve-artlist-actions">
         <button class="btn btn-ghost btn-xs" id="rve-col-picker-btn" title="Show/hide columns">⊞ Columns</button>
-        <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Collapse">⊟ Collapse</button>
+        <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Collapse list">⊟ Collapse</button>
       </div>`;
   }
 
@@ -490,8 +471,6 @@ export async function renderReviewExecute(container, ctx) {
       _listExpanded = !_listExpanded;
       rebuildArtifactList();
     });
-
-    root.querySelector('#rve-nav-toggle-btn')?.addEventListener('click', () => toggleNav());
 
     root.querySelector('#rve-col-picker-btn')?.addEventListener('click', e => {
       e.stopPropagation();

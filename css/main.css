@@ -5598,7 +5598,6 @@ th.col-th-dragging * { pointer-events: none; }
 .rve-artlist-title   { font-size: 12px; font-weight: 600; flex: 1; }
 .rve-artlist-count   { color: var(--text-muted); font-weight: 400; }
 .rve-artlist-actions { display: flex; gap: 4px; flex-shrink: 0; margin-left: auto; }
-.rve-nav-toggle-btn  { font-size: 11px; border: 1px solid var(--border) !important; }
 .rve-filter-active-badge { font-size: 10px; background: #e8f0fe; color: #1558d6;
   border: 1px solid #c5d8fb; border-radius: 10px; padding: 1px 7px; white-space: nowrap; }
 
