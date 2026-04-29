@@ -111,6 +111,28 @@ export async function renderReviewExecute(container, ctx) {
 
   let _selectedSnapshot = snapshots?.[0] || null;
 
+  // Artifact list panel state
+  let _listExpanded = false;
+  let _tableFilter  = '';
+  // Columns visible in expanded table mode
+  const SKIP_FIELDS = new Set(['id','created_at','updated_at','project_id','parent_id','parent_type','domain','session_id']);
+  const ALL_COLS    = buildAvailableColumns(snapshots || []);
+  // Default: show a useful subset; user can toggle
+  const DEFAULT_VIS = new Set(['code','title','status','type','priority']);
+  let _visCols = new Set(ALL_COLS.filter(c => DEFAULT_VIS.has(c)));
+  if (!_visCols.size) ALL_COLS.slice(0, 4).forEach(c => _visCols.add(c));
+
+  function buildAvailableColumns(snaps) {
+    const seen = new Set(['code','title']); // always first
+    snaps.forEach(s => {
+      const d = s.snapshot_data || {};
+      Object.keys(d).forEach(k => { if (!SKIP_FIELDS.has(k)) seen.add(k); });
+    });
+    // Normalise: req_code→code, spec_code→code, test_code→code already mapped in fetcher
+    ['req_code','spec_code','test_code','analysis_code','name'].forEach(k => seen.delete(k));
+    return [...seen];
+  }
+
   // ── Diff modal ───────────────────────────────────────────────────────────────
 
   async function openDiffModal(snap) {
@@ -291,9 +313,21 @@ export async function renderReviewExecute(container, ctx) {
   function renderReviewTab() {
     return `
       <div class="rve-body">
-        <div class="rve-artifact-list" id="rve-artifact-list">
-          ${(snapshots || []).map(snap => renderArtifactCard(snap)).join('')}
-          ${!snapshots?.length ? '<p class="rv-empty" style="padding:16px">No artifacts in this session.</p>' : ''}
+        <div class="rve-artifact-list ${_listExpanded ? 'rve-artifact-list--expanded' : ''}" id="rve-artifact-list">
+          <div class="rve-artlist-toolbar" id="rve-artlist-toolbar">
+            ${_listExpanded ? `
+              <input class="form-input rve-artlist-filter" id="rve-artlist-filter"
+                placeholder="Filter by code or title…" value="${escHtml(_tableFilter)}"/>
+              <div class="rve-artlist-actions">
+                <button class="btn btn-ghost btn-xs" id="rve-col-picker-btn" title="Show/hide columns">⊞ Columns</button>
+                <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Collapse list">⊟ Collapse</button>
+              </div>` : `
+              <span class="rve-artlist-title">Artifacts <span class="rve-artlist-count">(${(snapshots||[]).length})</span></span>
+              <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Expand artifact table">⊞ Expand</button>`}
+          </div>
+          <div id="rve-artlist-body">
+            ${renderArtifactListBody()}
+          </div>
         </div>
         <div class="rve-checklist-col" id="rve-checklist-col"></div>
         <div class="rve-props-panel" id="rve-props-panel">
@@ -303,19 +337,192 @@ export async function renderReviewExecute(container, ctx) {
     `;
   }
 
-  function wireReviewTab() {
-    container.querySelectorAll('.rve-art-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const snapId = card.dataset.snapId;
+  function renderArtifactListBody() {
+    if (!snapshots?.length) return '<p class="rv-empty" style="padding:16px">No artifacts in this session.</p>';
+    return _listExpanded ? renderArtifactTable() : renderArtifactCards();
+  }
+
+  function renderArtifactCards() {
+    return (snapshots || []).map(snap => renderArtifactCard(snap)).join('');
+  }
+
+  function renderArtifactTable() {
+    const visArr = ALL_COLS.filter(c => _visCols.has(c));
+    // Extra computed columns
+    const showProgress = sections.length > 0;
+
+    const filtered = (snapshots || []).filter(snap => {
+      if (!_tableFilter) return true;
+      const q = _tableFilter.toLowerCase();
+      return (snap.artifact_code || '').toLowerCase().includes(q) ||
+             (snap.artifact_title || '').toLowerCase().includes(q);
+    });
+
+    const colPretty = c => c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+    const headerCells = [
+      '<th class="rve-atbl-status-col"></th>',
+      ...visArr.map(c => `<th>${escHtml(colPretty(c))}</th>`),
+      showProgress ? '<th>Progress</th>' : '',
+      '<th>Findings</th>',
+    ].join('');
+
+    const rows = filtered.map(snap => {
+      const d       = snap.snapshot_data || {};
+      const isActive = _selectedSnapshot?.id === snap.id;
+      const mv      = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId)?.verdict;
+      const drifted = !!driftMap[snap.artifact_id];
+      const isShared  = session.checklist_mode === 'shared';
+      const ckSnapId  = isShared ? (snapshots?.[0]?.id || snap.id) : snap.id;
+      const snapResponses = _allResponses.filter(r => r.snapshot_id === ckSnapId && r.reviewer_id === currentUserId);
+      const totalItems    = sections.reduce((s, sec) => s + (sec.items?.length || 0), 0);
+      const myDone        = snapResponses.length;
+      const pct           = totalItems ? Math.round(myDone / totalItems * 100) : 0;
+      const openFnds      = _findings.filter(f => f.snapshot_id === snap.id && f.status === 'open').length;
+      const allFnds       = _findings.filter(f => f.snapshot_id === snap.id).length;
+
+      // For each visible column, try snapshot_data first, then snap itself
+      const dataCells = visArr.map(c => {
+        const raw = (c === 'code') ? (snap.artifact_code || d.req_code || d.spec_code || d.test_code || d.analysis_code || '')
+                  : (c === 'title') ? (snap.artifact_title || d.title || d.name || '')
+                  : (d[c] ?? '');
+        const val = String(raw ?? '');
+        if (c === 'status') return `<td><span class="badge badge-${escHtml(val || 'draft')}">${escHtml(val || '—')}</span></td>`;
+        return `<td class="${c === 'code' ? 'mono' : ''}">${escHtml(val || '—')}</td>`;
+      }).join('');
+
+      const verdictIndicator = mv
+        ? `<span class="rve-atbl-verdict rve-atbl-verdict--${mv}" title="${FINAL_VERDICT_LABELS[mv]}">${mv === 'go' ? '✓' : mv === 'no_go' ? '✗' : '⚑'}</span>`
+        : '';
+      const driftIndicator = drifted ? `<span class="rve-drift-badge" title="Changed since snapshot">⚠</span>` : '';
+
+      const progressCell = showProgress ? `<td>
+        <div class="rve-atbl-progress-wrap">
+          <div class="rve-progress-bar rve-atbl-progress"><div class="rve-progress-fill" style="width:${pct}%"></div></div>
+          <span class="rve-atbl-progress-label">${myDone}/${totalItems}</span>
+        </div></td>` : '';
+
+      const findingsCell = `<td>${allFnds
+        ? `<span class="rve-atbl-fnds ${openFnds ? 'rve-atbl-fnds--open' : 'rve-atbl-fnds--closed'}">⚑ ${openFnds ? openFnds + ' open' : allFnds + ' closed'}</span>`
+        : '<span class="text-muted" style="font-size:11px">—</span>'}</td>`;
+
+      return `<tr class="rve-atbl-row ${isActive ? 'rve-atbl-row--active' : ''}" data-snap-id="${snap.id}">
+        <td class="rve-atbl-status-col">${verdictIndicator}${driftIndicator}</td>
+        ${dataCells}
+        ${progressCell}
+        ${findingsCell}
+      </tr>`;
+    }).join('');
+
+    return `
+      <div class="rve-atbl-wrap">
+        <table class="rve-atbl" id="rve-atbl">
+          <thead><tr>${headerCells}</tr></thead>
+          <tbody>${rows || '<tr><td colspan="99" class="rv-empty" style="padding:16px;text-align:center">No artifacts match the filter.</td></tr>'}</tbody>
+        </table>
+      </div>`;
+  }
+
+  function rebuildArtifactList() {
+    const list = document.getElementById('rve-artifact-list');
+    if (!list) return;
+    list.className = `rve-artifact-list${_listExpanded ? ' rve-artifact-list--expanded' : ''}`;
+    list.querySelector('#rve-artlist-toolbar').innerHTML = _listExpanded ? `
+      <input class="form-input rve-artlist-filter" id="rve-artlist-filter"
+        placeholder="Filter by code or title…" value="${escHtml(_tableFilter)}"/>
+      <div class="rve-artlist-actions">
+        <button class="btn btn-ghost btn-xs" id="rve-col-picker-btn" title="Show/hide columns">⊞ Columns</button>
+        <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Collapse">⊟ Collapse</button>
+      </div>` : `
+      <span class="rve-artlist-title">Artifacts <span class="rve-artlist-count">(${(snapshots||[]).length})</span></span>
+      <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Expand">⊞ Expand</button>`;
+    list.querySelector('#rve-artlist-body').innerHTML = renderArtifactListBody();
+    wireArtifactListInteractions(list);
+    // Re-apply active state
+    if (_selectedSnapshot) {
+      list.querySelectorAll(`[data-snap-id="${_selectedSnapshot.id}"]`).forEach(el => el.classList.add('active', 'rve-atbl-row--active'));
+    }
+  }
+
+  function wireArtifactListInteractions(root) {
+    root = root || document.getElementById('rve-artifact-list');
+    if (!root) return;
+
+    root.querySelector('#rve-list-toggle')?.addEventListener('click', () => {
+      _listExpanded = !_listExpanded;
+      rebuildArtifactList();
+    });
+
+    root.querySelector('#rve-artlist-filter')?.addEventListener('input', e => {
+      _tableFilter = e.target.value;
+      root.querySelector('#rve-artlist-body').innerHTML = renderArtifactListBody();
+      wireArtifactListInteractions(root);
+    });
+
+    root.querySelector('#rve-col-picker-btn')?.addEventListener('click', e => {
+      e.stopPropagation();
+      openColPicker(root.querySelector('#rve-col-picker-btn'));
+    });
+
+    // Row/card click
+    root.querySelectorAll('[data-snap-id]').forEach(el => {
+      el.addEventListener('click', () => {
+        const snapId = el.dataset.snapId;
         _selectedSnapshot = (snapshots || []).find(s => s.id === snapId);
-        container.querySelectorAll('.rve-art-card').forEach(c => c.classList.toggle('active', c.dataset.snapId === snapId));
+        // Clear active on all
+        root.querySelectorAll('.rve-art-card').forEach(c => c.classList.toggle('active', c.dataset.snapId === snapId));
+        root.querySelectorAll('.rve-atbl-row').forEach(r => r.classList.toggle('rve-atbl-row--active', r.dataset.snapId === snapId));
         loadArtifactPanel();
       });
     });
+  }
+
+  function openColPicker(anchor) {
+    document.getElementById('rve-col-picker-popover')?.remove();
+    const popover = document.createElement('div');
+    popover.id = 'rve-col-picker-popover';
+    popover.className = 'rve-col-picker-popover';
+    popover.innerHTML = `
+      <div class="rve-col-picker-header">
+        <strong>Visible Columns</strong>
+        <button class="btn btn-ghost btn-xs rve-col-picker-close">✕</button>
+      </div>
+      <div class="rve-col-picker-list">
+        ${ALL_COLS.map(c => `
+          <label class="rve-col-picker-item">
+            <input type="checkbox" data-col="${c}" ${_visCols.has(c) ? 'checked' : ''}/>
+            <span>${c.replace(/_/g,' ')}</span>
+          </label>`).join('')}
+      </div>`;
+    document.body.appendChild(popover);
+
+    const rect = anchor.getBoundingClientRect();
+    popover.style.top  = (rect.bottom + 4 + window.scrollY) + 'px';
+    popover.style.left = Math.max(0, rect.right - popover.offsetWidth) + 'px';
+
+    popover.querySelector('.rve-col-picker-close').onclick = () => popover.remove();
+    const closeOnClickOutside = e => { if (!popover.contains(e.target)) { popover.remove(); document.removeEventListener('click', closeOnClickOutside); } };
+    setTimeout(() => document.addEventListener('click', closeOnClickOutside), 0);
+
+    popover.querySelectorAll('input[type=checkbox]').forEach(chk => {
+      chk.onchange = () => {
+        if (chk.checked) _visCols.add(chk.dataset.col);
+        else _visCols.delete(chk.dataset.col);
+        document.getElementById('rve-artlist-body').innerHTML = renderArtifactListBody();
+        wireArtifactListInteractions(document.getElementById('rve-artifact-list'));
+      };
+    });
+  }
+
+  function wireReviewTab() {
+    const list = document.getElementById('rve-artifact-list');
+    if (list) wireArtifactListInteractions(list);
     if (_selectedSnapshot) {
-      container.querySelector(`[data-snap-id="${_selectedSnapshot.id}"]`)?.classList.add('active');
+      list?.querySelectorAll(`[data-snap-id="${_selectedSnapshot.id}"]`).forEach(el => {
+        el.classList.add('active'); el.classList.add('rve-atbl-row--active');
+      });
     }
-    // Always mount checklist (it's always visible); load first artifact properties
+    // Always mount checklist; load first artifact properties
     mountChecklist();
     if (_selectedSnapshot) loadPropsPanel();
   }
@@ -658,6 +865,15 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   function refreshArtifactCard(snap) {
+    if (_listExpanded) {
+      // In table mode — rebuild body to reflect updated data
+      const body = document.getElementById('rve-artlist-body');
+      if (body) {
+        body.innerHTML = renderArtifactListBody();
+        wireArtifactListInteractions(document.getElementById('rve-artifact-list'));
+      }
+      return;
+    }
     const card = container.querySelector(`[data-snap-id="${snap.id}"].rve-art-card`);
     if (!card) return;
     card.outerHTML = renderArtifactCard(snap);
