@@ -113,17 +113,9 @@ export async function renderReviewExecute(container, ctx) {
   const _artifactVerdicts = artifactVerdicts ? [...artifactVerdicts] : [];
   const _allResponses     = allResponses      ? [...allResponses]     : [];
 
-  async function reloadFindings() {
-    const { data } = await sb.from('review_findings')
-      .select('*').eq('session_id', sessionId).order('created_at');
-    _findings.length = 0;
-    _findings.push(...(data || []));
-  }
-
-  async function afterFindingMutation() {
-    await reloadFindings();
-    (snapshots || []).forEach(s => refreshArtifactCard(s));
-    if (_selectedSnapshot && !_propsCollapsed) await loadPropsPanel();
+  function afterFindingMutation(snap) {
+    refreshArtifactCard(snap);
+    if (_selectedSnapshot?.id === snap.id && !_propsCollapsed) loadPropsPanel();
   }
 
   // Pre-select artifact from URL param (e.g. when navigating from req badge)
@@ -383,6 +375,7 @@ export async function renderReviewExecute(container, ctx) {
             comment: `[Closed] ${comment}`,
           });
 
+          f.status = 'closed';
           toast(`${f.finding_code} closed.`, 'success');
           row.innerHTML = `<div class="diff-finding-info">
             <span class="mono diff-finding-code">${escHtml(f.finding_code)}</span>
@@ -390,7 +383,7 @@ export async function renderReviewExecute(container, ctx) {
             <span class="diff-finding-title">${escHtml(f.title)}</span>
           </div>`;
           mountChecklist(snap);
-          await afterFindingMutation();
+          afterFindingMutation(snap);
         };
       });
     });
@@ -1142,9 +1135,9 @@ export async function renderReviewExecute(container, ctx) {
         else refreshArtifactCard(snap);
       },
       onFindingRaise: opts => openRaiseFindingModal(opts),
-      onFindingCreated: () => afterFindingMutation(),
-      onFindingDeleted: () => afterFindingMutation(),
-      onFindingStatusChanged: () => afterFindingMutation(),
+      onFindingCreated: f => { _findings.push(f); afterFindingMutation(snap); },
+      onFindingDeleted: ({ id }) => { const i = _findings.findIndex(x => x.id === id); if (i >= 0) _findings.splice(i, 1); afterFindingMutation(snap); },
+      onFindingStatusChanged: ({ id, status }) => { const f = _findings.find(x => x.id === id); if (f) f.status = status; afterFindingMutation(snap); },
       onCompareRequest: () => openDiffModal(snap),
     });
   }
@@ -1379,12 +1372,11 @@ export async function renderReviewExecute(container, ctx) {
           }).catch(() => {});
         }
       }
+      if (finding) _findings.push(finding);
       if (_stagedVerdict) await saveArtifactVerdict(snap, _stagedVerdict);
       toast(`Finding ${findingCode} created.`, 'success');
-      await afterFindingMutation();
-
       _stagedVerdict = null;
-      // afterFindingMutation already reloads the full panel
+      afterFindingMutation(snap);
     });
 
     // "Raise Finding" standalone button (no verdict required)
@@ -1641,14 +1633,14 @@ export async function renderReviewExecute(container, ctx) {
       }).select().single();
 
       if (error) { toast('Error: ' + error.message, 'error'); btn.disabled = false; return; }
+      _findings.push(finding);
       toast(`Finding ${finding_code} raised.`, 'success');
       hideModal();
 
-      // Inject into checklist panel without full re-mount
       const panel = document.getElementById('rve-checklist-panel');
       if (panel?._addFinding) panel._addFinding(finding);
 
-      await afterFindingMutation();
+      afterFindingMutation(_selectedSnapshot);
     };
     document.getElementById('fnd-title').focus();
   }
@@ -1688,7 +1680,10 @@ export async function renderReviewExecute(container, ctx) {
     });
 
     if (changed && _selectedSnapshot) mountChecklist(_selectedSnapshot);
-    if (changed) await afterFindingMutation();
+    if (changed) {
+      (snapshots || []).forEach(s => refreshArtifactCard(s));
+      if (_selectedSnapshot && !_propsCollapsed) loadPropsPanel();
+    }
 
     if (btn && !silent) { btn.disabled = false; btn.textContent = '↺ Refresh'; }
     if (!silent && changed) toast('Updated with latest responses.', 'success');
