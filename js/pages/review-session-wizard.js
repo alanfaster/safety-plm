@@ -193,7 +193,6 @@ export async function renderReviewSessionWizard(container, ctx) {
   async function renderStep2(body) {
     body.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
 
-    // Load items, systems, and all artifact types for the project once
     if (!state.items.length) {
       const [{ data: itemsData }, ...artResults] = await Promise.all([
         sb.from('items').select('id, name').eq('project_id', project.id).order('created_at'),
@@ -214,11 +213,10 @@ export async function renderReviewSessionWizard(container, ctx) {
       }
     }
 
-    Object.keys(ARTIFACT_TYPE_LABELS).forEach(k => { if (!state.selected[k]) state.selected[k] = new Set(); });
-
     const typeKeys = Object.keys(ARTIFACT_TYPE_LABELS);
-    const totalAll = Object.values(state.artifacts).reduce((s, arr) => s + arr.length, 0);
+    typeKeys.forEach(k => { if (!state.selected[k]) state.selected[k] = new Set(); });
 
+    const totalAll = Object.values(state.artifacts).reduce((s, arr) => s + arr.length, 0);
     if (!totalAll) {
       body.innerHTML = `<div class="wiz-step-body">
         <h3>Select Artifacts to Review</h3>
@@ -227,238 +225,251 @@ export async function renderReviewSessionWizard(container, ctx) {
       return;
     }
 
-    // Build lookup maps
-    const systemToItem = {};
-    state.items.forEach(it => {
-      (state.systems[it.id] || []).forEach(sys => { systemToItem[sys.id] = it.id; });
-    });
-
-    // artsByNode: { 'item:{id}': { type:[art] }, 'sys:{id}': { type:[art] }, 'other': { type:[art] } }
-    const artsByNode = {};
+    // artsByLeaf: { 'item:{id}:{type}': [art,...], 'sys:{id}:{type}': [art,...] }
+    const artsByLeaf = {};
     typeKeys.forEach(type => {
       (state.artifacts[type] || []).forEach(art => {
-        let key;
-        if (art.parent_type === 'item')   key = `item:${art.parent_id}`;
-        else if (art.parent_type === 'system') key = `sys:${art.parent_id}`;
-        else key = 'other';
-        if (!artsByNode[key]) artsByNode[key] = {};
-        if (!artsByNode[key][type]) artsByNode[key][type] = [];
-        artsByNode[key][type].push(art);
+        const prefix = art.parent_type === 'system' ? 'sys' : 'item';
+        const key    = `${prefix}:${art.parent_id}:${type}`;
+        if (!artsByLeaf[key]) artsByLeaf[key] = [];
+        artsByLeaf[key].push(art);
       });
     });
 
-    // Selected tree node — default to first item that has artifacts
+    // Collapse state: grouped by group-key → open/closed
+    const _groupOpen = {};
+    // Default: open first item group, all sys groups within it open
+    if (state.items.length) _groupOpen[`item-${state.items[0].id}`] = true;
+
+    // Active leaf node
     let _activeNode = null;
-    for (const it of state.items) {
-      if (artsByNode[`item:${it.id}`] || (state.systems[it.id] || []).some(s => artsByNode[`sys:${s.id}`])) {
-        _activeNode = `item:${it.id}`;
-        break;
+    outer: for (const it of state.items) {
+      for (const type of typeKeys) {
+        if ((artsByLeaf[`item:${it.id}:${type}`] || []).length) {
+          _activeNode = `item:${it.id}:${type}`;
+          break outer;
+        }
       }
     }
-    if (!_activeNode) _activeNode = 'other';
+
+    // ── Helpers ────────────────────────────────────────────────────────────
 
     function countSelected() {
       return Object.values(state.selected).reduce((s, set) => s + set.size, 0);
     }
 
-    function nodeSelectedCount(nodeKey) {
-      if (nodeKey === 'all') return countSelected();
-      const arts = artsByNode[nodeKey] || {};
-      return typeKeys.reduce((s, t) => s + (arts[t] || []).filter(a => state.selected[t].has(a.id)).length, 0);
+    function leafSel(nodeKey) {
+      // nodeKey = 'item:{id}:{type}' | 'sys:{id}:{type}'
+      const [prefix, id, type] = nodeKey.split(':');
+      return (artsByLeaf[nodeKey] || []).filter(a => state.selected[type]?.has(a.id)).length;
+    }
+    function leafTotal(nodeKey) { return (artsByLeaf[nodeKey] || []).length; }
+
+    function groupSel(prefix, id) {
+      return typeKeys.reduce((s, t) => s + leafSel(`${prefix}:${id}:${t}`), 0);
+    }
+    function groupTotal(prefix, id) {
+      return typeKeys.reduce((s, t) => s + leafTotal(`${prefix}:${id}:${t}`), 0);
+    }
+    function itemTotalDeep(it) {
+      const direct = groupTotal('item', it.id);
+      const sysTotal = (state.systems[it.id] || []).reduce((s, sys) => s + groupTotal('sys', sys.id), 0);
+      return direct + sysTotal;
+    }
+    function itemSelDeep(it) {
+      const direct = groupSel('item', it.id);
+      const sysSel = (state.systems[it.id] || []).reduce((s, sys) => s + groupSel('sys', sys.id), 0);
+      return direct + sysSel;
     }
 
-    function nodeTotalCount(nodeKey) {
-      if (nodeKey === 'all') return totalAll;
-      const arts = artsByNode[nodeKey] || {};
-      return typeKeys.reduce((s, t) => s + (arts[t] || []).length, 0);
+    // ── Left tree renderer ────────────────────────────────────────────────
+
+    function badge(sel, total) {
+      if (!total) return '';
+      return sel > 0
+        ? `<span class="wiz-tree-badge">${sel}/${total}</span>`
+        : `<span class="wiz-tree-total">${total}</span>`;
     }
 
-    // ── Left tree ─────────────────────────────────────────────────────────
-
-    function renderLeftTree() {
-      const itemNodes = state.items.map(it => {
-        const itemKey  = `item:${it.id}`;
-        const systems  = state.systems[it.id] || [];
-        // total artifacts for this item = direct + all its systems
-        const relatedKeys = [itemKey, ...systems.map(s => `sys:${s.id}`)];
-        const total = relatedKeys.reduce((s, k) => s + nodeTotalCount(k), 0);
-        if (!total) return '';
-
-        const selCount = relatedKeys.reduce((s, k) => s + nodeSelectedCount(k), 0);
-
-        const sysNodes = systems.map(sys => {
-          const sysKey = `sys:${sys.id}`;
-          if (!nodeTotalCount(sysKey)) return '';
-          const sSel = nodeSelectedCount(sysKey);
-          const sTotal = nodeTotalCount(sysKey);
-          return `<div class="wiz-tree-node wiz-tree-sys ${_activeNode === sysKey ? 'active' : ''}"
-                      data-node="${sysKey}">
-            <span class="wiz-tree-icon">⚙</span>
-            <span class="wiz-tree-label">${escHtml(sys.system_code ? sys.system_code + ' · ' + sys.name : sys.name)}</span>
-            ${sSel ? `<span class="wiz-tree-badge">${sSel}</span>` : `<span class="wiz-tree-total">${sTotal}</span>`}
-          </div>`;
-        }).join('');
-
-        const directTotal = nodeTotalCount(itemKey);
-        const directSel   = nodeSelectedCount(itemKey);
-        const directNode  = directTotal ? `
-          <div class="wiz-tree-node wiz-tree-direct ${_activeNode === itemKey ? 'active' : ''}"
-               data-node="${itemKey}">
-            <span class="wiz-tree-icon">📄</span>
-            <span class="wiz-tree-label">Direct artifacts</span>
-            ${directSel ? `<span class="wiz-tree-badge">${directSel}</span>` : `<span class="wiz-tree-total">${directTotal}</span>`}
-          </div>` : '';
-
-        return `
-          <div class="wiz-tree-item-group">
-            <div class="wiz-tree-item-header">
-              <span class="wiz-tree-icon">📁</span>
-              <span class="wiz-tree-label">${escHtml(it.name)}</span>
-              ${selCount ? `<span class="wiz-tree-badge">${selCount}</span>` : `<span class="wiz-tree-total">${total}</span>`}
-            </div>
-            <div class="wiz-tree-item-children">
-              ${directNode}
-              ${sysNodes}
-            </div>
-          </div>`;
-      }).join('');
-
-      const otherTotal = nodeTotalCount('other');
-      const otherNode  = otherTotal ? `
-        <div class="wiz-tree-item-group">
-          <div class="wiz-tree-node ${_activeNode === 'other' ? 'active' : ''}" data-node="other">
-            <span class="wiz-tree-icon">📁</span>
-            <span class="wiz-tree-label">Other</span>
-            <span class="wiz-tree-total">${otherTotal}</span>
-          </div>
-        </div>` : '';
-
-      return itemNodes + otherNode;
-    }
-
-    // ── Right artifacts panel ──────────────────────────────────────────────
-
-    function renderRightPanel(nodeKey) {
-      const arts = artsByNode[nodeKey] || {};
-      const hasSomething = typeKeys.some(t => (arts[t] || []).length);
-      if (!hasSomething) return `<p class="rv-empty" style="padding:32px">No artifacts in this node.</p>`;
-
-      return typeKeys.map(type => {
-        const list = arts[type] || [];
-        if (!list.length) return '';
-        const sel   = state.selected[type];
-        const allSel = list.every(a => sel.has(a.id));
-        const noneSel = list.every(a => !sel.has(a.id));
-
-        const rows = list.map(a => `
-          <tr class="wiz-art-row" data-type="${type}" data-id="${a.id}">
-            <td style="width:28px"><input type="checkbox" class="wiz-art-chk"
-              data-type="${type}" data-id="${a.id}" ${sel.has(a.id) ? 'checked' : ''}/></td>
-            <td class="mono" style="white-space:nowrap">${escHtml(a.code || '—')}</td>
-            <td style="width:100%">${escHtml(a.title || a.name || '—')}</td>
-            <td style="white-space:nowrap"><span class="badge badge-${escHtml(a.status || 'draft')}">${escHtml(a.status || '—')}</span></td>
-          </tr>`).join('');
-
-        const selCount = list.filter(a => sel.has(a.id)).length;
-        return `
-          <div class="wiz-rp-section">
-            <div class="wiz-rp-section-hdr">
-              <span class="wiz-rp-type-label">${ARTIFACT_TYPE_ICONS[type]} ${ARTIFACT_TYPE_LABELS[type]}</span>
-              <span class="wiz-rp-sel-count">${selCount}/${list.length}</span>
-              <button type="button" class="btn btn-ghost btn-xs wiz-rp-sel-all"
-                data-node="${nodeKey}" data-type="${type}">All</button>
-              <button type="button" class="btn btn-ghost btn-xs wiz-rp-sel-none"
-                data-node="${nodeKey}" data-type="${type}">None</button>
-            </div>
-            <table class="data-table wiz-art-table">
-              <tbody>${rows}</tbody>
-            </table>
-          </div>`;
-      }).join('');
-    }
-
-    // ── Full layout ────────────────────────────────────────────────────────
-
-    function renderLayout() {
+    function renderTypeLeaf(prefix, parentId, type) {
+      const key   = `${prefix}:${parentId}:${type}`;
+      const total = leafTotal(key);
+      if (!total) return '';
+      const sel    = leafSel(key);
+      const active = _activeNode === key;
       return `
-        <div class="wiz-step-body wiz-s2-layout">
-          <div class="wiz-s2-topbar">
-            <h3>Select Artifacts to Review</h3>
-            <span class="wiz-total-selected" id="wiz-total-sel">${countSelected()} selected</span>
+        <div class="wiz-tree-leaf ${active ? 'active' : ''}" data-node="${key}">
+          <span class="wiz-tree-leaf-icon">${ARTIFACT_TYPE_ICONS[type]}</span>
+          <span class="wiz-tree-label">${ARTIFACT_TYPE_LABELS[type]}</span>
+          ${badge(sel, total)}
+        </div>`;
+    }
+
+    function renderSysGroup(sys) {
+      const gKey  = `sys-${sys.id}`;
+      const open  = _groupOpen[gKey] !== false; // default open
+      const total = groupTotal('sys', sys.id);
+      if (!total) return '';
+      const sel   = groupSel('sys', sys.id);
+      const label = sys.system_code ? `${sys.system_code} · ${sys.name}` : sys.name;
+      return `
+        <div class="wiz-tree-group ${open ? 'open' : 'closed'}" data-group="${gKey}">
+          <div class="wiz-tree-group-hdr">
+            <span class="wiz-tree-chevron">▶</span>
+            <span class="wiz-tree-group-icon">⚙</span>
+            <span class="wiz-tree-label">${escHtml(label)}</span>
+            ${badge(sel, total)}
           </div>
-          <div class="wiz-s2-split">
-            <nav class="wiz-s2-tree" id="wiz-s2-tree">
-              ${renderLeftTree()}
-            </nav>
-            <div class="wiz-s2-panel" id="wiz-s2-panel">
-              ${renderRightPanel(_activeNode)}
-            </div>
+          <div class="wiz-tree-group-body">
+            ${typeKeys.map(t => renderTypeLeaf('sys', sys.id, t)).join('')}
           </div>
         </div>`;
     }
 
-    body.innerHTML = renderLayout();
-    wireStep2(body);
+    function renderItemGroup(it) {
+      const gKey  = `item-${it.id}`;
+      const open  = _groupOpen[gKey] !== false; // default open
+      const total = itemTotalDeep(it);
+      if (!total) return '';
+      const sel   = itemSelDeep(it);
+      const systems = state.systems[it.id] || [];
 
-    function wireStep2(root) {
-      // Tree node clicks
-      root.querySelectorAll('[data-node]').forEach(el => {
-        el.addEventListener('click', () => {
-          _activeNode = el.dataset.node;
-          root.querySelectorAll('[data-node]').forEach(n => n.classList.toggle('active', n.dataset.node === _activeNode));
-          root.querySelector('#wiz-s2-panel').innerHTML = renderRightPanel(_activeNode);
-          wireCheckboxes(root);
-          wireSelectButtons(root);
-        });
-      });
-      wireCheckboxes(root);
-      wireSelectButtons(root);
+      const directLeaves = typeKeys.map(t => renderTypeLeaf('item', it.id, t)).join('');
+      const sysGroups    = systems.map(sys => renderSysGroup(sys)).join('');
+
+      // Systems section label (only if there are systems with artifacts)
+      const hasSysArts = systems.some(s => groupTotal('sys', s.id) > 0);
+      const sysSection = hasSysArts ? `
+        <div class="wiz-tree-section-label">Systems</div>
+        ${sysGroups}` : '';
+
+      return `
+        <div class="wiz-tree-group ${open ? 'open' : 'closed'}" data-group="${gKey}">
+          <div class="wiz-tree-group-hdr wiz-tree-item-hdr">
+            <span class="wiz-tree-chevron">▶</span>
+            <span class="wiz-tree-group-icon">⬡</span>
+            <span class="wiz-tree-label">${escHtml(it.name)}</span>
+            ${badge(sel, total)}
+          </div>
+          <div class="wiz-tree-group-body">
+            ${directLeaves ? `<div class="wiz-tree-section-label">Item artifacts</div>${directLeaves}` : ''}
+            ${sysSection}
+          </div>
+        </div>`;
     }
 
-    function wireCheckboxes(root) {
+    function renderLeftTree() {
+      return state.items.map(it => renderItemGroup(it)).join('');
+    }
+
+    // ── Right panel renderer ──────────────────────────────────────────────
+
+    function renderRightPanel(nodeKey) {
+      if (!nodeKey) return `<p class="rv-empty" style="padding:32px">Select a node on the left.</p>`;
+      const [prefix, parentId, type] = nodeKey.split(':');
+      const list = artsByLeaf[nodeKey] || [];
+      if (!list.length) return `<p class="rv-empty" style="padding:32px">No artifacts here.</p>`;
+
+      const sel   = state.selected[type];
+      const selCount = list.filter(a => sel.has(a.id)).length;
+
+      const rows = list.map(a => `
+        <tr class="wiz-art-row" data-type="${type}" data-id="${a.id}">
+          <td style="width:28px"><input type="checkbox" class="wiz-art-chk"
+            data-type="${type}" data-id="${a.id}" ${sel.has(a.id) ? 'checked' : ''}/></td>
+          <td class="mono" style="white-space:nowrap">${escHtml(a.code || '—')}</td>
+          <td style="width:100%">${escHtml(a.title || a.name || '—')}</td>
+          <td style="white-space:nowrap"><span class="badge badge-${escHtml(a.status || 'draft')}">${escHtml(a.status || '—')}</span></td>
+        </tr>`).join('');
+
+      return `
+        <div class="wiz-rp-section">
+          <div class="wiz-rp-section-hdr">
+            <span class="wiz-rp-type-label">${ARTIFACT_TYPE_ICONS[type]} ${ARTIFACT_TYPE_LABELS[type]}</span>
+            <span class="wiz-rp-sel-count">${selCount}/${list.length}</span>
+            <button type="button" class="btn btn-ghost btn-xs wiz-rp-sel-all"
+              data-node="${nodeKey}" data-type="${type}">All</button>
+            <button type="button" class="btn btn-ghost btn-xs wiz-rp-sel-none"
+              data-node="${nodeKey}" data-type="${type}">None</button>
+          </div>
+          <table class="data-table wiz-art-table">
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    // ── Layout ────────────────────────────────────────────────────────────
+
+    body.innerHTML = `
+      <div class="wiz-step-body wiz-s2-layout">
+        <div class="wiz-s2-topbar">
+          <h3>Select Artifacts to Review</h3>
+          <span class="wiz-total-selected" id="wiz-total-sel">${countSelected()} selected</span>
+        </div>
+        <div class="wiz-s2-split">
+          <nav class="wiz-s2-tree" id="wiz-s2-tree">${renderLeftTree()}</nav>
+          <div class="wiz-s2-panel" id="wiz-s2-panel">${renderRightPanel(_activeNode)}</div>
+        </div>
+      </div>`;
+
+    wireStep2(body);
+
+    // ── Wiring ────────────────────────────────────────────────────────────
+
+    function wireStep2(root) {
+      // Group headers: toggle open/closed
+      root.querySelectorAll('.wiz-tree-group-hdr').forEach(hdr => {
+        hdr.addEventListener('click', e => {
+          if (e.target.closest('.wiz-tree-leaf')) return;
+          const group = hdr.closest('.wiz-tree-group');
+          const gKey  = group.dataset.group;
+          const open  = group.classList.toggle('open');
+          group.classList.toggle('closed', !open);
+          _groupOpen[gKey] = open;
+        });
+      });
+
+      // Leaf clicks: show right panel
+      root.querySelectorAll('.wiz-tree-leaf').forEach(leaf => {
+        leaf.addEventListener('click', e => {
+          e.stopPropagation();
+          _activeNode = leaf.dataset.node;
+          root.querySelectorAll('.wiz-tree-leaf').forEach(l => l.classList.toggle('active', l.dataset.node === _activeNode));
+          root.querySelector('#wiz-s2-panel').innerHTML = renderRightPanel(_activeNode);
+          wireRightPanel(root);
+        });
+      });
+
+      wireRightPanel(root);
+    }
+
+    function wireRightPanel(root) {
       root.querySelectorAll('.wiz-art-chk').forEach(chk => {
         chk.onchange = e => {
           if (e.target.checked) state.selected[chk.dataset.type].add(chk.dataset.id);
           else state.selected[chk.dataset.type].delete(chk.dataset.id);
-          refreshStep2(root);
+          refreshTreeBadges(root);
         };
       });
-    }
-
-    function wireSelectButtons(root) {
       root.querySelectorAll('.wiz-rp-sel-all, .wiz-rp-sel-none').forEach(btn => {
         btn.onclick = () => {
-          const isAll  = btn.classList.contains('wiz-rp-sel-all');
-          const { node, type } = btn.dataset;
-          const arts   = (artsByNode[node] || {})[type] || [];
-          arts.forEach(a => {
-            if (isAll) state.selected[type].add(a.id);
-            else state.selected[type].delete(a.id);
-          });
-          // Rebuild only the panel
+          const isAll = btn.classList.contains('wiz-rp-sel-all');
+          const { type } = btn.dataset;
+          const list  = artsByLeaf[_activeNode] || [];
+          list.forEach(a => { if (isAll) state.selected[type].add(a.id); else state.selected[type].delete(a.id); });
           root.querySelector('#wiz-s2-panel').innerHTML = renderRightPanel(_activeNode);
-          wireCheckboxes(root);
-          wireSelectButtons(root);
-          refreshStep2(root);
+          wireRightPanel(root);
+          refreshTreeBadges(root);
         };
       });
     }
 
-    function refreshStep2(root) {
-      // Total badge
-      const totalEl = root.querySelector('#wiz-total-sel');
-      if (totalEl) totalEl.textContent = `${countSelected()} selected`;
-      // Rebuild left tree badges without re-rendering the whole tree (preserve active state)
+    function refreshTreeBadges(root) {
+      root.querySelector('#wiz-total-sel').textContent = `${countSelected()} selected`;
+      // Rebuild only the tree (preserving group open/closed via _groupOpen)
       root.querySelector('#wiz-s2-tree').innerHTML = renderLeftTree();
-      root.querySelectorAll('[data-node]').forEach(el => {
-        el.addEventListener('click', () => {
-          _activeNode = el.dataset.node;
-          root.querySelectorAll('[data-node]').forEach(n => n.classList.toggle('active', n.dataset.node === _activeNode));
-          root.querySelector('#wiz-s2-panel').innerHTML = renderRightPanel(_activeNode);
-          wireCheckboxes(root);
-          wireSelectButtons(root);
-        });
-      });
+      // Re-wire group headers + leaf clicks after tree rebuild
+      wireStep2(root);
     }
   }
 

@@ -5525,26 +5525,48 @@ th.col-th-dragging * { pointer-events: none; }
 .wiz-s2-split    { display: flex; gap: 0; flex: 1; min-height: 0;
   border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 
-/* Left navigation tree */
-.wiz-s2-tree     { width: 220px; flex-shrink: 0; border-right: 1px solid var(--border);
-  background: #f8f9fa; overflow-y: auto; padding: 8px 0; }
-.wiz-tree-item-group { }
-.wiz-tree-item-header { display: flex; align-items: center; gap: 6px; padding: 8px 12px 4px;
-  font-size: 12px; font-weight: 700; color: #2d3a4a; cursor: default; }
-.wiz-tree-item-children { padding-left: 4px; }
-.wiz-tree-node   { display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+/* Left navigation tree — mirrors sidebar style */
+.wiz-s2-tree     { width: 240px; flex-shrink: 0; border-right: 1px solid var(--border);
+  background: #1e2a38; overflow-y: auto; padding: 6px 0; color: #c9d1d9; }
+
+/* Collapsible groups */
+.wiz-tree-group  { }
+.wiz-tree-group-hdr { display: flex; align-items: center; gap: 6px; padding: 7px 10px;
+  font-size: 12px; font-weight: 700; cursor: pointer; color: #8b949e;
+  text-transform: uppercase; letter-spacing: .04em;
+  transition: background .1s; user-select: none; }
+.wiz-tree-group-hdr:hover { background: rgba(255,255,255,.06); color: #c9d1d9; }
+.wiz-tree-item-hdr { color: #c9d1d9; font-size: 13px; text-transform: none; letter-spacing: 0; }
+.wiz-tree-group-icon { font-size: 13px; flex-shrink: 0; }
+.wiz-tree-chevron { font-size: 9px; width: 10px; flex-shrink: 0; color: #8b949e;
+  transition: transform .15s; transform: rotate(-90deg); }
+.wiz-tree-group.open > .wiz-tree-group-hdr > .wiz-tree-chevron { transform: rotate(0deg); }
+.wiz-tree-group-body { display: none; }
+.wiz-tree-group.open > .wiz-tree-group-body { display: block; }
+
+/* Section label inside group (e.g. "Item artifacts", "Systems") */
+.wiz-tree-section-label { font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: #58677a; padding: 6px 14px 2px 28px; }
+
+/* Leaf nodes (artifact type rows) */
+.wiz-tree-leaf   { display: flex; align-items: center; gap: 7px; padding: 5px 10px 5px 28px;
   font-size: 12px; cursor: pointer; border-left: 3px solid transparent;
-  transition: background .1s; color: var(--text-muted); }
-.wiz-tree-node:hover { background: #eef2f7; color: var(--text); }
-.wiz-tree-node.active { background: #e8f0fe; border-left-color: #1a73e8;
-  color: #1a73e8; font-weight: 600; }
-.wiz-tree-sys    { padding-left: 20px; }
-.wiz-tree-direct { padding-left: 20px; }
-.wiz-tree-icon   { font-size: 12px; flex-shrink: 0; }
+  transition: background .1s; color: #8b949e; }
+.wiz-tree-leaf:hover { background: rgba(255,255,255,.06); color: #c9d1d9; }
+.wiz-tree-leaf.active { background: rgba(88,136,255,.15); border-left-color: #5888ff;
+  color: #7aadff; font-weight: 600; }
+.wiz-tree-leaf-icon { font-size: 12px; flex-shrink: 0; }
+
+/* System sub-group indented further */
+.wiz-tree-group .wiz-tree-group .wiz-tree-group-hdr { padding-left: 22px; }
+.wiz-tree-group .wiz-tree-group .wiz-tree-leaf { padding-left: 40px; }
+.wiz-tree-group .wiz-tree-group .wiz-tree-section-label { padding-left: 40px; }
+
+/* Shared label + badges */
 .wiz-tree-label  { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wiz-tree-badge  { font-size: 10px; font-weight: 700; background: #1a73e8; color: #fff;
-  padding: 1px 6px; border-radius: 10px; flex-shrink: 0; }
-.wiz-tree-total  { font-size: 10px; color: #bbb; flex-shrink: 0; }
+.wiz-tree-badge  { font-size: 10px; font-weight: 700; background: #5888ff; color: #fff;
+  padding: 1px 6px; border-radius: 10px; flex-shrink: 0; white-space: nowrap; }
+.wiz-tree-total  { font-size: 10px; color: #4a5568; flex-shrink: 0; }
 
 /* Right artifact panel */
 .wiz-s2-panel    { flex: 1; overflow-y: auto; background: #fff; }
