@@ -316,19 +316,15 @@ export async function renderReviewSessionWizard(container, ctx) {
       _groupOpen[`item-${state.items[0].id}-system`] = true;
     }
 
-    // Active leaf
+    // Active leaf: pick the first art node that has data
     let _activeNode = null;
     outer: for (const it of state.items) {
-      for (const dom of WIZ_DOMAINS) {
-        for (const ph of dom.phases) {
-          const artType = PHASE_ART_TYPE[ph];
-          if (!artType || dom.key !== 'system') continue;
-          const [baseType, lvl] = artType.split(':');
-          const key = lvl
-            ? `art:item:${it.id}:${baseType}:${lvl}`
-            : `art:item:${it.id}:${artType}`;
-          if ((artsByLeaf[key] || []).length) { _activeNode = key; break outer; }
-        }
+      for (const ph of Object.keys(PHASE_ART_TYPE)) {
+        const [baseType, lvl] = PHASE_ART_TYPE[ph].split(':');
+        const key = lvl
+          ? `art:item:${it.id}:${baseType}:${lvl}`
+          : `art:item:${it.id}:${PHASE_ART_TYPE[ph]}`;
+        if ((artsByLeaf[key] || []).length) { _activeNode = key; break outer; }
       }
     }
 
@@ -340,57 +336,48 @@ export async function renderReviewSessionWizard(container, ctx) {
     }
 
     function artLeafSel(key) {
-      const parts = key.split(':'); // art, pType, pId, baseType, [lvl]
-      const baseType = parts[3];
-      const list = artsByLeaf[key] || [];
-      return list.filter(a => state.selected[baseType]?.has(a.id)).length;
+      const baseType = key.split(':')[3];
+      return (artsByLeaf[key] || []).filter(a => state.selected[baseType]?.has(a.id)).length;
     }
     function artLeafTotal(key) { return (artsByLeaf[key] || []).length; }
 
-    function domainSel(pPrefix, parentId, domKey) {
-      const dom = WIZ_DOMAINS.find(d => d.key === domKey);
+    // Flat artifact counts per parent (domain-independent — artifacts don't have a domain field)
+    function parentArtTotal(pPrefix, parentId) {
       let n = 0;
-      (dom?.phases || []).forEach(ph => {
-        const artType = PHASE_ART_TYPE[ph];
-        if (!artType || domKey !== 'system') return;
-        const [bt, lvl] = artType.split(':');
-        const key = lvl ? `art:${pPrefix}:${parentId}:${bt}:${lvl}` : `art:${pPrefix}:${parentId}:${artType}`;
-        n += artLeafSel(key);
-      });
-      // count selected pages for this parent+domain
-      (state.navPages[parentId] || []).filter(p => p.domain === domKey && !p.parent_page_id)
-        .forEach(p => { if (state.selected_pages?.has(p.id)) n++; });
-      return n;
-    }
-    function domainTotal(pPrefix, parentId, domKey) {
-      const dom = WIZ_DOMAINS.find(d => d.key === domKey);
-      let n = 0;
-      (dom?.phases || []).forEach(ph => {
-        const artType = PHASE_ART_TYPE[ph];
-        if (!artType || domKey !== 'system') return;
-        const [bt, lvl] = artType.split(':');
-        const key = lvl ? `art:${pPrefix}:${parentId}:${bt}:${lvl}` : `art:${pPrefix}:${parentId}:${artType}`;
+      Object.keys(PHASE_ART_TYPE).forEach(ph => {
+        const [bt, lvl] = PHASE_ART_TYPE[ph].split(':');
+        const key = lvl ? `art:${pPrefix}:${parentId}:${bt}:${lvl}` : `art:${pPrefix}:${parentId}:${PHASE_ART_TYPE[ph]}`;
         n += artLeafTotal(key);
       });
-      n += (state.navPages[parentId] || []).filter(p => p.domain === domKey && !p.parent_page_id && !p.is_folder).length;
-      n += (state.navPages[parentId] || []).filter(p => p.domain === domKey && p.is_folder).length;
+      n += artLeafTotal(`art:${pPrefix}:${parentId}:safety_analysis_rows`);
       return n;
     }
-    function parentTotalDeep(pPrefix, parentId) {
-      return WIZ_DOMAINS.reduce((s, d) => s + domainTotal(pPrefix, parentId, d.key), 0)
-           + (state.navPages[parentId] || []).filter(p => p.domain === 'safety').length;
+    function parentArtSel(pPrefix, parentId) {
+      let n = 0;
+      Object.keys(PHASE_ART_TYPE).forEach(ph => {
+        const [bt, lvl] = PHASE_ART_TYPE[ph].split(':');
+        const key = lvl ? `art:${pPrefix}:${parentId}:${bt}:${lvl}` : `art:${pPrefix}:${parentId}:${PHASE_ART_TYPE[ph]}`;
+        n += artLeafSel(key);
+      });
+      n += artLeafSel(`art:${pPrefix}:${parentId}:safety_analysis_rows`);
+      return n;
     }
-    function parentSelDeep(pPrefix, parentId) {
-      return WIZ_DOMAINS.reduce((s, d) => s + domainSel(pPrefix, parentId, d.key), 0)
-           + (state.navPages[parentId] || []).filter(p => p.domain === 'safety' && state.selected_pages?.has(p.id)).length;
+    function parentPageTotal(parentId) {
+      const pages = state.navPages[parentId] || [];
+      return pages.filter(p => !p.parent_page_id).length;
     }
-    function itemTotalDeep(it) {
-      return parentTotalDeep('item', it.id)
-           + (state.systems[it.id] || []).reduce((s, sys) => s + parentTotalDeep('sys', sys.id), 0);
+    function parentPageSel(parentId) {
+      return (state.navPages[parentId] || []).filter(p => state.selected_pages?.has(p.id)).length;
     }
-    function itemSelDeep(it) {
-      return parentSelDeep('item', it.id)
-           + (state.systems[it.id] || []).reduce((s, sys) => s + parentSelDeep('sys', sys.id), 0);
+    function parentTotal(pPrefix, parentId) { return parentArtTotal(pPrefix, parentId) + parentPageTotal(parentId); }
+    function parentSel(pPrefix, parentId)   { return parentArtSel(pPrefix, parentId)   + parentPageSel(parentId); }
+    function itemTotal(it) {
+      return parentTotal('item', it.id)
+           + (state.systems[it.id] || []).reduce((s, sys) => s + parentTotal('sys', sys.id), 0);
+    }
+    function itemSel(it) {
+      return parentSel('item', it.id)
+           + (state.systems[it.id] || []).reduce((s, sys) => s + parentSel('sys', sys.id), 0);
     }
 
     function badge(sel, total) {
@@ -401,9 +388,12 @@ export async function renderReviewSessionWizard(container, ctx) {
 
     // ── Tree renderers ────────────────────────────────────────────────────────
 
+    // Artifact leaves only shown under 'system' or 'item' domains (primary domains).
+    // SW/HW/MECH only host nav_pages, not artifact rows.
+    function isArtDomain(domKey) { return domKey === 'system' || domKey === 'item'; }
+
     function renderArtLeaf(pPrefix, parentId, phase, domKey) {
-      // Only show artifact leaves under 'system' domain to avoid duplication
-      if (domKey !== 'system') return '';
+      if (!isArtDomain(domKey)) return '';
       const artType = PHASE_ART_TYPE[phase];
       if (!artType) return '';
       const [baseType, lvl] = artType.split(':');
@@ -437,6 +427,7 @@ export async function renderReviewSessionWizard(container, ctx) {
       </div>`;
     }
 
+    // Always render phase rows (mirrors sidebar which shows all phases even when empty)
     function renderPhaseRow(pPrefix, parentId, phase, domKey, pageMap) {
       const artLeaf   = renderArtLeaf(pPrefix, parentId, phase, domKey);
       const phPages   = (pageMap[domKey] || {})[phase] || [];
@@ -460,13 +451,20 @@ export async function renderReviewSessionWizard(container, ctx) {
         return renderPageLeaf(p);
       }).join('');
 
-      if (!artLeaf && !pageLeaves) return '';
+      const icon  = PHASE_ICONS[phase] || '•';
+      const label = PHASE_LABELS[phase] || phase;
+
+      if (!artLeaf && !pageLeaves) {
+        // Empty phase: render as simple leaf (no expand arrow)
+        return `<div class="wiz-tree-leaf wiz-tree-phase-leaf"
+          data-node="phase:${pPrefix}:${parentId}:${domKey}:${phase}" data-leaf-type="phase">
+          <span class="wiz-tree-leaf-icon">${icon}</span>
+          <span class="wiz-tree-label">${label}</span>
+        </div>`;
+      }
 
       const phGKey = `ph-${pPrefix}-${parentId}-${domKey}-${phase}`;
       const phOpen = _groupOpen[phGKey] !== false;
-      const icon   = PHASE_ICONS[phase] || '•';
-      const label  = PHASE_LABELS[phase] || phase;
-
       return `
         <div class="wiz-tree-group ${phOpen ? 'open' : 'closed'}" data-group="${phGKey}">
           <div class="wiz-tree-group-hdr wiz-tree-phase-hdr">
@@ -480,19 +478,33 @@ export async function renderReviewSessionWizard(container, ctx) {
         </div>`;
     }
 
+    // Always render domain groups — never hide due to empty content
     function renderDomainGroup(pPrefix, parentId, dom) {
-      const pageMap  = getPagesFor(parentId);
-      const total    = domainTotal(pPrefix, parentId, dom.key);
-      if (!total) return '';
-      const sel      = domainSel(pPrefix, parentId, dom.key);
-      const gKey     = `${pPrefix}-${parentId}-${dom.key}`;
-      const open     = _groupOpen[gKey] !== false;
+      const pageMap = getPagesFor(parentId);
+      const gKey    = `${pPrefix}-${parentId}-${dom.key}`;
+      const open    = _groupOpen[gKey] !== false;
 
       const phases = dom.phases.map(ph =>
         renderPhaseRow(pPrefix, parentId, ph, dom.key, pageMap)
       ).join('');
 
-      if (!phases.trim()) return '';
+      // Count only for badge — don't use for visibility
+      let artSel = 0, artTotal = 0;
+      if (isArtDomain(dom.key)) {
+        dom.phases.forEach(ph => {
+          const artType = PHASE_ART_TYPE[ph];
+          if (!artType) return;
+          const [bt, lvl] = artType.split(':');
+          const key = lvl ? `art:${pPrefix}:${parentId}:${bt}:${lvl}` : `art:${pPrefix}:${parentId}:${artType}`;
+          artSel   += artLeafSel(key);
+          artTotal += artLeafTotal(key);
+        });
+      }
+      const pageSel   = (state.navPages[parentId] || []).filter(p => p.domain === dom.key && !p.parent_page_id && state.selected_pages?.has(p.id)).length;
+      const pageTotal = (state.navPages[parentId] || []).filter(p => p.domain === dom.key && !p.parent_page_id).length;
+      const sel = artSel + pageSel;
+      const total = artTotal + pageTotal;
+
       return `
         <div class="wiz-tree-group ${open ? 'open' : 'closed'}" data-group="${gKey}">
           <div class="wiz-tree-group-hdr wiz-tree-domain-hdr">
@@ -533,21 +545,22 @@ export async function renderReviewSessionWizard(container, ctx) {
         </div>`;
     }
 
-    function renderParentNode(pPrefix, parentId, label, icon) {
-      const gKey  = `${pPrefix}-${parentId}`;
-      const open  = _groupOpen[gKey] !== false;
-      const total = parentTotalDeep(pPrefix, parentId);
-      if (!total) return '';
-      const sel   = parentSelDeep(pPrefix, parentId);
+    // Render one system block — always show regardless of content count
+    function renderSystemBlock(sys) {
+      const label  = sys.system_code ? `${sys.system_code} · ${sys.name}` : sys.name;
+      const gKey   = `sys-block-${sys.id}`;
+      const open   = _groupOpen[gKey] !== false;
+      const sel    = parentSel('sys', sys.id);
+      const total  = parentTotal('sys', sys.id);
 
-      const domGroups   = WIZ_DOMAINS.map(d => renderDomainGroup(pPrefix, parentId, d)).join('');
-      const safetyGroup = renderSafetyGroup(pPrefix, parentId);
+      const domGroups   = WIZ_DOMAINS.map(d => renderDomainGroup('sys', sys.id, d)).join('');
+      const safetyGroup = renderSafetyGroup('sys', sys.id);
 
       return `
         <div class="wiz-tree-group ${open ? 'open' : 'closed'}" data-group="${gKey}">
           <div class="wiz-tree-group-hdr wiz-tree-parent-hdr">
             <span class="wiz-tree-chevron">▶</span>
-            <span class="wiz-tree-group-icon">${icon}</span>
+            <span class="wiz-tree-group-icon">⚙</span>
             <span class="wiz-tree-label">${escHtml(label)}</span>
             ${badge(sel, total)}
           </div>
@@ -558,23 +571,28 @@ export async function renderReviewSessionWizard(container, ctx) {
     }
 
     function renderItemNode(it) {
-      const gKey  = `item-${it.id}`;
-      const open  = _groupOpen[gKey] !== false;
-      const total = itemTotalDeep(it);
-      if (!total) return '';
-      const sel     = itemSelDeep(it);
+      const gKey   = `item-${it.id}`;
+      const open   = _groupOpen[gKey] !== false;
       const systems = state.systems[it.id] || [];
+      const sel    = itemSel(it);
+      const total  = itemTotal(it);
 
-      const itemContent = renderParentNode('item', it.id, 'Item level', '⬡');
-      const sysContent  = systems.map(sys => {
-        const label = sys.system_code ? `${sys.system_code} · ${sys.name}` : sys.name;
-        return renderParentNode('sys', sys.id, label, '⚙');
-      }).join('');
+      // Item level: when systems exist, sidebar uses a single 'item' domain group (V-cycle)
+      //             when no systems, sidebar uses all 4 DOMAINS (system/sw/hw/mech)
+      let itemContent;
+      if (systems.length > 0) {
+        const vcycleDom = { key: 'item', label: 'V-cycle', icon: '⬡',
+          phases: Object.keys(PHASE_ICONS) };
+        itemContent = renderDomainGroup('item', it.id, vcycleDom)
+                    + renderSafetyGroup('item', it.id);
+      } else {
+        itemContent = WIZ_DOMAINS.map(d => renderDomainGroup('item', it.id, d)).join('')
+                    + renderSafetyGroup('item', it.id);
+      }
 
-      const hasSys = systems.some(s => parentTotalDeep('sys', s.id) > 0);
-      const sysSection = hasSys ? `
+      const sysSection = systems.length ? `
         <div class="wiz-tree-section-label">Systems</div>
-        ${sysContent}` : '';
+        ${systems.map(sys => renderSystemBlock(sys)).join('')}` : '';
 
       return `
         <div class="wiz-tree-group ${open ? 'open' : 'closed'}" data-group="${gKey}">
