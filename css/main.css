@@ -5634,17 +5634,40 @@ th.col-th-dragging * { pointer-events: none; }
 .rve-atbl-fnds--closed { background: #e6f4ea; color: #1e7e34; border: 1px solid #c3e6cb; }
 
 /* Column picker popover */
-.rve-col-picker-popover { position: fixed; z-index: 1000; background: var(--bg-card);
-  border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.15);
+.rve-col-picker-popover { position: fixed; z-index: 1000; background: #fff;
+  border: 1px solid #d0d0d0; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.18);
   padding: 0; min-width: 180px; max-height: 320px; overflow-y: auto; }
 .rve-col-picker-header { display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 12px; border-bottom: 1px solid var(--border); position: sticky; top: 0;
-  background: var(--bg-card); z-index: 1; }
-.rve-col-picker-list   { padding: 4px 0; }
+  padding: 8px 12px; border-bottom: 1px solid #e8e8e8; position: sticky; top: 0;
+  background: #fff; z-index: 1; }
+.rve-col-picker-list   { padding: 4px 0; background: #fff; }
 .rve-col-picker-item   { display: flex; align-items: center; gap: 8px; padding: 6px 12px;
-  cursor: pointer; font-size: 12px; transition: background .1s; }
-.rve-col-picker-item:hover { background: var(--bg-hover); }
+  cursor: pointer; font-size: 12px; transition: background .1s; background: #fff; }
+.rve-col-picker-item:hover { background: #f0f6ff; }
 .rve-col-picker-item input { margin: 0; cursor: pointer; }
+
+/* List filter button in table header */
+.rve-atbl-list-filter-btn { width: 100%; height: 24px; font-size: 11px; padding: 0 6px;
+  border: 1px solid var(--border); border-radius: 4px; background: #fff; color: var(--text-muted);
+  cursor: pointer; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rve-atbl-list-filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+.rve-atbl-list-filter-btn--active { background: #e8f0fe; border-color: #1a73e8; color: #1558d6; font-weight: 600; }
+
+/* List filter popover (Excel-style) */
+.rve-list-filter-popover { position: absolute; z-index: 1100; background: #fff;
+  border: 1px solid #d0d0d0; border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.2);
+  min-width: 180px; max-height: 360px; display: flex; flex-direction: column; }
+.rve-lfp-header { display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-bottom: 1px solid #e8e8e8; font-size: 12px; flex-shrink: 0; }
+.rve-lfp-actions { display: flex; gap: 4px; padding: 4px 8px; border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0; }
+.rve-lfp-list { overflow-y: auto; flex: 1; padding: 4px 0; }
+.rve-lfp-item { display: flex; align-items: center; gap: 8px; padding: 5px 12px;
+  cursor: pointer; font-size: 12px; transition: background .1s; }
+.rve-lfp-item:hover { background: #f0f6ff; }
+.rve-lfp-item input { margin: 0; cursor: pointer; flex-shrink: 0; }
+.rve-lfp-val { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rve-lfp-footer { padding: 8px 12px; border-top: 1px solid #e8e8e8; flex-shrink: 0; }
 
 .rve-checklist-panel { flex: 1; overflow-y: auto; }
 .rve-checklist-empty { display: flex; align-items: center; justify-content: center;

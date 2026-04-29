@@ -362,28 +362,42 @@ export async function renderReviewExecute(container, ctx) {
     return (snapshots || []).map(snap => renderArtifactCard(snap)).join('');
   }
 
+  // Returns the display value for a cell (shared between table render and filter logic)
+  function getCellValue(snap, col) {
+    const d = snap.snapshot_data || {};
+    if (col === 'code')  return snap.artifact_code  || d.req_code || d.spec_code || d.test_code || d.analysis_code || '';
+    if (col === 'title') return snap.artifact_title || d.title    || d.name      || '';
+    return String(d[col] ?? '');
+  }
+
+  // Distinct non-empty values for a column across all snapshots
+  function getColDistinctValues(col) {
+    const vals = new Set();
+    (snapshots || []).forEach(s => { const v = getCellValue(s, col); if (v) vals.add(v); });
+    return [...vals].sort();
+  }
+
+  // A column is "list" type when it has between 2 and 12 distinct values
+  function isListCol(col) {
+    const v = getColDistinctValues(col);
+    return v.length >= 2 && v.length <= 12;
+  }
+
   function renderArtifactTable() {
     const visArr      = ALL_COLS.filter(c => _visCols.has(c));
     const showProgress = sections.length > 0;
     const colPretty    = c => c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
-    // Build per-row cell values for filtering
-    function getCellValue(snap, col) {
-      const d = snap.snapshot_data || {};
-      if (col === 'code')  return snap.artifact_code  || d.req_code || d.spec_code || d.test_code || d.analysis_code || '';
-      if (col === 'title') return snap.artifact_title || d.title    || d.name      || '';
-      return String(d[col] ?? '');
-    }
-
-    // Filter: every active column filter must match
+    // Filter: text = substring match; Set = must be in the set
     const filtered = (snapshots || []).filter(snap => {
       return Object.entries(_colFilters).every(([col, fv]) => {
-        if (!fv) return true;
-        return getCellValue(snap, col).toLowerCase().includes(fv.toLowerCase());
+        if (!fv || (fv instanceof Set && fv.size === 0)) return true;
+        const val = getCellValue(snap, col);
+        if (fv instanceof Set) return fv.has(val);
+        return val.toLowerCase().includes(fv.toLowerCase());
       });
     });
 
-    // Header: label row + filter-input row
     const labelRow = [
       '<th class="rve-atbl-status-col"></th>',
       ...visArr.map(c => `<th data-col="${c}">${escHtml(colPretty(c))}</th>`),
@@ -393,11 +407,21 @@ export async function renderReviewExecute(container, ctx) {
 
     const filterRow = [
       '<th class="rve-atbl-filter-spacer"></th>',
-      ...visArr.map(c => `<th class="rve-atbl-filter-cell">
-        <input class="rve-atbl-col-filter" data-col="${c}"
-          placeholder="…" value="${escHtml(_colFilters[c] || '')}"
-          title="Filter ${colPretty(c)}"/>
-      </th>`),
+      ...visArr.map(c => {
+        if (isListCol(c)) {
+          const active = _colFilters[c] instanceof Set ? _colFilters[c] : null;
+          const label  = active?.size ? `✓ ${active.size} selected` : '▼ All';
+          return `<th class="rve-atbl-filter-cell">
+            <button class="rve-atbl-list-filter-btn ${active?.size ? 'rve-atbl-list-filter-btn--active' : ''}"
+              data-col="${c}" data-filter-type="list">${escHtml(label)}</button>
+          </th>`;
+        }
+        const val = typeof _colFilters[c] === 'string' ? _colFilters[c] : '';
+        return `<th class="rve-atbl-filter-cell">
+          <input class="rve-atbl-col-filter" data-col="${c}"
+            placeholder="…" value="${escHtml(val)}" title="Filter ${colPretty(c)}"/>
+        </th>`;
+      }),
       showProgress ? '<th></th>' : '',
       '<th></th>',
     ].join('');
@@ -443,7 +467,7 @@ export async function renderReviewExecute(container, ctx) {
       </tr>`;
     }).join('');
 
-    const hasActiveFilters = Object.values(_colFilters).some(v => v);
+    const hasActiveFilters = Object.values(_colFilters).some(v => v instanceof Set ? v.size > 0 : !!v);
     const emptyMsg = hasActiveFilters
       ? `No artifacts match the active filters. <button class="btn btn-ghost btn-xs rve-clear-filters-btn">Clear all filters</button>`
       : 'No artifacts in this session.';
@@ -536,25 +560,23 @@ export async function renderReviewExecute(container, ctx) {
       openColPicker(root.querySelector('#rve-col-picker-btn'));
     });
 
-    // Per-column filter inputs (in table header)
+    // Text filter inputs
     root.querySelectorAll('.rve-atbl-col-filter').forEach(inp => {
       inp.addEventListener('input', e => {
         e.stopPropagation();
         _colFilters[inp.dataset.col] = e.target.value;
-        // Rebuild only tbody to avoid re-focusing the input
-        const tbody = root.querySelector('#rve-atbl tbody');
-        if (tbody) {
-          const tmp = document.createElement('table');
-          tmp.innerHTML = renderArtifactTable();
-          const newTbody = tmp.querySelector('tbody');
-          if (newTbody) tbody.replaceWith(newTbody);
-          wireRowClicks(root);
-        }
-        // Update count label in toolbar
+        rebuildTbody(root);
         updateFilterCountBadge(root);
       });
-      // Prevent row-click when clicking inside filter input
       inp.addEventListener('click', e => e.stopPropagation());
+    });
+
+    // List filter buttons (multi-select popover)
+    root.querySelectorAll('.rve-atbl-list-filter-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        openListFilterPopover(btn, btn.dataset.col, root);
+      });
     });
 
     // Clear-all-filters button (shown when results are empty)
@@ -581,8 +603,18 @@ export async function renderReviewExecute(container, ctx) {
     });
   }
 
+  function rebuildTbody(root) {
+    const tbody = root.querySelector('#rve-atbl tbody');
+    if (!tbody) return;
+    const tmp = document.createElement('table');
+    tmp.innerHTML = renderArtifactTable();
+    const newTbody = tmp.querySelector('tbody');
+    if (newTbody) tbody.replaceWith(newTbody);
+    wireRowClicks(root);
+  }
+
   function updateFilterCountBadge(root) {
-    const active = Object.values(_colFilters).filter(v => v).length;
+    const active = Object.values(_colFilters).filter(v => v instanceof Set ? v.size > 0 : !!v).length;
     const toolbar = root.querySelector('#rve-artlist-toolbar');
     if (!toolbar) return;
     let badge = toolbar.querySelector('.rve-filter-active-badge');
@@ -596,6 +628,74 @@ export async function renderReviewExecute(container, ctx) {
     } else {
       badge?.remove();
     }
+  }
+
+  function openListFilterPopover(anchor, col, root) {
+    document.getElementById('rve-list-filter-popover')?.remove();
+
+    const allVals    = getColDistinctValues(col);
+    const activeSet  = _colFilters[col] instanceof Set ? _colFilters[col] : new Set(allVals); // all selected by default
+    const colPretty  = col.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+    const popover = document.createElement('div');
+    popover.id = 'rve-list-filter-popover';
+    popover.className = 'rve-list-filter-popover';
+    popover.innerHTML = `
+      <div class="rve-lfp-header">
+        <strong>${escHtml(colPretty)}</strong>
+        <button class="btn btn-ghost btn-xs rve-lfp-close">✕</button>
+      </div>
+      <div class="rve-lfp-actions">
+        <button class="btn btn-ghost btn-xs rve-lfp-all">Select all</button>
+        <button class="btn btn-ghost btn-xs rve-lfp-none">Clear</button>
+      </div>
+      <div class="rve-lfp-list">
+        ${allVals.map(v => `
+          <label class="rve-lfp-item">
+            <input type="checkbox" class="rve-lfp-chk" value="${escHtml(v)}" ${activeSet.has(v) ? 'checked' : ''}/>
+            <span class="rve-lfp-val">${escHtml(v || '(empty)')}</span>
+          </label>`).join('')}
+      </div>
+      <div class="rve-lfp-footer">
+        <button class="btn btn-secondary btn-sm rve-lfp-apply">Apply</button>
+      </div>`;
+
+    document.body.appendChild(popover);
+
+    // Position below the anchor button
+    const rect = anchor.getBoundingClientRect();
+    popover.style.left = Math.max(4, rect.left) + 'px';
+    popover.style.top  = (rect.bottom + 4 + window.scrollY) + 'px';
+
+    const getChecked = () => new Set([...popover.querySelectorAll('.rve-lfp-chk:checked')].map(c => c.value));
+
+    popover.querySelector('.rve-lfp-close').onclick = () => popover.remove();
+    popover.querySelector('.rve-lfp-all').onclick   = () => popover.querySelectorAll('.rve-lfp-chk').forEach(c => c.checked = true);
+    popover.querySelector('.rve-lfp-none').onclick  = () => popover.querySelectorAll('.rve-lfp-chk').forEach(c => c.checked = false);
+
+    popover.querySelector('.rve-lfp-apply').onclick = () => {
+      const sel = getChecked();
+      // If all values selected = no filter; otherwise store the set
+      _colFilters[col] = sel.size === allVals.length ? new Set() : sel;
+      popover.remove();
+      // Rebuild filter row button + tbody
+      const filterRow = root.querySelector('.rve-atbl-filter-row');
+      if (filterRow) {
+        const tmp = document.createElement('table');
+        tmp.innerHTML = renderArtifactTable();
+        const newFR = tmp.querySelector('.rve-atbl-filter-row');
+        if (newFR) filterRow.replaceWith(newFR);
+        // Re-wire list filter buttons in the new row
+        root.querySelectorAll('.rve-atbl-list-filter-btn').forEach(btn => {
+          btn.addEventListener('click', e => { e.stopPropagation(); openListFilterPopover(btn, btn.dataset.col, root); });
+        });
+      }
+      rebuildTbody(root);
+      updateFilterCountBadge(root);
+    };
+
+    const closeOut = e => { if (!popover.contains(e.target) && e.target !== anchor) { popover.remove(); document.removeEventListener('click', closeOut); } };
+    setTimeout(() => document.addEventListener('click', closeOut), 0);
   }
 
   function wirePropsPanel() {
