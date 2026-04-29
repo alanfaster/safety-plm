@@ -114,7 +114,7 @@ export async function renderReviewExecute(container, ctx) {
   // Artifact list panel state
   let _listExpanded    = false;
   let _propsCollapsed  = false;
-  let _artlistWidth    = parseInt(localStorage.getItem('alm_artlist_width') || '260', 10);
+  let _artlistWidth    = parseInt(localStorage.getItem('alm_artlist_width') || '750', 10);
   let _colFilters      = {};   // { [colName]: string }  — per-column filter values
   // Columns visible in expanded table mode
   const SKIP_FIELDS = new Set(['id','created_at','updated_at','project_id','parent_id','parent_type','domain','session_id']);
@@ -496,7 +496,7 @@ export async function renderReviewExecute(container, ctx) {
     root.querySelector('#rve-list-toggle')?.addEventListener('click', () => {
       _listExpanded = !_listExpanded;
       if (_listExpanded) {
-        _artlistWidth = Math.max(400, _artlistWidth);
+        _artlistWidth = Math.max(600, _artlistWidth);
       }
       rebuildArtifactList();
       if (!_listExpanded && _selectedSnapshot) loadPropsPanel();
@@ -509,7 +509,7 @@ export async function renderReviewExecute(container, ctx) {
       const onMove = e => {
         const dx = e.clientX - startX;
         const body = document.getElementById('rve-body') || root.parentElement;
-        const maxW = body ? body.clientWidth - 320 : 1200; // leave room for checklist
+        const maxW = body ? body.clientWidth - 200 : 1400; // leave minimum room for checklist
         _artlistWidth = Math.max(260, Math.min(maxW, startW + dx));
         root.style.width = `${_artlistWidth}px`;
       };
