@@ -191,19 +191,73 @@ export async function renderReviewFindings(container, ctx) {
       filterSeverity = e.target.value; renderPage();
     };
 
-    // Status transition buttons
+    // Status transition buttons — show inline comment form before committing
+    const COMMENT_REQUIRED = new Set(['rejected','duplicate','deferred','closed']);
+
     container.querySelectorAll('.rvf-status-btn').forEach(btn => {
-      btn.onclick = async () => {
+      btn.onclick = () => {
         const { findingId, toStatus } = btn.dataset;
-        const finding = findings?.find(f => f.id === findingId);
-        if (!finding) return;
-        const { error } = await sb.from('review_findings').update({
-          status: toStatus, updated_at: new Date().toISOString(),
-        }).eq('id', findingId);
-        if (error) { toast('Error: ' + error.message, 'error'); return; }
-        finding.status = toStatus;
-        toast(`Finding ${finding.finding_code}: ${STATUS_LABELS[toStatus]}`, 'success');
-        renderPage();
+        const tr = btn.closest('tr');
+        if (!tr) return;
+
+        // Remove any other open transition form in this table
+        container.querySelectorAll('.rvf-transition-row').forEach(r => r.remove());
+        container.querySelectorAll('.rvf-status-btn.rvf-status-btn--active').forEach(b => b.classList.remove('rvf-status-btn--active'));
+
+        btn.classList.add('rvf-status-btn--active');
+        const required = COMMENT_REQUIRED.has(toStatus);
+
+        const formTr = document.createElement('tr');
+        formTr.className = 'rvf-transition-row';
+        formTr.innerHTML = `
+          <td colspan="7">
+            <div class="rvf-transition-form">
+              <span class="rvf-transition-label">→ <strong>${STATUS_LABELS[toStatus]}</strong></span>
+              <textarea class="form-input rvf-transition-comment" rows="2"
+                placeholder="Add a note${required ? ' (required)' : ' (optional)'}…"
+                style="flex:1;font-size:12px"></textarea>
+              <div class="rvf-transition-actions">
+                <button class="btn btn-primary btn-sm rvf-transition-confirm">Confirm</button>
+                <button class="btn btn-ghost btn-sm rvf-transition-cancel">Cancel</button>
+              </div>
+            </div>
+          </td>`;
+        tr.after(formTr);
+
+        const commentInput = formTr.querySelector('.rvf-transition-comment');
+        commentInput.focus();
+
+        formTr.querySelector('.rvf-transition-cancel').onclick = () => {
+          formTr.remove();
+          btn.classList.remove('rvf-status-btn--active');
+        };
+
+        formTr.querySelector('.rvf-transition-confirm').onclick = async () => {
+          const comment = commentInput.value.trim();
+          if (required && !comment) { commentInput.focus(); toast('A note is required for this transition.', 'error'); return; }
+          const finding = findings?.find(f => f.id === findingId);
+          if (!finding) return;
+
+          const confirmBtn = formTr.querySelector('.rvf-transition-confirm');
+          confirmBtn.disabled = true;
+
+          const updates = { status: toStatus, updated_at: new Date().toISOString() };
+          if (comment) updates.resolution_note = comment;
+          const { error } = await sb.from('review_findings').update(updates).eq('id', findingId);
+          if (error) { toast('Error: ' + error.message, 'error'); confirmBtn.disabled = false; return; }
+
+          if (comment) {
+            await sb.from('review_finding_comments').insert({
+              finding_id: findingId, author_id: null,
+              comment: `[${STATUS_LABELS[toStatus]}] ${comment}`,
+            }).catch(() => {});
+          }
+
+          finding.status = toStatus;
+          if (comment) finding.resolution_note = comment;
+          toast(`${finding.finding_code}: ${STATUS_LABELS[toStatus]}`, 'success');
+          renderPage();
+        };
       };
     });
 

@@ -5986,6 +5986,22 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rvf-actions .btn { margin-right: 2px; }
 .rvf-resolution-input { font-size: 12px; min-width: 160px; }
 
+/* Inline transition form (findings page) */
+.rvf-transition-row td { background: #f8f9ff; padding: 8px 12px; border-bottom: 1px solid #e3e8f0; }
+.rvf-transition-form {
+  display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap;
+}
+.rvf-transition-label { font-size: 12px; padding-top: 6px; white-space: nowrap; min-width: 100px; }
+.rvf-transition-actions { display: flex; gap: 6px; padding-top: 2px; }
+.rvf-status-btn--active { background: #e8f0fe !important; color: #1A73E8 !important; }
+
+/* Findings group label in execute props panel */
+.rve-findings-group-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--color-text-muted); margin: 8px 0 4px; padding-bottom: 3px;
+  border-bottom: 1px solid var(--color-border);
+}
+
 /* ============================================================
    REVIEW EXECUTE — 3-TAB LAYOUT
    ============================================================ */

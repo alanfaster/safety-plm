@@ -1096,15 +1096,23 @@ export async function renderReviewExecute(container, ctx) {
             <button class="btn btn-ghost btn-xs" id="rve-finding-raise-btn" style="margin-left:8px">+ Raise Finding</button>
           </div>
           <div id="rve-findings-list">
-            ${_findings.filter(f => f.snapshot_id === snap.id).length
-              ? _findings.filter(f => f.snapshot_id === snap.id).map(f => `
+            ${(() => {
+              const snapFindings = _findings.filter(f => f.snapshot_id === snap.id);
+              if (!snapFindings.length) return '<p class="text-muted" style="font-size:12px;margin:4px 0">No findings yet.</p>';
+              const checklistFindings = snapFindings.filter(f => f.response_id);
+              const directFindings    = snapFindings.filter(f => !f.response_id);
+              const renderFnd = f => `
                 <div class="rve-props-finding-row rv-sev-${f.severity}">
                   <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
                   <span class="rve-props-finding-title">${escHtml(f.title)}</span>
                   <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
                   <span class="badge" style="font-size:10px">${escHtml(f.status)}</span>
-                </div>`).join('')
-              : '<p class="text-muted" style="font-size:12px;margin:4px 0">No findings yet.</p>'}
+                </div>`;
+              return [
+                checklistFindings.length ? `<div class="rve-findings-group-label">From checklist</div>${checklistFindings.map(renderFnd).join('')}` : '',
+                directFindings.length    ? `<div class="rve-findings-group-label">Direct findings</div>${directFindings.map(renderFnd).join('')}` : '',
+              ].filter(Boolean).join('');
+            })()}
           </div>
         </div>
 
@@ -1199,15 +1207,24 @@ export async function renderReviewExecute(container, ctx) {
       panel.querySelector('#rve-finding-desc').value  = '';
       _stagedVerdict = null;
 
-      // Refresh findings list
+      // Refresh findings list (grouped by source)
       const list = panel.querySelector('#rve-findings-list');
-      if (list) list.innerHTML = _findings.filter(f => f.snapshot_id === snap.id).map(f => `
-        <div class="rve-props-finding-row">
-          <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
-          <span class="rve-props-finding-title">${escHtml(f.title)}</span>
-          <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
-          <span class="badge" style="font-size:10px">${escHtml(f.status)}</span>
-        </div>`).join('');
+      if (list) {
+        const snapFindings = _findings.filter(f => f.snapshot_id === snap.id);
+        const checklistFindings = snapFindings.filter(f => f.response_id);
+        const directFindings    = snapFindings.filter(f => !f.response_id);
+        const renderFnd = f => `
+          <div class="rve-props-finding-row rv-sev-${f.severity}">
+            <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
+            <span class="rve-props-finding-title">${escHtml(f.title)}</span>
+            <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
+            <span class="badge" style="font-size:10px">${escHtml(f.status)}</span>
+          </div>`;
+        list.innerHTML = [
+          checklistFindings.length ? `<div class="rve-findings-group-label">From checklist</div>${checklistFindings.map(renderFnd).join('')}` : '',
+          directFindings.length    ? `<div class="rve-findings-group-label">Direct findings</div>${directFindings.map(renderFnd).join('')}` : '',
+        ].filter(Boolean).join('') || '<p class="text-muted" style="font-size:12px;margin:4px 0">No findings yet.</p>';
+      }
     });
 
     // "Raise Finding" standalone button (no verdict required)
