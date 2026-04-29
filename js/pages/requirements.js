@@ -44,6 +44,7 @@ let _traceData     = {};   // { [nodeId]: [{code, label}] } — cached lookup da
 let _tracePanelId  = null; // currently open req id in trace panel
 let _colFilters    = {};   // { [colId]: string } — active column filter values
 let _systems       = [];   // systems for the current item (used by system_component column)
+let _selection     = new Set();  // selected requirement IDs (bulk actions)
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export async function renderRequirements(container, { project, item, system, par
   _tracePanelId  = null;
   _colFilters    = {};
   _collapsed   = new Set(JSON.parse(sessionStorage.getItem(`req_collapsed_${parentId}`) || '[]'));
+  _selection   = new Set();
   _showAsil    = project.type === 'automotive';
   _showDal     = project.type === 'aerospace' || project.type === 'military';
 
@@ -134,6 +136,15 @@ export async function renderRequirements(container, { project, item, system, par
       <button class="btn btn-primary"   id="btn-new-req">＋ ${t('req.new')}</button>
       <button class="btn btn-secondary" id="btn-new-section">＋ Section</button>
     </div>
+    <div class="req-bulk-bar" id="req-bulk-bar">
+      <span class="req-bulk-count" id="req-bulk-count">0 selected</span>
+      <div class="req-bulk-actions">
+        <button class="btn btn-primary btn-sm" id="req-bulk-review">✓ Review</button>
+        <button class="btn btn-secondary btn-sm" id="req-bulk-status">✏ Edit Status</button>
+        <button class="btn btn-danger btn-sm" id="req-bulk-delete">🗑 Delete</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="req-bulk-cancel">✕ Cancel</button>
+    </div>
   `;
 
   document.getElementById('btn-new-req').onclick = () =>
@@ -157,14 +168,42 @@ export async function renderRequirements(container, { project, item, system, par
     };
   });
 
+  // "Start Review" button — enters selection mode (highlights all rows for picking)
   document.getElementById('btn-start-review-page').onclick = () => {
+    // Select all visible content requirements, then show bulk bar
+    const allIds = _data.filter(r => r.type !== 'title' && r.type !== 'info').map(r => r.id);
+    allIds.forEach(id => _selection.add(id));
+    syncBulkBar();
+    syncCheckboxes();
+  };
+
+  // Bulk bar actions
+  document.getElementById('req-bulk-cancel').onclick = () => {
+    _selection.clear();
+    syncBulkBar();
+    syncCheckboxes();
+  };
+
+  document.getElementById('req-bulk-review').onclick = () => {
+    if (!_selection.size) return;
+    sessionStorage.setItem('wiz_preselected_requirements', JSON.stringify([..._selection]));
     const base = `/project/${project.id}/item/${item.id}`;
     const parentTypePfx = system ? 'system' : 'item';
     const parentIdCtx   = system ? system.id : item.id;
     const displayName   = subPageName || pageTitle;
-    let url = `${base}/reviews/new?phase=requirements&domain=${encodeURIComponent(domainKey)}&parentType=${parentTypePfx}&parentId=${parentIdCtx}&pageName=${encodeURIComponent(displayName)}`;
+    let url = `${base}/reviews/new?phase=requirements&domain=${encodeURIComponent(domainKey)}&parentType=${parentTypePfx}&parentId=${parentIdCtx}&pageName=${encodeURIComponent(displayName)}&preselected=1`;
     if (pageId) url += `&pageId=${pageId}`;
     navigate(url);
+  };
+
+  document.getElementById('req-bulk-status').onclick = () => {
+    if (!_selection.size) return;
+    showBulkStatusPicker();
+  };
+
+  document.getElementById('req-bulk-delete').onclick = () => {
+    if (!_selection.size) return;
+    bulkDelete();
   };
 
   await loadData();
@@ -577,6 +616,39 @@ function wireAllRows(tbody) {
       if (!req) return;
       await handleReqDelete(req);
     };
+  });
+
+  // Hover-to-reveal checkbox + click-to-select
+  tbody.querySelectorAll('tr[data-rid]').forEach(tr => {
+    const rid = tr.dataset.rid;
+    const r   = _data.find(r => r.id === rid);
+    if (!r || r.type === 'title' || r.type === 'info') return;
+    const chk = tr.querySelector('.req-row-chk');
+    const handle = tr.querySelector('.req-drag-handle');
+    if (!chk) return;
+
+    tr.addEventListener('mouseenter', () => {
+      if (!_selection.has(rid)) { chk.style.display = ''; if (handle) handle.style.display = 'none'; }
+    });
+    tr.addEventListener('mouseleave', () => {
+      if (!_selection.has(rid)) { chk.style.display = 'none'; if (handle) handle.style.display = ''; }
+    });
+
+    chk.addEventListener('change', e => {
+      e.stopPropagation();
+      if (chk.checked) _selection.add(rid); else _selection.delete(rid);
+      tr.classList.toggle('req-row-selected', _selection.has(rid));
+      syncBulkBar();
+      // Keep checkbox visible if selected
+      if (!_selection.has(rid)) { chk.style.display = 'none'; if (handle) handle.style.display = ''; }
+    });
+
+    // Apply initial state (e.g. after re-render)
+    if (_selection.has(rid)) {
+      chk.checked = true; chk.style.display = '';
+      if (handle) handle.style.display = 'none';
+      tr.classList.add('req-row-selected');
+    }
   });
 }
 
@@ -1326,7 +1398,11 @@ function reqTd(c, r) {
     </select>`;
   switch (c.id) {
     case 'drag':
-      return `<td data-col="drag" class="req-drag-handle" title="Drag to reorder">⠿</td>`;
+      return `<td data-col="drag" class="req-drag-cell">
+        <span class="req-drag-handle" title="Drag to reorder">⠿</span>
+        <input type="checkbox" class="req-row-chk" data-rid="${r.id}" ${_selection.has(r.id) ? 'checked' : ''}
+          title="Select" style="display:none"/>
+      </td>`;
     case 'code': {
       const ftaLinked = r.source?.startsWith('FTA-AND:');
       return `<td data-col="code" class="code-cell" style="white-space:nowrap">
@@ -2258,6 +2334,87 @@ function dfaUrl(project, item, system) {
 
 function tr_of(el) {
   return el?.closest('tr');
+}
+
+// ── Bulk selection helpers ────────────────────────────────────────────────────
+
+function syncBulkBar() {
+  const bar   = document.getElementById('req-bulk-bar');
+  const count = document.getElementById('req-bulk-count');
+  if (!bar) return;
+  const n = _selection.size;
+  bar.classList.toggle('req-bulk-bar--visible', n > 0);
+  if (count) count.textContent = `${n} selected`;
+}
+
+function syncCheckboxes() {
+  document.querySelectorAll('tr[data-rid]').forEach(tr => {
+    const rid = tr.dataset.rid;
+    const chk = tr.querySelector('.req-row-chk');
+    const handle = tr.querySelector('.req-drag-handle');
+    if (!chk) return;
+    const sel = _selection.has(rid);
+    chk.checked = sel;
+    chk.style.display = sel ? '' : 'none';
+    if (handle) handle.style.display = sel ? 'none' : '';
+    tr.classList.toggle('req-row-selected', sel);
+  });
+}
+
+function showBulkStatusPicker() {
+  // Show a small floating status picker near the button
+  const existing = document.getElementById('req-bulk-status-picker');
+  if (existing) { existing.remove(); return; }
+
+  const btn = document.getElementById('req-bulk-status');
+  const picker = document.createElement('div');
+  picker.id = 'req-bulk-status-picker';
+  picker.className = 'req-bulk-status-picker';
+  picker.innerHTML = REQ_STATUSES.map(s =>
+    `<button class="req-bulk-status-opt" data-status="${s}">${s}</button>`
+  ).join('');
+  document.body.appendChild(picker);
+
+  const rect = btn.getBoundingClientRect();
+  picker.style.left = rect.left + 'px';
+  picker.style.top  = (rect.top - picker.offsetHeight - 6) + 'px';
+
+  picker.querySelectorAll('.req-bulk-status-opt').forEach(opt => {
+    opt.onclick = async () => {
+      picker.remove();
+      const ids = [..._selection];
+      await Promise.all(ids.map(id =>
+        sb.from('requirements').update({ status: opt.dataset.status, updated_at: new Date().toISOString() }).eq('id', id)
+      ));
+      ids.forEach(id => {
+        const r = _data.find(r => r.id === id);
+        if (r) r.status = opt.dataset.status;
+        const sel = document.querySelector(`tr[data-rid="${id}"] select[data-field="status"]`);
+        if (sel) sel.value = opt.dataset.status;
+      });
+      toast(`${ids.length} requirement${ids.length > 1 ? 's' : ''} set to "${opt.dataset.status}".`, 'success');
+    };
+  });
+
+  setTimeout(() => document.addEventListener('click', function close(e) {
+    if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', close); }
+  }), 0);
+}
+
+async function bulkDelete() {
+  const n = _selection.size;
+  if (!confirm(`Delete ${n} requirement${n > 1 ? 's' : ''}? This cannot be undone.`)) return;
+  const ids = [..._selection];
+  await Promise.all(ids.map(id => sb.from('requirements').delete().eq('id', id)));
+  ids.forEach(id => {
+    const idx = _data.findIndex(r => r.id === id);
+    if (idx !== -1) _data.splice(idx, 1);
+    document.querySelector(`tr[data-rid="${id}"]`)?.remove();
+  });
+  _selection.clear();
+  syncBulkBar();
+  buildReqNavTree();
+  toast(`${n} requirement${n > 1 ? 's' : ''} deleted.`, 'success');
 }
 
 function esc(str) {

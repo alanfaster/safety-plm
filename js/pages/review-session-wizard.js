@@ -907,6 +907,18 @@ export async function renderReviewSessionWizard(container, ctx) {
       }
 
       if (!state.selected[baseType]) state.selected[baseType] = new Set();
+
+      // Pre-select IDs passed from requirements page bulk selection
+      if (_hashQuery.get('preselected') && baseType) {
+        const stored = sessionStorage.getItem(`wiz_preselected_${baseType}`);
+        if (stored) {
+          JSON.parse(stored).forEach(id => {
+            if (ctxArtifacts.some(a => a.id === id)) state.selected[baseType].add(id);
+          });
+          sessionStorage.removeItem(`wiz_preselected_${baseType}`);
+        }
+      }
+
       const sel = state.selected[baseType];
 
       function buildRows() {
