@@ -48,6 +48,15 @@ const TRANSITIONS = {
   rejected:    [],
 };
 
+const TRANSITION_LABELS = {
+  accepted:'Accept', in_progress:'Start work', fixed:'Mark as Implemented',
+  verified:'Verify', closed:'Confirm & Close', rejected:'Reject',
+  deferred:'Defer', duplicate:'Mark Duplicate',
+};
+
+// Comment required for terminal/negative transitions
+const COMMENT_REQUIRED = new Set(['rejected', 'duplicate', 'deferred', 'closed']);
+
 export async function renderReviewFindings(container, ctx) {
   const { project, item, sessionId } = ctx;
   const base = `/project/${project.id}/item/${item.id}`;
@@ -165,7 +174,7 @@ export async function renderReviewFindings(container, ctx) {
                 <th>Severity</th>
                 <th>Title</th>
                 <th>Status</th>
-                <th style="width:160px">Actions</th>
+                <th style="width:36px"></th>
               </tr>
             </thead>
             <tbody>
@@ -190,31 +199,32 @@ export async function renderReviewFindings(container, ctx) {
       filterSeverity = e.target.value; renderPage();
     };
 
-    // Status transition buttons — show inline comment form before committing
-    const COMMENT_REQUIRED = new Set(['rejected','duplicate','deferred','closed']);
-
-    container.querySelectorAll('.rvf-status-btn').forEach(btn => {
-      btn.onclick = () => {
-        const { findingId, toStatus } = btn.dataset;
-        const tr = btn.closest('tr');
+    // Status select — show inline confirm form with required comment
+    container.querySelectorAll('.rvf-status-select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const findingId = sel.dataset.findingId;
+        const toStatus  = sel.value;
+        if (!toStatus || toStatus === sel.dataset.current) { sel.value = sel.dataset.current; return; }
+        const finding = findings?.find(f => f.id === findingId);
+        if (!finding) return;
+        const tr = sel.closest('tr');
         if (!tr) return;
 
-        // Remove any other open transition form in this table
+        // Remove any other open confirm row
         container.querySelectorAll('.rvf-transition-row').forEach(r => r.remove());
-        container.querySelectorAll('.rvf-status-btn.rvf-status-btn--active').forEach(b => b.classList.remove('rvf-status-btn--active'));
 
-        btn.classList.add('rvf-status-btn--active');
+        sel.disabled = true;
         const required = COMMENT_REQUIRED.has(toStatus);
+        const label    = TRANSITION_LABELS[toStatus] || STATUS_LABELS[toStatus];
 
         const formTr = document.createElement('tr');
         formTr.className = 'rvf-transition-row';
         formTr.innerHTML = `
-          <td colspan="7">
+          <td colspan="6">
             <div class="rvf-transition-form">
-              <span class="rvf-transition-label">→ <strong>${STATUS_LABELS[toStatus]}</strong></span>
+              <span class="rvf-transition-label">→ <strong>${escHtml(label)}</strong></span>
               <textarea class="form-input rvf-transition-comment" rows="2"
-                placeholder="Add a note${required ? ' (required)' : ' (optional)'}…"
-                style="flex:1;font-size:12px"></textarea>
+                placeholder="Add a note${required ? ' (required)' : ' (optional)'}…"></textarea>
               <div class="rvf-transition-actions">
                 <button class="btn btn-primary btn-sm rvf-transition-confirm">Confirm</button>
                 <button class="btn btn-ghost btn-sm rvf-transition-cancel">Cancel</button>
@@ -222,21 +232,18 @@ export async function renderReviewFindings(container, ctx) {
             </div>
           </td>`;
         tr.after(formTr);
-
-        const commentInput = formTr.querySelector('.rvf-transition-comment');
-        commentInput.focus();
+        formTr.querySelector('.rvf-transition-comment').focus();
 
         formTr.querySelector('.rvf-transition-cancel').onclick = () => {
           formTr.remove();
-          btn.classList.remove('rvf-status-btn--active');
+          sel.value = sel.dataset.current;
+          sel.disabled = false;
         };
 
         formTr.querySelector('.rvf-transition-confirm').onclick = async () => {
-          const comment = commentInput.value.trim();
-          if (required && !comment) { commentInput.focus(); toast('A note is required for this transition.', 'error'); return; }
-          const finding = findings?.find(f => f.id === findingId);
-          if (!finding) return;
-
+          const comment    = formTr.querySelector('.rvf-transition-comment').value.trim();
+          const commentEl  = formTr.querySelector('.rvf-transition-comment');
+          if (required && !comment) { commentEl.focus(); toast('A note is required for this transition.', 'error'); return; }
           const confirmBtn = formTr.querySelector('.rvf-transition-confirm');
           confirmBtn.disabled = true;
 
@@ -248,23 +255,43 @@ export async function renderReviewFindings(container, ctx) {
           if (comment) {
             await sb.from('review_finding_comments').insert({
               finding_id: findingId, author_id: null,
-              comment: `[${STATUS_LABELS[toStatus]}] ${comment}`,
+              comment: `[${label}] ${comment}`,
             }).catch(() => {});
           }
 
           finding.status = toStatus;
           if (comment) finding.resolution_note = comment;
-          toast(`${finding.finding_code}: ${STATUS_LABELS[toStatus]}`, 'success');
+          toast(`${finding.finding_code}: ${label}`, 'success');
           renderPage();
         };
+      });
+    });
+
+    // Delete button
+    container.querySelectorAll('.rvf-del-btn').forEach(btn => {
+      btn.onclick = async () => {
+        const finding = findings?.find(f => f.id === btn.dataset.findingId);
+        if (!finding) return;
+        if (!confirm(`Delete ${finding.finding_code}?`)) return;
+        const { error } = await sb.from('review_findings').delete().eq('id', finding.id);
+        if (error) { toast('Error: ' + error.message, 'error'); return; }
+        findings.splice(findings.indexOf(finding), 1);
+        toast(`${finding.finding_code} deleted.`, 'success');
+        renderPage();
       };
     });
 
   }
 
   function renderFindingRow(f, snapMap) {
-    const snap = f.snapshot_id ? snapMap[f.snapshot_id] : null;
+    const snap        = f.snapshot_id ? snapMap[f.snapshot_id] : null;
     const transitions = TRANSITIONS[f.status] || [];
+    const disabled    = transitions.length === 0 ? 'disabled' : '';
+    const statusSelect = `
+      <select class="rvf-status-select" data-finding-id="${f.id}" data-current="${f.status}" ${disabled}>
+        <option value="${f.status}" selected>${STATUS_LABELS[f.status] || f.status}</option>
+        ${transitions.map(to => `<option value="${to}">${TRANSITION_LABELS[to] || STATUS_LABELS[to]}</option>`).join('')}
+      </select>`;
 
     return `
       <tr class="rvf-row" data-id="${f.id}">
@@ -277,16 +304,12 @@ export async function renderReviewFindings(container, ctx) {
         <td class="rvf-title-cell">
           <div class="rvf-title">${escHtml(f.title)}</div>
           ${f.description ? `<div class="rvf-desc text-muted">${escHtml(f.description)}</div>` : ''}
+          ${f.resolution_note ? `<div class="text-muted" style="font-size:11px;margin-top:2px;font-style:italic">${escHtml(f.resolution_note)}</div>` : ''}
         </td>
-        <td>
-          <span class="badge ${STATUS_CLASSES[f.status] || ''}">${STATUS_LABELS[f.status] || f.status}</span>
-          ${f.resolution_note ? `<div class="text-muted" style="font-size:11px;margin-top:3px">${escHtml(f.resolution_note)}</div>` : ''}
-        </td>
-        <td class="rvf-actions">
-          ${transitions.map(to => `
-            <button class="btn btn-ghost btn-sm rvf-status-btn" data-finding-id="${f.id}" data-to-status="${to}" title="${STATUS_LABELS[to]}">
-              ${STATUS_LABELS[to]}
-            </button>`).join('')}
+        <td>${statusSelect}</td>
+        <td style="text-align:center">
+          <button class="btn btn-ghost btn-xs rvf-del-btn" data-finding-id="${f.id}"
+            style="color:var(--color-danger,#e53e3e)" title="Delete finding">✕</button>
         </td>
       </tr>
     `;

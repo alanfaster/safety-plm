@@ -5982,8 +5982,15 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rvf-table .rvf-title-cell { max-width: 280px; }
 .rvf-title        { font-size: 12px; font-weight: 500; }
 .rvf-desc         { font-size: 11px; margin-top: 2px; }
-.rvf-actions      { white-space: nowrap; }
-.rvf-actions .btn { margin-right: 2px; }
+
+/* Status select in findings table */
+.rvf-status-select {
+  font-size: 12px; border: 1px solid transparent; border-radius: 4px;
+  padding: 2px 4px; background: transparent; cursor: pointer; max-width: 160px;
+}
+.rvf-status-select:hover { border-color: var(--color-border); background: #fff; }
+.rvf-status-select:focus { border-color: var(--accent, #1A73E8); background: #fff; outline: none; }
+.rvf-status-select:disabled { opacity: 0.5; cursor: default; }
 
 /* Inline transition form (findings page) */
 .rvf-transition-row td { background: #f8f9ff; padding: 8px 12px; border-bottom: 1px solid #e3e8f0; }
