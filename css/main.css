@@ -6121,8 +6121,20 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rve-props-findings-section { margin-top: 4px; }
 .rve-props-finding-row {
   padding: 5px 6px; border-radius: 4px; margin-bottom: 4px;
-  background: #fff8f0; border-left: 3px solid #d93025; font-size: 12px;
+  background: #fffdf8; border-left: 3px solid #ccc; font-size: 12px;
 }
+/* Severity left-border — mirrors checklist */
+.rve-props-finding-row[data-severity="critical"]    { border-left-color: #d93025; }
+.rve-props-finding-row[data-severity="major"]       { border-left-color: #fd7e14; }
+.rve-props-finding-row[data-severity="minor"]       { border-left-color: #f0a500; }
+.rve-props-finding-row[data-severity="observation"] { border-left-color: #9e9e9e; }
+/* Status overrides — take precedence over severity */
+.rve-props-finding-row[data-status="accepted"]      { border-left-color: #f9ab00; }
+.rve-props-finding-row[data-status="fixed"]         { border-left-color: #1a73e8; }
+.rve-props-finding-row[data-status="closed"]        { border-left-color: #34a853; }
+.rve-props-finding-row[data-status="rejected"],
+.rve-props-finding-row[data-status="deferred"],
+.rve-props-finding-row[data-status="duplicate"]     { border-left-color: #9e9e9e; }
 .rve-props-fnd-header {
   display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
 }

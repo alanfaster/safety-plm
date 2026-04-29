@@ -321,7 +321,7 @@ export async function renderReviewExecute(container, ctx) {
     const statusBadge = `<span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}" style="font-size:10px">${FINDING_STATUS_LABELS[f.status] || f.status}</span>`;
     if (!editable) {
       return `
-        <div class="rve-props-finding-row rv-sev-${f.severity} rve-props-finding-row--readonly" data-finding-id="${f.id}">
+        <div class="rve-props-finding-row rv-sev-${f.severity} rve-props-finding-row--readonly" data-finding-id="${f.id}" data-severity="${f.severity}" data-status="${f.status}">
           <div class="rve-props-fnd-header">
             <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
             <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
@@ -334,7 +334,7 @@ export async function renderReviewExecute(container, ctx) {
     const transitions = FINDING_TRANSITIONS[f.status] || [];
     const disabled    = transitions.length === 0 ? 'disabled' : '';
     return `
-      <div class="rve-props-finding-row rv-sev-${f.severity}" data-finding-id="${f.id}">
+      <div class="rve-props-finding-row rv-sev-${f.severity}" data-finding-id="${f.id}" data-severity="${f.severity}" data-status="${f.status}">
         <div class="rve-props-fnd-header">
           <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
           <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
