@@ -5614,13 +5614,13 @@ th.col-th-dragging * { pointer-events: none; }
   text-transform: uppercase; letter-spacing: .04em; position: sticky; top: 0; z-index: 2; }
 
 /* Draggable column header */
-.rve-atbl-th-drag       { cursor: grab; user-select: none; }
+.rve-atbl-th-drag        { cursor: grab; user-select: none; }
 .rve-atbl-th-drag:active { cursor: grabbing; }
-.rve-atbl-th-drag .rve-atbl-th-label { flex: 1; }
-.rve-atbl-th-drag .rve-atbl-th-grip  { margin-left: 6px; opacity: 0; font-size: 13px;
+.rve-atbl-th-inner       { display: flex; align-items: center; gap: 4px; }
+.rve-atbl-th-inner .rve-atbl-th-label { flex: 1; }
+.rve-atbl-th-inner .rve-atbl-th-grip  { opacity: 0; font-size: 13px;
   color: #aaa; transition: opacity .15s; }
 .rve-atbl-th-drag:hover .rve-atbl-th-grip { opacity: 1; }
-.rve-atbl-th-drag { display: flex; align-items: center; }
 .rve-atbl-th--dragging  { opacity: .4; background: #e8f0fe !important; }
 .rve-atbl-th--drag-over { background: #c5d8fb !important; border-left: 3px solid #1a73e8 !important; }
 .rve-atbl-filter-row th { background: #fafafa; border-bottom: 2px solid var(--border);

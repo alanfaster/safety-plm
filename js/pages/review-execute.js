@@ -378,8 +378,11 @@ export async function renderReviewExecute(container, ctx) {
     return [...vals].sort();
   }
 
-  // A column is "list" type when it has between 2 and 12 distinct values
+  const ALWAYS_TEXT_COLS = new Set(['code','title','name','description','source','rationale','acceptance_criteria','notes']);
+
+  // A column is "list" type when it has between 2 and 12 distinct values and is not a free-text field
   function isListCol(col) {
+    if (ALWAYS_TEXT_COLS.has(col)) return false;
     const v = getColDistinctValues(col);
     return v.length >= 2 && v.length <= 12;
   }
@@ -402,8 +405,10 @@ export async function renderReviewExecute(container, ctx) {
     const labelRow = [
       '<th class="rve-atbl-status-col"></th>',
       ...visArr.map(c => `<th class="rve-atbl-th-drag" draggable="true" data-col="${c}">
-        <span class="rve-atbl-th-label">${escHtml(colPretty(c))}</span>
-        <span class="rve-atbl-th-grip" title="Drag to reorder">⠿</span>
+        <div class="rve-atbl-th-inner">
+          <span class="rve-atbl-th-label">${escHtml(colPretty(c))}</span>
+          <span class="rve-atbl-th-grip" title="Drag to reorder">⠿</span>
+        </div>
       </th>`),
       showProgress ? '<th>Progress</th>' : '',
       '<th>Findings</th>',
