@@ -19,6 +19,11 @@
 
 import { sb } from '../config.js';
 import { wireBottomPanel } from '../utils/bottom-panel.js';
+import {
+  FINDING_STATUS_LABELS, FINDING_STATUS_CLASSES,
+  TRANSITIONS, TRANSITION_LABELS, COMMENT_REQUIRED,
+  SEVERITY_LABELS, SEVERITY_CLASSES,
+} from './finding-constants.js';
 
 const VERDICT_LABELS  = { ok:'OK', nok:'NOK', partially_ok:'Partially OK', na:'N/A' };
 const VERDICT_CLASSES = { ok:'rv-v-ok', nok:'rv-v-nok', partially_ok:'rv-v-partial', na:'rv-v-na' };
@@ -26,29 +31,6 @@ const VERDICT_CLASSES = { ok:'rv-v-ok', nok:'rv-v-nok', partially_ok:'rv-v-parti
 const ARTIFACT_FINAL_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-GO' };
 const ARTIFACT_FINAL_CLASSES = { go:'rvck-stamp-go', conditional:'rvck-stamp-conditional', no_go:'rvck-stamp-nogo' };
 
-const FINDING_STATUS_LABELS  = {
-  open:'Open', accepted:'Accepted', fixed:'Implemented – pending review', closed:'Closed', rejected:'Rejected',
-  in_progress:'In Progress', deferred:'Deferred', verified:'Verified', duplicate:'Duplicate',
-};
-const FINDING_STATUS_CLASSES = {
-  open:'rv-fs-open', accepted:'rv-fs-accepted', in_progress:'rv-fs-in-progress',
-  deferred:'rv-fs-deferred', fixed:'rv-fs-fixed', verified:'rv-fs-verified',
-  closed:'rv-fs-closed', duplicate:'rv-fs-closed', rejected:'rv-fs-closed',
-};
-const SEVERITY_CLASSES = {
-  critical:'rv-sev-critical', major:'rv-sev-major', minor:'rv-sev-minor', observation:'rv-sev-observation',
-};
-const SEVERITY_LABELS  = { critical:'Critical', major:'Major', minor:'Minor', observation:'Observation' };
-
-const TRANSITIONS = {
-  open:     ['accepted', 'rejected'],
-  accepted: ['fixed'],
-  fixed:    ['closed'],
-  closed:[], rejected:[],
-};
-const TRANSITION_LABELS = {
-  accepted:'Accept', fixed:'Mark as Implemented', closed:'Confirm & Close', rejected:'Reject',
-};
 
 function buildStatusSelectHtml(f, isAuthor, extraClass = '') {
   const transitions = TRANSITIONS[f.status] || [];

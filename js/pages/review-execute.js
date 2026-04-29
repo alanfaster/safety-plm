@@ -149,7 +149,6 @@ export async function renderReviewExecute(container, ctx) {
         <button class="rve-bulk-btn rve-bulk-btn--go"          data-bulk-verdict="ok">✓ OK</button>
         <button class="rve-bulk-btn rve-bulk-btn--conditional" data-bulk-verdict="partially_ok">⚑ Partially OK</button>
         <button class="rve-bulk-btn rve-bulk-btn--no_go"       data-bulk-verdict="nok">✗ NOK</button>
-        <button class="rve-bulk-btn rve-bulk-btn--na"          data-bulk-verdict="na">— N/A</button>
         <button class="btn btn-ghost btn-xs rve-bulk-cancel-btn" title="Cancel">✕</button>
       </div>`;
   }
@@ -1052,7 +1051,7 @@ export async function renderReviewExecute(container, ctx) {
         <div class="rve-props-verdict-section">
           <div class="rve-props-verdict-label">My Verdict</div>
           <div class="rvck-verdict-pills">
-            ${[['ok','OK'],['nok','NOK'],['partially_ok','Partly OK'],['na','N/A']].map(([v,lbl]) => `
+            ${[['ok','OK'],['nok','NOK'],['partially_ok','Partly OK']].map(([v,lbl]) => `
               <button class="rvck-vbtn rve-props-vbtn ${mv === v ? 'sel-' + v + ' active' : ''}" data-verdict="${v}">${lbl}</button>`).join('')}
           </div>
 

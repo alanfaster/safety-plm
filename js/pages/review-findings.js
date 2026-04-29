@@ -7,55 +7,12 @@ import { sb } from '../config.js';
 import { navigate } from '../router.js';
 import { setBreadcrumb } from '../components/topbar.js';
 import { toast } from '../toast.js';
-
-const SEVERITY_LABELS  = { critical: 'Critical', major: 'Major', minor: 'Minor', observation: 'Observation' };
-const SEVERITY_CLASSES = { critical: 'rv-sev-critical', major: 'rv-sev-major', minor: 'rv-sev-minor', observation: 'rv-sev-observation' };
-
-// ASPICE MAN.5 finding lifecycle
-const STATUS_LABELS = {
-  open:        'Open',
-  accepted:    'Accepted',
-  in_progress: 'In Progress',
-  deferred:    'Deferred',
-  fixed:       'Fixed',
-  verified:    'Verified',
-  closed:      'Closed',
-  duplicate:   'Duplicate',
-  rejected:    'Rejected',
-};
-const STATUS_CLASSES = {
-  open:        'rv-fs-open',
-  accepted:    'rv-fs-accepted',
-  in_progress: 'rv-fs-in-progress',
-  deferred:    'rv-fs-deferred',
-  fixed:       'rv-fs-fixed',
-  verified:    'rv-fs-verified',
-  closed:      'rv-fs-closed',
-  duplicate:   'rv-fs-closed',
-  rejected:    'rv-fs-closed',
-};
-
-// Valid transitions (from → [to])
-const TRANSITIONS = {
-  open:        ['accepted', 'rejected', 'duplicate'],
-  accepted:    ['in_progress', 'deferred', 'rejected'],
-  in_progress: ['fixed', 'deferred'],
-  deferred:    ['in_progress', 'rejected'],
-  fixed:       ['verified', 'in_progress'],
-  verified:    ['closed', 'in_progress'],
-  closed:      [],
-  duplicate:   [],
-  rejected:    [],
-};
-
-const TRANSITION_LABELS = {
-  accepted:'Accept', in_progress:'Start work', fixed:'Mark as Implemented',
-  verified:'Verify', closed:'Confirm & Close', rejected:'Reject',
-  deferred:'Defer', duplicate:'Mark Duplicate',
-};
-
-// Comment required for terminal/negative transitions
-const COMMENT_REQUIRED = new Set(['rejected', 'duplicate', 'deferred', 'closed']);
+import {
+  FINDING_STATUS_LABELS as STATUS_LABELS,
+  FINDING_STATUS_CLASSES as STATUS_CLASSES,
+  TRANSITIONS, TRANSITION_LABELS, COMMENT_REQUIRED,
+  SEVERITY_LABELS, SEVERITY_CLASSES,
+} from '../components/finding-constants.js';
 
 export async function renderReviewFindings(container, ctx) {
   const { project, item, sessionId } = ctx;
