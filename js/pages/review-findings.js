@@ -79,7 +79,8 @@ export async function renderReviewFindings(container, ctx) {
   let filterStatus   = 'all';
   let filterSeverity = 'all';
   const _urlParams   = new URLSearchParams(window.location.hash.split('?')[1] || '');
-  let filterArtifact = _urlParams.get('artifactId') || null;  // pre-filter by artifact id from badge nav
+  let filterArtifact = _urlParams.get('artifactId') || null;
+  const _fromPath    = _urlParams.get('from') ? decodeURIComponent(_urlParams.get('from')) : null;
 
   renderPage();
 
@@ -114,6 +115,7 @@ export async function renderReviewFindings(container, ctx) {
             <p class="page-subtitle">${escHtml(session?.title || '')} · ${(findings || []).length} total</p>
           </div>
           <div style="display:flex;gap:8px">
+            ${_fromPath ? `<button class="btn btn-secondary" id="rvf-btn-back">← Back</button>` : ''}
             <button class="btn btn-secondary" id="rvf-btn-execute">← Back to Checklist</button>
           </div>
         </div>
@@ -175,6 +177,7 @@ export async function renderReviewFindings(container, ctx) {
       </div>
     `;
 
+    document.getElementById('rvf-btn-back')?.addEventListener('click', () => navigate(_fromPath));
     document.getElementById('rvf-btn-execute').onclick = () => navigate(`${base}/reviews/${sessionId}/execute`);
 
     document.getElementById('rvf-clear-art-filter')?.addEventListener('click', () => {

@@ -580,11 +580,12 @@ function wireAllRows(tbody) {
     const sessionId = badge.dataset.sessionId;
     const rid       = badge.dataset.rid;
     if (!sessionId) return;
-    const base2 = `/project/${project.id}/item/${item.id}`;
+    const base2    = `/project/${project.id}/item/${item.id}`;
+    const fromPath = encodeURIComponent(window.location.hash.replace(/^#/, ''));
     if (badge.dataset.badgeType === 'finding') {
-      navigate(`${base2}/reviews/${sessionId}/findings?artifactId=${rid}`);
+      navigate(`${base2}/reviews/${sessionId}/findings?artifactId=${rid}&from=${fromPath}`);
     } else {
-      navigate(`${base2}/reviews/${sessionId}/execute?artifactId=${rid}`);
+      navigate(`${base2}/reviews/${sessionId}/execute?artifactId=${rid}&from=${fromPath}`);
     }
   });
 

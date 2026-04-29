@@ -113,6 +113,7 @@ export async function renderReviewExecute(container, ctx) {
   // Pre-select artifact from URL param (e.g. when navigating from req badge)
   const _urlParams      = new URLSearchParams(window.location.hash.split('?')[1] || '');
   const _preselArtId    = _urlParams.get('artifactId');
+  const _fromPath       = _urlParams.get('from') ? decodeURIComponent(_urlParams.get('from')) : null;
   let _selectedSnapshot = (_preselArtId && (snapshots || []).find(s => s.artifact_id === _preselArtId))
     || snapshots?.[0] || null;
 
@@ -324,6 +325,7 @@ export async function renderReviewExecute(container, ctx) {
             ${session.checklist_mode === 'shared' ? `<span class="rve-tpl-tag" title="One checklist shared across all artifacts">⇔ Shared checklist</span>` : ''}
           </div>
           <div class="rve-topbar-right">
+            ${_fromPath ? `<button class="btn btn-secondary btn-sm" id="rve-btn-back">← Back</button>` : ''}
             <button class="btn btn-ghost btn-sm" id="rve-btn-refresh" title="Refresh responses and findings from other reviewers">↺ Refresh</button>
             ${session.status === 'in_progress' ? `<button class="btn btn-primary btn-sm" id="rve-btn-complete">✓ Complete Review</button>` : ''}
           </div>
@@ -332,6 +334,7 @@ export async function renderReviewExecute(container, ctx) {
       </div>
     `;
 
+    document.getElementById('rve-btn-back')?.addEventListener('click', () => navigate(_fromPath));
     document.getElementById('rve-btn-complete')?.addEventListener('click', completeSession);
     document.getElementById('rve-btn-refresh')?.addEventListener('click', () => refreshFromServer());
     wireReviewTab();
