@@ -25,8 +25,9 @@ const SEVERITY_LABELS  = { critical:'Critical', major:'Major', minor:'Minor', ob
 const SEVERITY_CLASSES = { critical:'rv-sev-critical', major:'rv-sev-major', minor:'rv-sev-minor', observation:'rv-sev-observation' };
 
 
-const FINAL_VERDICT_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-GO' };
-const FINAL_VERDICT_CLASSES = { go:'rve-artcard-go', conditional:'rve-artcard-conditional', no_go:'rve-artcard-no_go' };
+const FINAL_VERDICT_LABELS  = { ok:'OK', partially_ok:'Partially OK', nok:'NOK', na:'N/A' };
+const FINAL_VERDICT_CLASSES = { ok:'rve-artcard-go', partially_ok:'rve-artcard-conditional', nok:'rve-artcard-no_go', na:'rve-artcard-na' };
+const VERDICT_REQUIRES_FINDING = new Set(['nok','partially_ok']);
 
 const ARTIFACT_DISPLAY_FIELDS = {
   requirements:         ['req_code','title','description','type','status','priority','asil','dal'],
@@ -140,9 +141,10 @@ export async function renderReviewExecute(container, ctx) {
     return `
       <div class="rve-bulk-verdict-bar" id="rve-bulk-verdict-bar">
         <span class="rve-bulk-verdict-label">All:</span>
-        <button class="rve-bulk-btn rve-bulk-btn--go"          data-bulk-verdict="go">✓ GO</button>
-        <button class="rve-bulk-btn rve-bulk-btn--conditional" data-bulk-verdict="conditional">⚑ Cond.</button>
-        <button class="rve-bulk-btn rve-bulk-btn--no_go"       data-bulk-verdict="no_go">✗ NO-GO</button>
+        <button class="rve-bulk-btn rve-bulk-btn--go"          data-bulk-verdict="ok">✓ OK</button>
+        <button class="rve-bulk-btn rve-bulk-btn--conditional" data-bulk-verdict="partially_ok">⚑ Partially OK</button>
+        <button class="rve-bulk-btn rve-bulk-btn--no_go"       data-bulk-verdict="nok">✗ NOK</button>
+        <button class="rve-bulk-btn rve-bulk-btn--na"          data-bulk-verdict="na">— N/A</button>
         <button class="btn btn-ghost btn-xs rve-bulk-cancel-btn" title="Cancel">✕</button>
       </div>`;
   }
@@ -469,7 +471,7 @@ export async function renderReviewExecute(container, ctx) {
       }).join('');
 
       const verdictIndicator = mv
-        ? `<span class="rve-atbl-verdict rve-atbl-verdict--${mv}" title="${FINAL_VERDICT_LABELS[mv]}">${mv === 'go' ? '✓' : mv === 'no_go' ? '✗' : '⚑'}</span>`
+        ? `<span class="rve-atbl-verdict rve-atbl-verdict--${mv}" title="${FINAL_VERDICT_LABELS[mv]}">${mv === 'ok' ? '✓' : mv === 'nok' ? '✗' : mv === 'na' ? '—' : '⚑'}</span>`
         : '';
       const driftIndicator = drifted ? `<span class="rve-drift-badge" title="Changed since snapshot">⚠</span>` : '';
 
@@ -1043,11 +1045,24 @@ export async function renderReviewExecute(container, ctx) {
         <div class="rve-props-verdict-section">
           <div class="rve-props-verdict-label">My Verdict</div>
           <div class="rve-props-verdict-btns">
-            ${['go','conditional','no_go'].map(v => `
-              <button class="rve-props-vbtn ${mv === v ? 'rve-props-vbtn-' + v + ' active' : ''}"
-                      data-verdict="${v}">
-                ${v === 'go' ? '✓ GO' : v === 'no_go' ? '✗ NO-GO' : '⚑ Conditional'}
-              </button>`).join('')}
+            ${[['ok','✓ OK','rve-props-vbtn-ok'],['partially_ok','⚑ Partially OK','rve-props-vbtn-conditional'],['nok','✗ NOK','rve-props-vbtn-nok'],['na','— N/A','rve-props-vbtn-na']].map(([v,lbl,cls]) => `
+              <button class="rve-props-vbtn ${mv === v ? cls + ' active' : ''}" data-verdict="${v}">${lbl}</button>`).join('')}
+          </div>
+
+          <div class="rve-props-finding-form" id="rve-finding-form" style="display:none">
+            <div class="rve-props-verdict-label" style="margin-top:10px">Finding required <span style="color:var(--color-danger)">*</span></div>
+            <input class="form-input" id="rve-finding-title" placeholder="Finding title…" style="margin-bottom:6px"/>
+            <select class="form-input form-select" id="rve-finding-severity" style="margin-bottom:6px">
+              <option value="major">Major</option>
+              <option value="critical">Critical</option>
+              <option value="minor">Minor</option>
+              <option value="observation">Observation</option>
+            </select>
+            <textarea class="form-input" id="rve-finding-desc" rows="2" placeholder="Description / evidence…"></textarea>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn btn-primary btn-sm" id="rve-finding-save">Save verdict + finding</button>
+              <button class="btn btn-ghost btn-sm" id="rve-finding-cancel">Cancel</button>
+            </div>
           </div>
 
           ${reviewerList.length > 1 ? `
@@ -1060,11 +1075,30 @@ export async function renderReviewExecute(container, ctx) {
                 return `<div class="rve-props-rv-row">
                   <span class="rve-props-rv-name ${isMe ? 'rve-props-rv-me' : ''}">${escHtml(r.display_name || r.role || '?')}${isMe ? ' (me)' : ''}</span>
                   ${v
-                    ? `<span class="rve-props-rv-verdict rve-props-rv-verdict--${v}">${FINAL_VERDICT_LABELS[v]}</span>`
+                    ? `<span class="rve-props-rv-verdict rve-props-rv-verdict--${v}">${FINAL_VERDICT_LABELS[v] || v}</span>`
                     : `<span class="rve-props-rv-pending">Pending</span>`}
                 </div>`;
               }).join('')}
             </div>` : ''}
+        </div>
+
+        <div class="rve-props-divider"></div>
+
+        <div class="rve-props-findings-section">
+          <div class="rve-props-verdict-label">Findings
+            <button class="btn btn-ghost btn-xs" id="rve-finding-raise-btn" style="margin-left:8px">+ Raise Finding</button>
+          </div>
+          <div id="rve-findings-list">
+            ${_findings.filter(f => f.snapshot_id === snap.id).length
+              ? _findings.filter(f => f.snapshot_id === snap.id).map(f => `
+                <div class="rve-props-finding-row rv-sev-${f.severity}">
+                  <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
+                  <span class="rve-props-finding-title">${escHtml(f.title)}</span>
+                  <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
+                  <span class="badge" style="font-size:10px">${escHtml(f.status)}</span>
+                </div>`).join('')
+              : '<p class="text-muted" style="font-size:12px;margin:4px 0">No findings yet.</p>'}
+          </div>
         </div>
 
         <div class="rve-props-divider"></div>
@@ -1092,16 +1126,86 @@ export async function renderReviewExecute(container, ctx) {
     wirePropsPanel();  // re-wire toggle after innerHTML replace
     panel.querySelector('#rve-props-compare')?.addEventListener('click', () => openDiffModal(snap));
 
-    // Wire verdict buttons
-    let _currentVerdict = mv;
+    // Wire verdict buttons — NOK/Partially OK require a finding before saving
+    let _stagedVerdict = null;
+    const findingForm  = panel.querySelector('#rve-finding-form');
+
+    const VBTN_ACTIVE_CLS = { ok:'rve-props-vbtn-ok', partially_ok:'rve-props-vbtn-conditional', nok:'rve-props-vbtn-nok', na:'rve-props-vbtn-na' };
+
+    function highlightVbtn(v) {
+      panel.querySelectorAll('.rve-props-vbtn').forEach(b => {
+        const active = b.dataset.verdict === v;
+        b.className  = `rve-props-vbtn${active ? ' ' + (VBTN_ACTIVE_CLS[v] || '') + ' active' : ''}`;
+      });
+    }
+
     panel.querySelectorAll('.rve-props-vbtn').forEach(btn => {
       btn.addEventListener('click', async () => {
-        _currentVerdict = btn.dataset.verdict;
-        panel.querySelectorAll('.rve-props-vbtn').forEach(b => {
-          b.className = `rve-props-vbtn${b.dataset.verdict === _currentVerdict ? ' rve-props-vbtn-' + _currentVerdict + ' active' : ''}`;
-        });
-        await saveArtifactVerdict(snap, _currentVerdict);
+        const v = btn.dataset.verdict;
+        highlightVbtn(v);
+        if (VERDICT_REQUIRES_FINDING.has(v)) {
+          _stagedVerdict = v;
+          findingForm.style.display = '';
+          panel.querySelector('#rve-finding-title')?.focus();
+        } else {
+          _stagedVerdict = null;
+          findingForm.style.display = 'none';
+          await saveArtifactVerdict(snap, v);
+        }
       });
+    });
+
+    panel.querySelector('#rve-finding-cancel')?.addEventListener('click', () => {
+      _stagedVerdict = null;
+      findingForm.style.display = 'none';
+      highlightVbtn(mv);   // revert to saved verdict
+    });
+
+    panel.querySelector('#rve-finding-save')?.addEventListener('click', async () => {
+      const title = panel.querySelector('#rve-finding-title')?.value.trim();
+      const desc  = panel.querySelector('#rve-finding-desc')?.value.trim();
+      const sev   = panel.querySelector('#rve-finding-severity')?.value || 'major';
+      if (!title) { panel.querySelector('#rve-finding-title')?.focus(); toast('Enter a finding title.','error'); return; }
+      if (!desc)  { panel.querySelector('#rve-finding-desc')?.focus();  toast('Enter a description.','error');   return; }
+
+      const saveBtn = panel.querySelector('#rve-finding-save');
+      saveBtn.disabled = true;
+
+      // Generate finding code
+      const { count } = await sb.from('review_findings').select('*', { count:'exact', head:true }).eq('session_id', sessionId);
+      const findingCode = `FND-${String((count || 0) + 1).padStart(3,'0')}`;
+
+      const { data: finding, error: fe } = await sb.from('review_findings').insert({
+        session_id: sessionId, snapshot_id: snap.id,
+        finding_code: findingCode, title, description: desc,
+        severity: sev, status: 'open', created_by: currentUserId,
+      }).select().single();
+
+      saveBtn.disabled = false;
+      if (fe) { toast('Error saving finding: ' + fe.message, 'error'); return; }
+
+      if (finding) _findings.push(finding);
+      await saveArtifactVerdict(snap, _stagedVerdict);
+
+      findingForm.style.display = 'none';
+      panel.querySelector('#rve-finding-title').value = '';
+      panel.querySelector('#rve-finding-desc').value  = '';
+      _stagedVerdict = null;
+
+      // Refresh findings list
+      const list = panel.querySelector('#rve-findings-list');
+      if (list) list.innerHTML = _findings.filter(f => f.snapshot_id === snap.id).map(f => `
+        <div class="rve-props-finding-row">
+          <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
+          <span class="rve-props-finding-title">${escHtml(f.title)}</span>
+          <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
+          <span class="badge" style="font-size:10px">${escHtml(f.status)}</span>
+        </div>`).join('');
+    });
+
+    // "Raise Finding" standalone button (no verdict required)
+    panel.querySelector('#rve-finding-raise-btn')?.addEventListener('click', () => {
+      findingForm.style.display = findingForm.style.display === 'none' ? '' : 'none';
     });
 
     // Wire comment reply
