@@ -107,8 +107,9 @@ export async function renderReviewSessionWizard(container, ctx) {
       <div class="wiz-wrap">
         <div class="wiz-steps" id="wiz-steps">
           <div class="wiz-step active" data-step="1"><span class="wiz-step-num">1</span><span class="wiz-step-label">Setup</span></div>
+          ${!_initQuery.get('preselected') ? `
           <div class="wiz-step-sep">›</div>
-          <div class="wiz-step" data-step="2"><span class="wiz-step-num">2</span><span class="wiz-step-label">Artifacts</span></div>
+          <div class="wiz-step" data-step="2"><span class="wiz-step-num">2</span><span class="wiz-step-label">Artifacts</span></div>` : ''}
           <div class="wiz-step-sep">›</div>
           <div class="wiz-step" data-step="3"><span class="wiz-step-num">3</span><span class="wiz-step-label">Reviewers</span></div>
           ${!(_initPhase && _initQuery.get('parentId')) ? `
@@ -129,6 +130,16 @@ export async function renderReviewSessionWizard(container, ctx) {
   // Load templates upfront
   const { data: templates } = await sb.from('review_protocol_templates')
     .select('*').eq('project_id', project.id).eq('is_active', true).order('name');
+
+  // Load pre-selected artifact IDs from sessionStorage (set by requirements page bulk bar)
+  if (_initQuery.get('preselected')) {
+    const stored = sessionStorage.getItem('wiz_preselected_requirements');
+    if (stored) {
+      if (!state.selected['requirements']) state.selected['requirements'] = new Set();
+      JSON.parse(stored).forEach(id => state.selected['requirements'].add(id));
+      sessionStorage.removeItem('wiz_preselected_requirements');
+    }
+  }
 
   // Auto-select template matching the artifact type for this page context
   if (!state.template_id && _initPhase && templates?.length) {
@@ -1292,7 +1303,8 @@ export async function renderReviewSessionWizard(container, ctx) {
           return;
         }
       }
-      state.step = 2;
+      // Skip artifact step when items were pre-selected from the page
+      state.step = _initQuery.get('preselected') ? 3 : 2;
     } else if (state.step === 2) {
       state.step = 3;
     } else if (state.step === 3) {
