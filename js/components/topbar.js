@@ -111,6 +111,20 @@ function toggleSidebar(sidebar) {
 }
 
 /**
+ * Set contextual action buttons in the topbar (beside breadcrumb).
+ * Call with HTML string; cleared automatically on each route change via clearPageActions().
+ */
+export function setPageActions(html) {
+  const el = document.getElementById('page-actions');
+  if (el) el.innerHTML = html;
+}
+
+export function clearPageActions() {
+  const el = document.getElementById('page-actions');
+  if (el) el.innerHTML = '';
+}
+
+/**
  * Update breadcrumb trail.
  * @param {Array<{label:string, path?:string}>} crumbs
  */

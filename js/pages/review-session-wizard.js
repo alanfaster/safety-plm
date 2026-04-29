@@ -61,10 +61,23 @@ export async function renderReviewSessionWizard(container, ctx) {
 
   const { data: { user: currentUser } } = await sb.auth.getUser();
 
+  // Pre-populate title from URL context if wizard was launched from a page button
+  const _initQuery   = new URLSearchParams(window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '');
+  const _initPhase   = _initQuery.get('phase');
+  const _initDomain  = _initQuery.get('domain');
+  const PHASE_TITLE_LABELS = {
+    item_definition:'Item Definition', requirements:'Requirements', architecture:'Architecture',
+    design:'Design', implementation:'Implementation', unit_testing:'Unit Testing',
+    integration_testing:'Integration Testing', system_testing:'System Testing', validation:'Validation',
+  };
+  const _initTitle = _initPhase
+    ? `${PHASE_TITLE_LABELS[_initPhase] || _initPhase}${_initDomain && _initDomain !== 'default' ? ' (' + _initDomain.toUpperCase() + ')' : ''} Review`
+    : '';
+
   // Wizard state
   const state = {
     step: 1,
-    title: '',
+    title: _initTitle,
     review_type: 'inspection',
     template_id: null,
     planned_date: new Date().toISOString().slice(0, 10),
@@ -332,15 +345,61 @@ export async function renderReviewSessionWizard(container, ctx) {
       _groupOpen[`item-${state.items[0].id}-system`] = true;
     }
 
-    // Active leaf: pick the first art node that has data
+    // Parse context from URL query string (set when wizard launched from a page's "Start Review" button)
+    const _hashQuery    = new URLSearchParams(window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '');
+    const _ctxPhase     = _hashQuery.get('phase');
+    const _ctxDomain    = _hashQuery.get('domain');
+    const _ctxParentType = _hashQuery.get('parentType');
+    const _ctxParentId  = _hashQuery.get('parentId');
+    const _ctxPageId    = _hashQuery.get('pageId');
+
+    // Determine active leaf: prefer context from URL, else pick first node with data
     let _activeNode = null;
-    outer: for (const it of state.items) {
-      for (const ph of Object.keys(PHASE_ART_TYPE)) {
-        const [baseType, lvl] = PHASE_ART_TYPE[ph].split(':');
-        const key = lvl
-          ? `art:item:${it.id}:${baseType}:${lvl}`
-          : `art:item:${it.id}:${PHASE_ART_TYPE[ph]}`;
-        if ((artsByLeaf[key] || []).length) { _activeNode = key; break outer; }
+
+    if (_ctxPhase && _ctxParentId) {
+      if (_ctxPageId) {
+        // Sub-page context: activate the page leaf
+        _activeNode = `page:${_ctxPageId}`;
+      } else {
+        // Phase + domain context: try to find the matching art leaf
+        const pPrefix = _ctxParentType === 'system' ? 'sys' : 'item';
+        const artType = PHASE_ART_TYPE[_ctxPhase];
+        if (artType) {
+          const [bt, lvl] = artType.split(':');
+          const key = lvl ? `art:${pPrefix}:${_ctxParentId}:${bt}:${lvl}` : `art:${pPrefix}:${_ctxParentId}:${artType}`;
+          _activeNode = key;
+        }
+      }
+      // Auto-expand the relevant groups
+      if (_ctxParentType === 'system') {
+        _groupOpen[`sys-block-${_ctxParentId}`] = true;
+        // Find item that owns this system
+        const owningItem = state.items.find(it => (state.systems[it.id] || []).some(s => s.id === _ctxParentId));
+        if (owningItem) _groupOpen[`item-${owningItem.id}`] = true;
+        if (_ctxDomain) {
+          _groupOpen[`sys-${_ctxParentId}-${_ctxDomain}`] = true;
+          if (_ctxPhase) _groupOpen[`ph-sys-${_ctxParentId}-${_ctxDomain}-${_ctxPhase}`] = true;
+        }
+      } else {
+        // item context
+        const owningItem = state.items.find(it => it.id === _ctxParentId);
+        if (owningItem) _groupOpen[`item-${owningItem.id}`] = true;
+        const hasSystems = (state.systems[_ctxParentId] || []).length > 0;
+        const domKey = hasSystems ? 'item' : (_ctxDomain || 'system');
+        _groupOpen[`item-${_ctxParentId}-${domKey}`] = true;
+        if (_ctxPhase) _groupOpen[`ph-item-${_ctxParentId}-${domKey}-${_ctxPhase}`] = true;
+      }
+    }
+
+    if (!_activeNode) {
+      outer: for (const it of state.items) {
+        for (const ph of Object.keys(PHASE_ART_TYPE)) {
+          const [baseType, lvl] = PHASE_ART_TYPE[ph].split(':');
+          const key = lvl
+            ? `art:item:${it.id}:${baseType}:${lvl}`
+            : `art:item:${it.id}:${PHASE_ART_TYPE[ph]}`;
+          if ((artsByLeaf[key] || []).length) { _activeNode = key; break outer; }
+        }
       }
     }
 

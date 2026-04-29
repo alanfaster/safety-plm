@@ -186,6 +186,11 @@ input, select, textarea { font-family: var(--font); }
 }
 .breadcrumb-sep { color: rgba(255,255,255,0.35); font-size: 12px; }
 
+/* Page-contextual action buttons (injected per page into #page-actions) */
+.page-actions { display: flex; align-items: center; gap: 6px; }
+.page-action-group { display: flex; align-items: center; gap: 6px; }
+.page-action-group .btn-sm { font-size: 12px; padding: 4px 10px; }
+
 /* Topbar buttons */
 .topbar-btn {
   background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);

@@ -6,12 +6,46 @@
 import { sb } from '../config.js';
 import { t } from '../i18n/index.js';
 import { toast } from '../toast.js';
+import { navigate } from '../router.js';
+import { setPageActions } from '../components/topbar.js';
 import { renderRequirements }   from './requirements.js';
 import { renderItemDefinition } from './item-definition.js';
 import { renderArchitecture }   from './architecture.js';
 import { renderArchSpec }       from './arch-spec.js';
 import { renderWiki }           from './wiki.js';
 import { renderTestSpecs }      from './test-specs.js';
+
+// Phases that have reviewable artifacts
+const REVIEWABLE_PHASES = new Set(['requirements','architecture','design','implementation',
+  'unit_testing','integration_testing','system_testing','validation']);
+
+function injectReviewActions(project, item, system, phase, domain, pageId) {
+  const parentType = system ? 'system' : 'item';
+  const parentId   = system ? system.id : item.id;
+  const base       = `/project/${project.id}/item/${item.id}`;
+  const reviewsBase = `${base}/reviews`;
+
+  // Build wizard URL with context query params
+  let wizardUrl = `${base}/reviews/new?phase=${phase}&domain=${domain}&parentType=${parentType}&parentId=${parentId}`;
+  if (pageId) wizardUrl += `&pageId=${pageId}`;
+
+  setPageActions(`
+    <div class="page-action-group">
+      <button class="btn btn-primary btn-sm page-action-review" id="btn-start-review" title="Start a review for this page">
+        ✓ Start Review
+      </button>
+      <button class="btn btn-secondary btn-sm page-action-reviews-link" id="btn-page-reviews" title="See all reviews for this page">
+        📋 Reviews
+      </button>
+    </div>
+  `);
+
+  document.getElementById('btn-start-review').onclick = () => navigate(wizardUrl);
+  document.getElementById('btn-page-reviews').onclick = () => {
+    const filterUrl = `${reviewsBase}?phase=${phase}&domain=${domain}&parentType=${parentType}&parentId=${parentId}`;
+    navigate(filterUrl);
+  };
+}
 
 export async function renderVcycle(container, { project, item, system, phase, domain = 'default', pageId = null }) {
   // Wiki pages short-circuit any phase renderer
@@ -26,6 +60,7 @@ export async function renderVcycle(container, { project, item, system, phase, do
 
   if (phase === 'item_definition') {
     await renderItemDefinition(container, { project, item, system, domain, pageId });
+    if (REVIEWABLE_PHASES.has(phase)) injectReviewActions(project, item, system, phase, domain, pageId);
     return;
   }
 
@@ -36,6 +71,7 @@ export async function renderVcycle(container, { project, item, system, phase, do
     // SW / HW / MECH domains always use the Architecture Specification table layout
     if (domain === 'sw' || domain === 'hw' || domain === 'mech') {
       await renderArchSpec(container, { project, item, system, parentType, parentId, domain, pageId });
+      injectReviewActions(project, item, system, phase, domain, pageId);
       return;
     }
 
@@ -44,15 +80,18 @@ export async function renderVcycle(container, { project, item, system, phase, do
       const { data: pg } = await sb.from('nav_pages').select('name').eq('id', pageId).maybeSingle();
       if (pg?.name?.toLowerCase().includes('specification')) {
         await renderArchSpec(container, { project, item, system, parentType, parentId, domain, pageId });
+        injectReviewActions(project, item, system, phase, domain, pageId);
         return;
       }
     }
     await renderArchitecture(container, { project, item, system, domain, pageId });
+    injectReviewActions(project, item, system, phase, domain, pageId);
     return;
   }
 
   if (['unit_testing', 'integration_testing', 'system_testing'].includes(phase)) {
     await renderTestSpecs(container, { project, item, system, phase, domain, pageId });
+    injectReviewActions(project, item, system, phase, domain, pageId);
     return;
   }
 
@@ -60,6 +99,7 @@ export async function renderVcycle(container, { project, item, system, phase, do
     const parentType = system ? 'system' : 'item';
     const parentId   = system ? system.id : item.id;
     await renderRequirements(container, { project, item, system, parentType, parentId, domain, pageId });
+    injectReviewActions(project, item, system, phase, domain, pageId);
     return;
   }
 
@@ -121,6 +161,8 @@ export async function renderVcycle(container, { project, item, system, phase, do
       </div>
     </div>
   `;
+
+  if (REVIEWABLE_PHASES.has(phase)) injectReviewActions(project, item, system, phase, domain, pageId);
 
   document.getElementById('btn-save-doc').onclick = async () => {
     const text      = document.getElementById('doc-text').value;

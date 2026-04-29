@@ -6,7 +6,7 @@ import { sb, buildCode, nextIndex } from './config.js';
 import { requireAuth } from './auth.js';
 import { route, navigate, init as initRouter } from './router.js';
 import { t } from './i18n/index.js';
-import { initTopbar, setBreadcrumb } from './components/topbar.js';
+import { initTopbar, setBreadcrumb, clearPageActions } from './components/topbar.js';
 import { renderSidebar } from './components/sidebar.js';
 import { showModal, hideModal } from './components/modal.js';
 import { toast } from './toast.js';
@@ -67,6 +67,9 @@ function setLoading() {
 }
 
 function getContent() { return document.getElementById('content'); }
+
+// Clear contextual page actions on every route change
+window.addEventListener('hashchange', clearPageActions);
 
 // ── Add System Modal ──────────────────────────────────────────────────
 function openAddSystemModal(project, item, onDone) {

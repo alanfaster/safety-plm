@@ -22,6 +22,10 @@ function getCurrentPath() {
 }
 
 function dispatch(path) {
+  // Strip query string before route matching (handlers can read window.location.hash directly)
+  const qIdx = path.indexOf('?');
+  if (qIdx !== -1) path = path.slice(0, qIdx);
+
   // Strip deep-link anchor suffix ("||anchor:ELEMENT_ID") before route matching
   const sepIdx = path.indexOf('||');
   if (sepIdx !== -1) {
