@@ -1358,9 +1358,11 @@ export async function renderReviewSessionWizard(container, ctx) {
     const snapshotInserts = [];
     for (const [type, ids] of Object.entries(state.selected)) {
       for (const id of ids) {
-        const art = (state.artifacts[type] || []).find(a => a.id === id);
-        if (!art) continue;
+        // state.artifacts may be empty when step 2 was skipped — fetch directly
+        let art = (state.artifacts[type] || []).find(a => a.id === id);
         const fullRow = await fetchFullArtifact(type, id);
+        if (!art) art = fullRow;
+        if (!art) continue;
         const row = fullRow || art;
         snapshotInserts.push({
           session_id:          session.id,
