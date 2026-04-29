@@ -1283,6 +1283,13 @@ export async function renderReviewExecute(container, ctx) {
     panel.querySelectorAll('.rve-props-vbtn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const v = btn.dataset.verdict;
+        if (v === 'ok') {
+          const pending = pendingFindingsFor(snap);
+          if (pending.length) {
+            showOkBlockedModal([`${pending.length} pending finding${pending.length > 1 ? 's' : ''}`]);
+            return;
+          }
+        }
         highlightVbtn(v);
         if (VERDICT_REQUIRES_FINDING.has(v)) {
           _stagedVerdict = v;
@@ -1469,9 +1476,36 @@ export async function renderReviewExecute(container, ctx) {
     loadPropsPanel();
   }
 
+  const FINDING_TERMINAL = new Set(['closed','rejected','duplicate']);
+
+  function pendingFindingsFor(snap) {
+    return _findings.filter(f => f.snapshot_id === snap.id && !FINDING_TERMINAL.has(f.status));
+  }
+
+  function showOkBlockedModal(lines) {
+    showModal({
+      title: '⚠ Cannot mark as OK',
+      body: `<p style="margin:0 0 10px">An artifact cannot be marked <strong>OK</strong> while it still has unresolved findings:</p>
+             <ul style="margin:0;padding-left:18px">${lines.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul>
+             <p style="margin:10px 0 0;font-size:12px;color:var(--text-muted)">Resolve or close all findings first.</p>`,
+      footer: `<button class="btn btn-primary" id="rve-ok-block-close">OK</button>`,
+    });
+    document.getElementById('rve-ok-block-close').onclick = hideModal;
+  }
+
   async function applyBulkVerdict(verdict) {
     const snaps = (snapshots || []).filter(s => _bulkSelected.has(s.id));
     if (!snaps.length) return;
+    if (verdict === 'ok') {
+      const blocked = snaps.filter(s => pendingFindingsFor(s).length > 0);
+      if (blocked.length) {
+        showOkBlockedModal(blocked.map(s => {
+          const n = pendingFindingsFor(s).length;
+          return `${s.artifact_code || s.artifact_type} — ${n} pending finding${n > 1 ? 's' : ''}`;
+        }));
+        return;
+      }
+    }
     await Promise.all(snaps.map(snap => saveArtifactVerdict(snap, verdict)));
     if (_selectedSnapshot && !_propsCollapsed) await loadPropsPanel();
     toast(`Verdict set to ${FINAL_VERDICT_LABELS[verdict]} for ${snaps.length} artifact${snaps.length !== 1 ? 's' : ''}.`, 'success');
