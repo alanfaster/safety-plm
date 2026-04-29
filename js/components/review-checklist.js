@@ -267,7 +267,6 @@ export function mountReviewChecklist(container, opts) {
           <span class="rvck-inline-finding-actions">
             <button class="btn btn-ghost btn-xs rvck-comments-toggle" data-finding-id="${f.id}"
                     title="${commentCount ? commentCount + ' comment(s)' : 'Add comment'}">💬${commentCount ? ' ' + commentCount : ''}</button>
-            ${isAuthor ? `<button class="btn btn-ghost btn-xs rvck-inline-edit-btn" data-finding-id="${f.id}" title="Edit">✎</button>` : ''}
             ${isAuthor ? `<button class="btn btn-ghost btn-xs rvck-inline-del-btn" data-finding-id="${f.id}" title="Delete" style="color:var(--color-danger,#e53e3e)">✕</button>` : ''}
           </span>
         </div>
@@ -525,64 +524,6 @@ export function mountReviewChecklist(container, opts) {
 
   }
 
-  function wireInlineEdits(root) {
-    root.querySelectorAll('.rvck-inline-edit-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const findingId = btn.dataset.findingId;
-        const f = findings.find(x => x.id === findingId);
-        if (!f) return;
-        const card = root.querySelector(`.rvck-inline-finding[data-finding-id="${findingId}"]`);
-        if (!card || card.querySelector('.rvck-inline-edit-form')) return; // already editing
-
-        const header = card.querySelector('.rvck-inline-finding-header');
-        const descEl = card.querySelector('.rvck-inline-finding-desc');
-        header.style.display = 'none';
-        if (descEl) descEl.style.display = 'none';
-
-        const form = document.createElement('div');
-        form.className = 'rvck-inline-edit-form';
-        form.innerHTML = `
-          <input class="form-input rvck-edit-title" value="${escHtml(f.title)}" placeholder="Finding title *"/>
-          <div class="rvck-raise-row">
-            <select class="form-input form-select rvck-edit-severity">
-              ${['critical','major','minor','observation'].map(s =>
-                `<option value="${s}" ${s === f.severity ? 'selected' : ''}>${SEVERITY_LABELS[s]}</option>`
-              ).join('')}
-            </select>
-            <button class="btn btn-primary btn-sm rvck-edit-save-btn">Save</button>
-            <button class="btn btn-ghost btn-sm rvck-edit-cancel-btn">Cancel</button>
-          </div>
-          <textarea class="form-input rvck-edit-desc" rows="2" placeholder="Description (optional)…">${escHtml(f.description || '')}</textarea>
-        `;
-        card.insertBefore(form, card.querySelector('.rvck-inline-transitions') || card.querySelector('.rvck-inline-thread'));
-
-        form.querySelector('.rvck-edit-cancel-btn').addEventListener('click', () => {
-          form.remove();
-          header.style.display = '';
-          if (descEl) descEl.style.display = '';
-        });
-
-        form.querySelector('.rvck-edit-save-btn').addEventListener('click', async () => {
-          const title = form.querySelector('.rvck-edit-title').value.trim();
-          if (!title) { form.querySelector('.rvck-edit-title').focus(); return; }
-          const severity = form.querySelector('.rvck-edit-severity').value;
-          const description = form.querySelector('.rvck-edit-desc').value.trim();
-
-          const saveBtn = form.querySelector('.rvck-edit-save-btn');
-          saveBtn.disabled = true;
-          const { error } = await sb.from('review_findings')
-            .update({ title, severity, description: description || null, updated_at: new Date().toISOString() })
-            .eq('id', findingId);
-          saveBtn.disabled = false;
-          if (error) return;
-
-          Object.assign(f, { title, severity, description });
-          card.outerHTML = renderInlineFinding(f);
-          wireInlineFinding(root);
-        });
-      });
-    });
-  }
 
   function wireInlineFinding(root) {
     // Comments toggle
@@ -594,7 +535,6 @@ export function mountReviewChecklist(container, opts) {
       });
     });
     wireInlineTransitions(root);
-    wireInlineEdits(root);
     wireInlineDeletes(root);
     wireInlineReplies(root);
   }
