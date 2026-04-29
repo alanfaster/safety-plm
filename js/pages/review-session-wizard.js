@@ -639,6 +639,54 @@ export async function renderReviewSessionWizard(container, ctx) {
         const pageId = nodeKey.split(':')[1];
         const page   = Object.values(state.navPages).flat().find(p => p.id === pageId);
         if (!page) return `<p class="rv-empty" style="padding:32px">Page not found.</p>`;
+
+        // Requirement sub-pages: detect by name — same logic as requirements.js renderRequirements
+        if (page.phase === 'requirements') {
+          const nameLow = page.name.toLowerCase();
+          let typeFilter = null;
+          if (nameLow.includes('interface'))       typeFilter = ['interface'];
+          else if (nameLow.includes('safety'))     typeFilter = ['safety', 'safety-independency'];
+          else if (!nameLow.includes('customer'))  typeFilter = null; // show all for generic pages
+
+          // Find parent (item or system) from nav_page
+          const parentId = page.parent_id;
+          const pPrefix  = page.parent_type === 'system' ? 'sys' : 'item';
+          const allReqs  = artsByLeaf[`art:${pPrefix}:${parentId}:requirements`] || [];
+          const filtered = typeFilter
+            ? allReqs.filter(r => typeFilter.includes(r.type))
+            : allReqs.filter(r => !['title','info','interface','safety','safety-independency'].includes(r.type));
+
+          if (!filtered.length) {
+            return `<p class="rv-empty" style="padding:32px">No ${escHtml(page.name)} found.</p>`;
+          }
+
+          const sel = state.selected['requirements'];
+          const selCount = filtered.filter(r => sel?.has(r.id)).length;
+          const rows = filtered.map(r => `
+            <tr class="wiz-art-row" data-type="requirements" data-id="${r.id}">
+              <td style="width:28px"><input type="checkbox" class="wiz-art-chk"
+                data-type="requirements" data-id="${r.id}" ${sel?.has(r.id) ? 'checked' : ''}/></td>
+              <td class="mono" style="white-space:nowrap">${escHtml(r.req_code || r.code || '—')}</td>
+              <td style="width:100%">${escHtml(r.title || '—')}</td>
+              <td style="white-space:nowrap"><span class="badge badge-${escHtml(r.status || 'draft')}">${escHtml(r.status || '—')}</span></td>
+            </tr>`).join('');
+
+          // Synthesize a virtual nodeKey for All/None buttons
+          const vNodeKey = `art:${pPrefix}:${parentId}:requirements`;
+          return `
+            <div class="wiz-rp-section">
+              <div class="wiz-rp-section-hdr">
+                <span class="wiz-rp-type-label">📋 ${escHtml(page.name)}</span>
+                <span class="wiz-rp-sel-count">${selCount}/${filtered.length}</span>
+                <button type="button" class="btn btn-ghost btn-xs wiz-rp-sel-all"
+                  data-type="requirements" data-ids="${filtered.map(r=>r.id).join(',')}">All</button>
+                <button type="button" class="btn btn-ghost btn-xs wiz-rp-sel-none"
+                  data-type="requirements" data-ids="${filtered.map(r=>r.id).join(',')}">None</button>
+              </div>
+              <table class="data-table wiz-art-table"><tbody>${rows}</tbody></table>
+            </div>`;
+        }
+
         const sel = state.selected_pages?.has(pageId);
         return `
           <div class="wiz-rp-section">
@@ -746,8 +794,9 @@ export async function renderReviewSessionWizard(container, ctx) {
         btn.onclick = () => {
           const isAll = btn.classList.contains('wiz-rp-sel-all');
           const { type } = btn.dataset;
-          const list  = artsByLeaf[_activeNode] || [];
-          list.forEach(a => { if (isAll) state.selected[type].add(a.id); else state.selected[type].delete(a.id); });
+          // data-ids: explicit id list (page-filtered reqs); otherwise use artsByLeaf
+          const ids = btn.dataset.ids ? btn.dataset.ids.split(',').filter(Boolean) : (artsByLeaf[_activeNode] || []).map(a => a.id);
+          ids.forEach(id => { if (isAll) state.selected[type].add(id); else state.selected[type].delete(id); });
           root.querySelector('#wiz-s2-panel').innerHTML = renderRightPanel(_activeNode);
           wireRightPanel(root);
           refreshTree(root);
