@@ -1224,22 +1224,6 @@ export async function renderReviewExecute(container, ctx) {
               <button class="rvck-vbtn rve-props-vbtn ${mv === v ? 'sel-'+v : ''}" data-verdict="${v}">${lbl}</button>`).join('')}
           </div>
 
-          <div class="rve-props-finding-form" id="rve-finding-form" style="display:none">
-            <div class="rve-props-verdict-label" style="margin-top:10px">Finding required <span style="color:var(--color-danger)">*</span></div>
-            <input class="form-input" id="rve-finding-title" placeholder="Finding title…" style="margin-bottom:6px"/>
-            <select class="form-input form-select" id="rve-finding-severity" style="margin-bottom:6px">
-              <option value="major">Major</option>
-              <option value="critical">Critical</option>
-              <option value="minor">Minor</option>
-              <option value="observation">Observation</option>
-            </select>
-            <textarea class="form-input" id="rve-finding-desc" rows="2" placeholder="Description / evidence…"></textarea>
-            <div style="display:flex;gap:6px;margin-top:6px">
-              <button class="btn btn-primary btn-sm" id="rve-finding-save">Save verdict + finding</button>
-              <button class="btn btn-ghost btn-sm" id="rve-finding-cancel">Cancel</button>
-            </div>
-          </div>
-
           ${reviewerList.length > 1 ? `
             <div class="rve-props-verdict-label" style="margin-top:10px">All Reviewer Verdicts</div>
             <div class="rve-props-reviewers-table">
@@ -1262,6 +1246,20 @@ export async function renderReviewExecute(container, ctx) {
         <div class="rve-props-findings-section">
           <div class="rve-props-verdict-label">Findings
             <button class="btn btn-ghost btn-xs" id="rve-finding-raise-btn" style="margin-left:8px">+ Raise Finding</button>
+          </div>
+          <div class="rve-props-finding-form" id="rve-finding-form" style="display:none;margin-top:8px">
+            <input class="form-input" id="rve-finding-title" placeholder="Finding title…" style="margin-bottom:6px"/>
+            <select class="form-input form-select" id="rve-finding-severity" style="margin-bottom:6px">
+              <option value="major">Major</option>
+              <option value="critical">Critical</option>
+              <option value="minor">Minor</option>
+              <option value="observation">Observation</option>
+            </select>
+            <textarea class="form-input" id="rve-finding-desc" rows="2" placeholder="Description / evidence…"></textarea>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn btn-primary btn-sm" id="rve-finding-save">Save Finding</button>
+              <button class="btn btn-ghost btn-sm" id="rve-finding-cancel">Cancel</button>
+            </div>
           </div>
           <div id="rve-findings-list">
             ${renderPropsFindingsList(_findings.filter(f => f.snapshot_id === snap.id))}
@@ -1320,6 +1318,7 @@ export async function renderReviewExecute(container, ctx) {
         if (VERDICT_REQUIRES_FINDING.has(v)) {
           _stagedVerdict = v;
           findingForm.style.display = '';
+          findingForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           panel.querySelector('#rve-finding-title')?.focus();
         } else {
           _stagedVerdict = null;
@@ -1370,6 +1369,7 @@ export async function renderReviewExecute(container, ctx) {
       }
       if (_stagedVerdict) await saveArtifactVerdict(snap, _stagedVerdict);
       refreshArtifactCard(snap);
+      toast(`Finding ${findingCode} created.`, 'success');
 
       findingForm.style.display = 'none';
       panel.querySelector('#rve-finding-title').value = '';
