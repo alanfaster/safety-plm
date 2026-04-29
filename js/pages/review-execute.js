@@ -114,6 +114,7 @@ export async function renderReviewExecute(container, ctx) {
   const _allResponses     = allResponses      ? [...allResponses]     : [];
 
   function afterFindingMutation(snap) {
+    // Refresh artifact card badges
     const body = document.getElementById('rve-artlist-body');
     if (body) {
       body.innerHTML = renderArtifactListBody();
@@ -121,10 +122,14 @@ export async function renderReviewExecute(container, ctx) {
       document.querySelectorAll('.rve-art-card').forEach(c =>
         c.classList.toggle('active', c.dataset.snapId === _selectedSnapshot?.id));
     }
-    if (snap && _selectedSnapshot?.id === snap.id && !_propsCollapsed) {
+    // Refresh checklist panel (Open Points section lives here)
+    if (_selectedSnapshot) mountChecklist(_selectedSnapshot);
+    // Refresh props findings list
+    const activeSnap = snap || _selectedSnapshot;
+    if (activeSnap && !_propsCollapsed) {
       const list = document.getElementById('rve-findings-list');
       if (list) {
-        list.innerHTML = renderPropsFindingsList(_findings.filter(f => f.snapshot_id === snap.id));
+        list.innerHTML = renderPropsFindingsList(_findings.filter(f => f.snapshot_id === activeSnap.id));
         wirePropsFindingsList(list);
       }
     }
