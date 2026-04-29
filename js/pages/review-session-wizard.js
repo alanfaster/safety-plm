@@ -431,18 +431,22 @@ export async function renderReviewSessionWizard(container, ctx) {
       </div>`;
     }
 
-    // Mirror of requirements.js typeFilter logic — returns filtered req array for a page
+    // Mirror of requirements.js typeFilter + domainKey logic exactly
     function getReqsForPage(page) {
       if (page.phase !== 'requirements') return null;
       const nameLow  = page.name.toLowerCase();
       let typeFilter = null;
       if (nameLow.includes('interface'))   typeFilter = ['interface'];
       else if (nameLow.includes('safety')) typeFilter = ['safety', 'safety-independency'];
-      const pPrefix = page.parent_type === 'system' ? 'sys' : 'item';
-      const allReqs = artsByLeaf[`art:${pPrefix}:${page.parent_id}:requirements`] || [];
+
+      const pPrefix   = page.parent_type === 'system' ? 'sys' : 'item';
+      // domainKey mirrors requirements.js: system parents use page.domain; item parents use 'item'
+      const domainKey = page.parent_type === 'system' ? (page.domain || 'system') : 'item';
+      const allReqs   = (artsByLeaf[`art:${pPrefix}:${page.parent_id}:requirements`] || [])
+        .filter(r => r.domain === domainKey);
       return typeFilter
         ? allReqs.filter(r => typeFilter.includes(r.type))
-        : allReqs.filter(r => !['title','info','interface','safety-independency'].includes(r.type));
+        : allReqs.filter(r => !['interface','safety-independency'].includes(r.type));
     }
 
     function renderPageLeaf(page) {
@@ -1152,8 +1156,10 @@ export async function renderReviewSessionWizard(container, ctx) {
   async function fetchArtifacts(type, projectId) {
     if (type === 'requirements') {
       const { data } = await sb.from('requirements')
-        .select('id, req_code, title, status, type, parent_type, parent_id, updated_at')
-        .eq('project_id', projectId).order('req_code');
+        .select('id, req_code, title, status, type, domain, parent_type, parent_id, updated_at')
+        .eq('project_id', projectId)
+        .not('type', 'in', '("title","info")')
+        .order('req_code');
       return (data || []).map(r => ({ ...r, code: r.req_code }));
     }
     if (type === 'arch_spec_items') {
