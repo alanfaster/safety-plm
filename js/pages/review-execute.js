@@ -1372,15 +1372,12 @@ export async function renderReviewExecute(container, ctx) {
       if (fe) { toast('Error saving finding: ' + fe.message, 'error'); return; }
 
       if (finding) {
-        if (desc) {
-          await sb.from('review_finding_comments').insert({
-            finding_id: finding.id, author_id: currentUserId,
-            comment: desc,
-          }).catch(() => {});
-        }
+        _findings.push(finding);
+        if (desc) sb.from('review_finding_comments').insert({
+          finding_id: finding.id, author_id: currentUserId, comment: desc,
+        }).catch(() => {});
       }
-      if (finding) _findings.push(finding);
-      if (_stagedVerdict) await saveArtifactVerdict(snap, _stagedVerdict);
+      if (_stagedVerdict) saveArtifactVerdict(snap, _stagedVerdict);
       toast(`Finding ${findingCode} created.`, 'success');
       _stagedVerdict = null;
       afterFindingMutation(snap);
