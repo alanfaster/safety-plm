@@ -66,7 +66,8 @@ export function mountReviewChecklist(container, opts) {
     reviewers = [], findings = [], artifactVerdict = null,
     isDrifted = false,
     responseSnapshot,
-    onSaved, onFindingRaise, onFindingCreated, onCompareRequest, onReSnapshotRequest, onVerdictSaved,
+    onSaved, onFindingRaise, onFindingCreated, onFindingDeleted, onFindingStatusChanged,
+    onCompareRequest, onReSnapshotRequest, onVerdictSaved,
   } = opts;
 
   // In shared mode the checklist snapshot (where responses are stored) differs from the display snapshot
@@ -594,6 +595,7 @@ export function mountReviewChecklist(container, opts) {
           wireInlineFinding(root);
           refreshToggleBadge(f.template_item_id);
           loadVisibleComments();
+          onFindingStatusChanged?.({ id: findingId, status: toStatus });
         });
       });
     });
@@ -630,6 +632,7 @@ export function mountReviewChecklist(container, opts) {
           if (body && !(findingsByItem['__open__'] || []).length)
             body.innerHTML = `<p class="rvck-op-empty text-muted">No open points yet.</p>`;
         }
+        onFindingDeleted?.({ id: findingId });
       });
     });
   }

@@ -1132,6 +1132,18 @@ export async function renderReviewExecute(container, ctx) {
       },
       onFindingRaise: opts => openRaiseFindingModal(opts),
       onFindingCreated: f => { _findings.push(f); refreshArtifactCard(snap); if (!_propsCollapsed) loadPropsPanel(); },
+      onFindingDeleted: ({ id }) => {
+        const i = _findings.findIndex(f => f.id === id);
+        if (i >= 0) _findings.splice(i, 1);
+        refreshArtifactCard(snap);
+        if (!_propsCollapsed) loadPropsPanel();
+      },
+      onFindingStatusChanged: ({ id, status }) => {
+        const f = _findings.find(x => x.id === id);
+        if (f) f.status = status;
+        refreshArtifactCard(snap);
+        if (!_propsCollapsed) loadPropsPanel();
+      },
       onCompareRequest: () => openDiffModal(snap),
     });
   }
