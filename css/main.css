@@ -5859,12 +5859,28 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rve-props-panel     { width: 300px; flex-shrink: 0; overflow-y: auto; background: var(--bg-surface, #fafafa);
   border-left: 1px solid var(--border); transition: width 0.2s ease; }
 .rve-props-panel--collapsed { width: 28px; overflow: hidden; padding: 0; }
-.rve-props-collapsed-btn { writing-mode: vertical-rl; text-orientation: mixed;
-  transform: rotate(180deg); background: none; border: none; cursor: pointer;
-  font-size: 11px; font-weight: 600; color: var(--text-muted); padding: 12px 6px;
-  height: 100%; width: 100%; display: flex; align-items: center; justify-content: center;
-  letter-spacing: .05em; white-space: nowrap; }
-.rve-props-collapsed-btn:hover { color: var(--accent); background: var(--bg-hover); }
+
+/* Props panel header (always visible when expanded) */
+.rve-props-header { display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--border);
+  background: var(--bg-card); flex-shrink: 0; }
+.rve-props-header-title { font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--text-muted); }
+
+/* Toggle button — horizontal (inside expanded header) */
+.rve-props-toggle-btn { background: none; border: none; cursor: pointer; padding: 2px 4px;
+  font-size: 12px; color: var(--text-muted); border-radius: 4px; line-height: 1; }
+.rve-props-toggle-btn:hover { color: var(--accent); background: var(--bg-hover); }
+
+/* Toggle button — vertical (collapsed state, fills the narrow panel) */
+.rve-props-toggle-btn--collapsed { writing-mode: vertical-rl; text-orientation: mixed;
+  width: 100%; height: auto; padding: 12px 0 8px; display: flex; flex-direction: column;
+  align-items: center; gap: 8px; background: none; border: none; cursor: pointer;
+  color: var(--text-muted); }
+.rve-props-toggle-btn--collapsed:hover { color: var(--accent); background: var(--bg-hover); }
+.rve-props-panel-title { font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; writing-mode: vertical-rl; }
+.rve-props-toggle-icon { font-size: 10px; }
 .rve-props-inner     { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .rve-props-placeholder { padding: 32px 16px; color: var(--text-muted); font-size: 13px; text-align: center; }
 

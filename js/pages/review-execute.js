@@ -339,8 +339,15 @@ export async function renderReviewExecute(container, ctx) {
         <div class="rve-checklist-col" id="rve-checklist-col"></div>
         <div class="rve-props-panel ${_propsCollapsed ? 'rve-props-panel--collapsed' : ''}" id="rve-props-panel">
           ${_propsCollapsed
-            ? `<button class="rve-props-collapsed-btn" id="rve-props-open-btn" title="Show properties panel">◀ Properties</button>`
-            : `<div class="rve-props-placeholder text-muted">Select an artifact to view its properties.</div>`}
+            ? `<button class="rve-props-toggle-btn rve-props-toggle-btn--collapsed" id="rve-props-toggle-btn" title="Expand properties">
+                 <span class="rve-props-panel-title">Properties</span>
+                 <span class="rve-props-toggle-icon">▶</span>
+               </button>`
+            : `<div class="rve-props-header">
+                 <span class="rve-props-header-title">Properties</span>
+                 <button class="rve-props-toggle-btn" id="rve-props-toggle-btn" title="Collapse properties">◀</button>
+               </div>
+               <div class="rve-props-placeholder text-muted">Select an artifact to view its properties.</div>`}
         </div>
       </div>
     `;
@@ -489,22 +496,7 @@ export async function renderReviewExecute(container, ctx) {
     root.querySelector('#rve-list-toggle')?.addEventListener('click', () => {
       _listExpanded = !_listExpanded;
       if (_listExpanded) {
-        // Auto-collapse props panel to free up space
-        _propsCollapsed = true;
-        const propsPanel = document.getElementById('rve-props-panel');
-        if (propsPanel) {
-          propsPanel.className = 'rve-props-panel rve-props-panel--collapsed';
-          propsPanel.innerHTML = `<button class="rve-props-collapsed-btn" id="rve-props-open-btn" title="Show properties panel">◀ Properties</button>`;
-          wirePropsPanel();
-        }
-        _artlistWidth = Math.max(400, _artlistWidth); // ensure a reasonable start width
-      } else {
-        _propsCollapsed = false;
-        const propsPanel = document.getElementById('rve-props-panel');
-        if (propsPanel) {
-          propsPanel.className = 'rve-props-panel';
-          propsPanel.innerHTML = `<div class="rve-props-placeholder text-muted">Select an artifact to view its properties.</div>`;
-        }
+        _artlistWidth = Math.max(400, _artlistWidth);
       }
       rebuildArtifactList();
       if (!_listExpanded && _selectedSnapshot) loadPropsPanel();
@@ -607,13 +599,31 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   function wirePropsPanel() {
-    document.getElementById('rve-props-open-btn')?.addEventListener('click', () => {
-      _propsCollapsed = false;
+    document.getElementById('rve-props-toggle-btn')?.addEventListener('click', () => {
+      _propsCollapsed = !_propsCollapsed;
       const propsPanel = document.getElementById('rve-props-panel');
       if (!propsPanel) return;
-      propsPanel.className = 'rve-props-panel';
-      if (_selectedSnapshot) loadPropsPanel();
-      else propsPanel.innerHTML = `<div class="rve-props-placeholder text-muted">Select an artifact to view its properties.</div>`;
+      if (_propsCollapsed) {
+        propsPanel.className = 'rve-props-panel rve-props-panel--collapsed';
+        propsPanel.innerHTML = `
+          <button class="rve-props-toggle-btn rve-props-toggle-btn--collapsed" id="rve-props-toggle-btn" title="Expand properties">
+            <span class="rve-props-panel-title">Properties</span>
+            <span class="rve-props-toggle-icon">▶</span>
+          </button>`;
+        wirePropsPanel();
+      } else {
+        propsPanel.className = 'rve-props-panel';
+        if (_selectedSnapshot) loadPropsPanel();
+        else {
+          propsPanel.innerHTML = `
+            <div class="rve-props-header">
+              <span class="rve-props-header-title">Properties</span>
+              <button class="rve-props-toggle-btn" id="rve-props-toggle-btn" title="Collapse properties">◀</button>
+            </div>
+            <div class="rve-props-placeholder text-muted">Select an artifact to view its properties.</div>`;
+          wirePropsPanel();
+        }
+      }
     });
   }
 
@@ -795,6 +805,10 @@ export async function renderReviewExecute(container, ctx) {
     const _comments = rows.map(c => ({ ...c, user_profiles: { display_name: profileMap[c.author_id] || null } }));
 
     panel.innerHTML = `
+      <div class="rve-props-header">
+        <span class="rve-props-header-title">Properties</span>
+        <button class="rve-props-toggle-btn" id="rve-props-toggle-btn" title="Collapse properties">◀</button>
+      </div>
       <div class="rve-props-inner">
         <div class="rve-props-artifact-header">
           <span class="rve-art-code">${escHtml(snap.artifact_code || snap.artifact_type)}</span>
