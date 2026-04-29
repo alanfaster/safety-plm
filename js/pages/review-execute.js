@@ -113,7 +113,7 @@ export async function renderReviewExecute(container, ctx) {
 
   // Artifact list panel state
   let _listExpanded = false;
-  let _tableFilter  = '';
+  let _colFilters   = {};   // { [colName]: string }  — per-column filter values
   // Columns visible in expanded table mode
   const SKIP_FIELDS = new Set(['id','created_at','updated_at','project_id','parent_id','parent_type','domain','session_id']);
   const ALL_COLS    = buildAvailableColumns(snapshots || []);
@@ -131,6 +131,33 @@ export async function renderReviewExecute(container, ctx) {
     // Normalise: req_code→code, spec_code→code, test_code→code already mapped in fetcher
     ['req_code','spec_code','test_code','analysis_code','name'].forEach(k => seen.delete(k));
     return [...seen];
+  }
+
+  function isSidebarCollapsed() {
+    return !!document.getElementById('sidebar')?.classList.contains('collapsed');
+  }
+  function toggleNav() {
+    document.getElementById('sidebar-toggle')?.click();
+    // Rebuild toolbar to update the nav button label
+    setTimeout(() => {
+      const list = document.getElementById('rve-artifact-list');
+      if (list) {
+        list.querySelector('#rve-artlist-toolbar').innerHTML = buildExpandedToolbar();
+        wireArtifactListInteractions(list);
+      }
+    }, 250); // after CSS transition
+  }
+  function buildExpandedToolbar() {
+    const navCollapsed = isSidebarCollapsed();
+    return `
+      <button class="btn btn-ghost btn-xs rve-nav-toggle-btn" id="rve-nav-toggle-btn"
+        title="${navCollapsed ? 'Show navigation sidebar' : 'Hide navigation sidebar'}">
+        ${navCollapsed ? '⊞ Nav' : '⊟ Nav'}
+      </button>
+      <div class="rve-artlist-actions">
+        <button class="btn btn-ghost btn-xs" id="rve-col-picker-btn" title="Show/hide columns">⊞ Columns</button>
+        <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Collapse">⊟ Collapse</button>
+      </div>`;
   }
 
   // ── Diff modal ───────────────────────────────────────────────────────────────
@@ -315,13 +342,7 @@ export async function renderReviewExecute(container, ctx) {
       <div class="rve-body">
         <div class="rve-artifact-list ${_listExpanded ? 'rve-artifact-list--expanded' : ''}" id="rve-artifact-list">
           <div class="rve-artlist-toolbar" id="rve-artlist-toolbar">
-            ${_listExpanded ? `
-              <input class="form-input rve-artlist-filter" id="rve-artlist-filter"
-                placeholder="Filter by code or title…" value="${escHtml(_tableFilter)}"/>
-              <div class="rve-artlist-actions">
-                <button class="btn btn-ghost btn-xs" id="rve-col-picker-btn" title="Show/hide columns">⊞ Columns</button>
-                <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Collapse list">⊟ Collapse</button>
-              </div>` : `
+            ${_listExpanded ? buildExpandedToolbar() : `
               <span class="rve-artlist-title">Artifacts <span class="rve-artlist-count">(${(snapshots||[]).length})</span></span>
               <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Expand artifact table">⊞ Expand</button>`}
           </div>
@@ -347,33 +368,52 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   function renderArtifactTable() {
-    const visArr = ALL_COLS.filter(c => _visCols.has(c));
-    // Extra computed columns
+    const visArr      = ALL_COLS.filter(c => _visCols.has(c));
     const showProgress = sections.length > 0;
+    const colPretty    = c => c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
+    // Build per-row cell values for filtering
+    function getCellValue(snap, col) {
+      const d = snap.snapshot_data || {};
+      if (col === 'code')  return snap.artifact_code  || d.req_code || d.spec_code || d.test_code || d.analysis_code || '';
+      if (col === 'title') return snap.artifact_title || d.title    || d.name      || '';
+      return String(d[col] ?? '');
+    }
+
+    // Filter: every active column filter must match
     const filtered = (snapshots || []).filter(snap => {
-      if (!_tableFilter) return true;
-      const q = _tableFilter.toLowerCase();
-      return (snap.artifact_code || '').toLowerCase().includes(q) ||
-             (snap.artifact_title || '').toLowerCase().includes(q);
+      return Object.entries(_colFilters).every(([col, fv]) => {
+        if (!fv) return true;
+        return getCellValue(snap, col).toLowerCase().includes(fv.toLowerCase());
+      });
     });
 
-    const colPretty = c => c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-
-    const headerCells = [
+    // Header: label row + filter-input row
+    const labelRow = [
       '<th class="rve-atbl-status-col"></th>',
-      ...visArr.map(c => `<th>${escHtml(colPretty(c))}</th>`),
+      ...visArr.map(c => `<th data-col="${c}">${escHtml(colPretty(c))}</th>`),
       showProgress ? '<th>Progress</th>' : '',
       '<th>Findings</th>',
     ].join('');
 
+    const filterRow = [
+      '<th class="rve-atbl-filter-spacer"></th>',
+      ...visArr.map(c => `<th class="rve-atbl-filter-cell">
+        <input class="rve-atbl-col-filter" data-col="${c}"
+          placeholder="…" value="${escHtml(_colFilters[c] || '')}"
+          title="Filter ${colPretty(c)}"/>
+      </th>`),
+      showProgress ? '<th></th>' : '',
+      '<th></th>',
+    ].join('');
+
     const rows = filtered.map(snap => {
-      const d       = snap.snapshot_data || {};
+      const d        = snap.snapshot_data || {};
       const isActive = _selectedSnapshot?.id === snap.id;
-      const mv      = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId)?.verdict;
-      const drifted = !!driftMap[snap.artifact_id];
-      const isShared  = session.checklist_mode === 'shared';
-      const ckSnapId  = isShared ? (snapshots?.[0]?.id || snap.id) : snap.id;
+      const mv       = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId)?.verdict;
+      const drifted  = !!driftMap[snap.artifact_id];
+      const isShared = session.checklist_mode === 'shared';
+      const ckSnapId = isShared ? (snapshots?.[0]?.id || snap.id) : snap.id;
       const snapResponses = _allResponses.filter(r => r.snapshot_id === ckSnapId && r.reviewer_id === currentUserId);
       const totalItems    = sections.reduce((s, sec) => s + (sec.items?.length || 0), 0);
       const myDone        = snapResponses.length;
@@ -381,14 +421,10 @@ export async function renderReviewExecute(container, ctx) {
       const openFnds      = _findings.filter(f => f.snapshot_id === snap.id && f.status === 'open').length;
       const allFnds       = _findings.filter(f => f.snapshot_id === snap.id).length;
 
-      // For each visible column, try snapshot_data first, then snap itself
       const dataCells = visArr.map(c => {
-        const raw = (c === 'code') ? (snap.artifact_code || d.req_code || d.spec_code || d.test_code || d.analysis_code || '')
-                  : (c === 'title') ? (snap.artifact_title || d.title || d.name || '')
-                  : (d[c] ?? '');
-        const val = String(raw ?? '');
+        const val = getCellValue(snap, c);
         if (c === 'status') return `<td><span class="badge badge-${escHtml(val || 'draft')}">${escHtml(val || '—')}</span></td>`;
-        return `<td class="${c === 'code' ? 'mono' : ''}">${escHtml(val || '—')}</td>`;
+        return `<td class="${c === 'code' ? 'mono' : ''}" title="${escHtml(val)}">${escHtml(val || '—')}</td>`;
       }).join('');
 
       const verdictIndicator = mv
@@ -408,17 +444,23 @@ export async function renderReviewExecute(container, ctx) {
 
       return `<tr class="rve-atbl-row ${isActive ? 'rve-atbl-row--active' : ''}" data-snap-id="${snap.id}">
         <td class="rve-atbl-status-col">${verdictIndicator}${driftIndicator}</td>
-        ${dataCells}
-        ${progressCell}
-        ${findingsCell}
+        ${dataCells}${progressCell}${findingsCell}
       </tr>`;
     }).join('');
+
+    const hasActiveFilters = Object.values(_colFilters).some(v => v);
+    const emptyMsg = hasActiveFilters
+      ? `No artifacts match the active filters. <button class="btn btn-ghost btn-xs rve-clear-filters-btn">Clear all filters</button>`
+      : 'No artifacts in this session.';
 
     return `
       <div class="rve-atbl-wrap">
         <table class="rve-atbl" id="rve-atbl">
-          <thead><tr>${headerCells}</tr></thead>
-          <tbody>${rows || '<tr><td colspan="99" class="rv-empty" style="padding:16px;text-align:center">No artifacts match the filter.</td></tr>'}</tbody>
+          <thead>
+            <tr class="rve-atbl-label-row">${labelRow}</tr>
+            <tr class="rve-atbl-filter-row">${filterRow}</tr>
+          </thead>
+          <tbody>${rows || `<tr><td colspan="99" class="rve-atbl-empty">${emptyMsg}</td></tr>`}</tbody>
         </table>
       </div>`;
   }
@@ -427,20 +469,16 @@ export async function renderReviewExecute(container, ctx) {
     const list = document.getElementById('rve-artifact-list');
     if (!list) return;
     list.className = `rve-artifact-list${_listExpanded ? ' rve-artifact-list--expanded' : ''}`;
-    list.querySelector('#rve-artlist-toolbar').innerHTML = _listExpanded ? `
-      <input class="form-input rve-artlist-filter" id="rve-artlist-filter"
-        placeholder="Filter by code or title…" value="${escHtml(_tableFilter)}"/>
-      <div class="rve-artlist-actions">
-        <button class="btn btn-ghost btn-xs" id="rve-col-picker-btn" title="Show/hide columns">⊞ Columns</button>
-        <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Collapse">⊟ Collapse</button>
-      </div>` : `
-      <span class="rve-artlist-title">Artifacts <span class="rve-artlist-count">(${(snapshots||[]).length})</span></span>
-      <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Expand">⊞ Expand</button>`;
+    list.querySelector('#rve-artlist-toolbar').innerHTML = _listExpanded
+      ? buildExpandedToolbar()
+      : `<span class="rve-artlist-title">Artifacts <span class="rve-artlist-count">(${(snapshots||[]).length})</span></span>
+         <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Expand">⊞ Expand</button>`;
     list.querySelector('#rve-artlist-body').innerHTML = renderArtifactListBody();
     wireArtifactListInteractions(list);
-    // Re-apply active state
     if (_selectedSnapshot) {
-      list.querySelectorAll(`[data-snap-id="${_selectedSnapshot.id}"]`).forEach(el => el.classList.add('active', 'rve-atbl-row--active'));
+      list.querySelectorAll(`[data-snap-id="${_selectedSnapshot.id}"]`).forEach(el => {
+        el.classList.add('active'); el.classList.add('rve-atbl-row--active');
+      });
     }
   }
 
@@ -453,28 +491,73 @@ export async function renderReviewExecute(container, ctx) {
       rebuildArtifactList();
     });
 
-    root.querySelector('#rve-artlist-filter')?.addEventListener('input', e => {
-      _tableFilter = e.target.value;
-      root.querySelector('#rve-artlist-body').innerHTML = renderArtifactListBody();
-      wireArtifactListInteractions(root);
-    });
+    root.querySelector('#rve-nav-toggle-btn')?.addEventListener('click', () => toggleNav());
 
     root.querySelector('#rve-col-picker-btn')?.addEventListener('click', e => {
       e.stopPropagation();
       openColPicker(root.querySelector('#rve-col-picker-btn'));
     });
 
-    // Row/card click
+    // Per-column filter inputs (in table header)
+    root.querySelectorAll('.rve-atbl-col-filter').forEach(inp => {
+      inp.addEventListener('input', e => {
+        e.stopPropagation();
+        _colFilters[inp.dataset.col] = e.target.value;
+        // Rebuild only tbody to avoid re-focusing the input
+        const tbody = root.querySelector('#rve-atbl tbody');
+        if (tbody) {
+          const tmp = document.createElement('table');
+          tmp.innerHTML = renderArtifactTable();
+          const newTbody = tmp.querySelector('tbody');
+          if (newTbody) tbody.replaceWith(newTbody);
+          wireRowClicks(root);
+        }
+        // Update count label in toolbar
+        updateFilterCountBadge(root);
+      });
+      // Prevent row-click when clicking inside filter input
+      inp.addEventListener('click', e => e.stopPropagation());
+    });
+
+    // Clear-all-filters button (shown when results are empty)
+    root.querySelector('.rve-clear-filters-btn')?.addEventListener('click', () => {
+      _colFilters = {};
+      root.querySelector('#rve-artlist-body').innerHTML = renderArtifactListBody();
+      wireArtifactListInteractions(root);
+    });
+
+    wireRowClicks(root);
+  }
+
+  function wireRowClicks(root) {
     root.querySelectorAll('[data-snap-id]').forEach(el => {
+      // Skip filter inputs that happen to be inside a [data-snap-id] ancestor
+      if (el.tagName === 'INPUT') return;
       el.addEventListener('click', () => {
         const snapId = el.dataset.snapId;
         _selectedSnapshot = (snapshots || []).find(s => s.id === snapId);
-        // Clear active on all
         root.querySelectorAll('.rve-art-card').forEach(c => c.classList.toggle('active', c.dataset.snapId === snapId));
         root.querySelectorAll('.rve-atbl-row').forEach(r => r.classList.toggle('rve-atbl-row--active', r.dataset.snapId === snapId));
         loadArtifactPanel();
       });
     });
+  }
+
+  function updateFilterCountBadge(root) {
+    const active = Object.values(_colFilters).filter(v => v).length;
+    const toolbar = root.querySelector('#rve-artlist-toolbar');
+    if (!toolbar) return;
+    let badge = toolbar.querySelector('.rve-filter-active-badge');
+    if (active > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'rve-filter-active-badge';
+        toolbar.prepend(badge);
+      }
+      badge.textContent = `${active} filter${active > 1 ? 's' : ''} active`;
+    } else {
+      badge?.remove();
+    }
   }
 
   function openColPicker(anchor) {
