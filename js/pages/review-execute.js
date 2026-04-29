@@ -113,26 +113,10 @@ export async function renderReviewExecute(container, ctx) {
   const _artifactVerdicts = artifactVerdicts ? [...artifactVerdicts] : [];
   const _allResponses     = allResponses      ? [...allResponses]     : [];
 
-  function afterFindingMutation(snap) {
-    // Refresh artifact card badges
-    const body = document.getElementById('rve-artlist-body');
-    if (body) {
-      body.innerHTML = renderArtifactListBody();
-      wireArtifactListInteractions(document.getElementById('rve-artifact-list'));
-      document.querySelectorAll('.rve-art-card').forEach(c =>
-        c.classList.toggle('active', c.dataset.snapId === _selectedSnapshot?.id));
-    }
-    // Refresh checklist panel (Open Points section lives here)
+  function afterFindingMutation() {
+    rebuildArtifactList();
     if (_selectedSnapshot) mountChecklist(_selectedSnapshot);
-    // Refresh props findings list
-    const activeSnap = snap || _selectedSnapshot;
-    if (activeSnap && !_propsCollapsed) {
-      const list = document.getElementById('rve-findings-list');
-      if (list) {
-        list.innerHTML = renderPropsFindingsList(_findings.filter(f => f.snapshot_id === activeSnap.id));
-        wirePropsFindingsList(list);
-      }
-    }
+    if (!_propsCollapsed) loadPropsPanel();
   }
 
   // Pre-select artifact from URL param (e.g. when navigating from req badge)
@@ -400,7 +384,7 @@ export async function renderReviewExecute(container, ctx) {
             <span class="diff-finding-title">${escHtml(f.title)}</span>
           </div>`;
           mountChecklist(snap);
-          afterFindingMutation(snap);
+          afterFindingMutation();
         };
       });
     });
@@ -1152,9 +1136,9 @@ export async function renderReviewExecute(container, ctx) {
         else refreshArtifactCard(snap);
       },
       onFindingRaise: opts => openRaiseFindingModal(opts),
-      onFindingCreated: f => { _findings.push(f); afterFindingMutation(snap); },
-      onFindingDeleted: ({ id }) => { const i = _findings.findIndex(x => x.id === id); if (i >= 0) _findings.splice(i, 1); afterFindingMutation(snap); },
-      onFindingStatusChanged: ({ id, status }) => { const f = _findings.find(x => x.id === id); if (f) f.status = status; afterFindingMutation(snap); },
+      onFindingCreated: f => { _findings.push(f); afterFindingMutation(); },
+      onFindingDeleted: ({ id }) => { const i = _findings.findIndex(x => x.id === id); if (i >= 0) _findings.splice(i, 1); afterFindingMutation(); },
+      onFindingStatusChanged: ({ id, status }) => { const f = _findings.find(x => x.id === id); if (f) f.status = status; afterFindingMutation(); },
       onCompareRequest: () => openDiffModal(snap),
     });
   }
@@ -1362,40 +1346,30 @@ export async function renderReviewExecute(container, ctx) {
       const title = panel.querySelector('#rve-finding-title')?.value.trim();
       const desc  = panel.querySelector('#rve-finding-desc')?.value.trim();
       const sev   = panel.querySelector('#rve-finding-severity')?.value || 'major';
-      if (!title) { panel.querySelector('#rve-finding-title')?.focus(); toast('Enter a finding title.','error'); return; }
-      if (!desc)  { panel.querySelector('#rve-finding-desc')?.focus();  toast('Enter a description.','error');   return; }
+      if (!title) { panel.querySelector('#rve-finding-title')?.focus(); toast('Enter a finding title.', 'error'); return; }
+      if (!desc)  { panel.querySelector('#rve-finding-desc')?.focus();  toast('Enter a description.', 'error');  return; }
 
       const saveBtn = panel.querySelector('#rve-finding-save');
       saveBtn.disabled = true;
 
-      const findingCode = `FND-${String(_findings.length + 1).padStart(3,'0')}`;
-
+      const findingCode = `FND-${String(_findings.length + 1).padStart(3, '0')}`;
       const { data: finding, error: fe } = await sb.from('review_findings').insert({
         session_id: sessionId, snapshot_id: snap.id,
         finding_code: findingCode, title, description: desc,
         severity: sev, status: 'open', created_by: currentUserId,
       }).select().single();
 
-      if (fe) { saveBtn.disabled = false; toast('Error saving finding: ' + fe.message, 'error'); return; }
-
-      // Close form immediately so user sees instant response
-      findingForm.style.display = 'none';
-      panel.querySelector('#rve-finding-title').value = '';
-      panel.querySelector('#rve-finding-desc').value  = '';
-      const staged = _stagedVerdict;
-      _stagedVerdict = null;
       saveBtn.disabled = false;
+      if (fe) { toast('Error: ' + fe.message, 'error'); return; }
 
-      if (finding) _findings.push(finding);
+      _findings.push(finding);
       toast(`Finding ${findingCode} created.`, 'success');
-
-      // Fire-and-forget side effects
-      if (finding?.id && desc) sb.from('review_finding_comments').insert({
-        finding_id: finding.id, author_id: currentUserId, comment: desc,
-      }).catch(() => {});
+      const staged = _stagedVerdict; _stagedVerdict = null;
       if (staged) saveArtifactVerdict(snap, staged);
+      if (finding?.id && desc) sb.from('review_finding_comments')
+        .insert({ finding_id: finding.id, author_id: currentUserId, comment: desc }).catch(() => {});
 
-      afterFindingMutation(snap);
+      afterFindingMutation();
     });
 
     // "Raise Finding" standalone button (no verdict required)
@@ -1658,7 +1632,7 @@ export async function renderReviewExecute(container, ctx) {
       const panel = document.getElementById('rve-checklist-panel');
       if (panel?._addFinding) panel._addFinding(finding);
 
-      afterFindingMutation(_selectedSnapshot);
+      afterFindingMutation();
     };
     document.getElementById('fnd-title').focus();
   }
