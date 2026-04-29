@@ -1368,7 +1368,7 @@ export async function renderReviewSessionWizard(container, ctx) {
           session_id:          session.id,
           artifact_type:       type,
           artifact_id:         id,
-          artifact_code:       art.code || '',
+          artifact_code:       art.req_code || art.spec_code || art.test_code || art.analysis_code || art.code || '',
           artifact_title:      art.title || art.name || '',
           snapshot_data:       row,
           artifact_updated_at: art.updated_at || null,
