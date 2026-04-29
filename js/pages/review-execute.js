@@ -114,15 +114,24 @@ export async function renderReviewExecute(container, ctx) {
   const _allResponses     = allResponses      ? [...allResponses]     : [];
 
   function afterFindingMutation(snap) {
-    refreshArtifactCard(snap);
-    if (_selectedSnapshot?.id === snap.id && !_propsCollapsed) refreshPropsFindingsList(snap);
-  }
-
-  function refreshPropsFindingsList(snap) {
-    const list = document.querySelector('#rve-props-panel #rve-findings-list');
-    if (!list) return;
-    list.innerHTML = renderPropsFindingsList(_findings.filter(f => f.snapshot_id === snap.id));
-    wirePropsFindingsList(list);
+    // Rebuild artifact list (works in both card and table mode)
+    const body = document.getElementById('rve-artlist-body');
+    if (body) {
+      body.innerHTML = renderArtifactListBody();
+      wireArtifactListInteractions(document.getElementById('rve-artifact-list'));
+    }
+    // Restore active card highlight
+    document.querySelectorAll('.rve-art-card').forEach(c => {
+      c.classList.toggle('active', c.dataset.snapId === _selectedSnapshot?.id);
+    });
+    // Update props findings list in-place
+    if (snap && _selectedSnapshot?.id === snap.id && !_propsCollapsed) {
+      const list = document.getElementById('rve-findings-list');
+      if (list) {
+        list.innerHTML = renderPropsFindingsList(_findings.filter(f => f.snapshot_id === snap.id));
+        wirePropsFindingsList(list);
+      }
+    }
   }
 
   // Pre-select artifact from URL param (e.g. when navigating from req badge)
