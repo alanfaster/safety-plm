@@ -275,7 +275,7 @@ export function mountReviewChecklist(container, opts) {
     const statusSelect = buildStatusSelectHtml(f, isAuthor, 'rvck-status-select');
 
     return `
-      <div class="rvck-inline-finding" data-finding-id="${f.id}" data-severity="${f.severity}">
+      <div class="rvck-inline-finding" data-finding-id="${f.id}" data-severity="${f.severity}" data-status="${f.status}">
         <div class="rvck-inline-finding-header">
           <span class="mono rvck-inline-finding-code">${escHtml(f.finding_code)}</span>
           <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}">${SEVERITY_LABELS[f.severity] || f.severity}</span>

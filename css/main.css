@@ -5924,6 +5924,11 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rvck-inline-finding[data-severity="major"]    { border-left-color: #fd7e14; }
 .rvck-inline-finding[data-severity="minor"]    { border-left-color: #f0a500; }
 .rvck-inline-finding[data-severity="observation"] { border-left-color: #9e9e9e; }
+/* Status overrides — terminal/resolved states turn the bar green or grey */
+.rvck-inline-finding[data-status="closed"]   { border-left-color: #34a853; }
+.rvck-inline-finding[data-status="verified"] { border-left-color: #1a73e8; }
+.rvck-inline-finding[data-status="rejected"] { border-left-color: #9e9e9e; }
+.rvck-inline-finding[data-status="deferred"] { border-left-color: #9e9e9e; }
 .rvck-inline-finding-header { display: flex; align-items: center; gap: 5px;
   padding: 4px 10px; flex-wrap: wrap; }
 .rvck-inline-finding-code  { font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
