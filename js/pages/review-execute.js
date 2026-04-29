@@ -875,6 +875,7 @@ export async function renderReviewExecute(container, ctx) {
     const thread0 = panel.querySelector('#rve-props-thread');
     if (thread0) wireCommentActions(thread0);
 
+    wirePropsPanel();  // re-wire toggle after innerHTML replace
     panel.querySelector('#rve-props-compare')?.addEventListener('click', () => openDiffModal(snap));
 
     // Wire verdict buttons
