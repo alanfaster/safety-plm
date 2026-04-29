@@ -45,6 +45,8 @@ let _tracePanelId  = null; // currently open req id in trace panel
 let _colFilters    = {};   // { [colId]: string } — active column filter values
 let _systems       = [];   // systems for the current item (used by system_component column)
 let _selection     = new Set();  // selected requirement IDs (bulk actions)
+let _reviewMap     = new Map();  // reqId → { sessionId, title } — active review sessions
+let _findingMap    = new Map();  // reqId → open finding count
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -72,6 +74,8 @@ export async function renderRequirements(container, { project, item, system, par
   _colFilters    = {};
   _collapsed   = new Set(JSON.parse(sessionStorage.getItem(`req_collapsed_${parentId}`) || '[]'));
   _selection   = new Set();
+  _reviewMap   = new Map();
+  _findingMap  = new Map();
   _showAsil    = project.type === 'automotive';
   _showDal     = project.type === 'aerospace' || project.type === 'military';
 
@@ -346,8 +350,45 @@ async function loadData() {
   ];
   _cols = loadColConfig(_colKey, _builtins);
 
+  await loadReviewStatus();
   renderTable(body);
   buildReqNavTree();
+}
+
+async function loadReviewStatus() {
+  _reviewMap = new Map();
+  _findingMap = new Map();
+  const reqIds = _data.filter(r => r.type !== 'title' && r.type !== 'info').map(r => r.id);
+  if (!reqIds.length) return;
+
+  const { data: snapshots } = await sb
+    .from('review_artifact_snapshots')
+    .select('id, artifact_id, session_id, review_sessions(id, title, status)')
+    .eq('artifact_type', 'requirements')
+    .eq('is_current', true)
+    .in('artifact_id', reqIds);
+  if (!snapshots?.length) return;
+
+  for (const snap of snapshots) {
+    const sess = snap.review_sessions;
+    if (sess && ['planned', 'in_progress'].includes(sess.status)) {
+      _reviewMap.set(snap.artifact_id, { sessionId: snap.session_id, title: sess.title });
+    }
+  }
+
+  const snapIds = snapshots.map(s => s.id);
+  const { data: findings } = await sb
+    .from('review_findings')
+    .select('snapshot_id')
+    .in('snapshot_id', snapIds)
+    .not('status', 'in', '("closed","rejected","duplicate")');
+  if (!findings?.length) return;
+
+  const snapToArt = new Map(snapshots.map(s => [s.id, s.artifact_id]));
+  for (const f of findings) {
+    const artId = snapToArt.get(f.snapshot_id);
+    if (artId) _findingMap.set(artId, (_findingMap.get(artId) || 0) + 1);
+  }
 }
 
 function renderTable(body) {
@@ -524,6 +565,16 @@ function infoRowHTML(r) {
 
 function wireAllRows(tbody) {
   const { project, item, system, parentType, parentId, typeFilter } = _ctx;
+
+  // Review / finding badge clicks — navigate to review execute page
+  tbody.addEventListener('click', e => {
+    const badge = e.target.closest('.req-review-badge, .req-finding-badge');
+    if (!badge) return;
+    e.stopPropagation();
+    const sessionId = badge.dataset.sessionId;
+    if (!sessionId) return;
+    navigate(`/project/${project.id}/item/${item.id}/reviews/${sessionId}/execute`);
+  });
 
   // Section rows
   tbody.querySelectorAll('.req-section-row').forEach(tr => {
@@ -1404,11 +1455,15 @@ function reqTd(c, r) {
           title="Select" style="display:none"/>
       </td>`;
     case 'code': {
-      const ftaLinked = r.source?.startsWith('FTA-AND:');
+      const ftaLinked  = r.source?.startsWith('FTA-AND:');
+      const reviewInfo = _reviewMap.get(r.id);
+      const findings   = _findingMap.get(r.id) || 0;
       return `<td data-col="code" class="code-cell" style="white-space:nowrap">
         ${esc(r.req_code)}
         ${ftaLinked ? '<span title="Linked to FTA AND gate" style="margin-left:4px;font-size:10px;color:#1A73E8">⚡</span>' : ''}
         ${r.version > 1 ? `<span class="artifact-version-badge">v${r.version}</span>` : ''}
+        ${reviewInfo ? `<span class="req-review-badge" data-session-id="${reviewInfo.sessionId}" title="Under review: ${esc(reviewInfo.title)}">🔍</span>` : ''}
+        ${findings ? `<span class="req-finding-badge" data-session-id="${reviewInfo?.sessionId || ''}" title="${findings} open finding(s)">⚠ ${findings}</span>` : ''}
       </td>`;
     }
     case 'title': {
