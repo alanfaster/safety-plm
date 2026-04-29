@@ -115,7 +115,14 @@ export async function renderReviewExecute(container, ctx) {
 
   function afterFindingMutation(snap) {
     refreshArtifactCard(snap);
-    if (_selectedSnapshot?.id === snap.id && !_propsCollapsed) loadPropsPanel();
+    if (_selectedSnapshot?.id === snap.id && !_propsCollapsed) refreshPropsFindingsList(snap);
+  }
+
+  function refreshPropsFindingsList(snap) {
+    const list = document.querySelector('#rve-props-panel #rve-findings-list');
+    if (!list) return;
+    list.innerHTML = renderPropsFindingsList(_findings.filter(f => f.snapshot_id === snap.id));
+    wirePropsFindingsList(list);
   }
 
   // Pre-select artifact from URL param (e.g. when navigating from req badge)
@@ -1682,7 +1689,7 @@ export async function renderReviewExecute(container, ctx) {
     if (changed && _selectedSnapshot) mountChecklist(_selectedSnapshot);
     if (changed) {
       (snapshots || []).forEach(s => refreshArtifactCard(s));
-      if (_selectedSnapshot && !_propsCollapsed) loadPropsPanel();
+      if (_selectedSnapshot && !_propsCollapsed) refreshPropsFindingsList(_selectedSnapshot);
     }
 
     if (btn && !silent) { btn.disabled = false; btn.textContent = '↺ Refresh'; }
