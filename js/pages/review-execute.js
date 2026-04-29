@@ -1194,8 +1194,8 @@ export async function renderReviewExecute(container, ctx) {
         <div class="rve-props-verdict-section">
           <div class="rve-props-verdict-label">My Verdict</div>
           <div class="rvck-verdict-pills">
-            ${[['ok','✓ OK','rve-bulk-btn--go'],['nok','✗ NOK','rve-bulk-btn--no_go'],['partially_ok','⚑ Partly','rve-bulk-btn--conditional']].map(([v,lbl,cls]) => `
-              <button class="rve-bulk-btn ${cls} rve-props-vbtn ${mv === v ? 'rve-props-vbtn--active' : ''}" data-verdict="${v}">${lbl}</button>`).join('')}
+            ${[['ok','OK'],['nok','NOK'],['partially_ok','Partly OK']].map(([v,lbl]) => `
+              <button class="rvck-vbtn rve-props-vbtn ${mv === v ? 'sel-'+v : ''}" data-verdict="${v}">${lbl}</button>`).join('')}
           </div>
 
           <div class="rve-props-finding-form" id="rve-finding-form" style="display:none">
@@ -1275,7 +1275,8 @@ export async function renderReviewExecute(container, ctx) {
 
     function highlightVbtn(v) {
       panel.querySelectorAll('.rve-props-vbtn').forEach(b => {
-        b.classList.toggle('rve-props-vbtn--active', b.dataset.verdict === v);
+        b.classList.remove('sel-ok','sel-nok','sel-partially_ok');
+        if (b.dataset.verdict === v) b.classList.add('sel-' + v);
       });
     }
 
