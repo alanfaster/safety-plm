@@ -114,17 +114,7 @@ export async function renderReviewExecute(container, ctx) {
   const _allResponses     = allResponses      ? [...allResponses]     : [];
 
   function afterFindingMutation(snap) {
-    // Rebuild artifact list (works in both card and table mode)
-    const body = document.getElementById('rve-artlist-body');
-    if (body) {
-      body.innerHTML = renderArtifactListBody();
-      wireArtifactListInteractions(document.getElementById('rve-artifact-list'));
-    }
-    // Restore active card highlight
-    document.querySelectorAll('.rve-art-card').forEach(c => {
-      c.classList.toggle('active', c.dataset.snapId === _selectedSnapshot?.id);
-    });
-    // Update props findings list in-place
+    if (snap) refreshArtifactCard(snap);
     if (snap && _selectedSnapshot?.id === snap.id && !_propsCollapsed) {
       const list = document.getElementById('rve-findings-list');
       if (list) {
@@ -1375,18 +1365,25 @@ export async function renderReviewExecute(container, ctx) {
         severity: sev, status: 'open', created_by: currentUserId,
       }).select().single();
 
-      saveBtn.disabled = false;
-      if (fe) { toast('Error saving finding: ' + fe.message, 'error'); return; }
+      if (fe) { saveBtn.disabled = false; toast('Error saving finding: ' + fe.message, 'error'); return; }
 
-      if (finding) {
-        _findings.push(finding);
-        if (desc) sb.from('review_finding_comments').insert({
-          finding_id: finding.id, author_id: currentUserId, comment: desc,
-        }).catch(() => {});
-      }
-      if (_stagedVerdict) saveArtifactVerdict(snap, _stagedVerdict);
-      toast(`Finding ${findingCode} created.`, 'success');
+      // Close form immediately so user sees instant response
+      findingForm.style.display = 'none';
+      panel.querySelector('#rve-finding-title').value = '';
+      panel.querySelector('#rve-finding-desc').value  = '';
+      const staged = _stagedVerdict;
       _stagedVerdict = null;
+      saveBtn.disabled = false;
+
+      if (finding) _findings.push(finding);
+      toast(`Finding ${findingCode} created.`, 'success');
+
+      // Fire-and-forget side effects
+      if (finding?.id && desc) sb.from('review_finding_comments').insert({
+        finding_id: finding.id, author_id: currentUserId, comment: desc,
+      }).catch(() => {});
+      if (staged) saveArtifactVerdict(snap, staged);
+
       afterFindingMutation(snap);
     });
 
