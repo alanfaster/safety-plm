@@ -343,9 +343,70 @@ export function mountReviewChecklist(container, opts) {
       });
     });
 
-    // Open points — "Add" button
+    // Open points — inline "Add" form (same pattern as checklist item findings)
     container.querySelector('.rvck-op-add-btn')?.addEventListener('click', () => {
-      onFindingRaise?.({ snapshotId: ckSnap.id, templateItemId: null, criterion: '', verdict: '', comment: '', responseId: null, isOpenPoint: true });
+      const body = container.querySelector('#rvck-op-body');
+      if (!body || body.querySelector('.rvck-op-inline-form')) return; // already open
+      const formHtml = `
+        <div class="rvck-op-inline-form rvck-inline-raise-form" style="padding:8px 12px;border-top:1px solid #f0dfc0">
+          <input  class="form-input rvck-raise-title rvck-op-raise-title" placeholder="Finding title *"/>
+          <div class="rvck-raise-row">
+            <select class="form-input form-select rvck-raise-severity rvck-op-raise-severity">
+              ${['critical','major','minor','observation'].map(s =>
+                `<option value="${s}" ${s === 'major' ? 'selected' : ''}>${SEVERITY_LABELS[s]}</option>`
+              ).join('')}
+            </select>
+            <button class="btn btn-secondary btn-sm rvck-op-raise-save-btn">⚑ Save Open Point</button>
+            <button class="btn btn-ghost btn-sm rvck-op-raise-cancel-btn">Cancel</button>
+          </div>
+          <textarea class="form-input rvck-raise-desc rvck-op-raise-desc" rows="2" placeholder="Description (optional)…"></textarea>
+        </div>`;
+      body.insertAdjacentHTML('afterbegin', formHtml);
+
+      body.querySelector('.rvck-op-raise-cancel-btn').onclick = () => {
+        body.querySelector('.rvck-op-inline-form')?.remove();
+      };
+
+      body.querySelector('.rvck-op-raise-save-btn').onclick = async () => {
+        const form    = body.querySelector('.rvck-op-inline-form');
+        const titleEl = form.querySelector('.rvck-op-raise-title');
+        const title   = titleEl.value.trim();
+        if (!title) { titleEl.focus(); titleEl.classList.add('input-error'); return; }
+        titleEl.classList.remove('input-error');
+
+        const severity = form.querySelector('.rvck-op-raise-severity').value || 'major';
+        const desc     = form.querySelector('.rvck-op-raise-desc').value.trim() || '';
+        const saveBtn  = form.querySelector('.rvck-op-raise-save-btn');
+        saveBtn.disabled = true; saveBtn.textContent = '…';
+
+        const seqNum = (findings.length + 1).toString().padStart(3, '0');
+        const finding_code = `FND-${seqNum}`;
+
+        const { data: newFinding, error } = await sb.from('review_findings').insert({
+          session_id:       session.id,
+          snapshot_id:      ckSnap.id,
+          template_item_id: null,
+          finding_code,
+          severity,
+          title,
+          description:  desc || null,
+          status:       'open',
+          created_by:   currentUserId,
+        }).select().single();
+
+        if (error) { saveBtn.disabled = false; saveBtn.textContent = '⚑ Save Open Point'; return; }
+
+        findings.push(newFinding);
+        if (!findingsByItem['__open__']) findingsByItem['__open__'] = [];
+        findingsByItem['__open__'].push(newFinding);
+        onFindingCreated?.(newFinding);
+
+        form.remove();
+        const badge = container.querySelector('#rvck-op-badge');
+        if (badge) badge.textContent = findingsByItem['__open__'].length;
+        body.insertAdjacentHTML('beforeend', renderInlineFinding(newFinding));
+        wireInlineFinding(container);
+      };
     });
 
     // Verdict pills
