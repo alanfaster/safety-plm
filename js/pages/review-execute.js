@@ -364,12 +364,31 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   function wirePropsFindingsList(container, snap) {
-    // "Go to finding" link — navigate to findings page with that finding highlighted
+    // "Go to finding" — scroll to and highlight within the checklist column
     container.querySelectorAll('.rve-props-fnd-goto').forEach(a => {
       a.addEventListener('click', e => {
         e.stopPropagation();
-        const from = encodeURIComponent(window.location.hash.replace(/^#/, ''));
-        navigate(`${base}/reviews/${sessionId}/findings?findingId=${a.dataset.fid}&from=${from}`);
+        const fid      = a.dataset.fid;
+        const checklist = document.getElementById('rve-checklist-col');
+        if (!checklist) return;
+
+        // Expand the findings toggle for the parent item if collapsed
+        const findingCard = checklist.querySelector(`.rvck-inline-finding[data-finding-id="${fid}"]`);
+        if (findingCard) {
+          // Ensure the findings slot containing this card is visible
+          const slot = findingCard.closest('.rvck-findings-slot');
+          if (slot && slot.style.display === 'none') {
+            // Find the toggle button for this slot's item and click it
+            const itemEl    = findingCard.closest('.rvck-item');
+            const toggleBtn = itemEl?.querySelector('.rvck-findings-toggle');
+            if (toggleBtn) toggleBtn.click();
+          }
+          requestAnimationFrame(() => {
+            findingCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            findingCard.classList.add('rvck-finding-highlight');
+            setTimeout(() => findingCard.classList.remove('rvck-finding-highlight'), 3000);
+          });
+        }
       });
     });
 
