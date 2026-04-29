@@ -125,6 +125,7 @@ export async function renderReviewExecute(container, ctx) {
   let _propsCollapsed  = false;
   let _bulkMode        = false;
   let _bulkSelected    = new Set();
+  let _syncBulkHighlight = () => {}; // set by wireBulkBar, called on checkbox change
   let _artlistWidth    = parseInt(localStorage.getItem('alm_artlist_width') || '750', 10);
   let _colFilters      = {};   // { [colName]: string | Set }  — per-column filter values
   // Columns visible in expanded table mode
@@ -172,11 +173,30 @@ export async function renderReviewExecute(container, ctx) {
 
     const allSnapIds = (snapshots || []).map(s => s.id);
 
+    // Highlight the verdict button that matches all selected artifacts' saved verdicts,
+    // or clear all highlights if verdicts are mixed / none saved.
+    function syncHighlight() {
+      const selectedIds = [..._bulkSelected];
+      let consensus = null;
+      if (selectedIds.length > 0) {
+        const verdicts = selectedIds.map(sid => {
+          const av = _artifactVerdicts.find(v => v.snapshot_id === sid && v.reviewer_id === currentUserId);
+          return av?.verdict || null;
+        });
+        const first = verdicts[0];
+        consensus = (first && verdicts.every(v => v === first)) ? first : null;
+      }
+      bar.querySelectorAll('[data-bulk-verdict]').forEach(b => {
+        b.classList.toggle('rve-bulk-btn--selected', b.dataset.bulkVerdict === consensus);
+      });
+    }
+
     const updateCount = () => {
       const lbl = bar.querySelector('#rve-bulk-count');
       if (lbl) lbl.textContent = `${_bulkSelected.size} selected`;
       const hasAny = _bulkSelected.size > 0;
       bar.querySelectorAll('[data-bulk-verdict]').forEach(b => { b.disabled = !hasAny; });
+      syncHighlight();
     };
 
     bar.querySelector('.rve-bulk-select-all').addEventListener('click', () => {
@@ -206,6 +226,10 @@ export async function renderReviewExecute(container, ctx) {
         if (_selectedSnapshot && !_propsCollapsed) loadPropsPanel();
       });
     });
+
+    // Expose so checkbox handler can call it without re-wiring
+    _syncBulkHighlight = syncHighlight;
+    syncHighlight();
   }
 
   function buildExpandedToolbar() {
@@ -701,12 +725,14 @@ export async function renderReviewExecute(container, ctx) {
       chk.addEventListener('change', () => {
         const sid = chk.dataset.snapId;
         if (chk.checked) _bulkSelected.add(sid); else _bulkSelected.delete(sid);
-        // Sync sibling checkboxes with same snap-id (card + table row may both exist)
         root.querySelectorAll(`.rve-bulk-chk[data-snap-id="${sid}"]`).forEach(c => { c.checked = chk.checked; });
         const lbl = root.querySelector('#rve-bulk-count');
         if (lbl) lbl.textContent = `${_bulkSelected.size} selected`;
         const bar = root.querySelector('#rve-bulk-verdict-bar');
-        if (bar) bar.querySelectorAll('[data-bulk-verdict]').forEach(b => { b.disabled = _bulkSelected.size === 0; });
+        if (bar) {
+          bar.querySelectorAll('[data-bulk-verdict]').forEach(b => { b.disabled = _bulkSelected.size === 0; });
+          _syncBulkHighlight();
+        }
       });
     });
 

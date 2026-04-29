@@ -5711,6 +5711,10 @@ th.col-th-dragging * { pointer-events: none; }
 .rve-bulk-btn--no_go:not(:disabled):hover { background: #d93025; color: #fff; }
 .rve-bulk-btn--conditional { border-color: #e37400; color: #e37400; }
 .rve-bulk-btn--conditional:not(:disabled):hover { background: #e37400; color: #fff; }
+/* Selected = same as hover (filled) — shows current saved consensus verdict */
+.rve-bulk-btn--go.rve-bulk-btn--selected         { background: #1e8e3e; color: #fff; }
+.rve-bulk-btn--no_go.rve-bulk-btn--selected      { background: #d93025; color: #fff; }
+.rve-bulk-btn--conditional.rve-bulk-btn--selected { background: #e37400; color: #fff; }
 .rve-filter-active-badge { font-size: 10px; background: #e8f0fe; color: #1558d6;
   border: 1px solid #c5d8fb; border-radius: 10px; padding: 1px 7px; white-space: nowrap; }
 
