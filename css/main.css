@@ -6269,3 +6269,9 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
   margin-bottom:12px; overflow:hidden; }
 .rvck-block .rvck-col-header { border-bottom:1px solid var(--border,#e2e8f0);
   background:var(--bg-alt,#f9fafb); border-radius:0; padding:10px 14px; }
+
+/* ── Checklist block collapse ───────────────────────────────────────── */
+.rvck-block-toggle       { width:100%; text-align:left; cursor:pointer;
+  background:none; border:none; padding:0; }
+.rvck-block-toggle:hover { background:var(--bg-hover,#f1f5f9); }
+.rvck-block-chevron      { font-size:10px; color:var(--text-muted); margin-right:4px; flex-shrink:0; }

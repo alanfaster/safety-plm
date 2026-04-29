@@ -133,22 +133,24 @@ export function mountReviewChecklist(container, opts) {
 
         ${sections.length ? `
           <div class="rvck-block">
-            <div class="rvck-col-header">
+            <button class="rvck-col-header rvck-block-toggle" data-target="rvck-sections-wrap">
+              <span class="rvck-block-chevron">▼</span>
               <span class="rvck-col-title">Checklist</span>
               ${totalItems ? `<span class="rvck-bp-progress">${myDoneTotal}/${totalItems}</span>` : ''}
-            </div>
+            </button>
             <div class="rvck-sections-wrap" id="rvck-sections-wrap">
               ${sections.map(sec => renderSection(sec)).join('')}
             </div>
           </div>` : ''}
 
         <div class="rvck-block" id="rvck-open-points">
-          <div class="rvck-col-header">
+          <button class="rvck-col-header rvck-block-toggle" data-target="rvck-op-body">
+            <span class="rvck-block-chevron">▼</span>
             <span class="rvck-col-title">Open Points</span>
             <span class="rvck-sec-badge" id="rvck-op-badge">${(findingsByItem['__open__'] || []).length || ''}</span>
             <span style="flex:1"></span>
             <button class="btn btn-ghost btn-xs rvck-op-add-btn">+ Add</button>
-          </div>
+          </button>
           <div id="rvck-op-body">
             ${renderOpenPointsList()}
           </div>
@@ -313,6 +315,19 @@ export function mountReviewChecklist(container, opts) {
   // ── Wire everything ─────────────────────────────────────────────────────────
 
   function wire() {
+    // Block-level collapse (Checklist / Open Points headers)
+    container.querySelectorAll('.rvck-block-toggle').forEach(btn => {
+      btn.addEventListener('click', e => {
+        if (e.target.closest('.rvck-op-add-btn')) return; // let + Add through
+        const body    = container.querySelector(`#${btn.dataset.target}`);
+        const chevron = btn.querySelector('.rvck-block-chevron');
+        if (!body) return;
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        if (chevron) chevron.textContent = collapsed ? '▼' : '▶';
+      });
+    });
+
     // Drift banner
     container.querySelector('.rvck-drift-compare-btn')?.addEventListener('click', () => onCompareRequest?.());
 
