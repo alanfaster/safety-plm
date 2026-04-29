@@ -379,6 +379,7 @@ export async function renderReviewExecute(container, ctx) {
           </div>`;
           refreshArtifactCard(snap);
           mountChecklist(snap);
+          if (_selectedSnapshot?.id === snap.id && !_propsCollapsed) loadPropsPanel();
         };
       });
     });
@@ -1130,7 +1131,7 @@ export async function renderReviewExecute(container, ctx) {
         else refreshArtifactCard(snap);
       },
       onFindingRaise: opts => openRaiseFindingModal(opts),
-      onFindingCreated: f => { _findings.push(f); refreshArtifactCard(snap); },
+      onFindingCreated: f => { _findings.push(f); refreshArtifactCard(snap); if (!_propsCollapsed) loadPropsPanel(); },
       onCompareRequest: () => openDiffModal(snap),
     });
   }
@@ -1647,6 +1648,7 @@ export async function renderReviewExecute(container, ctx) {
       if (panel?._addFinding) panel._addFinding(finding);
 
       refreshArtifactCard(_selectedSnapshot);
+      if (!_propsCollapsed) loadPropsPanel();
     };
     document.getElementById('fnd-title').focus();
   }
@@ -1687,6 +1689,7 @@ export async function renderReviewExecute(container, ctx) {
 
     if (changed && _selectedSnapshot) mountChecklist(_selectedSnapshot);
     if (changed) (snapshots || []).forEach(s => refreshArtifactCard(s));
+    if (changed && _selectedSnapshot && !_propsCollapsed) loadPropsPanel();
 
     if (btn && !silent) { btn.disabled = false; btn.textContent = '↺ Refresh'; }
     if (!silent && changed) toast('Updated with latest responses.', 'success');
