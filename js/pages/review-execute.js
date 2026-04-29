@@ -377,13 +377,14 @@ export async function renderReviewExecute(container, ctx) {
   function renderPropsFindingsList(snapFindings) {
     if (!snapFindings.length) return '<p class="text-muted" style="font-size:11px;margin:4px 0">No findings.</p>';
 
-    const openCount   = snapFindings.filter(f => f.status === 'open').length;
-    const activeCount = snapFindings.filter(f => f.status === 'accepted' || f.status === 'in_progress').length;
-    const doneCount   = snapFindings.filter(f => f.status === 'fixed' || f.status === 'verified' || f.status === 'closed').length;
-    const summaryBar  = `<div class="rve-props-fnd-summary">
-      ${openCount   ? `<span class="rve-props-fnd-count rve-props-fnd-count--open">${openCount} open</span>` : ''}
-      ${activeCount ? `<span class="rve-props-fnd-count rve-props-fnd-count--active">${activeCount} active</span>` : ''}
-      ${doneCount   ? `<span class="rve-props-fnd-count rve-props-fnd-count--done">${doneCount} closed</span>` : ''}
+    // One pill per status that has at least one finding
+    const STATUS_ORDER = ['open','accepted','fixed','verified','closed','rejected','deferred','duplicate'];
+    const countsByStatus = {};
+    snapFindings.forEach(f => { countsByStatus[f.status] = (countsByStatus[f.status] || 0) + 1; });
+    const summaryBar = `<div class="rve-props-fnd-summary">
+      ${STATUS_ORDER.filter(s => countsByStatus[s]).map(s =>
+        `<span class="rve-props-fnd-count badge ${FINDING_STATUS_CLASSES[s] || ''}" style="font-size:10px">${countsByStatus[s]} ${FINDING_STATUS_LABELS[s] || s}</span>`
+      ).join('')}
     </div>`;
 
     const checklistFindings = snapFindings.filter(f => f.response_id);
@@ -1054,7 +1055,15 @@ export async function renderReviewExecute(container, ctx) {
           <div class="rve-progress-bar"><div class="rve-progress-fill" style="width:${pct}%"></div></div>
           <div class="rve-art-counts">
             <span class="text-muted">${myDone}/${totalItems} items</span>
-            ${allFnds ? `<span class="${openFnds ? 'rv-fs-open' : ''}" style="font-size:10px;padding:1px 5px;border-radius:8px;border:1px solid;opacity:${openFnds ? 1 : 0.5}">⚑ ${openFnds || allFnds}</span>` : ''}
+            ${allFnds ? (() => {
+              const TERMINAL = new Set(['closed','rejected','duplicate']);
+              const activeFnds = snapFindings.filter(f => !TERMINAL.has(f.status)).length;
+              const cls  = openFnds  ? 'rv-fs-open'
+                         : activeFnds ? 'rve-card-fnd-active'
+                         : 'rve-card-fnd-done';
+              const num  = openFnds || activeFnds || allFnds;
+              return `<span class="rve-card-fnd-badge ${cls}">⚑ ${num}</span>`;
+            })() : ''}
           </div>` : '<span class="text-muted" style="font-size:11px">No checklist</span>'}
         ${verdictPills ? `<div class="rve-rv-mini-row">${verdictPills}</div>` : ''}
         ${drifted ? `<div class="rve-obsolete-badge">OBSOLETE</div>` : ''}

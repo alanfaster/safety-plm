@@ -6127,10 +6127,12 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 /* Findings list in props panel */
 .rve-props-findings-section { margin-top: 4px; }
 .rve-props-fnd-summary { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
-.rve-props-fnd-count   { font-size: 10px; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
-.rve-props-fnd-count--open   { background: #ffe4e4; color: #c0392b; }
-.rve-props-fnd-count--active { background: #fff3cd; color: #856404; }
-.rve-props-fnd-count--done   { background: #d4edda; color: #155724; }
+.rve-props-fnd-count { margin-right: 2px; }
+
+/* Findings badge on artifact card */
+.rve-card-fnd-badge  { font-size: 10px; padding: 1px 5px; border-radius: 8px; border: 1px solid; white-space: nowrap; }
+.rve-card-fnd-active { border-color: #e37400; color: #e37400; background: #fff8f0; }
+.rve-card-fnd-done   { border-color: #aaa;    color: #888;    background: transparent; }
 
 .rve-props-finding-row {
   padding: 3px 6px; border-radius: 4px; margin-bottom: 3px;
