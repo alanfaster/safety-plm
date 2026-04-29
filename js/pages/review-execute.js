@@ -112,8 +112,10 @@ export async function renderReviewExecute(container, ctx) {
   let _selectedSnapshot = snapshots?.[0] || null;
 
   // Artifact list panel state
-  let _listExpanded = false;
-  let _colFilters   = {};   // { [colName]: string }  — per-column filter values
+  let _listExpanded    = false;
+  let _propsCollapsed  = false;
+  let _artlistWidth    = parseInt(localStorage.getItem('alm_artlist_width') || '260', 10);
+  let _colFilters      = {};   // { [colName]: string }  — per-column filter values
   // Columns visible in expanded table mode
   const SKIP_FIELDS = new Set(['id','created_at','updated_at','project_id','parent_id','parent_type','domain','session_id']);
   const ALL_COLS    = buildAvailableColumns(snapshots || []);
@@ -319,9 +321,11 @@ export async function renderReviewExecute(container, ctx) {
   // ── Tab 1: Review (3-column layout) ──────────────────────────────────────────
 
   function renderReviewTab() {
+    const artlistStyle = _listExpanded ? `style="width:${_artlistWidth}px"` : '';
     return `
       <div class="rve-body">
-        <div class="rve-artifact-list ${_listExpanded ? 'rve-artifact-list--expanded' : ''}" id="rve-artifact-list">
+        <div class="rve-artifact-list ${_listExpanded ? 'rve-artifact-list--expanded' : ''}"
+             id="rve-artifact-list" ${artlistStyle}>
           <div class="rve-artlist-toolbar" id="rve-artlist-toolbar">
             ${_listExpanded ? buildExpandedToolbar() : `
               <span class="rve-artlist-title">Artifacts <span class="rve-artlist-count">(${(snapshots||[]).length})</span></span>
@@ -330,10 +334,13 @@ export async function renderReviewExecute(container, ctx) {
           <div id="rve-artlist-body">
             ${renderArtifactListBody()}
           </div>
+          ${_listExpanded ? '<div class="rve-artlist-resize-handle" id="rve-artlist-resize-handle"></div>' : ''}
         </div>
         <div class="rve-checklist-col" id="rve-checklist-col"></div>
-        <div class="rve-props-panel" id="rve-props-panel">
-          <div class="rve-props-placeholder text-muted">Select an artifact to view its properties.</div>
+        <div class="rve-props-panel ${_propsCollapsed ? 'rve-props-panel--collapsed' : ''}" id="rve-props-panel">
+          ${_propsCollapsed
+            ? `<button class="rve-props-collapsed-btn" id="rve-props-open-btn" title="Show properties panel">◀ Properties</button>`
+            : `<div class="rve-props-placeholder text-muted">Select an artifact to view its properties.</div>`}
         </div>
       </div>
     `;
@@ -450,11 +457,23 @@ export async function renderReviewExecute(container, ctx) {
     const list = document.getElementById('rve-artifact-list');
     if (!list) return;
     list.className = `rve-artifact-list${_listExpanded ? ' rve-artifact-list--expanded' : ''}`;
+    list.style.width = _listExpanded ? `${_artlistWidth}px` : '';
+
     list.querySelector('#rve-artlist-toolbar').innerHTML = _listExpanded
       ? buildExpandedToolbar()
       : `<span class="rve-artlist-title">Artifacts <span class="rve-artlist-count">(${(snapshots||[]).length})</span></span>
          <button class="btn btn-ghost btn-xs" id="rve-list-toggle" title="Expand">⊞ Expand</button>`;
     list.querySelector('#rve-artlist-body').innerHTML = renderArtifactListBody();
+
+    // Ensure resize handle present only in expanded mode
+    list.querySelector('.rve-artlist-resize-handle')?.remove();
+    if (_listExpanded) {
+      const handle = document.createElement('div');
+      handle.className = 'rve-artlist-resize-handle';
+      handle.id = 'rve-artlist-resize-handle';
+      list.appendChild(handle);
+    }
+
     wireArtifactListInteractions(list);
     if (_selectedSnapshot) {
       list.querySelectorAll(`[data-snap-id="${_selectedSnapshot.id}"]`).forEach(el => {
@@ -469,8 +488,56 @@ export async function renderReviewExecute(container, ctx) {
 
     root.querySelector('#rve-list-toggle')?.addEventListener('click', () => {
       _listExpanded = !_listExpanded;
+      if (_listExpanded) {
+        // Auto-collapse props panel to free up space
+        _propsCollapsed = true;
+        const propsPanel = document.getElementById('rve-props-panel');
+        if (propsPanel) {
+          propsPanel.className = 'rve-props-panel rve-props-panel--collapsed';
+          propsPanel.innerHTML = `<button class="rve-props-collapsed-btn" id="rve-props-open-btn" title="Show properties panel">◀ Properties</button>`;
+          wirePropsPanel();
+        }
+        _artlistWidth = Math.max(400, _artlistWidth); // ensure a reasonable start width
+      } else {
+        _propsCollapsed = false;
+        const propsPanel = document.getElementById('rve-props-panel');
+        if (propsPanel) {
+          propsPanel.className = 'rve-props-panel';
+          propsPanel.innerHTML = `<div class="rve-props-placeholder text-muted">Select an artifact to view its properties.</div>`;
+        }
+      }
       rebuildArtifactList();
+      if (!_listExpanded && _selectedSnapshot) loadPropsPanel();
     });
+
+    // Resize handle drag
+    const handle = root.querySelector('#rve-artlist-resize-handle');
+    if (handle) {
+      let startX, startW;
+      const onMove = e => {
+        const dx = e.clientX - startX;
+        const body = document.getElementById('rve-body') || root.parentElement;
+        const maxW = body ? body.clientWidth - 320 : 1200; // leave room for checklist
+        _artlistWidth = Math.max(260, Math.min(maxW, startW + dx));
+        root.style.width = `${_artlistWidth}px`;
+      };
+      const onUp = () => {
+        localStorage.setItem('alm_artlist_width', String(_artlistWidth));
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+      handle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        startX = e.clientX;
+        startW = root.offsetWidth;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    }
 
     root.querySelector('#rve-col-picker-btn')?.addEventListener('click', e => {
       e.stopPropagation();
@@ -539,6 +606,17 @@ export async function renderReviewExecute(container, ctx) {
     }
   }
 
+  function wirePropsPanel() {
+    document.getElementById('rve-props-open-btn')?.addEventListener('click', () => {
+      _propsCollapsed = false;
+      const propsPanel = document.getElementById('rve-props-panel');
+      if (!propsPanel) return;
+      propsPanel.className = 'rve-props-panel';
+      if (_selectedSnapshot) loadPropsPanel();
+      else propsPanel.innerHTML = `<div class="rve-props-placeholder text-muted">Select an artifact to view its properties.</div>`;
+    });
+  }
+
   function openColPicker(anchor) {
     document.getElementById('rve-col-picker-popover')?.remove();
     const popover = document.createElement('div');
@@ -584,9 +662,10 @@ export async function renderReviewExecute(container, ctx) {
         el.classList.add('active'); el.classList.add('rve-atbl-row--active');
       });
     }
+    wirePropsPanel();
     // Always mount checklist; load first artifact properties
     mountChecklist();
-    if (_selectedSnapshot) loadPropsPanel();
+    if (_selectedSnapshot && !_propsCollapsed) loadPropsPanel();
   }
 
   function renderArtifactCard(snap) {
@@ -684,7 +763,7 @@ export async function renderReviewExecute(container, ctx) {
 
   async function loadPropsPanel() {
     const panel = document.getElementById('rve-props-panel');
-    if (!panel || !_selectedSnapshot) return;
+    if (!panel || !_selectedSnapshot || _propsCollapsed) return;
 
     const snap   = _selectedSnapshot;
     const data   = snap.snapshot_data || {};
