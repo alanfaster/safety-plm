@@ -1368,7 +1368,8 @@ export async function renderReviewExecute(container, ctx) {
           }).catch(() => {});
         }
       }
-      await saveArtifactVerdict(snap, _stagedVerdict);
+      if (_stagedVerdict) await saveArtifactVerdict(snap, _stagedVerdict);
+      refreshArtifactCard(snap);
 
       findingForm.style.display = 'none';
       panel.querySelector('#rve-finding-title').value = '';
