@@ -16,8 +16,6 @@ import { toast } from '../toast.js';
 import { mountReviewChecklist } from '../components/review-checklist.js';
 import {
   FINDING_STATUS_LABELS, FINDING_STATUS_CLASSES,
-  TRANSITIONS as FINDING_TRANSITIONS, TRANSITION_LABELS as FINDING_TRANSITION_LABELS,
-  COMMENT_REQUIRED as FINDING_COMMENT_REQUIRED,
 } from '../components/finding-constants.js';
 
 const SESSION_STATUS_CLASSES = {
@@ -316,33 +314,15 @@ export async function renderReviewExecute(container, ctx) {
 
   // ── Props panel findings list helpers ────────────────────────────────────────
 
-  function renderPropsFindingRow(f, editable) {
-    const gotoBtn = `<a class="rve-props-fnd-goto btn btn-ghost btn-xs" data-fid="${f.id}" title="Go to finding">↗</a>`;
-    if (!editable) {
-      return `
-        <div class="rve-props-finding-row rve-props-finding-row--readonly" data-finding-id="${f.id}" data-severity="${f.severity}" data-status="${f.status}">
-          <div class="rve-props-finding-row-main">
-            <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
-            <span class="rve-props-finding-title">${escHtml(f.title)}</span>
-            <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}" style="font-size:10px;margin-left:auto;flex-shrink:0">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
-            ${gotoBtn}
-          </div>
-        </div>`;
-    }
-    const transitions = FINDING_TRANSITIONS[f.status] || [];
-    const disabled    = transitions.length === 0 ? 'disabled' : '';
+  function renderPropsFindingRow(f) {
     return `
       <div class="rve-props-finding-row" data-finding-id="${f.id}" data-severity="${f.severity}" data-status="${f.status}">
         <div class="rve-props-finding-row-main">
           <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
           <span class="rve-props-finding-title">${escHtml(f.title)}</span>
-          <select class="rvf-status-select rve-props-fnd-select" data-finding-id="${f.id}" data-current="${f.status}" ${disabled} style="margin-left:auto">
-            <option value="${f.status}" selected>${FINDING_STATUS_LABELS[f.status] || f.status}</option>
-            ${transitions.map(to => `<option value="${to}">${FINDING_TRANSITION_LABELS[to] || FINDING_STATUS_LABELS[to]}</option>`).join('')}
-          </select>
-          ${gotoBtn}
+          <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}" style="font-size:10px;margin-left:auto;flex-shrink:0">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
+          <a class="rve-props-fnd-goto btn btn-ghost btn-xs" data-fid="${f.id}" title="Go to finding">↗</a>
         </div>
-        <div class="rve-props-fnd-confirm" style="display:none"></div>
       </div>`;
   }
 
@@ -358,33 +338,29 @@ export async function renderReviewExecute(container, ctx) {
       ${doneCount   ? `<span class="rve-props-fnd-count rve-props-fnd-count--done">${doneCount} closed</span>` : ''}
     </div>`;
 
-    const checklistFindings  = snapFindings.filter(f => f.response_id);
-    const openPointFindings  = snapFindings.filter(f => !f.response_id && f.template_item_id);
-    const directFindings     = snapFindings.filter(f => !f.response_id && !f.template_item_id);
-    const rows = [
-      checklistFindings.map(f => renderPropsFindingRow(f, false)).join(''),
-      openPointFindings.map(f => renderPropsFindingRow(f, false)).join(''),
-      directFindings.map(f => renderPropsFindingRow(f, true)).join(''),
-    ].join('');
-    return summaryBar + rows;
+    const checklistFindings = snapFindings.filter(f => f.response_id);
+    const openPointFindings = snapFindings.filter(f => !f.response_id && f.template_item_id);
+    const directFindings    = snapFindings.filter(f => !f.response_id && !f.template_item_id);
+    const group = (label, items) => items.length
+      ? `<div class="rve-findings-group-label">${label}</div>${items.map(f => renderPropsFindingRow(f)).join('')}`
+      : '';
+    return summaryBar
+      + group('Checklist', checklistFindings)
+      + group('Open points', openPointFindings)
+      + group('Direct', directFindings);
   }
 
-  function wirePropsFindingsList(container, snap) {
-    // "Go to finding" — scroll to and highlight within the checklist column
+  function wirePropsFindingsList(container) {
     container.querySelectorAll('.rve-props-fnd-goto').forEach(a => {
       a.addEventListener('click', e => {
         e.stopPropagation();
         const fid      = a.dataset.fid;
         const checklist = document.getElementById('rve-checklist-col');
         if (!checklist) return;
-
-        // Expand the findings toggle for the parent item if collapsed
         const findingCard = checklist.querySelector(`.rvck-inline-finding[data-finding-id="${fid}"]`);
         if (findingCard) {
-          // Ensure the findings slot containing this card is visible
           const slot = findingCard.closest('.rvck-item-findings');
           if (slot && slot.style.display === 'none') {
-            // Find the toggle button for this slot's item and click it
             const itemEl    = findingCard.closest('.rvck-item');
             const toggleBtn = itemEl?.querySelector('.rvck-findings-toggle');
             if (toggleBtn) toggleBtn.click();
@@ -395,69 +371,6 @@ export async function renderReviewExecute(container, ctx) {
             setTimeout(() => findingCard.classList.remove('rvck-finding-highlight'), 3000);
           });
         }
-      });
-    });
-
-    // Status select → inline confirm form with required comment
-    container.querySelectorAll('.rve-props-fnd-select').forEach(sel => {
-      sel.addEventListener('change', () => {
-        const findingId = sel.dataset.findingId;
-        const toStatus  = sel.value;
-        if (!toStatus || toStatus === sel.dataset.current) { sel.value = sel.dataset.current; return; }
-        const f = _findings.find(x => x.id === findingId);
-        if (!f) return;
-
-        // Close any other open confirm form in this list
-        container.querySelectorAll('.rve-props-fnd-confirm').forEach(el => { el.style.display = 'none'; el.innerHTML = ''; });
-        container.querySelectorAll('.rve-props-fnd-select').forEach(s => { if (s !== sel) s.disabled = false; });
-
-        sel.disabled = true;
-        const required = FINDING_COMMENT_REQUIRED.has(toStatus);
-        const label    = FINDING_TRANSITION_LABELS[toStatus] || FINDING_STATUS_LABELS[toStatus];
-        const row      = sel.closest('.rve-props-finding-row');
-        const confirm  = row?.querySelector('.rve-props-fnd-confirm');
-        if (!confirm) return;
-
-        confirm.innerHTML = `
-          <textarea class="form-input rve-props-fnd-comment" rows="2"
-            placeholder="Note${required ? ' (required)' : ' (optional)'}…" style="font-size:11px;margin-top:4px"></textarea>
-          <div style="display:flex;gap:4px;margin-top:4px">
-            <button class="btn btn-primary btn-xs rve-props-fnd-ok">${escHtml(label)}</button>
-            <button class="btn btn-ghost btn-xs rve-props-fnd-cancel">Cancel</button>
-          </div>`;
-        confirm.style.display = '';
-        confirm.querySelector('.rve-props-fnd-comment').focus();
-
-        confirm.querySelector('.rve-props-fnd-cancel').onclick = () => {
-          confirm.style.display = 'none'; confirm.innerHTML = '';
-          sel.value = sel.dataset.current; sel.disabled = false;
-        };
-
-        confirm.querySelector('.rve-props-fnd-ok').onclick = async () => {
-          const comment = confirm.querySelector('.rve-props-fnd-comment').value.trim();
-          if (required && !comment) { confirm.querySelector('.rve-props-fnd-comment').focus(); toast('A note is required.', 'error'); return; }
-          const okBtn = confirm.querySelector('.rve-props-fnd-ok');
-          okBtn.disabled = true;
-          const updates = { status: toStatus, updated_at: new Date().toISOString() };
-          if (comment) updates.resolution_note = comment;
-          const { error } = await sb.from('review_findings').update(updates).eq('id', findingId);
-          if (error) { toast('Error: ' + error.message, 'error'); okBtn.disabled = false; return; }
-          if (comment) {
-            await sb.from('review_finding_comments').insert({
-              finding_id: findingId, author_id: currentUserId,
-              comment: `[${label}] ${comment}`,
-            }).catch(() => {});
-          }
-          f.status = toStatus;
-          if (comment) f.resolution_note = comment;
-          toast(`${f.finding_code}: ${label}`, 'success');
-          // Re-render just this row (direct findings are always editable)
-          const newHtml = renderPropsFindingRow(f, true);
-          const tmp = document.createElement('div'); tmp.innerHTML = newHtml;
-          row.replaceWith(tmp.firstElementChild);
-          wirePropsFindingsList(container, snap);
-          refreshArtifactCard(snap);
-        };
       });
     });
   }
@@ -1050,6 +963,7 @@ export async function renderReviewExecute(container, ctx) {
     const totalItems    = sections.reduce((s, sec) => s + (sec.items?.length || 0), 0);
     const myDone        = snapResponses.filter(r => r.reviewer_id === currentUserId).length;
     const snapFindings  = _findings.filter(f => f.snapshot_id === snap.id);
+    const allFnds       = snapFindings.length;
     const openFnds      = snapFindings.filter(f => f.status === 'open').length;
     const drifted       = driftMap[snap.artifact_id];
     const pct           = totalItems ? Math.round(myDone / totalItems * 100) : 0;
@@ -1077,7 +991,7 @@ export async function renderReviewExecute(container, ctx) {
           <div class="rve-progress-bar"><div class="rve-progress-fill" style="width:${pct}%"></div></div>
           <div class="rve-art-counts">
             <span class="text-muted">${myDone}/${totalItems} items</span>
-            ${openFnds ? `<span class="rv-fs-open" style="font-size:10px;padding:1px 5px;border-radius:8px;border:1px solid">⚑ ${openFnds}</span>` : ''}
+            ${allFnds ? `<span class="${openFnds ? 'rv-fs-open' : ''}" style="font-size:10px;padding:1px 5px;border-radius:8px;border:1px solid;opacity:${openFnds ? 1 : 0.5}">⚑ ${openFnds || allFnds}</span>` : ''}
           </div>` : '<span class="text-muted" style="font-size:11px">No checklist</span>'}
         ${verdictPills ? `<div class="rve-rv-mini-row">${verdictPills}</div>` : ''}
         ${drifted ? `<div class="rve-obsolete-badge">OBSOLETE</div>` : ''}
@@ -1277,7 +1191,7 @@ export async function renderReviewExecute(container, ctx) {
     wirePropsPanel();  // re-wire toggle after innerHTML replace
     panel.querySelector('#rve-props-compare')?.addEventListener('click', () => openDiffModal(snap));
     const findingsList = panel.querySelector('#rve-findings-list');
-    if (findingsList) wirePropsFindingsList(findingsList, snap);
+    if (findingsList) wirePropsFindingsList(findingsList);
 
     // Wire verdict buttons — NOK/Partially OK require a finding before saving
     let _stagedVerdict = null;
