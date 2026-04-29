@@ -72,6 +72,7 @@ export async function renderReviewSessionWizard(container, ctx) {
     artifacts: {},   // { [artifactType]: [] }  all project artifacts loaded once
     items: [],       // project items
     systems: {},     // { [itemId]: [system, ...] }
+    navPages: {},    // { [parentId]: [page, ...] }
     reviewers: [],   // [{ user_id, role_id, role_name, role_code, display_name, review_role }]
   };
 
@@ -190,6 +191,34 @@ export async function renderReviewSessionWizard(container, ctx) {
     });
   }
 
+  // ── Tree constants ────────────────────────────────────────────────────────────
+  // Mirrors sidebar.js DOMAINS / ALL_PHASES / SUB_PHASES
+  const WIZ_DOMAINS = [
+    { key: 'system', label: 'System',  icon: '⬡', phases: ['item_definition','requirements','architecture','design','implementation','unit_testing','integration_testing','system_testing','validation'] },
+    { key: 'sw',     label: 'SW',      icon: '◧', phases: ['item_definition','requirements','architecture','design','implementation','unit_testing'] },
+    { key: 'hw',     label: 'HW',      icon: '◨', phases: ['item_definition','requirements','architecture','design','implementation','unit_testing'] },
+    { key: 'mech',   label: 'MECH',    icon: '◎', phases: ['item_definition','requirements','architecture','design','implementation','unit_testing'] },
+  ];
+  const PHASE_ICONS = {
+    item_definition:'▤', requirements:'≡', architecture:'◈', design:'◇',
+    implementation:'◫', unit_testing:'◉', integration_testing:'⊕', system_testing:'▣', validation:'✓',
+  };
+  const PHASE_LABELS = {
+    item_definition:'Definition', requirements:'Requirements', architecture:'Architecture',
+    design:'Design', implementation:'Implementation', unit_testing:'Unit Testing',
+    integration_testing:'Integration Testing', system_testing:'System Testing', validation:'Validation',
+  };
+  // Which artifact type belongs to which phase (only under 'system' domain to avoid duplication)
+  const PHASE_ART_TYPE = {
+    requirements: 'requirements',
+    architecture: 'arch_spec_items',
+    unit_testing: 'test_specs:unit',
+    integration_testing: 'test_specs:integration',
+    system_testing: 'test_specs:system',
+    validation: 'test_specs:validation',
+  };
+  const SAFETY_ITEMS = ['HARA','FSC','TSC','FTA','DFA','FMEA','DFMEA'];
+
   async function renderStep2(body) {
     body.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
 
@@ -204,20 +233,36 @@ export async function renderReviewSessionWizard(container, ctx) {
       state.items = itemsData || [];
       const typeKeys = Object.keys(ARTIFACT_TYPE_LABELS);
       typeKeys.forEach((k, i) => { state.artifacts[k] = artResults[i]; });
+
       if (state.items.length) {
+        // Systems + nav_pages in parallel for all items
         await Promise.all(state.items.map(async it => {
-          const { data: syss } = await sb.from('systems')
-            .select('id, name, system_code').eq('item_id', it.id).order('created_at');
-          state.systems[it.id] = syss || [];
+          const [{ data: syss }, { data: pages }] = await Promise.all([
+            sb.from('systems').select('id, name, system_code').eq('item_id', it.id).order('created_at'),
+            sb.from('nav_pages').select('*').eq('parent_type','item').eq('parent_id', it.id).order('sort_order'),
+          ]);
+          state.systems[it.id]  = syss  || [];
+          state.navPages[it.id] = pages || [];
         }));
+        // Nav pages for all systems
+        const allSystems = Object.values(state.systems).flat();
+        if (allSystems.length) {
+          await Promise.all(allSystems.map(async sys => {
+            const { data: pages } = await sb.from('nav_pages')
+              .select('*').eq('parent_type','system').eq('parent_id', sys.id).order('sort_order');
+            state.navPages[sys.id] = pages || [];
+          }));
+        }
       }
     }
 
     const typeKeys = Object.keys(ARTIFACT_TYPE_LABELS);
     typeKeys.forEach(k => { if (!state.selected[k]) state.selected[k] = new Set(); });
+    if (!state.selected_pages) state.selected_pages = new Set();
 
     const totalAll = Object.values(state.artifacts).reduce((s, arr) => s + arr.length, 0);
-    if (!totalAll) {
+    const totalPages = Object.values(state.navPages).reduce((s, arr) => s + arr.length, 0);
+    if (!totalAll && !totalPages) {
       body.innerHTML = `<div class="wiz-step-body">
         <h3>Select Artifacts to Review</h3>
         <p class="rv-empty" style="padding:32px 0">No artifacts found for this project.</p>
@@ -225,158 +270,369 @@ export async function renderReviewSessionWizard(container, ctx) {
       return;
     }
 
-    // artsByLeaf: { 'item:{id}:{type}': [art,...], 'sys:{id}:{type}': [art,...] }
+    // artsByLeaf: 'art:{pType}:{pId}:{artType}' → [art,...]
+    // test_specs split by level:  'art:{pType}:{pId}:test_specs:{level}'
     const artsByLeaf = {};
-    typeKeys.forEach(type => {
-      (state.artifacts[type] || []).forEach(art => {
-        const prefix = art.parent_type === 'system' ? 'sys' : 'item';
-        const key    = `${prefix}:${art.parent_id}:${type}`;
+    typeKeys.forEach(artType => {
+      (state.artifacts[artType] || []).forEach(art => {
+        const pPrefix = art.parent_type === 'system' ? 'sys' : 'item';
+        let key;
+        if (artType === 'test_specs') {
+          const lvl = art.level || 'unit';
+          key = `art:${pPrefix}:${art.parent_id}:test_specs:${lvl}`;
+        } else {
+          key = `art:${pPrefix}:${art.parent_id}:${artType}`;
+        }
         if (!artsByLeaf[key]) artsByLeaf[key] = [];
         artsByLeaf[key].push(art);
       });
     });
 
-    // Collapse state: grouped by group-key → open/closed
-    const _groupOpen = {};
-    // Default: open first item group, all sys groups within it open
-    if (state.items.length) _groupOpen[`item-${state.items[0].id}`] = true;
+    // pagesByDomainPhase: { [parentId]: { [domain]: { [phase]: [page,...] } } }
+    function getPagesFor(parentId) {
+      const pages = state.navPages[parentId] || [];
+      const map = {};
+      pages.filter(p => !p.parent_page_id && !p.is_folder).forEach(p => {
+        if (!map[p.domain]) map[p.domain] = {};
+        if (!map[p.domain][p.phase]) map[p.domain][p.phase] = [];
+        map[p.domain][p.phase].push(p);
+      });
+      // also include folders and their children as flat list
+      pages.filter(p => p.is_folder).forEach(folder => {
+        if (!map[folder.domain]) map[folder.domain] = {};
+        if (!map[folder.domain][folder.phase]) map[folder.domain][folder.phase] = [];
+        map[folder.domain][folder.phase].push(folder);
+      });
+      return map;
+    }
+    function getFolderChildren(parentId, folderId) {
+      return (state.navPages[parentId] || []).filter(p => p.parent_page_id === folderId);
+    }
 
-    // Active leaf node
+    // Collapse state
+    const _groupOpen = {};
+    if (state.items.length) {
+      _groupOpen[`item-${state.items[0].id}`] = true;
+      _groupOpen[`item-${state.items[0].id}-system`] = true;
+    }
+
+    // Active leaf
     let _activeNode = null;
     outer: for (const it of state.items) {
-      for (const type of typeKeys) {
-        if ((artsByLeaf[`item:${it.id}:${type}`] || []).length) {
-          _activeNode = `item:${it.id}:${type}`;
-          break outer;
+      for (const dom of WIZ_DOMAINS) {
+        for (const ph of dom.phases) {
+          const artType = PHASE_ART_TYPE[ph];
+          if (!artType || dom.key !== 'system') continue;
+          const [baseType, lvl] = artType.split(':');
+          const key = lvl
+            ? `art:item:${it.id}:${baseType}:${lvl}`
+            : `art:item:${it.id}:${artType}`;
+          if ((artsByLeaf[key] || []).length) { _activeNode = key; break outer; }
         }
       }
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     function countSelected() {
-      return Object.values(state.selected).reduce((s, set) => s + set.size, 0);
+      return Object.values(state.selected).reduce((s, set) => s + set.size, 0)
+           + (state.selected_pages?.size || 0);
     }
 
-    function leafSel(nodeKey) {
-      // nodeKey = 'item:{id}:{type}' | 'sys:{id}:{type}'
-      const [prefix, id, type] = nodeKey.split(':');
-      return (artsByLeaf[nodeKey] || []).filter(a => state.selected[type]?.has(a.id)).length;
+    function artLeafSel(key) {
+      const parts = key.split(':'); // art, pType, pId, baseType, [lvl]
+      const baseType = parts[3];
+      const list = artsByLeaf[key] || [];
+      return list.filter(a => state.selected[baseType]?.has(a.id)).length;
     }
-    function leafTotal(nodeKey) { return (artsByLeaf[nodeKey] || []).length; }
+    function artLeafTotal(key) { return (artsByLeaf[key] || []).length; }
 
-    function groupSel(prefix, id) {
-      return typeKeys.reduce((s, t) => s + leafSel(`${prefix}:${id}:${t}`), 0);
+    function domainSel(pPrefix, parentId, domKey) {
+      const dom = WIZ_DOMAINS.find(d => d.key === domKey);
+      let n = 0;
+      (dom?.phases || []).forEach(ph => {
+        const artType = PHASE_ART_TYPE[ph];
+        if (!artType || domKey !== 'system') return;
+        const [bt, lvl] = artType.split(':');
+        const key = lvl ? `art:${pPrefix}:${parentId}:${bt}:${lvl}` : `art:${pPrefix}:${parentId}:${artType}`;
+        n += artLeafSel(key);
+      });
+      // count selected pages for this parent+domain
+      (state.navPages[parentId] || []).filter(p => p.domain === domKey && !p.parent_page_id)
+        .forEach(p => { if (state.selected_pages?.has(p.id)) n++; });
+      return n;
     }
-    function groupTotal(prefix, id) {
-      return typeKeys.reduce((s, t) => s + leafTotal(`${prefix}:${id}:${t}`), 0);
+    function domainTotal(pPrefix, parentId, domKey) {
+      const dom = WIZ_DOMAINS.find(d => d.key === domKey);
+      let n = 0;
+      (dom?.phases || []).forEach(ph => {
+        const artType = PHASE_ART_TYPE[ph];
+        if (!artType || domKey !== 'system') return;
+        const [bt, lvl] = artType.split(':');
+        const key = lvl ? `art:${pPrefix}:${parentId}:${bt}:${lvl}` : `art:${pPrefix}:${parentId}:${artType}`;
+        n += artLeafTotal(key);
+      });
+      n += (state.navPages[parentId] || []).filter(p => p.domain === domKey && !p.parent_page_id && !p.is_folder).length;
+      n += (state.navPages[parentId] || []).filter(p => p.domain === domKey && p.is_folder).length;
+      return n;
+    }
+    function parentTotalDeep(pPrefix, parentId) {
+      return WIZ_DOMAINS.reduce((s, d) => s + domainTotal(pPrefix, parentId, d.key), 0)
+           + (state.navPages[parentId] || []).filter(p => p.domain === 'safety').length;
+    }
+    function parentSelDeep(pPrefix, parentId) {
+      return WIZ_DOMAINS.reduce((s, d) => s + domainSel(pPrefix, parentId, d.key), 0)
+           + (state.navPages[parentId] || []).filter(p => p.domain === 'safety' && state.selected_pages?.has(p.id)).length;
     }
     function itemTotalDeep(it) {
-      const direct = groupTotal('item', it.id);
-      const sysTotal = (state.systems[it.id] || []).reduce((s, sys) => s + groupTotal('sys', sys.id), 0);
-      return direct + sysTotal;
+      return parentTotalDeep('item', it.id)
+           + (state.systems[it.id] || []).reduce((s, sys) => s + parentTotalDeep('sys', sys.id), 0);
     }
     function itemSelDeep(it) {
-      const direct = groupSel('item', it.id);
-      const sysSel = (state.systems[it.id] || []).reduce((s, sys) => s + groupSel('sys', sys.id), 0);
-      return direct + sysSel;
+      return parentSelDeep('item', it.id)
+           + (state.systems[it.id] || []).reduce((s, sys) => s + parentSelDeep('sys', sys.id), 0);
     }
-
-    // ── Left tree renderer ────────────────────────────────────────────────
 
     function badge(sel, total) {
       if (!total) return '';
-      return sel > 0
-        ? `<span class="wiz-tree-badge">${sel}/${total}</span>`
-        : `<span class="wiz-tree-total">${total}</span>`;
+      if (sel > 0) return `<span class="wiz-tree-badge">${sel}/${total}</span>`;
+      return `<span class="wiz-tree-total">${total}</span>`;
     }
 
-    function renderTypeLeaf(prefix, parentId, type) {
-      const key   = `${prefix}:${parentId}:${type}`;
-      const total = leafTotal(key);
+    // ── Tree renderers ────────────────────────────────────────────────────────
+
+    function renderArtLeaf(pPrefix, parentId, phase, domKey) {
+      // Only show artifact leaves under 'system' domain to avoid duplication
+      if (domKey !== 'system') return '';
+      const artType = PHASE_ART_TYPE[phase];
+      if (!artType) return '';
+      const [baseType, lvl] = artType.split(':');
+      const nodeKey = lvl
+        ? `art:${pPrefix}:${parentId}:${baseType}:${lvl}`
+        : `art:${pPrefix}:${parentId}:${artType}`;
+      const total = artLeafTotal(nodeKey);
       if (!total) return '';
-      const sel    = leafSel(key);
-      const active = _activeNode === key;
+      const sel    = artLeafSel(nodeKey);
+      const active = _activeNode === nodeKey;
+      const icon   = ARTIFACT_TYPE_ICONS[baseType] || '📄';
+      const label  = lvl
+        ? `${ARTIFACT_TYPE_LABELS[baseType]} (${PHASE_LABELS[phase]})`
+        : ARTIFACT_TYPE_LABELS[baseType];
+      return `<div class="wiz-tree-leaf ${active ? 'active' : ''}" data-node="${nodeKey}" data-leaf-type="art">
+        <span class="wiz-tree-leaf-icon">${icon}</span>
+        <span class="wiz-tree-label">${label}</span>
+        ${badge(sel, total)}
+      </div>`;
+    }
+
+    function renderPageLeaf(page) {
+      const sel    = state.selected_pages?.has(page.id);
+      const active = _activeNode === `page:${page.id}`;
+      const icon   = page.is_folder ? '📁' : (page.page_type === 'wiki' ? '📄' : '╰');
+      return `<div class="wiz-tree-leaf ${active ? 'active' : ''} ${page.is_folder ? 'wiz-tree-folder' : ''}"
+        data-node="page:${page.id}" data-leaf-type="page" data-page-id="${page.id}">
+        <span class="wiz-tree-leaf-icon">${icon}</span>
+        <span class="wiz-tree-label">${escHtml(page.name)}</span>
+        ${page.is_folder ? '' : (sel ? `<span class="wiz-tree-badge">✓</span>` : '')}
+      </div>`;
+    }
+
+    function renderPhaseRow(pPrefix, parentId, phase, domKey, pageMap) {
+      const artLeaf   = renderArtLeaf(pPrefix, parentId, phase, domKey);
+      const phPages   = (pageMap[domKey] || {})[phase] || [];
+      const pageLeaves = phPages.map(p => {
+        if (p.is_folder) {
+          const children = getFolderChildren(parentId, p.id);
+          const gKey = `folder-${p.id}`;
+          const open = _groupOpen[gKey] !== false;
+          return `
+            <div class="wiz-tree-group ${open ? 'open' : 'closed'}" data-group="${gKey}">
+              <div class="wiz-tree-group-hdr wiz-tree-folder-hdr">
+                <span class="wiz-tree-chevron">▶</span>
+                <span class="wiz-tree-leaf-icon">📁</span>
+                <span class="wiz-tree-label">${escHtml(p.name)}</span>
+              </div>
+              <div class="wiz-tree-group-body">
+                ${children.map(c => renderPageLeaf(c)).join('')}
+              </div>
+            </div>`;
+        }
+        return renderPageLeaf(p);
+      }).join('');
+
+      if (!artLeaf && !pageLeaves) return '';
+
+      const phGKey = `ph-${pPrefix}-${parentId}-${domKey}-${phase}`;
+      const phOpen = _groupOpen[phGKey] !== false;
+      const icon   = PHASE_ICONS[phase] || '•';
+      const label  = PHASE_LABELS[phase] || phase;
+
       return `
-        <div class="wiz-tree-leaf ${active ? 'active' : ''}" data-node="${key}">
-          <span class="wiz-tree-leaf-icon">${ARTIFACT_TYPE_ICONS[type]}</span>
-          <span class="wiz-tree-label">${ARTIFACT_TYPE_LABELS[type]}</span>
-          ${badge(sel, total)}
+        <div class="wiz-tree-group ${phOpen ? 'open' : 'closed'}" data-group="${phGKey}">
+          <div class="wiz-tree-group-hdr wiz-tree-phase-hdr">
+            <span class="wiz-tree-chevron">▶</span>
+            <span class="wiz-tree-leaf-icon">${icon}</span>
+            <span class="wiz-tree-label">${label}</span>
+          </div>
+          <div class="wiz-tree-group-body">
+            ${artLeaf}${pageLeaves}
+          </div>
         </div>`;
     }
 
-    function renderSysGroup(sys) {
-      const gKey  = `sys-${sys.id}`;
-      const open  = _groupOpen[gKey] !== false; // default open
-      const total = groupTotal('sys', sys.id);
+    function renderDomainGroup(pPrefix, parentId, dom) {
+      const pageMap  = getPagesFor(parentId);
+      const total    = domainTotal(pPrefix, parentId, dom.key);
       if (!total) return '';
-      const sel   = groupSel('sys', sys.id);
-      const label = sys.system_code ? `${sys.system_code} · ${sys.name}` : sys.name;
+      const sel      = domainSel(pPrefix, parentId, dom.key);
+      const gKey     = `${pPrefix}-${parentId}-${dom.key}`;
+      const open     = _groupOpen[gKey] !== false;
+
+      const phases = dom.phases.map(ph =>
+        renderPhaseRow(pPrefix, parentId, ph, dom.key, pageMap)
+      ).join('');
+
+      if (!phases.trim()) return '';
       return `
         <div class="wiz-tree-group ${open ? 'open' : 'closed'}" data-group="${gKey}">
-          <div class="wiz-tree-group-hdr">
+          <div class="wiz-tree-group-hdr wiz-tree-domain-hdr">
             <span class="wiz-tree-chevron">▶</span>
-            <span class="wiz-tree-group-icon">⚙</span>
+            <span class="wiz-tree-group-icon">${dom.icon}</span>
+            <span class="wiz-tree-label">${dom.label}</span>
+            ${badge(sel, total)}
+          </div>
+          <div class="wiz-tree-group-body">${phases}</div>
+        </div>`;
+    }
+
+    function renderSafetyGroup(pPrefix, parentId) {
+      const safetyPages = (state.navPages[parentId] || []).filter(p => p.domain === 'safety' && !p.parent_page_id);
+      const safetyArts  = (artsByLeaf[`art:${pPrefix}:${parentId}:safety_analysis_rows`] || []);
+      const total = safetyArts.length + safetyPages.filter(p => !p.is_folder).length;
+      if (!total) return '';
+      const artKey = `art:${pPrefix}:${parentId}:safety_analysis_rows`;
+      const sel    = artLeafSel(artKey) + safetyPages.filter(p => state.selected_pages?.has(p.id)).length;
+      const gKey   = `safety-${pPrefix}-${parentId}`;
+      const open   = _groupOpen[gKey] !== false;
+      const artLeaf = safetyArts.length ? `
+        <div class="wiz-tree-leaf ${_activeNode === artKey ? 'active' : ''}" data-node="${artKey}" data-leaf-type="art">
+          <span class="wiz-tree-leaf-icon">⚠️</span>
+          <span class="wiz-tree-label">Safety Analyses</span>
+          ${badge(artLeafSel(artKey), safetyArts.length)}
+        </div>` : '';
+      const pageLeaves = safetyPages.map(p => renderPageLeaf(p)).join('');
+      return `
+        <div class="wiz-tree-group ${open ? 'open' : 'closed'}" data-group="${gKey}">
+          <div class="wiz-tree-group-hdr wiz-tree-domain-hdr">
+            <span class="wiz-tree-chevron">▶</span>
+            <span class="wiz-tree-group-icon">△</span>
+            <span class="wiz-tree-label">Safety</span>
+            ${badge(sel, total)}
+          </div>
+          <div class="wiz-tree-group-body">${artLeaf}${pageLeaves}</div>
+        </div>`;
+    }
+
+    function renderParentNode(pPrefix, parentId, label, icon) {
+      const gKey  = `${pPrefix}-${parentId}`;
+      const open  = _groupOpen[gKey] !== false;
+      const total = parentTotalDeep(pPrefix, parentId);
+      if (!total) return '';
+      const sel   = parentSelDeep(pPrefix, parentId);
+
+      const domGroups   = WIZ_DOMAINS.map(d => renderDomainGroup(pPrefix, parentId, d)).join('');
+      const safetyGroup = renderSafetyGroup(pPrefix, parentId);
+
+      return `
+        <div class="wiz-tree-group ${open ? 'open' : 'closed'}" data-group="${gKey}">
+          <div class="wiz-tree-group-hdr wiz-tree-parent-hdr">
+            <span class="wiz-tree-chevron">▶</span>
+            <span class="wiz-tree-group-icon">${icon}</span>
             <span class="wiz-tree-label">${escHtml(label)}</span>
             ${badge(sel, total)}
           </div>
           <div class="wiz-tree-group-body">
-            ${typeKeys.map(t => renderTypeLeaf('sys', sys.id, t)).join('')}
+            ${domGroups}${safetyGroup}
           </div>
         </div>`;
     }
 
-    function renderItemGroup(it) {
+    function renderItemNode(it) {
       const gKey  = `item-${it.id}`;
-      const open  = _groupOpen[gKey] !== false; // default open
+      const open  = _groupOpen[gKey] !== false;
       const total = itemTotalDeep(it);
       if (!total) return '';
-      const sel   = itemSelDeep(it);
+      const sel     = itemSelDeep(it);
       const systems = state.systems[it.id] || [];
 
-      const directLeaves = typeKeys.map(t => renderTypeLeaf('item', it.id, t)).join('');
-      const sysGroups    = systems.map(sys => renderSysGroup(sys)).join('');
+      const itemContent = renderParentNode('item', it.id, 'Item level', '⬡');
+      const sysContent  = systems.map(sys => {
+        const label = sys.system_code ? `${sys.system_code} · ${sys.name}` : sys.name;
+        return renderParentNode('sys', sys.id, label, '⚙');
+      }).join('');
 
-      // Systems section label (only if there are systems with artifacts)
-      const hasSysArts = systems.some(s => groupTotal('sys', s.id) > 0);
-      const sysSection = hasSysArts ? `
+      const hasSys = systems.some(s => parentTotalDeep('sys', s.id) > 0);
+      const sysSection = hasSys ? `
         <div class="wiz-tree-section-label">Systems</div>
-        ${sysGroups}` : '';
+        ${sysContent}` : '';
 
       return `
         <div class="wiz-tree-group ${open ? 'open' : 'closed'}" data-group="${gKey}">
           <div class="wiz-tree-group-hdr wiz-tree-item-hdr">
             <span class="wiz-tree-chevron">▶</span>
-            <span class="wiz-tree-group-icon">⬡</span>
+            <span class="wiz-tree-group-icon">📁</span>
             <span class="wiz-tree-label">${escHtml(it.name)}</span>
             ${badge(sel, total)}
           </div>
           <div class="wiz-tree-group-body">
-            ${directLeaves ? `<div class="wiz-tree-section-label">Item artifacts</div>${directLeaves}` : ''}
-            ${sysSection}
+            ${itemContent}${sysSection}
           </div>
         </div>`;
     }
 
     function renderLeftTree() {
-      return state.items.map(it => renderItemGroup(it)).join('');
+      return state.items.map(it => renderItemNode(it)).join('');
     }
 
-    // ── Right panel renderer ──────────────────────────────────────────────
+    // ── Right panel ───────────────────────────────────────────────────────────
 
     function renderRightPanel(nodeKey) {
-      if (!nodeKey) return `<p class="rv-empty" style="padding:32px">Select a node on the left.</p>`;
-      const [prefix, parentId, type] = nodeKey.split(':');
-      const list = artsByLeaf[nodeKey] || [];
+      if (!nodeKey) return `<p class="rv-empty" style="padding:32px">Select an element on the left.</p>`;
+
+      if (nodeKey.startsWith('page:')) {
+        const pageId = nodeKey.split(':')[1];
+        const page   = Object.values(state.navPages).flat().find(p => p.id === pageId);
+        if (!page) return `<p class="rv-empty" style="padding:32px">Page not found.</p>`;
+        const sel = state.selected_pages?.has(pageId);
+        return `
+          <div class="wiz-rp-section">
+            <div class="wiz-rp-section-hdr">
+              <span class="wiz-rp-type-label">${page.page_type === 'wiki' ? '📄' : '╰'} Document page</span>
+            </div>
+            <div style="padding:20px">
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px">
+                <input type="checkbox" class="wiz-page-chk" data-page-id="${pageId}" ${sel ? 'checked' : ''}
+                  style="width:16px;height:16px"/>
+                <span><strong>${escHtml(page.name)}</strong></span>
+              </label>
+              <p class="form-hint" style="margin-top:8px">Include this document page in the review snapshot.</p>
+            </div>
+          </div>`;
+      }
+
+      // art: node
+      const parts    = nodeKey.split(':');  // ['art', pType, pId, baseType, lvl?]
+      const baseType = parts[3];
+      const list     = artsByLeaf[nodeKey] || [];
       if (!list.length) return `<p class="rv-empty" style="padding:32px">No artifacts here.</p>`;
 
-      const sel   = state.selected[type];
-      const selCount = list.filter(a => sel.has(a.id)).length;
+      const sel      = state.selected[baseType];
+      const selCount = list.filter(a => sel?.has(a.id)).length;
 
       const rows = list.map(a => `
-        <tr class="wiz-art-row" data-type="${type}" data-id="${a.id}">
+        <tr class="wiz-art-row" data-type="${baseType}" data-id="${a.id}">
           <td style="width:28px"><input type="checkbox" class="wiz-art-chk"
-            data-type="${type}" data-id="${a.id}" ${sel.has(a.id) ? 'checked' : ''}/></td>
+            data-type="${baseType}" data-id="${a.id}" ${sel?.has(a.id) ? 'checked' : ''}/></td>
           <td class="mono" style="white-space:nowrap">${escHtml(a.code || '—')}</td>
           <td style="width:100%">${escHtml(a.title || a.name || '—')}</td>
           <td style="white-space:nowrap"><span class="badge badge-${escHtml(a.status || 'draft')}">${escHtml(a.status || '—')}</span></td>
@@ -385,20 +641,16 @@ export async function renderReviewSessionWizard(container, ctx) {
       return `
         <div class="wiz-rp-section">
           <div class="wiz-rp-section-hdr">
-            <span class="wiz-rp-type-label">${ARTIFACT_TYPE_ICONS[type]} ${ARTIFACT_TYPE_LABELS[type]}</span>
+            <span class="wiz-rp-type-label">${ARTIFACT_TYPE_ICONS[baseType] || '📄'} ${ARTIFACT_TYPE_LABELS[baseType] || baseType}</span>
             <span class="wiz-rp-sel-count">${selCount}/${list.length}</span>
-            <button type="button" class="btn btn-ghost btn-xs wiz-rp-sel-all"
-              data-node="${nodeKey}" data-type="${type}">All</button>
-            <button type="button" class="btn btn-ghost btn-xs wiz-rp-sel-none"
-              data-node="${nodeKey}" data-type="${type}">None</button>
+            <button type="button" class="btn btn-ghost btn-xs wiz-rp-sel-all" data-type="${baseType}">All</button>
+            <button type="button" class="btn btn-ghost btn-xs wiz-rp-sel-none" data-type="${baseType}">None</button>
           </div>
-          <table class="data-table wiz-art-table">
-            <tbody>${rows}</tbody>
-          </table>
+          <table class="data-table wiz-art-table"><tbody>${rows}</tbody></table>
         </div>`;
     }
 
-    // ── Layout ────────────────────────────────────────────────────────────
+    // ── Layout + wiring ───────────────────────────────────────────────────────
 
     body.innerHTML = `
       <div class="wiz-step-body wiz-s2-layout">
@@ -414,32 +666,28 @@ export async function renderReviewSessionWizard(container, ctx) {
 
     wireStep2(body);
 
-    // ── Wiring ────────────────────────────────────────────────────────────
-
     function wireStep2(root) {
-      // Group headers: toggle open/closed
       root.querySelectorAll('.wiz-tree-group-hdr').forEach(hdr => {
         hdr.addEventListener('click', e => {
           if (e.target.closest('.wiz-tree-leaf')) return;
           const group = hdr.closest('.wiz-tree-group');
-          const gKey  = group.dataset.group;
-          const open  = group.classList.toggle('open');
+          const gKey  = group?.dataset.group;
+          if (!gKey) return;
+          const open = group.classList.toggle('open');
           group.classList.toggle('closed', !open);
           _groupOpen[gKey] = open;
         });
       });
-
-      // Leaf clicks: show right panel
       root.querySelectorAll('.wiz-tree-leaf').forEach(leaf => {
         leaf.addEventListener('click', e => {
           e.stopPropagation();
           _activeNode = leaf.dataset.node;
-          root.querySelectorAll('.wiz-tree-leaf').forEach(l => l.classList.toggle('active', l.dataset.node === _activeNode));
+          root.querySelectorAll('.wiz-tree-leaf').forEach(l =>
+            l.classList.toggle('active', l.dataset.node === _activeNode));
           root.querySelector('#wiz-s2-panel').innerHTML = renderRightPanel(_activeNode);
           wireRightPanel(root);
         });
       });
-
       wireRightPanel(root);
     }
 
@@ -448,7 +696,14 @@ export async function renderReviewSessionWizard(container, ctx) {
         chk.onchange = e => {
           if (e.target.checked) state.selected[chk.dataset.type].add(chk.dataset.id);
           else state.selected[chk.dataset.type].delete(chk.dataset.id);
-          refreshTreeBadges(root);
+          refreshTree(root);
+        };
+      });
+      root.querySelectorAll('.wiz-page-chk').forEach(chk => {
+        chk.onchange = e => {
+          if (e.target.checked) state.selected_pages.add(chk.dataset.pageId);
+          else state.selected_pages.delete(chk.dataset.pageId);
+          refreshTree(root);
         };
       });
       root.querySelectorAll('.wiz-rp-sel-all, .wiz-rp-sel-none').forEach(btn => {
@@ -459,16 +714,14 @@ export async function renderReviewSessionWizard(container, ctx) {
           list.forEach(a => { if (isAll) state.selected[type].add(a.id); else state.selected[type].delete(a.id); });
           root.querySelector('#wiz-s2-panel').innerHTML = renderRightPanel(_activeNode);
           wireRightPanel(root);
-          refreshTreeBadges(root);
+          refreshTree(root);
         };
       });
     }
 
-    function refreshTreeBadges(root) {
+    function refreshTree(root) {
       root.querySelector('#wiz-total-sel').textContent = `${countSelected()} selected`;
-      // Rebuild only the tree (preserving group open/closed via _groupOpen)
       root.querySelector('#wiz-s2-tree').innerHTML = renderLeftTree();
-      // Re-wire group headers + leaf clicks after tree rebuild
       wireStep2(root);
     }
   }
