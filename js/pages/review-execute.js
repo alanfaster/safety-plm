@@ -1367,9 +1367,7 @@ export async function renderReviewExecute(container, ctx) {
       const saveBtn = panel.querySelector('#rve-finding-save');
       saveBtn.disabled = true;
 
-      // Generate finding code
-      const { count } = await sb.from('review_findings').select('*', { count:'exact', head:true }).eq('session_id', sessionId);
-      const findingCode = `FND-${String((count || 0) + 1).padStart(3,'0')}`;
+      const findingCode = `FND-${String(_findings.length + 1).padStart(3,'0')}`;
 
       const { data: finding, error: fe } = await sb.from('review_findings').insert({
         session_id: sessionId, snapshot_id: snap.id,
@@ -1629,8 +1627,7 @@ export async function renderReviewExecute(container, ctx) {
       btn.disabled = true;
 
       const resolvedSnapshotId = snapshotId || document.getElementById('fnd-snap')?.value || null;
-      const { count } = await sb.from('review_findings').select('id', { count:'exact', head:true }).eq('session_id', sessionId);
-      const finding_code = `FND-${String((count || 0) + 1).padStart(3, '0')}`;
+      const finding_code = `FND-${String(_findings.length + 1).padStart(3,'0')}`;
 
       const { data: finding, error } = await sb.from('review_findings').insert({
         session_id:       sessionId,
