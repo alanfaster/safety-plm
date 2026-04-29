@@ -158,7 +158,7 @@ export async function renderReviewSessionWizard(container, ctx) {
       s.classList.toggle('done',   parseInt(s.dataset.step) < state.step);
     });
     document.getElementById('wiz-btn-back').style.display = state.step > 1 ? '' : 'none';
-    const isCtxMode = !!((_ctxPhase && _ctxParentId));
+    const isCtxMode  = !!(_initPhase && _initQuery.get('parentId'));
     const isLastStep = state.step === 4 || (isCtxMode && state.step === 3);
     document.getElementById('wiz-btn-next').textContent = isLastStep ? '▶ Start Review' : 'Next ▶';
 
@@ -1284,7 +1284,7 @@ export async function renderReviewSessionWizard(container, ctx) {
     } else if (state.step === 2) {
       state.step = 3;
     } else if (state.step === 3) {
-      const isCtxMode = !!((_ctxPhase && _ctxParentId));
+      const isCtxMode = !!(_initPhase && _initQuery.get('parentId'));
       if (isCtxMode) {
         const totalSelected = Object.values(state.selected).reduce((sum, s) => sum + s.size, 0);
         if (!totalSelected) { toast('Select at least one artifact.', 'error'); return; }
