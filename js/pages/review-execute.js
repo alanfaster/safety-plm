@@ -316,17 +316,30 @@ export async function renderReviewExecute(container, ctx) {
 
   // ── Props panel findings list helpers ────────────────────────────────────────
 
-  function renderPropsFindingRow(f) {
+  function renderPropsFindingRow(f, editable) {
+    const gotoBtn = `<a class="rve-props-fnd-goto btn btn-ghost btn-xs" data-fid="${f.id}" title="Go to finding">↗</a>`;
+    const statusBadge = `<span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}" style="font-size:10px">${FINDING_STATUS_LABELS[f.status] || f.status}</span>`;
+    if (!editable) {
+      return `
+        <div class="rve-props-finding-row rv-sev-${f.severity} rve-props-finding-row--readonly" data-finding-id="${f.id}">
+          <div class="rve-props-fnd-header">
+            <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
+            <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
+            ${statusBadge}
+            <span class="rve-props-finding-title">${escHtml(f.title)}</span>
+            ${gotoBtn}
+          </div>
+        </div>`;
+    }
     const transitions = FINDING_TRANSITIONS[f.status] || [];
     const disabled    = transitions.length === 0 ? 'disabled' : '';
-    const statusCls   = FINDING_STATUS_CLASSES[f.status] || '';
     return `
       <div class="rve-props-finding-row rv-sev-${f.severity}" data-finding-id="${f.id}">
         <div class="rve-props-fnd-header">
           <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
           <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
           <span class="rve-props-finding-title">${escHtml(f.title)}</span>
-          <a class="rve-props-fnd-goto btn btn-ghost btn-xs" data-fid="${f.id}" title="Go to finding">↗</a>
+          ${gotoBtn}
         </div>
         <div class="rve-props-fnd-controls">
           <select class="rvf-status-select rve-props-fnd-select" data-finding-id="${f.id}" data-current="${f.status}" ${disabled}>
@@ -340,11 +353,13 @@ export async function renderReviewExecute(container, ctx) {
 
   function renderPropsFindingsList(snapFindings) {
     if (!snapFindings.length) return '<p class="text-muted" style="font-size:12px;margin:4px 0">No findings yet.</p>';
-    const checklistFindings = snapFindings.filter(f => f.response_id);
-    const directFindings    = snapFindings.filter(f => !f.response_id);
+    const checklistFindings  = snapFindings.filter(f => f.response_id);
+    const openPointFindings  = snapFindings.filter(f => !f.response_id && f.template_item_id);
+    const directFindings     = snapFindings.filter(f => !f.response_id && !f.template_item_id);
     return [
-      checklistFindings.length ? `<div class="rve-findings-group-label">From checklist</div>${checklistFindings.map(renderPropsFindingRow).join('')}` : '',
-      directFindings.length    ? `<div class="rve-findings-group-label">Direct findings</div>${directFindings.map(renderPropsFindingRow).join('')}` : '',
+      checklistFindings.length  ? `<div class="rve-findings-group-label">From checklist</div>${checklistFindings.map(f => renderPropsFindingRow(f, false)).join('')}`  : '',
+      openPointFindings.length  ? `<div class="rve-findings-group-label">Open points</div>${openPointFindings.map(f => renderPropsFindingRow(f, false)).join('')}`       : '',
+      directFindings.length     ? `<div class="rve-findings-group-label">Direct findings</div>${directFindings.map(f => renderPropsFindingRow(f, true)).join('')}`       : '',
     ].filter(Boolean).join('');
   }
 
@@ -411,8 +426,8 @@ export async function renderReviewExecute(container, ctx) {
           f.status = toStatus;
           if (comment) f.resolution_note = comment;
           toast(`${f.finding_code}: ${label}`, 'success');
-          // Re-render just this row
-          const newHtml = renderPropsFindingRow(f);
+          // Re-render just this row (direct findings are always editable)
+          const newHtml = renderPropsFindingRow(f, true);
           const tmp = document.createElement('div'); tmp.innerHTML = newHtml;
           row.replaceWith(tmp.firstElementChild);
           wirePropsFindingsList(container, snap);
@@ -1296,7 +1311,16 @@ export async function renderReviewExecute(container, ctx) {
       saveBtn.disabled = false;
       if (fe) { toast('Error saving finding: ' + fe.message, 'error'); return; }
 
-      if (finding) _findings.push(finding);
+      if (finding) {
+        _findings.push(finding);
+        // Save description as initial comment so it appears in finding history
+        if (desc) {
+          await sb.from('review_finding_comments').insert({
+            finding_id: finding.id, author_id: currentUserId,
+            comment: desc,
+          }).catch(() => {});
+        }
+      }
       await saveArtifactVerdict(snap, _stagedVerdict);
 
       findingForm.style.display = 'none';

@@ -6130,6 +6130,7 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rve-props-finding-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rve-props-fnd-goto { opacity: 0.4; padding: 0 3px; font-size: 11px; flex-shrink: 0; }
 .rve-props-finding-row:hover .rve-props-fnd-goto { opacity: 1; }
+.rve-props-finding-row--readonly { opacity: 0.85; cursor: default; }
 .rve-props-fnd-controls { margin-top: 4px; }
 .rve-props-fnd-confirm  { margin-top: 4px; }
 
