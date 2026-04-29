@@ -431,15 +431,43 @@ export async function renderReviewSessionWizard(container, ctx) {
       </div>`;
     }
 
+    // Mirror of requirements.js typeFilter logic — returns filtered req array for a page
+    function getReqsForPage(page) {
+      if (page.phase !== 'requirements') return null;
+      const nameLow  = page.name.toLowerCase();
+      let typeFilter = null;
+      if (nameLow.includes('interface'))   typeFilter = ['interface'];
+      else if (nameLow.includes('safety')) typeFilter = ['safety', 'safety-independency'];
+      const pPrefix = page.parent_type === 'system' ? 'sys' : 'item';
+      const allReqs = artsByLeaf[`art:${pPrefix}:${page.parent_id}:requirements`] || [];
+      return typeFilter
+        ? allReqs.filter(r => typeFilter.includes(r.type))
+        : allReqs.filter(r => !['title','info','interface','safety-independency'].includes(r.type));
+    }
+
     function renderPageLeaf(page) {
-      const sel    = state.selected_pages?.has(page.id);
       const active = _activeNode === `page:${page.id}`;
       const icon   = page.is_folder ? '📁' : (page.page_type === 'wiki' ? '📄' : '╰');
+
+      // For requirement sub-pages: show filtered count badge instead of selection checkbox
+      let countBadge = '';
+      if (!page.is_folder) {
+        const reqs = getReqsForPage(page);
+        if (reqs !== null) {
+          const sel    = state.selected['requirements'];
+          const selCnt = reqs.filter(r => sel?.has(r.id)).length;
+          countBadge   = badge(selCnt, reqs.length);
+        } else {
+          const sel = state.selected_pages?.has(page.id);
+          countBadge = sel ? `<span class="wiz-tree-badge">✓</span>` : '';
+        }
+      }
+
       return `<div class="wiz-tree-leaf ${active ? 'active' : ''} ${page.is_folder ? 'wiz-tree-folder' : ''}"
         data-node="page:${page.id}" data-leaf-type="page" data-page-id="${page.id}">
         <span class="wiz-tree-leaf-icon">${icon}</span>
         <span class="wiz-tree-label">${escHtml(page.name)}</span>
-        ${page.is_folder ? '' : (sel ? `<span class="wiz-tree-badge">✓</span>` : '')}
+        ${countBadge}
       </div>`;
     }
 
@@ -640,29 +668,18 @@ export async function renderReviewSessionWizard(container, ctx) {
         const page   = Object.values(state.navPages).flat().find(p => p.id === pageId);
         if (!page) return `<p class="rv-empty" style="padding:32px">Page not found.</p>`;
 
-        // Requirement sub-pages: detect by name — same logic as requirements.js renderRequirements
-        if (page.phase === 'requirements') {
-          const nameLow = page.name.toLowerCase();
-          let typeFilter = null;
-          if (nameLow.includes('interface'))       typeFilter = ['interface'];
-          else if (nameLow.includes('safety'))     typeFilter = ['safety', 'safety-independency'];
-          else if (!nameLow.includes('customer'))  typeFilter = null; // show all for generic pages
-
-          // Find parent (item or system) from nav_page
-          const parentId = page.parent_id;
-          const pPrefix  = page.parent_type === 'system' ? 'sys' : 'item';
-          const allReqs  = artsByLeaf[`art:${pPrefix}:${parentId}:requirements`] || [];
-          const filtered = typeFilter
-            ? allReqs.filter(r => typeFilter.includes(r.type))
-            : allReqs.filter(r => !['title','info','interface','safety','safety-independency'].includes(r.type));
+        // Requirement sub-pages — use shared helper (same filter as requirements.js)
+        const pageReqs = getReqsForPage(page);
+        if (pageReqs !== null) {
+          const filtered = pageReqs;
 
           if (!filtered.length) {
             return `<p class="rv-empty" style="padding:32px">No ${escHtml(page.name)} found.</p>`;
           }
 
-          const sel = state.selected['requirements'];
+          const sel      = state.selected['requirements'];
           const selCount = filtered.filter(r => sel?.has(r.id)).length;
-          const rows = filtered.map(r => `
+          const rows     = filtered.map(r => `
             <tr class="wiz-art-row" data-type="requirements" data-id="${r.id}">
               <td style="width:28px"><input type="checkbox" class="wiz-art-chk"
                 data-type="requirements" data-id="${r.id}" ${sel?.has(r.id) ? 'checked' : ''}/></td>
@@ -670,9 +687,6 @@ export async function renderReviewSessionWizard(container, ctx) {
               <td style="width:100%">${escHtml(r.title || '—')}</td>
               <td style="white-space:nowrap"><span class="badge badge-${escHtml(r.status || 'draft')}">${escHtml(r.status || '—')}</span></td>
             </tr>`).join('');
-
-          // Synthesize a virtual nodeKey for All/None buttons
-          const vNodeKey = `art:${pPrefix}:${parentId}:requirements`;
           return `
             <div class="wiz-rp-section">
               <div class="wiz-rp-section-hdr">
