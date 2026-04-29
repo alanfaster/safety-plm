@@ -26,7 +26,7 @@ const SEVERITY_CLASSES = { critical:'rv-sev-critical', major:'rv-sev-major', min
 
 
 const FINAL_VERDICT_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-GO' };
-const FINAL_VERDICT_CLASSES = { go:'rve-artcard-go', conditional:'rve-artcard-conditional', no_go:'rve-artcard-nogo' };
+const FINAL_VERDICT_CLASSES = { go:'rve-artcard-go', conditional:'rve-artcard-conditional', no_go:'rve-artcard-no_go' };
 
 const ARTIFACT_DISPLAY_FIELDS = {
   requirements:         ['req_code','title','description','type','status','priority','asil','dal'],
