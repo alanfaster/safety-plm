@@ -5887,28 +5887,37 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 /* Artifact list resize handle */
 .rve-artlist-resize-handle {
   position: absolute; top: 0; right: -10px; bottom: 0; width: 20px;
-  cursor: col-resize; z-index: 10;
+  cursor: col-resize; z-index: 20;
   display: flex; align-items: center; justify-content: center;
+  background: transparent; transition: background .15s;
 }
-/* visible bar */
+.rve-artlist-resize-handle:hover,
+.rve-artlist-resize-handle:active { background: rgba(26,115,232,.08); }
+
+/* visible bar — always shown, not hidden behind panel border */
 .rve-artlist-resize-handle::before {
   content: '';
-  position: absolute; top: 0; left: 9px; bottom: 0; width: 2px;
-  background: var(--border); transition: background .15s;
+  position: absolute; top: 0; left: 9px; bottom: 0; width: 3px;
+  background: #c8c8c8; border-radius: 2px; transition: background .15s;
 }
-/* grip dots */
+.rve-artlist-resize-handle:hover::before,
+.rve-artlist-resize-handle:active::before { background: #1a73e8; }
+
+/* grip pill */
 .rve-artlist-resize-handle::after {
-  content: '⋮⋮';
+  content: '⋮';
   position: relative; z-index: 1;
-  font-size: 13px; letter-spacing: -2px; line-height: 1;
-  color: #bbb; background: var(--bg-card);
-  border: 1px solid var(--border); border-radius: 4px;
-  padding: 4px 3px; transition: color .15s, border-color .15s, background .15s;
+  font-size: 16px; line-height: 1;
+  color: #999; background: #fff;
+  border: 1px solid #d0d0d0; border-radius: 6px;
+  padding: 6px 4px; box-shadow: 0 1px 3px rgba(0,0,0,.12);
+  transition: color .15s, border-color .15s, box-shadow .15s;
 }
-.rve-artlist-resize-handle:hover::before  { background: var(--accent); }
-.rve-artlist-resize-handle:hover::after   { color: var(--accent); border-color: var(--accent); background: #e8f0fe; }
-.rve-artlist-resize-handle:active::before { background: var(--accent); }
-.rve-artlist-resize-handle:active::after  { background: #c5d8fb; }
+.rve-artlist-resize-handle:hover::after,
+.rve-artlist-resize-handle:active::after {
+  color: #1a73e8; border-color: #1a73e8;
+  box-shadow: 0 2px 6px rgba(26,115,232,.25);
+}
 
 /* Props panel: artifact header */
 .rve-props-artifact-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
