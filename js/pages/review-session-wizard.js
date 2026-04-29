@@ -71,8 +71,9 @@ export async function renderReviewSessionWizard(container, ctx) {
     selected: {},    // { [artifactType]: Set<id> }
     artifacts: {},   // { [artifactType]: [] }  all project artifacts loaded once
     items: [],       // project items
-    systems: {},     // { [itemId]: [system, ...] }
-    navPages: {},    // { [parentId]: [page, ...] }
+    systems: {},      // { [itemId]: [system, ...] }
+    navPages: {},     // { [parentId]: [page, ...] }
+    phaseConfig: {},  // { [parentId]: [nav_phase_config row, ...] }
     reviewers: [],   // [{ user_id, role_id, role_name, role_code, display_name, review_role }]
   };
 
@@ -235,22 +236,27 @@ export async function renderReviewSessionWizard(container, ctx) {
       typeKeys.forEach((k, i) => { state.artifacts[k] = artResults[i]; });
 
       if (state.items.length) {
-        // Systems + nav_pages in parallel for all items
+        // Systems + nav_pages + phase config in parallel for all items
         await Promise.all(state.items.map(async it => {
-          const [{ data: syss }, { data: pages }] = await Promise.all([
+          const [{ data: syss }, { data: pages }, { data: cfg }] = await Promise.all([
             sb.from('systems').select('id, name, system_code').eq('item_id', it.id).order('created_at'),
             sb.from('nav_pages').select('*').eq('parent_type','item').eq('parent_id', it.id).order('sort_order'),
+            sb.from('nav_phase_config').select('*').eq('parent_type','item').eq('parent_id', it.id),
           ]);
-          state.systems[it.id]  = syss  || [];
-          state.navPages[it.id] = pages || [];
+          state.systems[it.id]      = syss  || [];
+          state.navPages[it.id]     = pages || [];
+          state.phaseConfig[it.id]  = cfg   || [];
         }));
-        // Nav pages for all systems
+        // Nav pages + phase config for all systems
         const allSystems = Object.values(state.systems).flat();
         if (allSystems.length) {
           await Promise.all(allSystems.map(async sys => {
-            const { data: pages } = await sb.from('nav_pages')
-              .select('*').eq('parent_type','system').eq('parent_id', sys.id).order('sort_order');
-            state.navPages[sys.id] = pages || [];
+            const [{ data: pages }, { data: cfg }] = await Promise.all([
+              sb.from('nav_pages').select('*').eq('parent_type','system').eq('parent_id', sys.id).order('sort_order'),
+              sb.from('nav_phase_config').select('*').eq('parent_type','system').eq('parent_id', sys.id),
+            ]);
+            state.navPages[sys.id]    = pages || [];
+            state.phaseConfig[sys.id] = cfg   || [];
           }));
         }
       }
@@ -307,6 +313,16 @@ export async function renderReviewSessionWizard(container, ctx) {
     }
     function getFolderChildren(parentId, folderId) {
       return (state.navPages[parentId] || []).filter(p => p.parent_page_id === folderId);
+    }
+
+    // Mirrors sidebar makeHelpers — reads nav_phase_config to filter hidden domains/phases
+    function isDomainHidden(parentId, domKey) {
+      return (state.phaseConfig[parentId] || [])
+        .some(c => c.domain === domKey && c.phase === '__domain__' && c.is_hidden);
+    }
+    function isPhaseHidden(parentId, domKey, phaseKey) {
+      return (state.phaseConfig[parentId] || [])
+        .some(c => c.domain === domKey && c.phase === phaseKey && c.is_hidden);
     }
 
     // Collapse state
@@ -478,15 +494,17 @@ export async function renderReviewSessionWizard(container, ctx) {
         </div>`;
     }
 
-    // Always render domain groups — never hide due to empty content
+    // Render domain group — hidden if configured so in nav_phase_config
     function renderDomainGroup(pPrefix, parentId, dom) {
+      if (isDomainHidden(parentId, dom.key)) return '';
       const pageMap = getPagesFor(parentId);
       const gKey    = `${pPrefix}-${parentId}-${dom.key}`;
       const open    = _groupOpen[gKey] !== false;
 
-      const phases = dom.phases.map(ph =>
-        renderPhaseRow(pPrefix, parentId, ph, dom.key, pageMap)
-      ).join('');
+      const phases = dom.phases
+        .filter(ph => !isPhaseHidden(parentId, dom.key, ph))
+        .map(ph => renderPhaseRow(pPrefix, parentId, ph, dom.key, pageMap))
+        .join('');
 
       // Count only for badge — don't use for visibility
       let artSel = 0, artTotal = 0;
