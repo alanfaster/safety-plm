@@ -113,6 +113,19 @@ export async function renderReviewExecute(container, ctx) {
   const _artifactVerdicts = artifactVerdicts ? [...artifactVerdicts] : [];
   const _allResponses     = allResponses      ? [...allResponses]     : [];
 
+  async function reloadFindings() {
+    const { data } = await sb.from('review_findings')
+      .select('*').eq('session_id', sessionId).order('created_at');
+    _findings.length = 0;
+    _findings.push(...(data || []));
+  }
+
+  async function afterFindingMutation() {
+    await reloadFindings();
+    (snapshots || []).forEach(s => refreshArtifactCard(s));
+    if (_selectedSnapshot && !_propsCollapsed) await loadPropsPanel();
+  }
+
   // Pre-select artifact from URL param (e.g. when navigating from req badge)
   const _urlParams      = new URLSearchParams(window.location.hash.split('?')[1] || '');
   const _preselArtId    = _urlParams.get('artifactId');
@@ -370,16 +383,14 @@ export async function renderReviewExecute(container, ctx) {
             comment: `[Closed] ${comment}`,
           });
 
-          f.status = 'closed';
           toast(`${f.finding_code} closed.`, 'success');
           row.innerHTML = `<div class="diff-finding-info">
             <span class="mono diff-finding-code">${escHtml(f.finding_code)}</span>
             <span class="badge rv-fs-closed">Closed</span>
             <span class="diff-finding-title">${escHtml(f.title)}</span>
           </div>`;
-          refreshArtifactCard(snap);
           mountChecklist(snap);
-          if (_selectedSnapshot?.id === snap.id && !_propsCollapsed) loadPropsPanel();
+          await afterFindingMutation();
         };
       });
     });
@@ -1131,19 +1142,9 @@ export async function renderReviewExecute(container, ctx) {
         else refreshArtifactCard(snap);
       },
       onFindingRaise: opts => openRaiseFindingModal(opts),
-      onFindingCreated: f => { _findings.push(f); refreshArtifactCard(snap); if (!_propsCollapsed) loadPropsPanel(); },
-      onFindingDeleted: ({ id }) => {
-        const i = _findings.findIndex(f => f.id === id);
-        if (i >= 0) _findings.splice(i, 1);
-        refreshArtifactCard(snap);
-        if (!_propsCollapsed) loadPropsPanel();
-      },
-      onFindingStatusChanged: ({ id, status }) => {
-        const f = _findings.find(x => x.id === id);
-        if (f) f.status = status;
-        refreshArtifactCard(snap);
-        if (!_propsCollapsed) loadPropsPanel();
-      },
+      onFindingCreated: () => afterFindingMutation(),
+      onFindingDeleted: () => afterFindingMutation(),
+      onFindingStatusChanged: () => afterFindingMutation(),
       onCompareRequest: () => openDiffModal(snap),
     });
   }
@@ -1371,8 +1372,6 @@ export async function renderReviewExecute(container, ctx) {
       if (fe) { toast('Error saving finding: ' + fe.message, 'error'); return; }
 
       if (finding) {
-        _findings.push(finding);
-        // Save description as initial comment so it appears in finding history
         if (desc) {
           await sb.from('review_finding_comments').insert({
             finding_id: finding.id, author_id: currentUserId,
@@ -1381,20 +1380,11 @@ export async function renderReviewExecute(container, ctx) {
         }
       }
       if (_stagedVerdict) await saveArtifactVerdict(snap, _stagedVerdict);
-      refreshArtifactCard(snap);
       toast(`Finding ${findingCode} created.`, 'success');
+      await afterFindingMutation();
 
-      findingForm.style.display = 'none';
-      panel.querySelector('#rve-finding-title').value = '';
-      panel.querySelector('#rve-finding-desc').value  = '';
       _stagedVerdict = null;
-
-      // Refresh findings list
-      const list = panel.querySelector('#rve-findings-list');
-      if (list) {
-        list.innerHTML = renderPropsFindingsList(_findings.filter(f => f.snapshot_id === snap.id));
-        wirePropsFindingsList(list, snap);
-      }
+      // afterFindingMutation already reloads the full panel
     });
 
     // "Raise Finding" standalone button (no verdict required)
@@ -1651,7 +1641,6 @@ export async function renderReviewExecute(container, ctx) {
       }).select().single();
 
       if (error) { toast('Error: ' + error.message, 'error'); btn.disabled = false; return; }
-      _findings.push(finding);
       toast(`Finding ${finding_code} raised.`, 'success');
       hideModal();
 
@@ -1659,8 +1648,7 @@ export async function renderReviewExecute(container, ctx) {
       const panel = document.getElementById('rve-checklist-panel');
       if (panel?._addFinding) panel._addFinding(finding);
 
-      refreshArtifactCard(_selectedSnapshot);
-      if (!_propsCollapsed) loadPropsPanel();
+      await afterFindingMutation();
     };
     document.getElementById('fnd-title').focus();
   }
@@ -1700,8 +1688,7 @@ export async function renderReviewExecute(container, ctx) {
     });
 
     if (changed && _selectedSnapshot) mountChecklist(_selectedSnapshot);
-    if (changed) (snapshots || []).forEach(s => refreshArtifactCard(s));
-    if (changed && _selectedSnapshot && !_propsCollapsed) loadPropsPanel();
+    if (changed) await afterFindingMutation();
 
     if (btn && !silent) { btn.disabled = false; btn.textContent = '↺ Refresh'; }
     if (!silent && changed) toast('Updated with latest responses.', 'success');
