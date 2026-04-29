@@ -5969,6 +5969,12 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rvf-stat         { display: flex; align-items: center; gap: 6px; padding: 8px 14px;
   border-radius: 6px; font-size: 12px; font-weight: 500; border-width: 1px; border-style: solid; }
 .rvf-stat-num     { font-size: 20px; font-weight: 700; line-height: 1; }
+.rvf-artifact-filter-bar {
+  display: flex; align-items: center; gap: 10px;
+  background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px;
+  padding: 7px 12px; margin-bottom: 12px; font-size: 13px;
+}
+.rvf-artifact-filter-label { flex: 1; }
 .rvf-filters      { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
 .rvf-table        { font-size: 12px; }
 .rvf-table .rvf-code    { font-family: monospace; font-size: 12px; white-space: nowrap; }

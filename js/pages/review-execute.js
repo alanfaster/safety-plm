@@ -110,7 +110,11 @@ export async function renderReviewExecute(container, ctx) {
   const _artifactVerdicts = artifactVerdicts ? [...artifactVerdicts] : [];
   const _allResponses     = allResponses      ? [...allResponses]     : [];
 
-  let _selectedSnapshot = snapshots?.[0] || null;
+  // Pre-select artifact from URL param (e.g. when navigating from req badge)
+  const _urlParams      = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  const _preselArtId    = _urlParams.get('artifactId');
+  let _selectedSnapshot = (_preselArtId && (snapshots || []).find(s => s.artifact_id === _preselArtId))
+    || snapshots?.[0] || null;
 
   // Artifact list panel state
   let _listExpanded    = false;

@@ -69,22 +69,33 @@ export async function renderReviewFindings(container, ctx) {
   ] = await Promise.all([
     sb.from('review_sessions').select('id, title, status').eq('id', sessionId).single(),
     sb.from('review_findings').select('*').eq('session_id', sessionId).order('created_at'),
-    sb.from('review_artifact_snapshots').select('id, artifact_code, artifact_title, artifact_type').eq('session_id', sessionId),
+    sb.from('review_artifact_snapshots').select('id, artifact_id, artifact_code, artifact_title, artifact_type').eq('session_id', sessionId),
   ]);
 
   const snapMap = {};
   (snapshots || []).forEach(s => { snapMap[s.id] = s; });
 
   // Active filters
-  let filterStatus = 'all';
+  let filterStatus   = 'all';
   let filterSeverity = 'all';
+  const _urlParams   = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  let filterArtifact = _urlParams.get('artifactId') || null;  // pre-filter by artifact id from badge nav
 
   renderPage();
 
   function renderPage() {
+    // Build set of snapshot IDs matching the artifact filter (artifact_id now included in query)
+    const snapIdsForArtifact = filterArtifact
+      ? new Set((snapshots || []).filter(s => s.artifact_id === filterArtifact).map(s => s.id))
+      : null;
+    const filterArtSnap = filterArtifact
+      ? (snapshots || []).find(s => s.artifact_id === filterArtifact)
+      : null;
+
     const filtered = (findings || []).filter(f => {
       if (filterStatus !== 'all' && f.status !== filterStatus) return false;
       if (filterSeverity !== 'all' && f.severity !== filterSeverity) return false;
+      if (snapIdsForArtifact && !snapIdsForArtifact.has(f.snapshot_id)) return false;
       return true;
     });
 
@@ -116,6 +127,16 @@ export async function renderReviewFindings(container, ctx) {
           <div class="rvf-stat rv-fs-closed"><span class="rvf-stat-num">${closedCount}</span> Closed</div>
           ${critCount ? `<div class="rvf-stat rv-sev-critical"><span class="rvf-stat-num">${critCount}</span> Critical</div>` : ''}
         </div>
+
+        ${filterArtSnap ? `
+          <div class="rvf-artifact-filter-bar">
+            <span class="rvf-artifact-filter-label">
+              Filtering findings for:
+              <strong>${escHtml(filterArtSnap.artifact_code || filterArtSnap.artifact_title || 'artifact')}</strong>
+              ${filterArtSnap.artifact_title ? `<span class="text-muted">— ${escHtml(filterArtSnap.artifact_title)}</span>` : ''}
+            </span>
+            <button class="btn btn-ghost btn-xs" id="rvf-clear-art-filter" title="Show all artifacts">✕ Clear filter</button>
+          </div>` : ''}
 
         <div class="rvf-filters">
           <label>Status:
@@ -155,6 +176,10 @@ export async function renderReviewFindings(container, ctx) {
     `;
 
     document.getElementById('rvf-btn-execute').onclick = () => navigate(`${base}/reviews/${sessionId}/execute`);
+
+    document.getElementById('rvf-clear-art-filter')?.addEventListener('click', () => {
+      filterArtifact = null; renderPage();
+    });
 
     container.querySelector('.rvf-filter-status').onchange = e => {
       filterStatus = e.target.value; renderPage();

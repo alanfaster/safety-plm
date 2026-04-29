@@ -384,10 +384,16 @@ async function loadReviewStatus() {
     .not('status', 'in', '("closed","rejected","duplicate")');
   if (!findings?.length) return;
 
-  const snapToArt = new Map(snapshots.map(s => [s.id, s.artifact_id]));
+  // snapInfo: snapId → { artifactId, sessionId }
+  const snapInfo = new Map(snapshots.map(s => [s.id, { artifactId: s.artifact_id, sessionId: s.session_id }]));
   for (const f of findings) {
-    const artId = snapToArt.get(f.snapshot_id);
-    if (artId) _findingMap.set(artId, (_findingMap.get(artId) || 0) + 1);
+    const info = snapInfo.get(f.snapshot_id);
+    if (!info) continue;
+    const cur = _findingMap.get(info.artifactId) || { count: 0, sessionId: info.sessionId };
+    // Prefer the active review session's sessionId so the link always goes to a live session
+    cur.count += 1;
+    cur.sessionId = _reviewMap.get(info.artifactId)?.sessionId || cur.sessionId;
+    _findingMap.set(info.artifactId, cur);
   }
 }
 
@@ -566,14 +572,20 @@ function infoRowHTML(r) {
 function wireAllRows(tbody) {
   const { project, item, system, parentType, parentId, typeFilter } = _ctx;
 
-  // Review / finding badge clicks — navigate to review execute page
+  // Review / finding badge clicks
   tbody.addEventListener('click', e => {
     const badge = e.target.closest('.req-review-badge, .req-finding-badge');
     if (!badge) return;
     e.stopPropagation();
     const sessionId = badge.dataset.sessionId;
+    const rid       = badge.dataset.rid;
     if (!sessionId) return;
-    navigate(`/project/${project.id}/item/${item.id}/reviews/${sessionId}/execute`);
+    const base2 = `/project/${project.id}/item/${item.id}`;
+    if (badge.dataset.badgeType === 'finding') {
+      navigate(`${base2}/reviews/${sessionId}/findings?artifactId=${rid}`);
+    } else {
+      navigate(`${base2}/reviews/${sessionId}/execute?artifactId=${rid}`);
+    }
   });
 
   // Section rows
@@ -1456,14 +1468,14 @@ function reqTd(c, r) {
       </td>`;
     case 'code': {
       const ftaLinked  = r.source?.startsWith('FTA-AND:');
-      const reviewInfo = _reviewMap.get(r.id);
-      const findings   = _findingMap.get(r.id) || 0;
+      const reviewInfo  = _reviewMap.get(r.id);
+      const findingInfo = _findingMap.get(r.id);
       return `<td data-col="code" class="code-cell" style="white-space:nowrap">
         ${esc(r.req_code)}
         ${ftaLinked ? '<span title="Linked to FTA AND gate" style="margin-left:4px;font-size:10px;color:#1A73E8">⚡</span>' : ''}
         ${r.version > 1 ? `<span class="artifact-version-badge">v${r.version}</span>` : ''}
-        ${reviewInfo ? `<span class="req-review-badge" data-session-id="${reviewInfo.sessionId}" title="Under review: ${esc(reviewInfo.title)}">🔍</span>` : ''}
-        ${findings ? `<span class="req-finding-badge" data-session-id="${reviewInfo?.sessionId || ''}" title="${findings} open finding(s)">⚠ ${findings}</span>` : ''}
+        ${reviewInfo ? `<span class="req-review-badge" data-badge-type="review" data-session-id="${reviewInfo.sessionId}" data-rid="${r.id}" title="Under review: ${esc(reviewInfo.title)}">🔍</span>` : ''}
+        ${findingInfo ? `<span class="req-finding-badge" data-badge-type="finding" data-session-id="${findingInfo.sessionId}" data-rid="${r.id}" title="${findingInfo.count} open finding(s)">⚠ ${findingInfo.count}</span>` : ''}
       </td>`;
     }
     case 'title': {
