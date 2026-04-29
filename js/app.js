@@ -304,13 +304,6 @@ route('/project/:projectId/item/:itemId/reviews/new', async ({ projectId, itemId
   await renderReviewSessionWizard(getContent(), ctx);
 });
 
-route('/project/:projectId/item/:itemId/reviews/:sessionId/findings', async ({ projectId, itemId, sessionId }) => {
-  setLoading();
-  const ctx = await loadItemContext(projectId, itemId, null, 'reviews');
-  if (!ctx) { navigate('/projects'); return; }
-  const { renderReviewFindings } = await import('./pages/review-findings.js');
-  await renderReviewFindings(getContent(), { ...ctx, sessionId });
-});
 
 route('/project/:projectId/item/:itemId/reviews/:sessionId/execute', async ({ projectId, itemId, sessionId }) => {
   setLoading();

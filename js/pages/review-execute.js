@@ -318,15 +318,13 @@ export async function renderReviewExecute(container, ctx) {
 
   function renderPropsFindingRow(f, editable) {
     const gotoBtn = `<a class="rve-props-fnd-goto btn btn-ghost btn-xs" data-fid="${f.id}" title="Go to finding">↗</a>`;
-    const statusBadge = `<span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}" style="font-size:10px">${FINDING_STATUS_LABELS[f.status] || f.status}</span>`;
     if (!editable) {
       return `
-        <div class="rve-props-finding-row rv-sev-${f.severity} rve-props-finding-row--readonly" data-finding-id="${f.id}" data-severity="${f.severity}" data-status="${f.status}">
-          <div class="rve-props-fnd-header">
+        <div class="rve-props-finding-row rve-props-finding-row--readonly" data-finding-id="${f.id}" data-severity="${f.severity}" data-status="${f.status}">
+          <div class="rve-props-finding-row-main">
             <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
-            <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
-            ${statusBadge}
             <span class="rve-props-finding-title">${escHtml(f.title)}</span>
+            <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}" style="font-size:10px;margin-left:auto;flex-shrink:0">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
             ${gotoBtn}
           </div>
         </div>`;
@@ -334,33 +332,41 @@ export async function renderReviewExecute(container, ctx) {
     const transitions = FINDING_TRANSITIONS[f.status] || [];
     const disabled    = transitions.length === 0 ? 'disabled' : '';
     return `
-      <div class="rve-props-finding-row rv-sev-${f.severity}" data-finding-id="${f.id}" data-severity="${f.severity}" data-status="${f.status}">
-        <div class="rve-props-fnd-header">
+      <div class="rve-props-finding-row" data-finding-id="${f.id}" data-severity="${f.severity}" data-status="${f.status}">
+        <div class="rve-props-finding-row-main">
           <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
-          <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
           <span class="rve-props-finding-title">${escHtml(f.title)}</span>
-          ${gotoBtn}
-        </div>
-        <div class="rve-props-fnd-controls">
-          <select class="rvf-status-select rve-props-fnd-select" data-finding-id="${f.id}" data-current="${f.status}" ${disabled}>
+          <select class="rvf-status-select rve-props-fnd-select" data-finding-id="${f.id}" data-current="${f.status}" ${disabled} style="margin-left:auto">
             <option value="${f.status}" selected>${FINDING_STATUS_LABELS[f.status] || f.status}</option>
             ${transitions.map(to => `<option value="${to}">${FINDING_TRANSITION_LABELS[to] || FINDING_STATUS_LABELS[to]}</option>`).join('')}
           </select>
+          ${gotoBtn}
         </div>
         <div class="rve-props-fnd-confirm" style="display:none"></div>
       </div>`;
   }
 
   function renderPropsFindingsList(snapFindings) {
-    if (!snapFindings.length) return '<p class="text-muted" style="font-size:12px;margin:4px 0">No findings yet.</p>';
+    if (!snapFindings.length) return '<p class="text-muted" style="font-size:11px;margin:4px 0">No findings.</p>';
+
+    const openCount   = snapFindings.filter(f => f.status === 'open').length;
+    const activeCount = snapFindings.filter(f => f.status === 'accepted' || f.status === 'in_progress').length;
+    const doneCount   = snapFindings.filter(f => f.status === 'fixed' || f.status === 'verified' || f.status === 'closed').length;
+    const summaryBar  = `<div class="rve-props-fnd-summary">
+      ${openCount   ? `<span class="rve-props-fnd-count rve-props-fnd-count--open">${openCount} open</span>` : ''}
+      ${activeCount ? `<span class="rve-props-fnd-count rve-props-fnd-count--active">${activeCount} active</span>` : ''}
+      ${doneCount   ? `<span class="rve-props-fnd-count rve-props-fnd-count--done">${doneCount} closed</span>` : ''}
+    </div>`;
+
     const checklistFindings  = snapFindings.filter(f => f.response_id);
     const openPointFindings  = snapFindings.filter(f => !f.response_id && f.template_item_id);
     const directFindings     = snapFindings.filter(f => !f.response_id && !f.template_item_id);
-    return [
-      checklistFindings.length  ? `<div class="rve-findings-group-label">From checklist</div>${checklistFindings.map(f => renderPropsFindingRow(f, false)).join('')}`  : '',
-      openPointFindings.length  ? `<div class="rve-findings-group-label">Open points</div>${openPointFindings.map(f => renderPropsFindingRow(f, false)).join('')}`       : '',
-      directFindings.length     ? `<div class="rve-findings-group-label">Direct findings</div>${directFindings.map(f => renderPropsFindingRow(f, true)).join('')}`       : '',
-    ].filter(Boolean).join('');
+    const rows = [
+      checklistFindings.map(f => renderPropsFindingRow(f, false)).join(''),
+      openPointFindings.map(f => renderPropsFindingRow(f, false)).join(''),
+      directFindings.map(f => renderPropsFindingRow(f, true)).join(''),
+    ].join('');
+    return summaryBar + rows;
   }
 
   function wirePropsFindingsList(container, snap) {

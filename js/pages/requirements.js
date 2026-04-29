@@ -582,11 +582,7 @@ function wireAllRows(tbody) {
     if (!sessionId) return;
     const base2    = `/project/${project.id}/item/${item.id}`;
     const fromPath = encodeURIComponent(window.location.hash.replace(/^#/, ''));
-    if (badge.dataset.badgeType === 'finding') {
-      navigate(`${base2}/reviews/${sessionId}/findings?artifactId=${rid}&from=${fromPath}`);
-    } else {
-      navigate(`${base2}/reviews/${sessionId}/execute?artifactId=${rid}&from=${fromPath}`);
-    }
+    navigate(`${base2}/reviews/${sessionId}/execute?artifactId=${rid}&from=${fromPath}`);
   });
 
   // Section rows
@@ -2377,7 +2373,6 @@ async function renderPageReviews() {
                 <td>${s.planned_date || '—'}</td>
                 <td>
                   <button class="btn btn-ghost btn-xs rv-open-btn" data-id="${s.id}">Open</button>
-                  <button class="btn btn-ghost btn-xs rv-findings-btn" data-id="${s.id}">Findings</button>
                 </td>
               </tr>`).join('')}
           </tbody>
@@ -2387,9 +2382,6 @@ async function renderPageReviews() {
 
   body.querySelectorAll('.rv-open-btn').forEach(btn => {
     btn.onclick = () => navigate(`${base}/reviews/${btn.dataset.id}/execute`);
-  });
-  body.querySelectorAll('.rv-findings-btn').forEach(btn => {
-    btn.onclick = () => navigate(`${base}/reviews/${btn.dataset.id}/findings`);
   });
 }
 

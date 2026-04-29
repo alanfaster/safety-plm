@@ -135,7 +135,6 @@ export async function renderReviewDashboard(container, ctx) {
                 <td class="text-muted">${formatDateTime(s.created_at)}</td>
                 <td class="rv-actions">
                   <button class="btn btn-secondary btn-sm rv-open-btn" data-id="${s.id}" title="Open checklist">Open</button>
-                  <button class="btn btn-ghost btn-sm rv-findings-btn" data-id="${s.id}" title="View findings">Findings</button>
                   ${s.status !== 'completed' && s.status !== 'cancelled' ? `<button class="btn btn-ghost btn-sm rv-cancel-btn" data-id="${s.id}" title="Cancel">Cancel</button>` : ''}
                   ${(!s.created_by || s.created_by === currentUserId) ? `<button class="btn btn-ghost btn-sm rv-delete-btn" data-id="${s.id}" title="Delete review">Delete</button>` : ''}
                 </td>
@@ -147,9 +146,6 @@ export async function renderReviewDashboard(container, ctx) {
 
     wrap.querySelectorAll('.rv-open-btn').forEach(btn => {
       btn.onclick = () => navigate(`${base}/reviews/${btn.dataset.id}/execute`);
-    });
-    wrap.querySelectorAll('.rv-findings-btn').forEach(btn => {
-      btn.onclick = () => navigate(`${base}/reviews/${btn.dataset.id}/findings`);
     });
     wrap.querySelectorAll('.rv-cancel-btn').forEach(btn => {
       btn.onclick = async () => {
