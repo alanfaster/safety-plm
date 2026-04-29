@@ -44,9 +44,10 @@ export async function renderReviewFindings(container, ctx) {
   // Active filters
   let filterStatus   = 'all';
   let filterSeverity = 'all';
-  const _urlParams   = new URLSearchParams(window.location.hash.split('?')[1] || '');
-  let filterArtifact = _urlParams.get('artifactId') || null;
-  const _fromPath    = _urlParams.get('from') ? decodeURIComponent(_urlParams.get('from')) : null;
+  const _urlParams    = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  let filterArtifact  = _urlParams.get('artifactId') || null;
+  const _fromPath     = _urlParams.get('from') ? decodeURIComponent(_urlParams.get('from')) : null;
+  const _highlightFid = _urlParams.get('findingId') || null;
 
   renderPage();
 
@@ -237,6 +238,17 @@ export async function renderReviewFindings(container, ctx) {
         renderPage();
       };
     });
+
+    // Scroll to and highlight a specific finding (from ?findingId= param)
+    if (_highlightFid) {
+      const targetRow = container.querySelector(`tr.rvf-row[data-id="${_highlightFid}"]`);
+      if (targetRow) {
+        targetRow.classList.add('rvf-row--highlight');
+        requestAnimationFrame(() => targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+        // Fade highlight out after 3s
+        setTimeout(() => targetRow.classList.remove('rvf-row--highlight'), 3000);
+      }
+    }
 
   }
 

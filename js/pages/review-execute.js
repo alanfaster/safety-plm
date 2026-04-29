@@ -14,6 +14,11 @@ import { setBreadcrumb } from '../components/topbar.js';
 import { showModal, hideModal } from '../components/modal.js';
 import { toast } from '../toast.js';
 import { mountReviewChecklist } from '../components/review-checklist.js';
+import {
+  FINDING_STATUS_LABELS, FINDING_STATUS_CLASSES,
+  TRANSITIONS as FINDING_TRANSITIONS, TRANSITION_LABELS as FINDING_TRANSITION_LABELS,
+  COMMENT_REQUIRED as FINDING_COMMENT_REQUIRED,
+} from '../components/finding-constants.js';
 
 const SESSION_STATUS_CLASSES = {
   planned:'badge-draft', in_progress:'badge-review', completed:'badge-approved', cancelled:'badge-deprecated',
@@ -308,6 +313,114 @@ export async function renderReviewExecute(container, ctx) {
   const FINDING_STATUS_LABELS = {
     open:'Open', accepted:'Accepted', fixed:'Implemented – pending review', closed:'Closed', rejected:'Rejected',
   };
+
+  // ── Props panel findings list helpers ────────────────────────────────────────
+
+  function renderPropsFindingRow(f) {
+    const transitions = FINDING_TRANSITIONS[f.status] || [];
+    const disabled    = transitions.length === 0 ? 'disabled' : '';
+    const statusCls   = FINDING_STATUS_CLASSES[f.status] || '';
+    return `
+      <div class="rve-props-finding-row rv-sev-${f.severity}" data-finding-id="${f.id}">
+        <div class="rve-props-fnd-header">
+          <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
+          <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
+          <span class="rve-props-finding-title">${escHtml(f.title)}</span>
+          <a class="rve-props-fnd-goto btn btn-ghost btn-xs" data-fid="${f.id}" title="Go to finding">↗</a>
+        </div>
+        <div class="rve-props-fnd-controls">
+          <select class="rvf-status-select rve-props-fnd-select" data-finding-id="${f.id}" data-current="${f.status}" ${disabled}>
+            <option value="${f.status}" selected>${FINDING_STATUS_LABELS[f.status] || f.status}</option>
+            ${transitions.map(to => `<option value="${to}">${FINDING_TRANSITION_LABELS[to] || FINDING_STATUS_LABELS[to]}</option>`).join('')}
+          </select>
+        </div>
+        <div class="rve-props-fnd-confirm" style="display:none"></div>
+      </div>`;
+  }
+
+  function renderPropsFindingsList(snapFindings) {
+    if (!snapFindings.length) return '<p class="text-muted" style="font-size:12px;margin:4px 0">No findings yet.</p>';
+    const checklistFindings = snapFindings.filter(f => f.response_id);
+    const directFindings    = snapFindings.filter(f => !f.response_id);
+    return [
+      checklistFindings.length ? `<div class="rve-findings-group-label">From checklist</div>${checklistFindings.map(renderPropsFindingRow).join('')}` : '',
+      directFindings.length    ? `<div class="rve-findings-group-label">Direct findings</div>${directFindings.map(renderPropsFindingRow).join('')}` : '',
+    ].filter(Boolean).join('');
+  }
+
+  function wirePropsFindingsList(container, snap) {
+    // "Go to finding" link — navigate to findings page with that finding highlighted
+    container.querySelectorAll('.rve-props-fnd-goto').forEach(a => {
+      a.addEventListener('click', e => {
+        e.stopPropagation();
+        const from = encodeURIComponent(window.location.hash.replace(/^#/, ''));
+        navigate(`${base}/reviews/${sessionId}/findings?findingId=${a.dataset.fid}&from=${from}`);
+      });
+    });
+
+    // Status select → inline confirm form with required comment
+    container.querySelectorAll('.rve-props-fnd-select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const findingId = sel.dataset.findingId;
+        const toStatus  = sel.value;
+        if (!toStatus || toStatus === sel.dataset.current) { sel.value = sel.dataset.current; return; }
+        const f = _findings.find(x => x.id === findingId);
+        if (!f) return;
+
+        // Close any other open confirm form in this list
+        container.querySelectorAll('.rve-props-fnd-confirm').forEach(el => { el.style.display = 'none'; el.innerHTML = ''; });
+        container.querySelectorAll('.rve-props-fnd-select').forEach(s => { if (s !== sel) s.disabled = false; });
+
+        sel.disabled = true;
+        const required = FINDING_COMMENT_REQUIRED.has(toStatus);
+        const label    = FINDING_TRANSITION_LABELS[toStatus] || FINDING_STATUS_LABELS[toStatus];
+        const row      = sel.closest('.rve-props-finding-row');
+        const confirm  = row?.querySelector('.rve-props-fnd-confirm');
+        if (!confirm) return;
+
+        confirm.innerHTML = `
+          <textarea class="form-input rve-props-fnd-comment" rows="2"
+            placeholder="Note${required ? ' (required)' : ' (optional)'}…" style="font-size:11px;margin-top:4px"></textarea>
+          <div style="display:flex;gap:4px;margin-top:4px">
+            <button class="btn btn-primary btn-xs rve-props-fnd-ok">${escHtml(label)}</button>
+            <button class="btn btn-ghost btn-xs rve-props-fnd-cancel">Cancel</button>
+          </div>`;
+        confirm.style.display = '';
+        confirm.querySelector('.rve-props-fnd-comment').focus();
+
+        confirm.querySelector('.rve-props-fnd-cancel').onclick = () => {
+          confirm.style.display = 'none'; confirm.innerHTML = '';
+          sel.value = sel.dataset.current; sel.disabled = false;
+        };
+
+        confirm.querySelector('.rve-props-fnd-ok').onclick = async () => {
+          const comment = confirm.querySelector('.rve-props-fnd-comment').value.trim();
+          if (required && !comment) { confirm.querySelector('.rve-props-fnd-comment').focus(); toast('A note is required.', 'error'); return; }
+          const okBtn = confirm.querySelector('.rve-props-fnd-ok');
+          okBtn.disabled = true;
+          const updates = { status: toStatus, updated_at: new Date().toISOString() };
+          if (comment) updates.resolution_note = comment;
+          const { error } = await sb.from('review_findings').update(updates).eq('id', findingId);
+          if (error) { toast('Error: ' + error.message, 'error'); okBtn.disabled = false; return; }
+          if (comment) {
+            await sb.from('review_finding_comments').insert({
+              finding_id: findingId, author_id: currentUserId,
+              comment: `[${label}] ${comment}`,
+            }).catch(() => {});
+          }
+          f.status = toStatus;
+          if (comment) f.resolution_note = comment;
+          toast(`${f.finding_code}: ${label}`, 'success');
+          // Re-render just this row
+          const newHtml = renderPropsFindingRow(f);
+          const tmp = document.createElement('div'); tmp.innerHTML = newHtml;
+          row.replaceWith(tmp.firstElementChild);
+          wirePropsFindingsList(container, snap);
+          refreshArtifactCard(snap);
+        };
+      });
+    });
+  }
 
   renderPage();
 
@@ -1095,23 +1208,7 @@ export async function renderReviewExecute(container, ctx) {
             <button class="btn btn-ghost btn-xs" id="rve-finding-raise-btn" style="margin-left:8px">+ Raise Finding</button>
           </div>
           <div id="rve-findings-list">
-            ${(() => {
-              const snapFindings = _findings.filter(f => f.snapshot_id === snap.id);
-              if (!snapFindings.length) return '<p class="text-muted" style="font-size:12px;margin:4px 0">No findings yet.</p>';
-              const checklistFindings = snapFindings.filter(f => f.response_id);
-              const directFindings    = snapFindings.filter(f => !f.response_id);
-              const renderFnd = f => `
-                <div class="rve-props-finding-row rv-sev-${f.severity}">
-                  <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
-                  <span class="rve-props-finding-title">${escHtml(f.title)}</span>
-                  <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
-                  <span class="badge" style="font-size:10px">${escHtml(f.status)}</span>
-                </div>`;
-              return [
-                checklistFindings.length ? `<div class="rve-findings-group-label">From checklist</div>${checklistFindings.map(renderFnd).join('')}` : '',
-                directFindings.length    ? `<div class="rve-findings-group-label">Direct findings</div>${directFindings.map(renderFnd).join('')}` : '',
-              ].filter(Boolean).join('');
-            })()}
+            ${renderPropsFindingsList(_findings.filter(f => f.snapshot_id === snap.id))}
           </div>
         </div>
 
@@ -1139,6 +1236,8 @@ export async function renderReviewExecute(container, ctx) {
 
     wirePropsPanel();  // re-wire toggle after innerHTML replace
     panel.querySelector('#rve-props-compare')?.addEventListener('click', () => openDiffModal(snap));
+    const findingsList = panel.querySelector('#rve-findings-list');
+    if (findingsList) wirePropsFindingsList(findingsList, snap);
 
     // Wire verdict buttons — NOK/Partially OK require a finding before saving
     let _stagedVerdict = null;
@@ -1205,23 +1304,11 @@ export async function renderReviewExecute(container, ctx) {
       panel.querySelector('#rve-finding-desc').value  = '';
       _stagedVerdict = null;
 
-      // Refresh findings list (grouped by source)
+      // Refresh findings list
       const list = panel.querySelector('#rve-findings-list');
       if (list) {
-        const snapFindings = _findings.filter(f => f.snapshot_id === snap.id);
-        const checklistFindings = snapFindings.filter(f => f.response_id);
-        const directFindings    = snapFindings.filter(f => !f.response_id);
-        const renderFnd = f => `
-          <div class="rve-props-finding-row rv-sev-${f.severity}">
-            <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
-            <span class="rve-props-finding-title">${escHtml(f.title)}</span>
-            <span class="badge rv-sev-badge-${f.severity}" style="font-size:10px">${escHtml(f.severity)}</span>
-            <span class="badge" style="font-size:10px">${escHtml(f.status)}</span>
-          </div>`;
-        list.innerHTML = [
-          checklistFindings.length ? `<div class="rve-findings-group-label">From checklist</div>${checklistFindings.map(renderFnd).join('')}` : '',
-          directFindings.length    ? `<div class="rve-findings-group-label">Direct findings</div>${directFindings.map(renderFnd).join('')}` : '',
-        ].filter(Boolean).join('') || '<p class="text-muted" style="font-size:12px;margin:4px 0">No findings yet.</p>';
+        list.innerHTML = renderPropsFindingsList(_findings.filter(f => f.snapshot_id === snap.id));
+        wirePropsFindingsList(list, snap);
       }
     });
 
