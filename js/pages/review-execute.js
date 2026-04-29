@@ -376,7 +376,7 @@ export async function renderReviewExecute(container, ctx) {
         const findingCard = checklist.querySelector(`.rvck-inline-finding[data-finding-id="${fid}"]`);
         if (findingCard) {
           // Ensure the findings slot containing this card is visible
-          const slot = findingCard.closest('.rvck-findings-slot');
+          const slot = findingCard.closest('.rvck-item-findings');
           if (slot && slot.style.display === 'none') {
             // Find the toggle button for this slot's item and click it
             const itemEl    = findingCard.closest('.rvck-item');
