@@ -5984,7 +5984,6 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rvf-desc         { font-size: 11px; margin-top: 2px; }
 .rvf-actions      { white-space: nowrap; }
 .rvf-actions .btn { margin-right: 2px; }
-.rvf-resolution-input { font-size: 12px; min-width: 160px; }
 
 /* Inline transition form (findings page) */
 .rvf-transition-row td { background: #f8f9ff; padding: 8px 12px; border-bottom: 1px solid #e3e8f0; }

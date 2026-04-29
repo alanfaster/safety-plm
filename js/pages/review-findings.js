@@ -165,7 +165,6 @@ export async function renderReviewFindings(container, ctx) {
                 <th>Severity</th>
                 <th>Title</th>
                 <th>Status</th>
-                <th>Resolution Note</th>
                 <th style="width:160px">Actions</th>
               </tr>
             </thead>
@@ -261,18 +260,6 @@ export async function renderReviewFindings(container, ctx) {
       };
     });
 
-    // Resolution note inline edit
-    container.querySelectorAll('.rvf-resolution-input').forEach(inp => {
-      inp.addEventListener('change', debounce(async () => {
-        const { findingId } = inp.dataset;
-        const finding = findings?.find(f => f.id === findingId);
-        if (!finding) return;
-        await sb.from('review_findings').update({
-          resolution_note: inp.value.trim(), updated_at: new Date().toISOString(),
-        }).eq('id', findingId);
-        finding.resolution_note = inp.value.trim();
-      }, 600));
-    });
   }
 
   function renderFindingRow(f, snapMap) {
@@ -293,10 +280,7 @@ export async function renderReviewFindings(container, ctx) {
         </td>
         <td>
           <span class="badge ${STATUS_CLASSES[f.status] || ''}">${STATUS_LABELS[f.status] || f.status}</span>
-        </td>
-        <td>
-          <input class="form-input rvf-resolution-input" data-finding-id="${f.id}"
-            value="${escHtml(f.resolution_note || '')}" placeholder="Resolution note…" style="font-size:12px"/>
+          ${f.resolution_note ? `<div class="text-muted" style="font-size:11px;margin-top:3px">${escHtml(f.resolution_note)}</div>` : ''}
         </td>
         <td class="rvf-actions">
           ${transitions.map(to => `
