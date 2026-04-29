@@ -5525,6 +5525,13 @@ th.col-th-dragging * { pointer-events: none; }
 .wiz-type-name   { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.2; }
 .wiz-type-sub    { font-size: 11px; color: var(--text-muted); line-height: 1.3; }
 
+/* Step 2 — Context mode (launched from a page) */
+.wiz-ctx-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-bottom: 4px;
+}
+.wiz-ctx-bulk { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
 /* Step 2 — Artifact tree split layout */
 .wiz-s2-layout   { display: flex; flex-direction: column; height: 100%; }
 .wiz-s2-topbar   { display: flex; align-items: center; justify-content: space-between;

@@ -161,7 +161,8 @@ export async function renderRequirements(container, { project, item, system, par
     const base = `/project/${project.id}/item/${item.id}`;
     const parentTypePfx = system ? 'system' : 'item';
     const parentIdCtx   = system ? system.id : item.id;
-    let url = `${base}/reviews/new?phase=requirements&domain=${encodeURIComponent(domainKey)}&parentType=${parentTypePfx}&parentId=${parentIdCtx}`;
+    const displayName   = subPageName || pageTitle;
+    let url = `${base}/reviews/new?phase=requirements&domain=${encodeURIComponent(domainKey)}&parentType=${parentTypePfx}&parentId=${parentIdCtx}&pageName=${encodeURIComponent(displayName)}`;
     if (pageId) url += `&pageId=${pageId}`;
     navigate(url);
   };

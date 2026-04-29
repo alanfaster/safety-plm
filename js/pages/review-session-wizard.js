@@ -65,14 +65,17 @@ export async function renderReviewSessionWizard(container, ctx) {
   const _initQuery   = new URLSearchParams(window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '');
   const _initPhase   = _initQuery.get('phase');
   const _initDomain  = _initQuery.get('domain');
+  const _initPageName = _initQuery.get('pageName');  // page display name passed from Start Review button
   const PHASE_TITLE_LABELS = {
     item_definition:'Item Definition', requirements:'Requirements', architecture:'Architecture',
     design:'Design', implementation:'Implementation', unit_testing:'Unit Testing',
     integration_testing:'Integration Testing', system_testing:'System Testing', validation:'Validation',
   };
-  const _initTitle = _initPhase
-    ? `${PHASE_TITLE_LABELS[_initPhase] || _initPhase}${_initDomain && _initDomain !== 'default' ? ' (' + _initDomain.toUpperCase() + ')' : ''} Review`
-    : '';
+  const _initTitle = _initPageName
+    ? `${_initPageName} Review`
+    : _initPhase
+      ? `${PHASE_TITLE_LABELS[_initPhase] || _initPhase}${_initDomain && _initDomain !== 'default' ? ' (' + _initDomain.toUpperCase() + ')' : ''} Review`
+      : '';
 
   // Wizard state
   const state = {
@@ -125,6 +128,20 @@ export async function renderReviewSessionWizard(container, ctx) {
   // Load templates upfront
   const { data: templates } = await sb.from('review_protocol_templates')
     .select('*').eq('project_id', project.id).eq('is_active', true).order('name');
+
+  // Auto-select template matching the artifact type for this page context
+  if (!state.template_id && _initPhase && templates?.length) {
+    const PHASE_TO_ART_TYPE = {
+      requirements: 'requirements', architecture: 'arch_spec_items',
+      unit_testing: 'test_specs', integration_testing: 'test_specs',
+      system_testing: 'test_specs', validation: 'test_specs',
+    };
+    const targetArtType = PHASE_TO_ART_TYPE[_initPhase];
+    if (targetArtType) {
+      const match = templates.find(t => t.artifact_type === targetArtType);
+      if (match) state.template_id = match.id;
+    }
+  }
 
   renderStep();
 
@@ -811,7 +828,14 @@ export async function renderReviewSessionWizard(container, ctx) {
         </div>`;
     }
 
-    // ── Layout + wiring ───────────────────────────────────────────────────────
+    // ── Context mode: launched from a specific page — show flat artifact list ──
+
+    if (_ctxPhase && _ctxParentId) {
+      renderContextMode(body);
+      return;
+    }
+
+    // ── Full tree layout + wiring ─────────────────────────────────────────────
 
     body.innerHTML = `
       <div class="wiz-step-body wiz-s2-layout">
@@ -826,6 +850,114 @@ export async function renderReviewSessionWizard(container, ctx) {
       </div>`;
 
     wireStep2(body);
+
+    function renderContextMode(root) {
+      // Get the relevant artifacts for this context
+      const pPrefix = _ctxParentType === 'system' ? 'sys' : 'item';
+
+      // Build artifact list for this context
+      let ctxArtifacts = [];
+      let baseType = '';
+
+      if (_ctxPageId) {
+        // Sub-page: use getReqsForPage equivalent
+        const page = Object.values(state.navPages).flat().find(p => p.id === _ctxPageId);
+        if (page) {
+          const reqs = getReqsForPage(page);
+          if (reqs !== null) {
+            ctxArtifacts = reqs;
+            baseType = 'requirements';
+          }
+        }
+      } else {
+        // Phase-level: pick artifacts from artsByLeaf for this parent
+        const artType = PHASE_ART_TYPE[_ctxPhase];
+        if (artType) {
+          const [bt, lvl] = artType.split(':');
+          baseType = bt;
+          const key = lvl
+            ? `art:${pPrefix}:${_ctxParentId}:${bt}:${lvl}`
+            : `art:${pPrefix}:${_ctxParentId}:${artType}`;
+          ctxArtifacts = artsByLeaf[key] || [];
+        }
+      }
+
+      if (!state.selected[baseType]) state.selected[baseType] = new Set();
+      const sel = state.selected[baseType];
+
+      function buildRows() {
+        return ctxArtifacts.map(a => `
+          <tr class="wiz-art-row" data-type="${baseType}" data-id="${a.id}">
+            <td style="width:28px"><input type="checkbox" class="wiz-ctx-chk"
+              data-type="${baseType}" data-id="${a.id}" ${sel.has(a.id) ? 'checked' : ''}/></td>
+            <td class="mono" style="white-space:nowrap;font-size:12px">${escHtml(a.req_code || a.code || '—')}</td>
+            <td style="width:100%">${escHtml(a.title || a.name || '—')}</td>
+            <td style="white-space:nowrap"><span class="badge badge-${escHtml(a.status || 'draft')}">${escHtml(a.status || '—')}</span></td>
+          </tr>`).join('');
+      }
+
+      function reRender() {
+        const tbody = root.querySelector('#wiz-ctx-tbody');
+        if (tbody) tbody.innerHTML = buildRows();
+        const cntEl = root.querySelector('#wiz-ctx-sel-count');
+        if (cntEl) cntEl.textContent = `${sel.size} / ${ctxArtifacts.length} selected`;
+        wireCtxRows(root);
+      }
+
+      const pageLabel = _initPageName || (PHASE_TITLE_LABELS[_ctxPhase] || _ctxPhase);
+
+      root.innerHTML = `
+        <div class="wiz-step-body">
+          <div class="wiz-ctx-header">
+            <div>
+              <h3 style="margin:0 0 4px">Select artifacts — <span style="color:var(--color-primary)">${escHtml(pageLabel)}</span></h3>
+              <p class="form-hint" style="margin:0">${ctxArtifacts.length} artifact${ctxArtifacts.length !== 1 ? 's' : ''} available</p>
+            </div>
+            <div class="wiz-ctx-bulk">
+              <span id="wiz-ctx-sel-count" style="font-size:13px;color:var(--color-text-muted)">${sel.size} / ${ctxArtifacts.length} selected</span>
+              <button type="button" class="btn btn-secondary btn-sm" id="wiz-ctx-all">Select All</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="wiz-ctx-none">Deselect All</button>
+            </div>
+          </div>
+          ${ctxArtifacts.length ? `
+          <div class="card" style="margin-top:12px">
+            <div class="card-body" style="padding:0">
+              <table class="data-table wiz-art-table">
+                <thead><tr>
+                  <th style="width:28px"></th>
+                  <th>Code</th><th>Title</th><th>Status</th>
+                </tr></thead>
+                <tbody id="wiz-ctx-tbody">${buildRows()}</tbody>
+              </table>
+            </div>
+          </div>` : `<p class="rv-empty" style="padding:32px 0">No artifacts found for this page.</p>`}
+        </div>`;
+
+      wireCtxRows(root);
+      root.querySelector('#wiz-ctx-all')?.addEventListener('click', () => {
+        ctxArtifacts.forEach(a => sel.add(a.id));
+        reRender();
+      });
+      root.querySelector('#wiz-ctx-none')?.addEventListener('click', () => {
+        ctxArtifacts.forEach(a => sel.delete(a.id));
+        reRender();
+      });
+    }
+
+    function wireCtxRows(root) {
+      root.querySelectorAll('.wiz-ctx-chk').forEach(chk => {
+        chk.onchange = e => {
+          if (e.target.checked) state.selected[chk.dataset.type].add(chk.dataset.id);
+          else state.selected[chk.dataset.type].delete(chk.dataset.id);
+          const cntEl = root.querySelector('#wiz-ctx-sel-count');
+          if (cntEl) {
+            const s = state.selected[chk.dataset.type];
+            const total = root.querySelectorAll('.wiz-ctx-chk').length;
+            cntEl.textContent = `${s.size} / ${total} selected`;
+          }
+        };
+      });
+    }
 
     function wireStep2(root) {
       root.querySelectorAll('.wiz-tree-group-hdr').forEach(hdr => {
