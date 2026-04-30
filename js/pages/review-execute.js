@@ -1359,6 +1359,9 @@ export async function renderReviewExecute(container, ctx) {
       if (fe) { toast('Error: ' + fe.message, 'error'); return; }
 
       _findings.push(finding);
+      findingForm.style.display = 'none';
+      panel.querySelector('#rve-finding-title').value = '';
+      panel.querySelector('#rve-finding-desc').value  = '';
       toast(`Finding ${findingCode} created.`, 'success');
       const staged = _stagedVerdict; _stagedVerdict = null;
       if (staged) {
