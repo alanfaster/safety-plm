@@ -1712,6 +1712,26 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   async function completeSession() {
+    // Block if any reviewer has not set OK on every artifact
+    const blocking = [];
+    for (const snap of (snapshots || [])) {
+      for (const reviewer of reviewerList) {
+        const av = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === reviewer.user_id);
+        if (av?.verdict !== 'ok') {
+          blocking.push(`${escHtml(snap.artifact_code || snap.artifact_type)} — ${escHtml(reviewer.display_name || reviewer.role || reviewer.user_id)}: ${av?.verdict ? av.verdict : 'no verdict'}`);
+        }
+      }
+    }
+    if (blocking.length) {
+      showModal({
+        title: '⚠ Cannot complete review',
+        body: `<p style="margin:0 0 10px">All reviewers must set <strong>OK</strong> on every artifact before completing:</p>
+               <ul style="margin:0;padding-left:18px;max-height:260px;overflow-y:auto">${blocking.map(l => `<li>${l}</li>`).join('')}</ul>`,
+        footer: `<button class="btn btn-primary" id="rve-complete-block-close">OK</button>`,
+      });
+      document.getElementById('rve-complete-block-close').onclick = hideModal;
+      return;
+    }
     if (!confirm('Mark this review session as completed? This cannot be undone.')) return;
     const { error } = await sb.from('review_sessions').update({
       status: 'completed', completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
