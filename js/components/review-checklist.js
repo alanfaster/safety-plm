@@ -448,45 +448,12 @@ export function mountReviewChecklist(container, opts) {
 
         if (error) { console.error('Failed to save finding', error); return; }
 
-        // Add to local state + notify parent
+        // Add to local state + notify parent (triggers full remount via afterFindingMutation)
         findings.push(newFinding);
         if (!findingsByItem[itemId]) findingsByItem[itemId] = [];
         findingsByItem[itemId].push(newFinding);
-        onFindingCreated?.(newFinding);
-
-        // Insert finding card into slot
-        const slot = container.querySelector(`#rvck-item-findings-${itemId}`);
-        if (slot) { slot.insertAdjacentHTML('beforeend', renderInlineFinding(newFinding)); wireInlineFinding(container); }
-
-        // Update (or create) the findings toggle bar count
-        const itemEl       = container.querySelector(`.rvck-item[data-item-id="${itemId}"]`);
-        const count        = findingsByItem[itemId].length;
-        const statusBadge  = buildFindingsSummaryBadges(findingsByItem[itemId]);
-        let toggleBtn = itemEl?.querySelector('.rvck-findings-toggle');
-        if (toggleBtn) {
-          toggleBtn.innerHTML = `<span class="rvck-findings-toggle-chevron">${slot?.style.display === 'none' ? '▶' : '▼'}</span> ⚑ ${count} finding${count > 1 ? 's' : ''} ${statusBadge}`;
-        } else if (itemEl && slot) {
-          // Create toggle for the first time and collapse the slot
-          toggleBtn = document.createElement('button');
-          toggleBtn.className = 'rvck-findings-toggle';
-          toggleBtn.dataset.itemId = itemId;
-          toggleBtn.innerHTML = `<span class="rvck-findings-toggle-chevron">▼</span> ⚑ 1 finding ${statusBadge}`;
-          itemEl.insertBefore(toggleBtn, slot);
-          toggleBtn.addEventListener('click', () => {
-            const list    = container.querySelector(`#rvck-item-findings-${itemId}`);
-            const chevron = toggleBtn.querySelector('.rvck-findings-toggle-chevron');
-            const open    = list?.style.display !== 'none';
-            if (list)    list.style.display  = open ? 'none' : '';
-            if (chevron) chevron.textContent = open ? '▶' : '▼';
-          });
-        }
-
-        // Clear form fields and response comment so remount renders empty
-        if (titleEl) titleEl.value = '';
-        const descEl = form?.querySelector('.rvck-raise-desc');
-        if (descEl) descEl.value = '';
         if (responseIndex[itemId]?.[currentUserId]) responseIndex[itemId][currentUserId].comment = '';
-        form.style.display = 'none';
+        onFindingCreated?.(newFinding);
       });
     });
 
