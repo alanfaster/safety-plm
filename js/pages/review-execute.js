@@ -1312,11 +1312,8 @@ export async function renderReviewExecute(container, ctx) {
       btn.addEventListener('click', async () => {
         const v = btn.dataset.verdict;
         if (v === 'ok') {
-          const pending = pendingFindingsFor(snap);
-          if (pending.length) {
-            showOkBlockedModal([`${pending.length} pending finding${pending.length > 1 ? 's' : ''}`]);
-            return;
-          }
+          const reasons = okBlockReasons(snap);
+          if (reasons.length) { showOkBlockedModal(reasons); return; }
         }
         highlightVbtn(v);
         if (VERDICT_REQUIRES_FINDING.has(v)) {
@@ -1502,27 +1499,47 @@ export async function renderReviewExecute(container, ctx) {
     return _findings.filter(f => f.snapshot_id === snap.id && !FINDING_TERMINAL.has(f.status));
   }
 
+  function unansweredItemsFor(snap) {
+    const isShared = session.checklist_mode === 'shared';
+    const ckSnapId = isShared ? (snapshots?.[0]?.id || snap.id) : snap.id;
+    const answered = new Set(
+      _allResponses
+        .filter(r => r.snapshot_id === ckSnapId && r.reviewer_id === currentUserId && r.verdict)
+        .map(r => r.template_item_id)
+    );
+    const total = sections.reduce((n, sec) => n + (sec.items?.length || 0), 0);
+    const done  = sections.reduce((n, sec) => n + (sec.items || []).filter(i => answered.has(i.id)).length, 0);
+    return total - done;
+  }
+
   function showOkBlockedModal(lines) {
     showModal({
       title: '⚠ Cannot mark as OK',
-      body: `<p style="margin:0 0 10px">An artifact cannot be marked <strong>OK</strong> while it still has unresolved findings:</p>
-             <ul style="margin:0;padding-left:18px">${lines.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul>
-             <p style="margin:10px 0 0;font-size:12px;color:var(--text-muted)">Resolve or close all findings first.</p>`,
+      body: `<p style="margin:0 0 10px">The artifact cannot be marked <strong>OK</strong>:</p>
+             <ul style="margin:0;padding-left:18px">${lines.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul>`,
       footer: `<button class="btn btn-primary" id="rve-ok-block-close">OK</button>`,
     });
     document.getElementById('rve-ok-block-close').onclick = hideModal;
+  }
+
+  function okBlockReasons(snap) {
+    const reasons = [];
+    const pending = pendingFindingsFor(snap).length;
+    if (pending) reasons.push(`${pending} unresolved finding${pending > 1 ? 's' : ''}`);
+    const unanswered = unansweredItemsFor(snap);
+    if (unanswered) reasons.push(`${unanswered} unanswered checklist item${unanswered > 1 ? 's' : ''}`);
+    return reasons;
   }
 
   async function applyBulkVerdict(verdict) {
     const snaps = (snapshots || []).filter(s => _bulkSelected.has(s.id));
     if (!snaps.length) return;
     if (verdict === 'ok') {
-      const blocked = snaps.filter(s => pendingFindingsFor(s).length > 0);
+      const blocked = snaps.filter(s => okBlockReasons(s).length > 0);
       if (blocked.length) {
-        showOkBlockedModal(blocked.map(s => {
-          const n = pendingFindingsFor(s).length;
-          return `${s.artifact_code || s.artifact_type} — ${n} pending finding${n > 1 ? 's' : ''}`;
-        }));
+        showOkBlockedModal(blocked.flatMap(s =>
+          okBlockReasons(s).map(r => `${s.artifact_code || s.artifact_type} — ${r}`)
+        ));
         return;
       }
     }
