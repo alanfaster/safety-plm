@@ -113,10 +113,10 @@ export async function renderReviewExecute(container, ctx) {
   const _artifactVerdicts = artifactVerdicts ? [...artifactVerdicts] : [];
   const _allResponses     = allResponses      ? [...allResponses]     : [];
 
-  async function afterFindingMutation() {
+  function afterFindingMutation() {
     rebuildArtifactList();
     if (_selectedSnapshot) mountChecklist(_selectedSnapshot);
-    await loadPropsPanel();
+    loadPropsPanel();
   }
 
   // Pre-select artifact from URL param (e.g. when navigating from req badge)
@@ -1369,7 +1369,7 @@ export async function renderReviewExecute(container, ctx) {
       if (finding?.id && desc) sb.from('review_finding_comments')
         .insert({ finding_id: finding.id, author_id: currentUserId, comment: desc }).then(null, () => {});
 
-      await afterFindingMutation();
+      afterFindingMutation();
     });
 
     // "Raise Finding" standalone button (no verdict required)
