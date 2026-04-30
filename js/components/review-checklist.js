@@ -482,7 +482,10 @@ export function mountReviewChecklist(container, opts) {
           });
         }
 
-        // Hide raise form — finding already exists
+        // Clear and hide raise form
+        if (titleEl) titleEl.value = '';
+        const descEl = form?.querySelector('.rvck-raise-desc');
+        if (descEl) descEl.value = '';
         form.style.display = 'none';
       });
     });
