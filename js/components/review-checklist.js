@@ -170,6 +170,7 @@ export function mountReviewChecklist(container, opts) {
     const myVerdict = myResp?.verdict || '';
     const myComment = myResp?.comment || '';
     const needsComment = myVerdict === 'nok' || myVerdict === 'partially_ok';
+    if (myComment) console.log('[DEBUG] renderItem', item.id, 'myComment=', myComment, 'needsComment=', needsComment, 'findings=', (findingsByItem[item.id]||[]).length);
 
     // Item-linked findings
     const itemFindings = findingsByItem[item.id] || [];
