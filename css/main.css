@@ -6289,9 +6289,10 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rve-rv-mini            { display: inline-flex; align-items: center; justify-content: center;
   width: 20px; height: 20px; border-radius: 50%; font-size: 10px; font-weight: 700;
   border: 2px solid transparent; cursor: default; }
-.rve-rv-mini--go        { background: #1e8e3e; color: #fff; border-color: #1e8e3e; }
-.rve-rv-mini--no_go     { background: #d93025; color: #fff; border-color: #d93025; }
-.rve-rv-mini--conditional { background: #e37400; color: #fff; border-color: #e37400; }
+.rve-rv-mini--go, .rve-rv-mini--ok           { background: #1e8e3e; color: #fff; border-color: #1e8e3e; }
+.rve-rv-mini--no_go, .rve-rv-mini--nok       { background: #d93025; color: #fff; border-color: #d93025; }
+.rve-rv-mini--conditional, .rve-rv-mini--partially_ok { background: #e37400; color: #fff; border-color: #e37400; }
+.rve-rv-mini--na        { background: #9e9e9e; color: #fff; border-color: #9e9e9e; }
 .rve-rv-mini--pending   { background: #f0f0f0; color: #999; border-color: #ddd; }
 
 /* Reviewer verdicts table in props panel */
