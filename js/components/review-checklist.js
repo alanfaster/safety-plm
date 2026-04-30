@@ -485,7 +485,9 @@ export function mountReviewChecklist(container, opts) {
         // Clear form fields and response comment so remount renders empty
         if (titleEl) titleEl.value = '';
         const descEl = form?.querySelector('.rvck-raise-desc');
+        console.log('[DEBUG] descEl found:', !!descEl, 'value before clear:', descEl?.value);
         if (descEl) descEl.value = '';
+        console.log('[DEBUG] responseIndex comment before clear:', responseIndex[itemId]?.[currentUserId]?.comment);
         if (responseIndex[itemId]?.[currentUserId]) responseIndex[itemId][currentUserId].comment = '';
         form.style.display = 'none';
       });
