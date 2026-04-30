@@ -1367,7 +1367,7 @@ export async function renderReviewExecute(container, ctx) {
       const staged = _stagedVerdict; _stagedVerdict = null;
       if (staged) saveArtifactVerdict(snap, staged);
       if (finding?.id && desc) sb.from('review_finding_comments')
-        .insert({ finding_id: finding.id, author_id: currentUserId, comment: desc }).catch(() => {});
+        .insert({ finding_id: finding.id, author_id: currentUserId, comment: desc }).then(null, () => {});
 
       await afterFindingMutation();
     });
