@@ -26,7 +26,7 @@ import {
 } from './finding-constants.js';
 
 const VERDICT_LABELS  = { ok:'OK', nok:'NOK', partially_ok:'Partially OK', na:'N/A' };
-const VERDICT_CLASSES = { ok:'rv-v-ok', nok:'rv-v-nok', partially_ok:'rv-v-partial', na:'rv-v-na' };
+const VERDICT_CLASSES = { ok:'sel-ok', nok:'sel-nok', partially_ok:'sel-partially_ok', na:'sel-na' };
 
 const ARTIFACT_FINAL_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-GO' };
 const ARTIFACT_FINAL_CLASSES = { go:'rvck-stamp-go', conditional:'rvck-stamp-conditional', no_go:'rvck-stamp-nogo' };
