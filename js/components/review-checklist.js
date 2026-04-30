@@ -482,10 +482,11 @@ export function mountReviewChecklist(container, opts) {
           });
         }
 
-        // Clear and hide raise form
+        // Clear form fields and response comment so remount renders empty
         if (titleEl) titleEl.value = '';
         const descEl = form?.querySelector('.rvck-raise-desc');
         if (descEl) descEl.value = '';
+        if (responseIndex[itemId]?.[currentUserId]) responseIndex[itemId][currentUserId].comment = '';
         form.style.display = 'none';
       });
     });
