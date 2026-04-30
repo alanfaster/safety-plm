@@ -166,14 +166,12 @@ export function mountReviewChecklist(container, opts) {
   }
 
   function renderItem(item) {
-    const myResp    = responseIndex[item.id]?.[currentUserId];
-    const myVerdict = myResp?.verdict || '';
-    const myComment = myResp?.comment || '';
-    const needsComment = myVerdict === 'nok' || myVerdict === 'partially_ok';
-    if (myComment) console.log('[DEBUG] renderItem', item.id, 'myComment=', myComment, 'needsComment=', needsComment, 'findings=', (findingsByItem[item.id]||[]).length);
-
-    // Item-linked findings
+    const myResp      = responseIndex[item.id]?.[currentUserId];
+    const myVerdict   = myResp?.verdict || '';
     const itemFindings = findingsByItem[item.id] || [];
+    // Don't pre-fill description when findings already exist — avoids stale text on re-open
+    const myComment   = itemFindings.length ? '' : (myResp?.comment || '');
+    const needsComment = myVerdict === 'nok' || myVerdict === 'partially_ok';
 
     return `
       <div class="rvck-item" data-item-id="${item.id}" data-verdict="${myVerdict}">
@@ -486,9 +484,7 @@ export function mountReviewChecklist(container, opts) {
         // Clear form fields and response comment so remount renders empty
         if (titleEl) titleEl.value = '';
         const descEl = form?.querySelector('.rvck-raise-desc');
-        console.log('[DEBUG] descEl found:', !!descEl, 'value before clear:', descEl?.value);
         if (descEl) descEl.value = '';
-        console.log('[DEBUG] responseIndex comment before clear:', responseIndex[itemId]?.[currentUserId]?.comment);
         if (responseIndex[itemId]?.[currentUserId]) responseIndex[itemId][currentUserId].comment = '';
         form.style.display = 'none';
       });
