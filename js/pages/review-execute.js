@@ -1061,7 +1061,8 @@ export async function renderReviewExecute(container, ctx) {
     const myDone        = snapResponses.filter(r => r.reviewer_id === currentUserId).length;
     const snapFindings  = _findings.filter(f => f.snapshot_id === snap.id);
     const allFnds       = snapFindings.length;
-    const openFnds      = snapFindings.filter(f => f.status === 'open').length;
+    const RESOLVED      = new Set(['closed','rejected','duplicate']);
+    const openFnds      = snapFindings.filter(f => !RESOLVED.has(f.status)).length;
     const drifted       = driftMap[snap.artifact_id];
     const pct           = totalItems ? Math.round(myDone / totalItems * 100) : 0;
 
@@ -1092,13 +1093,8 @@ export async function renderReviewExecute(container, ctx) {
           <div class="rve-art-counts">
             <span class="text-muted">${myDone}/${totalItems} items</span>
             ${allFnds ? (() => {
-              const TERMINAL = new Set(['closed','rejected','duplicate']);
-              const activeFnds = snapFindings.filter(f => !TERMINAL.has(f.status)).length;
-              const cls  = openFnds  ? 'rv-fs-open'
-                         : activeFnds ? 'rve-card-fnd-active'
-                         : 'rve-card-fnd-done';
-              const num  = openFnds || activeFnds || allFnds;
-              return `<span class="rve-card-fnd-badge ${cls}">⚑ ${num}</span>`;
+              const cls = openFnds ? 'rv-fs-open' : 'rve-card-fnd-done';
+              return `<span class="rve-card-fnd-badge ${cls}">⚑ ${openFnds || allFnds}</span>`;
             })() : ''}
           </div>` : '<span class="text-muted" style="font-size:11px">No checklist</span>'}
         ${verdictPills ? `<div class="rve-rv-mini-row">${verdictPills}</div>` : ''}
