@@ -1361,7 +1361,13 @@ export async function renderReviewExecute(container, ctx) {
       _findings.push(finding);
       toast(`Finding ${findingCode} created.`, 'success');
       const staged = _stagedVerdict; _stagedVerdict = null;
-      if (staged) saveArtifactVerdict(snap, staged);
+      if (staged) {
+        // Update cache synchronously so loadPropsPanel reads the correct verdict
+        const existing = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
+        if (existing) existing.verdict = staged;
+        else _artifactVerdicts.push({ snapshot_id: snap.id, reviewer_id: currentUserId, verdict: staged, session_id: sessionId });
+        saveArtifactVerdict(snap, staged);
+      }
       if (finding?.id && desc) sb.from('review_finding_comments')
         .insert({ finding_id: finding.id, author_id: currentUserId, comment: desc }).then(null, () => {});
 
