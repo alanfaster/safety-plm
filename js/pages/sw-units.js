@@ -37,15 +37,38 @@ export async function renderSwUnits(container, ctx) {
   const { data: pcRow } = await sb.from('project_config').select('config').eq('project_id', project.id).maybeSingle();
   const customUnitTypes = pcRow?.config?.sw_unit_types || [];
   const allUnitTypes = [...BUILTIN_UNIT_TYPES, ...customUnitTypes];
-  // Build active keyword map from config (array format) or legacy object format
+  // Build active keyword list from config (array format) or legacy object format
   const savedKeywords = pcRow?.config?.header_keywords;
-  const HDR_KW = {};
-  if (Array.isArray(savedKeywords)) {
-    savedKeywords.filter(k => k.enabled !== false).forEach(k => { HDR_KW[k.id] = k.kw; });
+  const ACTIVE_KW = []; // [{ id, label, kw }] — only enabled
+  const HDR_KW    = {}; // { id: kw } — for parser
+  const DEFAULT_HDR_KEYS = [
+    { id:'unit',   label:'Unit Code',    kw:'@unit'   },
+    { id:'name',   label:'Name',         kw:'@name'   },
+    { id:'type',   label:'Unit Type',    kw:'@type'   },
+    { id:'sdd',    label:'SDD Ref',      kw:'@sdd'    },
+    { id:'req',    label:'Requirements', kw:'@req'    },
+    { id:'author', label:'Author',       kw:'@author' },
+    { id:'date',   label:'Date',         kw:'@date'   },
+    { id:'status', label:'Status',       kw:'@status' },
+  ];
+  if (Array.isArray(savedKeywords) && savedKeywords.length) {
+    savedKeywords.filter(k => k.enabled !== false).forEach(k => {
+      ACTIVE_KW.push(k);
+      HDR_KW[k.id] = k.kw;
+    });
   } else {
-    // Legacy object format or defaults
-    const defaults = { unit:'@unit', name:'@name', type:'@type', asil:'@asil', sdd:'@sdd', req:'@req', author:'@author', date:'@date', status:'@status' };
-    Object.assign(HDR_KW, { ...defaults, ...(savedKeywords || {}) });
+    DEFAULT_HDR_KEYS.forEach(k => { ACTIVE_KW.push(k); HDR_KW[k.id] = k.kw; });
+    if (savedKeywords && !Array.isArray(savedKeywords)) Object.assign(HDR_KW, savedKeywords);
+  }
+
+  // Build header example string from active keywords
+  const EXAMPLE_VALS = { unit:'SWU-001', name:'Motor Control', type:'function', asil:'B',
+    sdd:'SDD-MOT-001', req:'SWR-001, SWR-002', author:'Your Name',
+    date:new Date().toISOString().slice(0,10), status:'draft' };
+  function buildHeaderExample() {
+    const maxKw = Math.max(...ACTIVE_KW.map(k => k.kw.length));
+    const lines = ACTIVE_KW.map(k => ' * ' + k.kw.padEnd(maxKw + 2) + (EXAMPLE_VALS[k.id] || 'value'));
+    return '/**\n' + lines.join('\n') + '\n */';
   }
 
   const crumbs = [
@@ -170,15 +193,7 @@ export async function renderSwUnits(container, ctx) {
               <div class="swu-step-body">
                 <strong>Prepare your source files</strong>
                 <p>Add a traceability header to each file so the tool can auto-populate unit code, name, type, ASIL level, and requirement links on import.</p>
-                <pre class="swu-header-example">/**
- * ${HDR_KW.unit}    SWU-001
- * ${HDR_KW.name}    Motor Control
- * ${HDR_KW.type}    function
- * ${HDR_KW.asil}    B
- * ${HDR_KW.sdd}     SDD-MOT-001
- * ${HDR_KW.req}     SWR-001, SWR-002
- * ${HDR_KW.author}  Your Name
- */</pre>
+                <pre class="swu-header-example">${escHtml(buildHeaderExample())}</pre>
                 <p style="margin-top:6px">
                   <a href="docs/sw-unit-coding-guidelines.md" target="_blank" class="swu-link">📄 Read the full coding guidelines</a>
                   &nbsp;·&nbsp;

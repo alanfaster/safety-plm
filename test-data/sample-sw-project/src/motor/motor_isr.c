@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @unit    SWU-MOT-002
  * @name    Motor ISR Handler
  * @type    isr
@@ -6,25 +6,24 @@
  * @sdd     SDD-MOT-002
  * @req     SWR-MOT-004, SWR-MOT-005
  * @author  A. Guerrero
- * @language c
+ * @date    2026-05-04
+ * @status  approved
  *
  * Encoder quadrature ISR and PWM timer ISR for the motor control loop.
- * Both ISRs share a volatile state block; access from non-ISR context
- * must be protected with interrupt disable/enable guards.
  */
 
 #include "motor_control.h"
 #include <stdint.h>
 #include <stdbool.h>
 
-/* ── Shared volatile state (ISR ↔ motor_control task) ────────────────────── */
+/* â”€â”€ Shared volatile state (ISR â†” motor_control task) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 volatile uint32_t g_encoder_ticks   = 0;
 volatile int32_t  g_encoder_delta   = 0;   /* ticks since last sample */
-volatile uint16_t g_pwm_duty        = 0;   /* 0–1000 = 0–100 % */
+volatile uint16_t g_pwm_duty        = 0;   /* 0â€“1000 = 0â€“100 % */
 volatile bool     g_overcurrent_flag = false;
 
-/* ── Encoder quadrature ISR (EXTI line — rising + falling edge on A/B) ───── */
+/* â”€â”€ Encoder quadrature ISR (EXTI line â€” rising + falling edge on A/B) â”€â”€â”€â”€â”€ */
 
 void ENCODER_IRQHandler(void)
 {
@@ -49,7 +48,7 @@ void ENCODER_IRQHandler(void)
     EXTI->PR = EXTI_PR_ENC_MASK;  /* clear pending bits */
 }
 
-/* ── PWM timer ISR (TIM1 update — fires at 20 kHz) ──────────────────────── */
+/* â”€â”€ PWM timer ISR (TIM1 update â€” fires at 20 kHz) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 void TIM1_UP_IRQHandler(void)
 {
@@ -57,17 +56,17 @@ void TIM1_UP_IRQHandler(void)
 
     /* Read current sense ADC (injected conversion, already done by HW) */
     uint16_t adc_cs = ADC1->JDR1;
-    /* 1 LSB ≈ 0.8 mA — threshold at 10 A = 12500 LSB */
+    /* 1 LSB â‰ˆ 0.8 mA â€” threshold at 10 A = 12500 LSB */
     if (adc_cs > 12500u) {
         g_overcurrent_flag = true;
-        TIM1->BDTR &= ~TIM_BDTR_MOE;  /* disable main output — break */
+        TIM1->BDTR &= ~TIM_BDTR_MOE;  /* disable main output â€” break */
     }
 
     /* Update PWM compare register from shared duty word */
     TIM1->CCR1 = g_pwm_duty;
 }
 
-/* ── Helper: safely read encoder delta and reset it ─────────────────────── */
+/* â”€â”€ Helper: safely read encoder delta and reset it â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 int32_t encoder_consume_delta(void)
 {

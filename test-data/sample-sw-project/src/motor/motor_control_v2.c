@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @unit    SWU-MOT-001
  * @name    Motor Control
  * @type    function
@@ -6,11 +6,12 @@
  * @sdd     SDD-MOT-001
  * @req     SWR-MOT-001, SWR-MOT-002, SWR-MOT-003
  * @author  A. Guerrero
- * @language c
+ * @date    2026-05-04
+ * @status  in_review
  *
  * Controls the brushless DC motor speed and direction. (v2)
- * Changes: PID_KP 1.2→1.5, OVER_TEMP 85→90, anti-windup + fault LED.
- *
+ * Changes: PID_KP 1.2->1.5, OVER_TEMP 85->90, anti-windup + fault LED.
+ * 
  * RENAME THIS FILE TO motor_control.c WHEN UPLOADING THE SECOND ZIP
  */
 
@@ -57,7 +58,7 @@ void motor_run(float current_rpm, float dt) {
     float error    = g_motor.setpoint - current_rpm;
     g_motor.integral += error * dt;
 
-    /* Anti-windup clamp — NEW */
+    /* Anti-windup clamp â€” NEW */
     if (g_motor.integral >  INTEGRAL_LIMIT) g_motor.integral =  INTEGRAL_LIMIT;
     if (g_motor.integral < -INTEGRAL_LIMIT) g_motor.integral = -INTEGRAL_LIMIT;
 

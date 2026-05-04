@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @unit    SWU-SEN-001
  * @name    Speed Sensor Driver
  * @type    function
@@ -6,7 +6,8 @@
  * @sdd     SDD-SEN-001
  * @req     SWR-SEN-001, SWR-SEN-002
  * @author  A. Guerrero
- * @language c
+ * @date    2026-05-04
+ * @status  approved
  *
  * Reads quadrature encoder pulses and computes RPM.
  */
@@ -22,7 +23,17 @@ static uint32_t g_prev_count  = 0;
 static float    g_filtered_rpm = 0.0f;
 
 /**
- * speed_sensor_init - Initialise encoder peripheral.
+ * @unit    SWU-SEN-001
+ * @name    Speed Sensor Driver
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-SEN-001
+ * @req     SWR-SEN-001, SWR-SEN-002
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Reads quadrature encoder pulses and computes RPM.
  */
 void speed_sensor_init(void) {
     g_prev_count   = 0;
@@ -31,8 +42,17 @@ void speed_sensor_init(void) {
 }
 
 /**
- * speed_sensor_read_rpm - Read current speed in RPM.
- * Uses a first-order low-pass filter to reduce noise.
+ * @unit    SWU-SEN-001
+ * @name    Speed Sensor Driver
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-SEN-001
+ * @req     SWR-SEN-001, SWR-SEN-002
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Reads quadrature encoder pulses and computes RPM.
  */
 float speed_sensor_read_rpm(void) {
     uint32_t current_count = encoder_get_count();
@@ -52,7 +72,17 @@ float speed_sensor_read_rpm(void) {
 }
 
 /**
- * speed_sensor_reset - Reset encoder count and filter state.
+ * @unit    SWU-SEN-001
+ * @name    Speed Sensor Driver
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-SEN-001
+ * @req     SWR-SEN-001, SWR-SEN-002
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Reads quadrature encoder pulses and computes RPM.
  */
 void speed_sensor_reset(void) {
     encoder_reset_count();

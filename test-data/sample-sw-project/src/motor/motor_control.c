@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @unit    SWU-MOT-001
  * @name    Motor Control
  * @type    function
@@ -6,7 +6,8 @@
  * @sdd     SDD-MOT-001
  * @req     SWR-MOT-001, SWR-MOT-002, SWR-MOT-003
  * @author  A. Guerrero
- * @language c
+ * @date    2026-05-04
+ * @status  approved
  *
  * Controls the brushless DC motor speed and direction.
  * Implements PID regulation and safety cut-off.
@@ -34,8 +35,18 @@ typedef struct {
 static MotorState_t g_motor = { 0.0f, 0.0f, 0.0f, false };
 
 /**
- * motor_init - Initialise motor driver and reset state.
- * Returns: 0 on success, -1 on hardware fault.
+ * @unit    SWU-MOT-001
+ * @name    Motor Control
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-MOT-001
+ * @req     SWR-MOT-001, SWR-MOT-002, SWR-MOT-003
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Controls the brushless DC motor speed and direction.
+ * Implements PID regulation and safety cut-off.
  */
 int motor_init(void) {
     g_motor.setpoint  = 0.0f;
@@ -47,8 +58,18 @@ int motor_init(void) {
 }
 
 /**
- * motor_set_speed - Set target RPM.
- * Clamps value to [MOTOR_MIN_RPM, MOTOR_MAX_RPM].
+ * @unit    SWU-MOT-001
+ * @name    Motor Control
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-MOT-001
+ * @req     SWR-MOT-001, SWR-MOT-002, SWR-MOT-003
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Controls the brushless DC motor speed and direction.
+ * Implements PID regulation and safety cut-off.
  */
 void motor_set_speed(float rpm) {
     if (rpm < MOTOR_MIN_RPM) rpm = MOTOR_MIN_RPM;
@@ -57,8 +78,18 @@ void motor_set_speed(float rpm) {
 }
 
 /**
- * motor_run - Execute one PID control cycle (call at 1 kHz).
- * Reads current RPM from encoder, computes PID output, writes PWM duty.
+ * @unit    SWU-MOT-001
+ * @name    Motor Control
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-MOT-001
+ * @req     SWR-MOT-001, SWR-MOT-002, SWR-MOT-003
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Controls the brushless DC motor speed and direction.
+ * Implements PID regulation and safety cut-off.
  */
 void motor_run(float current_rpm, float dt) {
     if (!g_motor.enabled) return;
@@ -87,7 +118,18 @@ void motor_run(float current_rpm, float dt) {
 }
 
 /**
- * motor_emergency_stop - Immediately disable PWM output and reset state.
+ * @unit    SWU-MOT-001
+ * @name    Motor Control
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-MOT-001
+ * @req     SWR-MOT-001, SWR-MOT-002, SWR-MOT-003
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Controls the brushless DC motor speed and direction.
+ * Implements PID regulation and safety cut-off.
  */
 void motor_emergency_stop(void) {
     g_motor.enabled  = false;
@@ -98,7 +140,18 @@ void motor_emergency_stop(void) {
 }
 
 /**
- * motor_enable - Enable or disable the motor driver.
+ * @unit    SWU-MOT-001
+ * @name    Motor Control
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-MOT-001
+ * @req     SWR-MOT-001, SWR-MOT-002, SWR-MOT-003
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Controls the brushless DC motor speed and direction.
+ * Implements PID regulation and safety cut-off.
  */
 void motor_enable(bool enable) {
     g_motor.enabled = enable;

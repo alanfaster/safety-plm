@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @unit    SWU-SEN-002
  * @name    Temperature Sensor Driver
  * @type    function
@@ -6,7 +6,8 @@
  * @sdd     SDD-SEN-002
  * @req     SWR-SEN-003
  * @author  A. Guerrero
- * @language c
+ * @date    2026-05-04
+ * @status  approved
  *
  * Reads NTC thermistor via ADC and converts to Celsius.
  */
@@ -16,15 +17,24 @@
 #include <math.h>
 
 #define NTC_BETA        3950.0f   /* NTC beta coefficient */
-#define NTC_R25         10000.0f  /* Resistance at 25°C (Ohms) */
+#define NTC_R25         10000.0f  /* Resistance at 25Â°C (Ohms) */
 #define NTC_R_SERIES    10000.0f  /* Series resistor (Ohms) */
-#define T0_KELVIN       298.15f   /* 25°C in Kelvin */
+#define T0_KELVIN       298.15f   /* 25Â°C in Kelvin */
 #define ADC_RESOLUTION  4096      /* 12-bit ADC */
 #define ADC_VREF        3.3f      /* Reference voltage */
 
 /**
- * temperature_read_celsius - Read temperature from NTC thermistor.
- * Converts ADC reading to Celsius using Steinhart-Hart approximation.
+ * @unit    SWU-SEN-002
+ * @name    Temperature Sensor Driver
+ * @type    function
+ * @asil    A
+ * @sdd     SDD-SEN-002
+ * @req     SWR-SEN-003
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Reads NTC thermistor via ADC and converts to Celsius.
  */
 float temperature_read_celsius(void) {
     uint16_t adc_raw = adc_read_channel(ADC_CHANNEL_TEMP);
@@ -42,7 +52,17 @@ float temperature_read_celsius(void) {
 }
 
 /**
- * temperature_is_critical - Returns true if temperature exceeds safe limit.
+ * @unit    SWU-SEN-002
+ * @name    Temperature Sensor Driver
+ * @type    function
+ * @asil    A
+ * @sdd     SDD-SEN-002
+ * @req     SWR-SEN-003
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Reads NTC thermistor via ADC and converts to Celsius.
  */
 bool temperature_is_critical(float limit_celsius) {
     return temperature_read_celsius() >= limit_celsius;

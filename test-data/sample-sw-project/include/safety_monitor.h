@@ -1,12 +1,14 @@
-/**
+﻿/**
  * @unit    SWU-SAF-001-H
  * @name    Safety Monitor API Header
  * @type    general
- * @asil    B
  * @sdd     SDD-SAF-001
  * @req     SWR-SAF-001
  * @author  A. Guerrero
- * @language c
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Public API for the safety monitor module.
  */
 #ifndef SAFETY_MONITOR_H
 #define SAFETY_MONITOR_H

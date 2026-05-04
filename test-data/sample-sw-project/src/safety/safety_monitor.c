@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @unit    SWU-SAF-001
  * @name    Safety Monitor
  * @type    state_machine
@@ -6,10 +6,10 @@
  * @sdd     SDD-SAF-001
  * @req     SWR-SAF-001, SWR-SAF-002, SWR-SAF-003, SWR-SAF-004
  * @author  A. Guerrero
- * @language c
+ * @date    2026-05-04
+ * @status  approved
  *
- * Central safety supervision — monitors watchdog, temperature,
- * voltage rail and transitions system to SAFE state on fault.
+ * Central safety supervision — watchdog, temperature, voltage rail supervisor.
  */
 
 #include "safety_monitor.h"
@@ -33,7 +33,17 @@ static bool             g_safe_state = false;
 static float            g_temperature = 0.0f;
 
 /**
- * safety_monitor_init - Initialise safety subsystem.
+ * @unit    SWU-SAF-001
+ * @name    Safety Monitor
+ * @type    state_machine
+ * @asil    B
+ * @sdd     SDD-SAF-001
+ * @req     SWR-SAF-001, SWR-SAF-002, SWR-SAF-003, SWR-SAF-004
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Central safety supervision — watchdog, temperature, voltage rail supervisor.
  */
 void safety_monitor_init(void) {
     memset(g_safety_log, 0, sizeof(g_safety_log));
@@ -43,8 +53,17 @@ void safety_monitor_init(void) {
 }
 
 /**
- * safety_monitor_tick - Periodic supervision (call at 100 Hz).
- * Checks: watchdog, temperature, battery voltage.
+ * @unit    SWU-SAF-001
+ * @name    Safety Monitor
+ * @type    state_machine
+ * @asil    B
+ * @sdd     SDD-SAF-001
+ * @req     SWR-SAF-001, SWR-SAF-002, SWR-SAF-003, SWR-SAF-004
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Central safety supervision — watchdog, temperature, voltage rail supervisor.
  */
 void safety_monitor_tick(void) {
     watchdog_kick();
@@ -65,7 +84,17 @@ void safety_monitor_tick(void) {
 }
 
 /**
- * safety_log_event - Record a safety event with timestamp.
+ * @unit    SWU-SAF-001
+ * @name    Safety Monitor
+ * @type    state_machine
+ * @asil    B
+ * @sdd     SDD-SAF-001
+ * @req     SWR-SAF-001, SWR-SAF-002, SWR-SAF-003, SWR-SAF-004
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Central safety supervision — watchdog, temperature, voltage rail supervisor.
  */
 void safety_log_event(SafetyEvent_t event) {
     g_safety_log[g_log_head].event        = event;
@@ -74,15 +103,34 @@ void safety_log_event(SafetyEvent_t event) {
 }
 
 /**
- * safety_get_temperature - Return last measured temperature.
+ * @unit    SWU-SAF-001
+ * @name    Safety Monitor
+ * @type    state_machine
+ * @asil    B
+ * @sdd     SDD-SAF-001
+ * @req     SWR-SAF-001, SWR-SAF-002, SWR-SAF-003, SWR-SAF-004
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Central safety supervision — watchdog, temperature, voltage rail supervisor.
  */
 float safety_get_temperature(void) {
     return g_temperature;
 }
 
 /**
- * safety_enter_safe_state - Transition system to SAFE state.
- * Disables all actuators and signals fault to supervisor.
+ * @unit    SWU-SAF-001
+ * @name    Safety Monitor
+ * @type    state_machine
+ * @asil    B
+ * @sdd     SDD-SAF-001
+ * @req     SWR-SAF-001, SWR-SAF-002, SWR-SAF-003, SWR-SAF-004
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Central safety supervision — watchdog, temperature, voltage rail supervisor.
  */
 void safety_enter_safe_state(void) {
     if (g_safe_state) return;  /* Already in safe state */
@@ -92,7 +140,17 @@ void safety_enter_safe_state(void) {
 }
 
 /**
- * safety_is_safe_state - Returns true if system is in SAFE state.
+ * @unit    SWU-SAF-001
+ * @name    Safety Monitor
+ * @type    state_machine
+ * @asil    B
+ * @sdd     SDD-SAF-001
+ * @req     SWR-SAF-001, SWR-SAF-002, SWR-SAF-003, SWR-SAF-004
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ *
+ * Central safety supervision — watchdog, temperature, voltage rail supervisor.
  */
 bool safety_is_safe_state(void) {
     return g_safe_state;
