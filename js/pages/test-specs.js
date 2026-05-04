@@ -498,7 +498,7 @@ function testRowHTML(r) {
       case 'select':
         return `<td data-col="select" style="width:28px;padding:0 6px;text-align:center;vertical-align:middle"><input type="checkbox" class="ts-row-chk" data-id="${r.id}" title="Select"/></td>`;
       case 'drag':
-        return `<td data-col="drag" class="spec-drag-cell"><span class="spec-drag-handle" title="Drag">⠿</span></td>`;
+        return `<td data-col="drag" class="spec-drag-cell" style="vertical-align:top;padding-top:4px"><span class="spec-drag-handle" title="Drag">⠿</span></td>`;
       case 'code':
         return `<td data-col="code" class="code-cell" style="white-space:nowrap">${esc(r.test_code || '—')}${r.version > 1 ? ` <span class="artifact-version-badge">v${r.version}</span>` : ''}</td>`;
       case 'name':

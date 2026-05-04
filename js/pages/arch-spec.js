@@ -604,7 +604,7 @@ function rowHTML(it) {
       case 'select':
         return `<td data-col="select" style="width:28px;padding:0 6px;text-align:center;vertical-align:middle"><input type="checkbox" class="spec-row-chk" data-id="${it.id}" title="Select"/></td>`;
       case 'drag':
-        return `<td data-col="drag" class="req-drag-handle spec-drag-handle" title="Drag to reorder">⠿</td>`;
+        return `<td data-col="drag" style="width:24px;padding:4px 4px 0;text-align:center;vertical-align:top;cursor:grab"><span class="spec-drag-handle" title="Drag to reorder">⠿</span></td>`;
       case 'id':
         return `<td data-col="id" class="spec-id-cell code-cell">${esc(it.spec_code)}${it.version > 1 ? ` <span class="artifact-version-badge">v${it.version}</span>` : ''}</td>`;
       case 'description':

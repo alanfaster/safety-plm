@@ -16,6 +16,7 @@ const ASIL_LEVELS    = ['QM','ASIL-A','ASIL-B','ASIL-C','ASIL-D'];
 const DAL_LEVELS     = ['DAL-E','DAL-D','DAL-C','DAL-B','DAL-A'];
 
 const REQ_BUILTIN_COLS = [
+  { id: 'select',           name: '',                 fixed: true,  visible: true },
   { id: 'drag',             name: '',                 fixed: true,  visible: true },
   { id: 'code',             name: 'Code',             fixed: true,  visible: true },
   { id: 'title',            name: 'Title',            fixed: true,  visible: true },
@@ -349,6 +350,12 @@ async function loadData() {
     ...projectCustomCols,
   ];
   _cols = loadColConfig(_colKey, _builtins);
+  _cols = [
+    ..._cols.filter(c => c.id === 'select'),
+    ..._cols.filter(c => c.id === 'drag'),
+    ..._cols.filter(c => c.id !== 'select' && c.id !== 'drag' && c.id !== 'actions'),
+    ..._cols.filter(c => c.id === 'actions'),
+  ];
 
   await loadReviewStatus();
   renderTable(body);
@@ -413,7 +420,7 @@ function renderTable(body) {
   const visCols = _cols.filter(c => c.visible);
   const { project, item, system, parentType, parentId, typeFilter } = _ctx;
 
-  const SKIP_FILTER  = new Set(['drag', 'actions']);
+  const SKIP_FILTER  = new Set(['select', 'drag', 'actions']);
   const COL_OPTIONS  = {
     type:     REQ_TYPES,
     priority: REQ_PRIORITIES,
@@ -496,6 +503,29 @@ function renderTable(body) {
       renderTable(body);
     });
   }
+
+  // Select-all
+  const allChk = body.querySelector('#req-chk-all');
+  if (allChk) {
+    allChk.onchange = () => {
+      document.querySelectorAll('.req-row-chk').forEach(cb => {
+        cb.checked = allChk.checked;
+        if (allChk.checked) _selection.add(cb.dataset.rid); else _selection.delete(cb.dataset.rid);
+        cb.closest('tr')?.classList.toggle('req-row-selected', allChk.checked);
+      });
+      syncBulkBar();
+    };
+  }
+
+  // Row checkbox delegation on tbody
+  body.querySelector('#req-table tbody')?.addEventListener('change', e => {
+    const cb = e.target.closest('.req-row-chk');
+    if (!cb) return;
+    if (cb.checked) _selection.add(cb.dataset.rid); else _selection.delete(cb.dataset.rid);
+    cb.closest('tr')?.classList.toggle('req-row-selected', cb.checked);
+    syncBulkBar();
+    syncCheckboxes();
+  });
 
   scrollToAnchor();
 }
@@ -1429,6 +1459,9 @@ function wireMultiselCells(container) {
 // ── Column header / cell builders ─────────────────────────────────────────────
 
 function reqTh(c) {
+  if (c.id === 'select') {
+    return `<th data-col="select" style="width:28px;padding:0 6px;text-align:center"><input type="checkbox" id="req-chk-all" title="Select all"/></th>`;
+  }
   const labels = {
     drag: '', code: 'Code', title: 'Title', type: 'Type',
     priority: 'Priority', status: 'Status', asil: 'ASIL', dal: 'DAL',
@@ -1457,11 +1490,11 @@ function reqTd(c, r) {
       ${opts.map(v => `<option value="${v}" ${cur===v?'selected':''}>${v}</option>`).join('')}
     </select>`;
   switch (c.id) {
+    case 'select':
+      return `<td data-col="select" style="width:28px;padding:0 6px;text-align:center;vertical-align:middle"><input type="checkbox" class="req-row-chk" data-rid="${r.id}" ${_selection.has(r.id) ? 'checked' : ''} title="Select"/></td>`;
     case 'drag':
-      return `<td data-col="drag" class="req-drag-cell">
+      return `<td data-col="drag" class="req-drag-cell" style="vertical-align:top;padding-top:6px">
         <span class="req-drag-handle" title="Drag to reorder">⠿</span>
-        <input type="checkbox" class="req-row-chk" data-rid="${r.id}" ${_selection.has(r.id) ? 'checked' : ''}
-          title="Select" style="display:none"/>
       </td>`;
     case 'code': {
       const ftaLinked  = r.source?.startsWith('FTA-AND:');
@@ -2411,14 +2444,17 @@ function syncCheckboxes() {
   document.querySelectorAll('tr[data-rid]').forEach(tr => {
     const rid = tr.dataset.rid;
     const chk = tr.querySelector('.req-row-chk');
-    const handle = tr.querySelector('.req-drag-handle');
     if (!chk) return;
     const sel = _selection.has(rid);
     chk.checked = sel;
-    chk.style.display = sel ? '' : 'none';
-    if (handle) handle.style.display = sel ? 'none' : '';
     tr.classList.toggle('req-row-selected', sel);
   });
+  // sync select-all
+  const allChk = document.getElementById('req-chk-all');
+  if (allChk) {
+    const all = [...document.querySelectorAll('.req-row-chk')];
+    allChk.checked = all.length > 0 && all.every(c => c.checked);
+  }
 }
 
 function showBulkStatusPicker() {
