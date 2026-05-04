@@ -294,17 +294,19 @@ export async function renderSwUnits(container, ctx) {
         <textarea class="form-input swu-code-editor" id="swup-src" rows="10" spellcheck="false">${escHtml(unit.source_code||'')}</textarea>
       </div>
       ${unit.needs_review ? `<div style="margin-bottom:10px"><span class="badge badge-review">⚠ Changed — review pending</span></div>` : ''}
-      <div style="display:flex;gap:8px;margin-top:4px">
-        <button class="btn btn-primary btn-sm" id="swup-save">Save</button>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
         <button class="btn btn-ghost btn-xs" id="swup-link" title="Copy link">🔗</button>
-        <span class="text-muted" style="font-size:11px;align-self:center">v${unit.version}</span>
+        <span class="text-muted" style="font-size:11px">v${unit.version}</span>
+        <span id="swup-saving" style="font-size:11px;color:var(--color-text-muted);display:none">Saving…</span>
       </div>`;
 
     document.getElementById('swup-link').onclick = () => copyElementLink(`swu-row-${unit.id}`);
-    document.getElementById('swup-save').onclick  = async () => {
-      const saveBtn     = document.getElementById('swup-save');
-      const unit_code   = document.getElementById('swup-code').value.trim();
-      const name        = document.getElementById('swup-name').value.trim();
+
+    async function autosave() {
+      const unit_code   = document.getElementById('swup-code')?.value.trim();
+      const name        = document.getElementById('swup-name')?.value.trim();
+      if (!unit_code || !name) return;
+
       const unit_type   = document.getElementById('swup-type').value || 'general';
       const status      = document.getElementById('swup-status').value;
       const language    = document.getElementById('swup-lang').value;
@@ -312,9 +314,8 @@ export async function renderSwUnits(container, ctx) {
       const description = document.getElementById('swup-desc').value.trim();
       const source_code = document.getElementById('swup-src').value;
 
-      if (!unit_code) { toast('Enter a unit code.', 'error'); return; }
-      if (!name)      { toast('Enter a name.', 'error'); return; }
-      saveBtn.disabled = true;
+      const saving = document.getElementById('swup-saving');
+      if (saving) saving.style.display = '';
 
       let content_hash = unit.content_hash;
       let extra = {};
@@ -327,6 +328,8 @@ export async function renderSwUnits(container, ctx) {
             file_path: unit.file_path, uploaded_by: currentUserId,
           });
           extra = { needs_review: true, version: (unit.version || 1) + 1 };
+          unit.content_hash = content_hash;
+          unit.version = (unit.version || 1) + 1;
         }
       }
 
@@ -341,14 +344,31 @@ export async function renderSwUnits(container, ctx) {
         updated_at: new Date().toISOString(),
       }).eq('id', unit.id);
 
-      saveBtn.disabled = false;
+      if (saving) saving.style.display = 'none';
       if (error) { toast('Error: ' + error.message, 'error'); return; }
-      toast('SW unit saved.', 'success');
-      await loadList();
-      // Re-open panel with updated data
-      const updated = _allUnits.find(u => u.id === unit.id);
-      if (updated) openPropsPanel(updated);
-    };
+      // Update local cache without re-rendering the panel
+      const cached = _allUnits.find(u => u.id === unit.id);
+      if (cached) Object.assign(cached, { unit_code, name, unit_type, status, language: language||null, file_path: file_path||null, description: description||null, source_code: source_code||null, content_hash, ...extra });
+      // Refresh row in table
+      const tr = document.getElementById(`swu-row-${unit.id}`);
+      if (tr) {
+        _cols.filter(c => c.visible).forEach(c => {
+          const td = tr.querySelector(`td[data-col="${c.id}"]`);
+          if (td) td.outerHTML = renderTd(c.id, cached || unit);
+        });
+      }
+    }
+
+    // Debounce for text inputs
+    let _saveTimer = null;
+    function debouncedSave() {
+      clearTimeout(_saveTimer);
+      _saveTimer = setTimeout(autosave, 800);
+    }
+
+    body.querySelectorAll('select').forEach(el => el.addEventListener('change', autosave));
+    body.querySelectorAll('input').forEach(el => el.addEventListener('input', debouncedSave));
+    body.querySelectorAll('textarea').forEach(el => el.addEventListener('input', debouncedSave));
 
     // Highlight selected row
     document.querySelectorAll('#swu-list-wrap tr[data-id]').forEach(r =>
