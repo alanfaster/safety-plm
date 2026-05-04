@@ -12,6 +12,7 @@
  */
 
 import { sb, buildCode, nextIndex } from '../config.js';
+import { navigate } from '../router.js';
 import { toast } from '../toast.js';
 import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr } from '../components/col-mgr.js';
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
@@ -22,6 +23,7 @@ const SPEC_TYPES    = ['overview', 'component', 'interface', 'behavior', 'deploy
 const UML_TYPES     = ['none', 'component', 'state', 'usecase', 'class'];
 
 const SPEC_BUILTIN_COLS = [
+  { id: 'select',           name: '',                 fixed: true,  visible: true },
   { id: 'drag',             name: '',                 fixed: true,  visible: true },
   { id: 'id',               name: 'ID',               fixed: true,  visible: true },
   { id: 'description',      name: 'Description',      fixed: true,  visible: true },
@@ -42,6 +44,15 @@ let _builtins  = SPEC_BUILTIN_COLS; // builtins + project custom cols
 let _collapsed  = new Set(); // collapsed section ids
 let _colFilters = {};        // { [colId]: string } — active column filter values
 let _systems    = [];        // systems for the current item (used by system_component column)
+let _selection  = new Set(); // selected item IDs
+
+function syncBulkBar() {
+  const bar   = document.getElementById('spec-bulk-bar');
+  const count = document.getElementById('spec-bulk-count');
+  if (!bar) return;
+  bar.classList.toggle('req-bulk-bar--visible', _selection.size > 0);
+  if (count) count.textContent = `${_selection.size} selected`;
+}
 
 // ── Entry Point ───────────────────────────────────────────────────────────────
 
@@ -52,6 +63,12 @@ export async function renderArchSpec(container, { project, item, system, parentT
   _umlOpenId = null;
   _builtins  = SPEC_BUILTIN_COLS; // will be updated in loadSpec after project_config fetch
   _cols      = loadColConfig(`spec_${parentId}`, _builtins);
+  _cols = [
+    ..._cols.filter(c => c.id === 'select'),
+    ..._cols.filter(c => c.id !== 'select' && c.id !== 'actions' && c.id !== 'drag'),
+    ..._cols.filter(c => c.id === 'drag'),
+    ..._cols.filter(c => c.id === 'actions'),
+  ];
   _collapsed  = new Set();
   _colFilters = {};
 
@@ -90,12 +107,70 @@ export async function renderArchSpec(container, { project, item, system, parentT
       <button class="btn btn-primary"   id="btn-new-spec">＋ New Item</button>
       <button class="btn btn-secondary" id="btn-new-spec-section">＋ Section</button>
     </div>
+    <div class="req-bulk-bar" id="spec-bulk-bar">
+      <span class="req-bulk-count" id="spec-bulk-count">0 selected</span>
+      <div class="req-bulk-actions">
+        <button class="btn btn-primary btn-sm"   id="spec-bulk-review">✓ Review</button>
+        <button class="btn btn-secondary btn-sm" id="spec-bulk-status">✏ Edit Status</button>
+        <button class="btn btn-danger btn-sm"    id="spec-bulk-delete">🗑 Delete</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="spec-bulk-cancel">✕ Cancel</button>
+    </div>
   `;
 
   document.getElementById('btn-new-spec').onclick         = () => addRow(null);
   document.getElementById('btn-new-spec-section').onclick  = () => addSection(null);
   document.getElementById('spec-nav-close').onclick        = () => toggleNav(false);
   document.getElementById('spec-nav-expand').onclick       = () => toggleNav(true);
+
+  document.getElementById('spec-bulk-cancel').onclick = () => {
+    _selection.clear(); syncBulkBar();
+    document.querySelectorAll('.spec-row-chk').forEach(cb => { cb.checked = false; });
+    document.querySelectorAll('tr[data-id]').forEach(tr => tr.classList.remove('req-row-selected'));
+  };
+
+  document.getElementById('spec-bulk-review').onclick = () => {
+    if (!_selection.size) return;
+    navigate(`/project/${_ctx.project.id}/item/${_ctx.parentId}/reviews/new?artifact_type=arch_spec_items&artifact_ids=${[..._selection].join(',')}`);
+  };
+
+  document.getElementById('spec-bulk-status').onclick = () => {
+    const existing = document.getElementById('spec-bulk-status-picker');
+    if (existing) { existing.remove(); return; }
+    const btn    = document.getElementById('spec-bulk-status');
+    const picker = document.createElement('div');
+    picker.id        = 'spec-bulk-status-picker';
+    picker.className = 'req-bulk-status-picker';
+    picker.innerHTML = SPEC_STATUSES.map(v =>
+      `<button class="req-bulk-status-opt" data-status="${v}">${v}</button>`).join('');
+    document.body.appendChild(picker);
+    const rect = btn.getBoundingClientRect();
+    picker.style.left = rect.left + 'px';
+    picker.style.top  = (rect.top - picker.offsetHeight - 6) + 'px';
+    picker.querySelectorAll('.req-bulk-status-opt').forEach(opt => {
+      opt.onclick = async () => {
+        picker.remove();
+        const ids = [..._selection];
+        await Promise.all(ids.map(id => sb.from('arch_spec_items').update({ status: opt.dataset.status, updated_at: new Date().toISOString() }).eq('id', id)));
+        ids.forEach(id => { const it = _items.find(i => i.id === id); if (it) it.status = opt.dataset.status; });
+        toast(`${ids.length} item${ids.length > 1 ? 's' : ''} set to "${opt.dataset.status}".`, 'success');
+        renderTable(document.getElementById('spec-body'));
+      };
+    });
+    setTimeout(() => document.addEventListener('click', function close(e) {
+      if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', close); }
+    }), 0);
+  };
+
+  document.getElementById('spec-bulk-delete').onclick = async () => {
+    const n = _selection.size;
+    if (!confirm(`Delete ${n} item${n > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    await Promise.all([..._selection].map(id => sb.from('arch_spec_items').delete().eq('id', id)));
+    _items = _items.filter(it => !_selection.has(it.id));
+    _selection.clear(); syncBulkBar();
+    toast(`${n} item${n > 1 ? 's' : ''} deleted.`, 'success');
+    renderTable(document.getElementById('spec-body'));
+  };
 
   await loadSpec();
   applyGotoTarget();
@@ -243,6 +318,12 @@ async function loadSpec() {
     ...(actionCol ? [actionCol] : []),
   ];
   _cols = loadColConfig(`spec_${_ctx.parentId}`, _builtins);
+  _cols = [
+    ..._cols.filter(c => c.id === 'select'),
+    ..._cols.filter(c => c.id !== 'select' && c.id !== 'actions' && c.id !== 'drag'),
+    ..._cols.filter(c => c.id === 'drag'),
+    ..._cols.filter(c => c.id === 'actions'),
+  ];
 
   let specQ = sb.from('arch_spec_items')
     .select('*')
@@ -365,13 +446,14 @@ function renderTable(body) {
   };
   const visibleCols = _cols.filter(c => c.visible);
   const theadHtml = visibleCols.map(c => {
+    if (c.id === 'select') return `<th data-col="select" style="width:28px;padding:0 6px;text-align:center"><input type="checkbox" id="spec-chk-all" title="Select all"/></th>`;
     const meta = TH_META[c.id] || { style: '', label: esc(c.name), managed: true };
     const managed = (meta.managed || c.custom) ? ' class="col-managed"' : '';
     const style   = meta.style ? ` style="${meta.style}"` : '';
     return `<th data-col="${esc(c.id)}"${style}${managed}>${c.custom ? esc(c.name) : meta.label}</th>`;
   }).join('');
 
-  const SKIP_FILTER  = new Set(['drag', 'actions']);
+  const SKIP_FILTER  = new Set(['select', 'drag', 'actions']);
   const COL_OPTIONS  = {
     type:   SPEC_TYPES,
     status: SPEC_STATUSES,
@@ -424,6 +506,34 @@ function renderTable(body) {
     wireSpecDragDrop(tbody);
     wireSpecCustomCols(tbody);
     wireInsertHover(tbody);
+
+    // Wire row checkboxes via event delegation
+    tbody.addEventListener('change', e => {
+      const cb = e.target.closest('.spec-row-chk');
+      if (!cb) return;
+      if (cb.checked) _selection.add(cb.dataset.id); else _selection.delete(cb.dataset.id);
+      const tr = cb.closest('tr');
+      if (tr) tr.classList.toggle('req-row-selected', cb.checked);
+      syncBulkBar();
+      const allChk = document.getElementById('spec-chk-all');
+      if (allChk) {
+        const allIds = [...document.querySelectorAll('.spec-row-chk')].map(c => c.dataset.id);
+        allChk.checked = allIds.length > 0 && allIds.every(id => _selection.has(id));
+      }
+    });
+
+    // Wire select-all
+    const allChk = document.getElementById('spec-chk-all');
+    if (allChk) {
+      allChk.onchange = () => {
+        document.querySelectorAll('.spec-row-chk').forEach(cb => {
+          cb.checked = allChk.checked;
+          if (allChk.checked) _selection.add(cb.dataset.id); else _selection.delete(cb.dataset.id);
+          const tr = cb.closest('tr'); if (tr) tr.classList.toggle('req-row-selected', allChk.checked);
+        });
+        syncBulkBar();
+      };
+    }
   }
 
   rerenderTbody();
@@ -491,6 +601,8 @@ function rowHTML(it) {
   const visibleCols = _cols.filter(c => c.visible);
   return visibleCols.map(c => {
     switch (c.id) {
+      case 'select':
+        return `<td data-col="select" style="width:28px;padding:0 6px;text-align:center;vertical-align:middle"><input type="checkbox" class="spec-row-chk" data-id="${it.id}" title="Select"/></td>`;
       case 'drag':
         return `<td data-col="drag" class="req-drag-handle spec-drag-handle" title="Drag to reorder">⠿</td>`;
       case 'id':

@@ -6,6 +6,7 @@
  */
 
 import { sb, buildCode, nextIndex } from '../config.js';
+import { navigate } from '../router.js';
 import { toast } from '../toast.js';
 import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr } from '../components/col-mgr.js';
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
@@ -56,6 +57,7 @@ const RESULT_COLORS = { pass: '#34A853', fail: '#EA4335', blocked: '#F29900' };
 const RESULT_LABELS = { pass: '✓ PASS', fail: '✗ FAIL', blocked: '⊘ BLOCKED' };
 
 const BUILTIN_COLS = [
+  { id: 'select',  name: '',             fixed: true,  visible: true },
   { id: 'drag',    name: '',             fixed: true,  visible: true },
   { id: 'code',    name: 'ID',           fixed: true,  visible: true },
   { id: 'name',    name: 'Name',         fixed: true,  visible: true },
@@ -67,7 +69,7 @@ const BUILTIN_COLS = [
   { id: 'actions', name: '',             fixed: true,  visible: true },
 ];
 
-const SKIP_FILTER = new Set(['drag', 'actions']);
+const SKIP_FILTER = new Set(['select', 'drag', 'actions']);
 
 // ── Module state ──────────────────────────────────────────────────────────────
 
@@ -82,6 +84,15 @@ let _saveTimer    = null;
 let _currentUser  = null;
 let _colFilters   = {};
 let _colKey       = '';
+let _selection    = new Set();
+
+function syncBulkBar() {
+  const bar   = document.getElementById('ts-bulk-bar');
+  const count = document.getElementById('ts-bulk-count');
+  if (!bar) return;
+  bar.classList.toggle('req-bulk-bar--visible', _selection.size > 0);
+  if (count) count.textContent = `${_selection.size} selected`;
+}
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -100,6 +111,12 @@ export async function renderTestSpecs(container, { project, item, system, phase,
   _colFilters  = {};
   _colKey      = `ts_${parentId}_${phase}`;
   _cols        = loadColConfig(_colKey, BUILTIN_COLS);
+  _cols = [
+    ..._cols.filter(c => c.id === 'select'),
+    ..._cols.filter(c => c.id !== 'select' && c.id !== 'actions' && c.id !== 'drag'),
+    ..._cols.filter(c => c.id === 'drag'),
+    ..._cols.filter(c => c.id === 'actions'),
+  ];
 
   const { data: { user } } = await sb.auth.getUser();
   _currentUser = user;
@@ -155,6 +172,15 @@ export async function renderTestSpecs(container, { project, item, system, phase,
       <button class="btn btn-primary"   id="btn-new-test">＋ New Test</button>
       <button class="btn btn-secondary" id="btn-new-section">＋ Section</button>
     </div>
+    <div class="req-bulk-bar" id="ts-bulk-bar">
+      <span class="req-bulk-count" id="ts-bulk-count">0 selected</span>
+      <div class="req-bulk-actions">
+        <button class="btn btn-primary btn-sm"   id="ts-bulk-review">✓ Review</button>
+        <button class="btn btn-secondary btn-sm" id="ts-bulk-status">✏ Edit Status</button>
+        <button class="btn btn-danger btn-sm"    id="ts-bulk-delete">🗑 Delete</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="ts-bulk-cancel">✕ Cancel</button>
+    </div>
   `;
 
   document.getElementById('btn-new-test').onclick    = () => createTest();
@@ -162,6 +188,55 @@ export async function renderTestSpecs(container, { project, item, system, phase,
   document.getElementById('ts-nav-close').onclick    = () => toggleNav(false);
   document.getElementById('ts-nav-expand').onclick   = () => toggleNav(true);
   document.getElementById('ts-panel-close').onclick  = () => closeDetail();
+
+  document.getElementById('ts-bulk-cancel').onclick = () => {
+    _selection.clear(); syncBulkBar();
+    document.querySelectorAll('.ts-row-chk').forEach(cb => { cb.checked = false; });
+    document.querySelectorAll('tr[data-id]').forEach(tr => tr.classList.remove('req-row-selected'));
+  };
+
+  document.getElementById('ts-bulk-review').onclick = () => {
+    if (!_selection.size) return;
+    navigate(`/project/${_ctx.project.id}/item/${_ctx.parentId}/reviews/new?artifact_type=test_specs&artifact_ids=${[..._selection].join(',')}`);
+  };
+
+  document.getElementById('ts-bulk-status').onclick = () => {
+    const existing = document.getElementById('ts-bulk-status-picker');
+    if (existing) { existing.remove(); return; }
+    const btn    = document.getElementById('ts-bulk-status');
+    const picker = document.createElement('div');
+    picker.id        = 'ts-bulk-status-picker';
+    picker.className = 'req-bulk-status-picker';
+    picker.innerHTML = STATUSES.map(v =>
+      `<button class="req-bulk-status-opt" data-status="${v}">${v}</button>`).join('');
+    document.body.appendChild(picker);
+    const rect = btn.getBoundingClientRect();
+    picker.style.left = rect.left + 'px';
+    picker.style.top  = (rect.top - picker.offsetHeight - 6) + 'px';
+    picker.querySelectorAll('.req-bulk-status-opt').forEach(opt => {
+      opt.onclick = async () => {
+        picker.remove();
+        const ids = [..._selection];
+        await Promise.all(ids.map(id => sb.from('test_specs').update({ status: opt.dataset.status, updated_at: new Date().toISOString() }).eq('id', id)));
+        ids.forEach(id => { const r = _rows.find(r => r.id === id); if (r) r.status = opt.dataset.status; });
+        toast(`${ids.length} test${ids.length > 1 ? 's' : ''} set to "${opt.dataset.status}".`, 'success');
+        renderTable(document.getElementById('ts-body'));
+      };
+    });
+    setTimeout(() => document.addEventListener('click', function close(e) {
+      if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', close); }
+    }), 0);
+  };
+
+  document.getElementById('ts-bulk-delete').onclick = async () => {
+    const n = _selection.size;
+    if (!confirm(`Delete ${n} item${n > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    await Promise.all([..._selection].map(id => sb.from('test_specs').delete().eq('id', id)));
+    _rows = _rows.filter(r => !_selection.has(r.id));
+    _selection.clear(); syncBulkBar();
+    toast(`${n} test${n > 1 ? 's' : ''} deleted.`, 'success');
+    renderTable(document.getElementById('ts-body'));
+  };
 
   await loadTests();
   applyGotoTarget();
@@ -279,6 +354,7 @@ function renderTable(body) {
   );
 
   const theadCells = _cols.filter(c => c.visible).map(c => {
+    if (c.id === 'select') return `<th data-col="select" style="width:28px;padding:0 6px;text-align:center"><input type="checkbox" id="ts-chk-all" title="Select all"/></th>`;
     const w = COL_WIDTHS[c.id] ? ` style="width:${COL_WIDTHS[c.id]}"` : '';
     return `<th data-col="${c.id}"${w}>${COL_LABELS[c.id] ?? esc(c.name)}</th>`;
   }).join('');
@@ -339,6 +415,34 @@ function renderTable(body) {
     }
     wireDragDrop(tbody);
     wireInsertHover(tbody);
+
+    // Wire row checkboxes via event delegation
+    tbody.addEventListener('change', e => {
+      const cb = e.target.closest('.ts-row-chk');
+      if (!cb) return;
+      if (cb.checked) _selection.add(cb.dataset.id); else _selection.delete(cb.dataset.id);
+      const tr = cb.closest('tr');
+      if (tr) tr.classList.toggle('req-row-selected', cb.checked);
+      syncBulkBar();
+      const allChk = document.getElementById('ts-chk-all');
+      if (allChk) {
+        const allIds = [...document.querySelectorAll('.ts-row-chk')].map(c => c.dataset.id);
+        allChk.checked = allIds.length > 0 && allIds.every(id => _selection.has(id));
+      }
+    });
+
+    // Wire select-all
+    const allChk = document.getElementById('ts-chk-all');
+    if (allChk) {
+      allChk.onchange = () => {
+        document.querySelectorAll('.ts-row-chk').forEach(cb => {
+          cb.checked = allChk.checked;
+          if (allChk.checked) _selection.add(cb.dataset.id); else _selection.delete(cb.dataset.id);
+          const tr = cb.closest('tr'); if (tr) tr.classList.toggle('req-row-selected', allChk.checked);
+        });
+        syncBulkBar();
+      };
+    }
   }
 
   rerenderTbody();
@@ -391,6 +495,8 @@ function testRowHTML(r) {
 
   return _cols.filter(c => c.visible).map(c => {
     switch (c.id) {
+      case 'select':
+        return `<td data-col="select" style="width:28px;padding:0 6px;text-align:center;vertical-align:middle"><input type="checkbox" class="ts-row-chk" data-id="${r.id}" title="Select"/></td>`;
       case 'drag':
         return `<td data-col="drag" class="spec-drag-cell"><span class="spec-drag-handle" title="Drag">⠿</span></td>`;
       case 'code':
