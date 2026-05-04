@@ -468,85 +468,87 @@ export async function renderSwUnits(container, ctx) {
       btn.textContent = '…';
 
       let added = 0, changed = 0, unchanged = 0;
-      const warnings = []; // { unitCode, filePath, conflict: { file_path, unit_code } }
+      const warnings = [];
 
-      // Pre-load all existing unit_codes in this scope to detect duplicates
+      // Pre-load all existing units to match by unit_code
       const { data: existingUnits } = await sb.from('sw_units')
-        .select('id, unit_code, file_path')
+        .select('id, unit_code, file_path, version, content_hash, source_code')
         .eq('project_id', project.id)
         .eq('parent_type', parentType)
         .eq('parent_id', parentId);
-      const unitCodeMap = {}; // unit_code → { file_path }
-      (existingUnits || []).forEach(u => { unitCodeMap[u.unit_code] = u; });
-      // Also track codes assigned during this import batch
-      const assignedThisRun = {}; // unit_code → filePath
+      const byCode = {}; // unit_code → existing row
+      (existingUnits || []).forEach(u => { byCode[u.unit_code] = u; });
+      const seenThisRun = {}; // unit_code → filePath (duplicate detection within batch)
 
       for (const { path, entry } of _zipFiles) {
-        const content   = await entry.async('string');
-        const filePath  = prefix && path.startsWith(prefix) ? path.slice(prefix.length) : path;
-        const hash      = await hashContent(content);
-        const lang      = detectLanguage(filePath);
+        const content  = await entry.async('string');
+        const filePath = prefix && path.startsWith(prefix) ? path.slice(prefix.length) : path;
+        const lang     = detectLanguage(filePath);
 
-        const { data: existing } = await sb.from('sw_units')
-          .select('id, version, content_hash, source_code')
-          .eq('project_id', project.id)
-          .eq('parent_type', parentType)
-          .eq('parent_id', parentId)
-          .eq('file_path', filePath)
-          .maybeSingle();
+        // Parse ALL @unit blocks in this file
+        const unitBlocks = parseAllUnits(content);
 
-        const hdr = parseFileHeader(content);
-        const langFromHeader = hdr.language ? detectLanguage('file.' + hdr.language) : null;
+        // Fallback: if no @unit blocks found, treat whole file as one unit
+        if (!unitBlocks.length) {
+          const autoCode = 'SWU-' + filePath.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase().slice(0, 20);
+          unitBlocks.push({ fields: { unit: autoCode, name: filePath.split('/').pop() }, code: content });
+        }
 
-        if (!existing) {
-          const unitCode = hdr.unit || ('SWU-' + filePath.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase().slice(0, 20));
-          const unitName = hdr.name || filePath.split('/').pop();
-          const unitType = hdr.type || 'general';
+        for (const { fields: hdr, code } of unitBlocks) {
+          const unitCode = hdr.unit;
+          const hash     = await hashContent(code);
 
-          // Duplicate unit_code check
-          if (unitCodeMap[unitCode] && unitCodeMap[unitCode].file_path !== filePath) {
-            warnings.push({ unitCode, filePath, conflict: unitCodeMap[unitCode] });
-          } else if (assignedThisRun[unitCode] && assignedThisRun[unitCode] !== filePath) {
-            warnings.push({ unitCode, filePath, conflict: { file_path: assignedThisRun[unitCode] } });
+          // Duplicate check within this import run
+          if (seenThisRun[unitCode] && seenThisRun[unitCode] !== filePath) {
+            warnings.push({ unitCode, filePath, conflict: { file_path: seenThisRun[unitCode] } });
+            continue;
           }
-          assignedThisRun[unitCode] = filePath;
+          seenThisRun[unitCode] = filePath;
 
-          const descParts = [];
-          if (hdr.asil)   descParts.push(`ASIL: ${hdr.asil}`);
-          if (hdr.sdd)    descParts.push(`SDD: ${hdr.sdd}`);
-          if (hdr.req)    descParts.push(`Req: ${hdr.req}`);
-          if (hdr.author) descParts.push(`Author: ${hdr.author}`);
-          const validStatuses = ['draft','in_review','approved','deprecated'];
-          const unitStatus = (hdr.status && validStatuses.includes(hdr.status)) ? hdr.status : 'draft';
-          const { error: insErr } = await sb.from('sw_units').insert({
-            project_id: project.id, parent_type: parentType, parent_id: parentId,
-            unit_code: unitCode, name: unitName, unit_type: unitType,
-            file_path: filePath, language: langFromHeader || lang,
-            description: descParts.length ? descParts.join(' | ') : null,
-            source_code: content, content_hash: hash,
-            needs_review: true, version: 1, status: unitStatus,
-            created_by: currentUserId,
-          });
-          if (insErr) {
-            warnings.push({ unitCode, filePath, conflict: { file_path: `DB error: ${insErr.message}` } });
+          const existing = byCode[unitCode];
+
+          if (!existing) {
+            const descParts = [];
+            if (hdr.asil)   descParts.push(`ASIL: ${hdr.asil}`);
+            if (hdr.sdd)    descParts.push(`SDD: ${hdr.sdd}`);
+            if (hdr.req)    descParts.push(`Req: ${hdr.req}`);
+            if (hdr.author) descParts.push(`Author: ${hdr.author}`);
+            const validStatuses = ['draft','in_review','approved','deprecated'];
+            const unitStatus = (hdr.status && validStatuses.includes(hdr.status)) ? hdr.status : 'draft';
+
+            const { error: insErr } = await sb.from('sw_units').insert({
+              project_id: project.id, parent_type: parentType, parent_id: parentId,
+              unit_code: unitCode,
+              name: hdr.name || filePath.split('/').pop(),
+              unit_type: hdr.type || 'general',
+              file_path: filePath, language: lang,
+              description: descParts.length ? descParts.join(' | ') : null,
+              source_code: code, content_hash: hash,
+              needs_review: false, version: 1, status: unitStatus,
+              created_by: currentUserId,
+            });
+            if (insErr) {
+              warnings.push({ unitCode, filePath, conflict: { file_path: `DB error: ${insErr.message}` } });
+            } else {
+              byCode[unitCode] = { unit_code: unitCode, file_path: filePath };
+              added++;
+            }
+          } else if (existing.content_hash !== hash) {
+            await sb.from('sw_unit_versions').insert({
+              sw_unit_id: existing.id, version: existing.version,
+              source_code: existing.source_code, content_hash: existing.content_hash,
+              file_path: filePath, uploaded_by: currentUserId,
+            });
+            const { error: updErr } = await sb.from('sw_units').update({
+              source_code: code, content_hash: hash,
+              file_path: filePath,
+              version: (existing.version || 1) + 1,
+              needs_review: true, updated_at: new Date().toISOString(),
+            }).eq('id', existing.id);
+            if (!updErr) changed++;
           } else {
-            unitCodeMap[unitCode] = { file_path: filePath };
-            added++;
+            unchanged++;
           }
-        } else if (existing.content_hash !== hash) {
-          await sb.from('sw_unit_versions').insert({
-            sw_unit_id: existing.id, version: existing.version,
-            source_code: existing.source_code, content_hash: existing.content_hash,
-            file_path: filePath, uploaded_by: currentUserId,
-          });
-          const { error: updErr } = await sb.from('sw_units').update({
-            source_code: content, content_hash: hash,
-            version: (existing.version || 1) + 1,
-            needs_review: true, updated_at: new Date().toISOString(),
-          }).eq('id', existing.id);
-          if (!updErr) changed++;
-        } else {
-          unchanged++;
         }
       }
 
@@ -588,18 +590,48 @@ export async function renderSwUnits(container, ctx) {
 
   // ── Utilities ─────────────────────────────────────────────────────────────────
 
-  function parseFileHeader(content) {
-    const lines = content.split('\n').slice(0, 30); // Only scan first 30 lines
-    const result = {};
-    for (const line of lines) {
-      const trimmed = line.replace(/^[\s*/]+/, '').trim(); // Strip comment chars
-      for (const [field, kw] of Object.entries(HDR_KW)) {
-        if (trimmed.startsWith(kw)) {
-          result[field] = trimmed.slice(kw.length).trim().replace(/^[:\s]+/, '');
+  // Parse ALL /** @unit ... */ blocks in a file — returns array of unit definitions
+  // Each block spans from /** to */ and the code that follows until the next /** or EOF
+  function parseAllUnits(content) {
+    const units = [];
+    // Split on comment block openings, keeping the delimiter
+    const blocks = content.split(/(\/\*\*)/);
+    // blocks: ['before', '/**', 'content1', '/**', 'content2', ...]
+    for (let i = 1; i < blocks.length; i += 2) {
+      const commentAndRest = blocks[i + 1] || '';
+      // Find end of comment block
+      const closeIdx = commentAndRest.indexOf('*/');
+      if (closeIdx === -1) continue;
+      const commentBody = commentAndRest.slice(0, closeIdx);
+      const codeAfter   = commentAndRest.slice(closeIdx + 2);
+
+      // Parse keyword fields from comment lines
+      const fields = {};
+      for (const line of commentBody.split('\n')) {
+        const trimmed = line.replace(/^[\s*/]+/, '').trim();
+        for (const [field, kw] of Object.entries(HDR_KW)) {
+          if (trimmed.startsWith(kw)) {
+            fields[field] = trimmed.slice(kw.length).trim().replace(/^[:\s]+/, '');
+          }
         }
       }
+
+      // Only keep blocks that have a @unit keyword
+      if (!fields.unit) continue;
+
+      // Code body = everything after */ until the next /** (or EOF)
+      const nextBlockIdx = codeAfter.indexOf('/**');
+      const codeBody = nextBlockIdx === -1 ? codeAfter : codeAfter.slice(0, nextBlockIdx);
+
+      units.push({ fields, code: codeBody.trim() });
     }
-    return result;
+    return units;
+  }
+
+  // Legacy single-header parser (kept for onboarding example)
+  function parseFileHeader(content) {
+    const all = parseAllUnits(content);
+    return all.length ? all[0].fields : {};
   }
 
   async function hashContent(text) {
