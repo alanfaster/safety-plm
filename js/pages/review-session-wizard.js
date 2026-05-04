@@ -81,14 +81,14 @@ export async function renderReviewSessionWizard(container, ctx) {
       ? `${PHASE_TITLE_LABELS[_initPhase] || _initPhase}${_initDomain && _initDomain !== 'default' ? ' (' + _initDomain.toUpperCase() + ')' : ''} Review`
       : '';
 
-  // Wizard state
+  // Wizard state — review_mode set to safe default, updated after project config loads
   const state = {
     step: 1,
     title: _initTitle,
     review_type: 'inspection',
     template_id: null,
     planned_date: new Date().toISOString().slice(0, 10),
-    review_mode: _defaultReviewMode,
+    review_mode: 'internal',
     external_evidence_url: '',
     external_evidence_notes: '',
     selected: {},    // { [artifactType]: Set<id> }
@@ -139,9 +139,10 @@ export async function renderReviewSessionWizard(container, ctx) {
     sb.from('review_protocol_templates').select('*').eq('project_id', project.id).eq('is_active', true).order('name'),
     sb.from('project_config').select('config').eq('project_id', project.id).maybeSingle(),
   ]);
-  const _projectConfig    = pcRow?.config || {};
+  const _projectConfig     = pcRow?.config || {};
   const _defaultReviewMode = _projectConfig.review_mode || 'internal';
   const _requiredFields    = _projectConfig.external_review_required_fields || ['url', 'verdict'];
+  state.review_mode = _defaultReviewMode;
 
   // Load pre-selected artifact IDs from sessionStorage (set by requirements page bulk bar)
   if (_initQuery.get('preselected')) {

@@ -298,11 +298,14 @@ route('/project/:projectId/item/:itemId/system/:systemId', async ({ projectId, i
 // ── Review routes ─────────────────────────────────────────────────────
 route('/project/:projectId/item/:itemId/reviews/new', async ({ projectId, itemId }) => {
   setLoading();
-  // Always item-level sidebar for review wizard; system/domain scope passed via query string
-  const ctx = await loadItemContext(projectId, itemId, null, 'reviews');
-  if (!ctx) { navigate('/projects'); return; }
-  const { renderReviewSessionWizard } = await import('./pages/review-session-wizard.js');
-  await renderReviewSessionWizard(getContent(), ctx);
+  try {
+    const ctx = await loadItemContext(projectId, itemId, null, 'reviews');
+    if (!ctx) { navigate('/projects'); return; }
+    const { renderReviewSessionWizard } = await import('./pages/review-session-wizard.js');
+    await renderReviewSessionWizard(getContent(), ctx);
+  } catch (e) {
+    getContent().innerHTML = `<div style="padding:40px;color:red;font-family:monospace;font-size:13px"><strong>ERROR reviews/new:</strong><br>${e.message}<br><pre>${e.stack}</pre></div>`;
+  }
 });
 
 
