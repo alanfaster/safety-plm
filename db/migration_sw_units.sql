@@ -47,12 +47,14 @@ ALTER TABLE sw_units ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sw_unit_versions ENABLE ROW LEVEL SECURITY;
 
 -- RLS: project members can read/write sw_units for their projects
+DROP POLICY IF EXISTS sw_units_policy ON sw_units;
 CREATE POLICY sw_units_policy ON sw_units
   USING (project_id IN (
     SELECT project_id FROM project_members WHERE user_id = auth.uid()
     UNION SELECT id FROM projects WHERE created_by = auth.uid()
   ));
 
+DROP POLICY IF EXISTS sw_unit_versions_policy ON sw_unit_versions;
 CREATE POLICY sw_unit_versions_policy ON sw_unit_versions
   USING (sw_unit_id IN (
     SELECT id FROM sw_units WHERE project_id IN (
