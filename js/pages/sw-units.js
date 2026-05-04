@@ -23,8 +23,15 @@ const BUILTIN_UNIT_TYPES = [
 ];
 
 export async function renderSwUnits(container, ctx) {
-  const { project, item } = ctx;
-  const base = `/project/${project.id}/item/${item.id}`;
+  const { project, item, system } = ctx;
+
+  // If navigating under a system, scope SW units to that system
+  const parentType = system ? 'system' : 'item';
+  const parentId   = system ? system.id : item.id;
+  const parentName = system ? `${system.system_code} · ${system.name}` : item.name;
+  const base = system
+    ? `/project/${project.id}/item/${item.id}/system/${system.id}`
+    : `/project/${project.id}/item/${item.id}`;
 
   // Load project config to get custom unit types and header keywords
   const { data: pcRow } = await sb.from('project_config').select('config').eq('project_id', project.id).maybeSingle();
@@ -42,19 +49,21 @@ export async function renderSwUnits(container, ctx) {
     language: savedKeywords.language || '@language',
   };
 
-  setBreadcrumb([
+  const crumbs = [
     { label: 'Projects', path: '/projects' },
     { label: project.name, path: `/project/${project.id}` },
-    { label: item.name, path: `${base}/vcycle/item_definition` },
-    { label: 'SW Units' },
-  ]);
+    { label: item.name, path: `/project/${project.id}/item/${item.id}/vcycle/item_definition` },
+  ];
+  if (system) crumbs.push({ label: parentName });
+  crumbs.push({ label: 'SW Units' });
+  setBreadcrumb(crumbs);
 
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-top">
         <div>
           <h1>SW Units</h1>
-          <p class="page-subtitle">${escHtml(item.name)}</p>
+          <p class="page-subtitle">${escHtml(parentName)}</p>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-secondary" id="swu-btn-upload">⬆ Upload Code (ZIP)</button>
@@ -140,7 +149,8 @@ export async function renderSwUnits(container, ctx) {
     const { data: units, error } = await sb.from('sw_units')
       .select('*')
       .eq('project_id', project.id)
-      .eq('parent_id', item.id)
+      .eq('parent_type', parentType)
+      .eq('parent_id', parentId)
       .order('unit_code');
 
     const wrap = document.getElementById('swu-list-wrap');
@@ -280,7 +290,7 @@ export async function renderSwUnits(container, ctx) {
       if (error) { toast('Error: ' + error.message, 'error'); return; }
     } else {
       const { error } = await sb.from('sw_units').insert({
-        project_id: project.id, parent_type: 'item', parent_id: item.id,
+        project_id: project.id, parent_type: parentType, parent_id: parentId,
         unit_code, name, unit_type, language: language || null, status,
         file_path: file_path || null, description: description || null,
         source_code: source_code || null, content_hash,
@@ -376,6 +386,8 @@ export async function renderSwUnits(container, ctx) {
         const { data: existing } = await sb.from('sw_units')
           .select('id, version, content_hash, source_code')
           .eq('project_id', project.id)
+          .eq('parent_type', parentType)
+          .eq('parent_id', parentId)
           .eq('file_path', filePath)
           .maybeSingle();
 
@@ -392,7 +404,7 @@ export async function renderSwUnits(container, ctx) {
           if (hdr.req)    descParts.push(`Req: ${hdr.req}`);
           if (hdr.author) descParts.push(`Author: ${hdr.author}`);
           await sb.from('sw_units').insert({
-            project_id: project.id, parent_type: 'item', parent_id: item.id,
+            project_id: project.id, parent_type: parentType, parent_id: parentId,
             unit_code: unitCode, name: unitName, unit_type: unitType,
             file_path: filePath, language: langFromHeader || lang,
             description: descParts.length ? descParts.join(' | ') : null,

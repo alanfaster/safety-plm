@@ -265,6 +265,7 @@ function buildSystemSidebar({ projectId, itemId, systemId, systemName, activePag
     });
   }
 
+  html += buildSwUnitsEntry({ base, activePage });
   html += buildSafetyGroup({ groupKey: `sys-${systemId}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
   return html;
 }
@@ -287,6 +288,7 @@ function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId,
       parentType: 'system', parentId: s.id,
     });
   }
+  body += buildSwUnitsEntry({ base, activePage });
   body += buildSafetyGroup({ groupKey: `sys-${s.id}-safety`, safetyItems, activePage, routePrefix: `${base}/safety`, sysId: s.id });
 
   return `
@@ -459,7 +461,7 @@ function buildReviewsEntry({ base, activePage }) {
 }
 
 function buildSwUnitsEntry({ base, activePage }) {
-  const active = activePage === 'sw-units';
+  const active = activePage === 'sw-units' || activePage?.endsWith(':sw-units');
   return `
     <div class="sb-phase-row">
       <button class="sb-item ${active ? 'active' : ''}" data-nav="${base}/sw-units" title="SW Units">

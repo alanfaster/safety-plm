@@ -329,6 +329,14 @@ route('/project/:projectId/item/:itemId/sw-units', async ({ projectId, itemId })
   await renderSwUnits(getContent(), ctx);
 });
 
+route('/project/:projectId/item/:itemId/system/:systemId/sw-units', async ({ projectId, itemId, systemId }) => {
+  setLoading();
+  const ctx = await loadItemContext(projectId, itemId, systemId, 'sw-units');
+  if (!ctx) { navigate('/projects'); return; }
+  const { renderSwUnits } = await import('./pages/sw-units.js');
+  await renderSwUnits(getContent(), ctx);
+});
+
 // ── Project settings route ────────────────────────────────────────────
 route('/project/:projectId/settings', async ({ projectId }) => {
   setLoading();
