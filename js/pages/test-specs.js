@@ -418,16 +418,29 @@ function renderTable(body) {
 
     // Wire row checkboxes via event delegation
     tbody.addEventListener('change', e => {
-      const cb = e.target.closest('.ts-row-chk');
-      if (!cb) return;
-      if (cb.checked) _selection.add(cb.dataset.id); else _selection.delete(cb.dataset.id);
-      const tr = cb.closest('tr');
-      if (tr) tr.classList.toggle('req-row-selected', cb.checked);
-      syncBulkBar();
-      const allChk = document.getElementById('ts-chk-all');
-      if (allChk) {
-        const allIds = [...document.querySelectorAll('.ts-row-chk')].map(c => c.dataset.id);
-        allChk.checked = allIds.length > 0 && allIds.every(id => _selection.has(id));
+      const cb    = e.target.closest('.ts-row-chk');
+      const secCb = e.target.closest('.ts-sec-chk');
+      if (cb) {
+        if (cb.checked) _selection.add(cb.dataset.id); else _selection.delete(cb.dataset.id);
+        const tr = cb.closest('tr');
+        if (tr) tr.classList.toggle('req-row-selected', cb.checked);
+        syncBulkBar();
+        const allChk = document.getElementById('ts-chk-all');
+        if (allChk) {
+          const allIds = [...document.querySelectorAll('.ts-row-chk')].map(c => c.dataset.id);
+          allChk.checked = allIds.length > 0 && allIds.every(id => _selection.has(id));
+        }
+      } else if (secCb) {
+        getItemsInSection(secCb.dataset.secId).forEach(it => {
+          if (secCb.checked) _selection.add(it.id); else _selection.delete(it.id);
+          const tr = tbody.querySelector(`tr[data-id="${it.id}"]`);
+          if (tr) {
+            tr.classList.toggle('req-row-selected', secCb.checked);
+            const rowCb = tr.querySelector('.ts-row-chk');
+            if (rowCb) rowCb.checked = secCb.checked;
+          }
+        });
+        syncBulkBar();
       }
     });
 
@@ -469,10 +482,26 @@ function buildRowEl(r) {
   return tr;
 }
 
+function getItemsInSection(sectionId) {
+  const secIdx = _rows.findIndex(r => r.id === sectionId);
+  if (secIdx === -1) return [];
+  const result = [];
+  for (let i = secIdx + 1; i < _rows.length; i++) {
+    if (_rows[i].type === 'section') break;
+    result.push(_rows[i]);
+  }
+  return result;
+}
+
 function sectionRowHTML(r) {
+  const secItems = getItemsInSection(r.id);
+  const allSel   = secItems.length > 0 && secItems.every(it => _selection.has(it.id));
   return `
     <td colspan="20" class="spec-section-cell">
       <div class="spec-section-inner">
+        <input type="checkbox" class="ts-sec-chk" data-sec-id="${r.id}"
+          title="Select all in section" ${allSel ? 'checked' : ''}
+          style="margin-right:6px;cursor:pointer;flex-shrink:0"/>
         <span class="spec-section-drag spec-drag-handle" title="Drag">⠿</span>
         <span class="spec-section-title" contenteditable="true" spellcheck="false">${esc(r.name || 'Untitled section')}</span>
         <div class="spec-section-actions">

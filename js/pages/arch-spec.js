@@ -507,18 +507,31 @@ function renderTable(body) {
     wireSpecCustomCols(tbody);
     wireInsertHover(tbody);
 
-    // Wire row checkboxes via event delegation
+    // Wire row + section checkboxes via event delegation
     tbody.addEventListener('change', e => {
-      const cb = e.target.closest('.spec-row-chk');
-      if (!cb) return;
-      if (cb.checked) _selection.add(cb.dataset.id); else _selection.delete(cb.dataset.id);
-      const tr = cb.closest('tr');
-      if (tr) tr.classList.toggle('req-row-selected', cb.checked);
-      syncBulkBar();
-      const allChk = document.getElementById('spec-chk-all');
-      if (allChk) {
-        const allIds = [...document.querySelectorAll('.spec-row-chk')].map(c => c.dataset.id);
-        allChk.checked = allIds.length > 0 && allIds.every(id => _selection.has(id));
+      const cb    = e.target.closest('.spec-row-chk');
+      const secCb = e.target.closest('.spec-sec-chk');
+      if (cb) {
+        if (cb.checked) _selection.add(cb.dataset.id); else _selection.delete(cb.dataset.id);
+        const tr = cb.closest('tr');
+        if (tr) tr.classList.toggle('req-row-selected', cb.checked);
+        syncBulkBar();
+        const allChk = document.getElementById('spec-chk-all');
+        if (allChk) {
+          const allIds = [...document.querySelectorAll('.spec-row-chk')].map(c => c.dataset.id);
+          allChk.checked = allIds.length > 0 && allIds.every(id => _selection.has(id));
+        }
+      } else if (secCb) {
+        getItemsInSection(secCb.dataset.secId).forEach(it => {
+          if (secCb.checked) _selection.add(it.id); else _selection.delete(it.id);
+          const tr = tbody.querySelector(`tr[data-id="${it.id}"]`);
+          if (tr) {
+            tr.classList.toggle('req-row-selected', secCb.checked);
+            const rowCb = tr.querySelector('.spec-row-chk');
+            if (rowCb) rowCb.checked = secCb.checked;
+          }
+        });
+        syncBulkBar();
       }
     });
 
@@ -573,14 +586,32 @@ function buildRowEl(it) {
   return tr;
 }
 
+function getItemsInSection(sectionId) {
+  const secIdx = _items.findIndex(it => it.id === sectionId);
+  if (secIdx === -1) return [];
+  const secLevel = _items[secIdx].custom_fields?.section_level || 1;
+  const result = [];
+  for (let i = secIdx + 1; i < _items.length; i++) {
+    const it = _items[i];
+    if (it.type === 'section' && (it.custom_fields?.section_level || 1) <= secLevel) break;
+    if (it.type !== 'section') result.push(it);
+  }
+  return result;
+}
+
 function sectionRowHTML(it) {
   const level     = it.custom_fields?.section_level || 1;
   const collapsed = _collapsed.has(it.id);
   const nums      = computeSectionNumbers();
   const num       = nums[it.id] || '';
+  const secItems  = getItemsInSection(it.id);
+  const allSel    = secItems.length > 0 && secItems.every(s => _selection.has(s.id));
   return `
     <td class="spec-section-cell" colspan="20">
       <div class="spec-section-inner spec-section-inner--l${level}">
+        <input type="checkbox" class="spec-sec-chk" data-sec-id="${it.id}"
+          title="Select all in section" ${allSel ? 'checked' : ''}
+          style="margin-right:6px;cursor:pointer;flex-shrink:0"/>
         <button class="spec-section-toggle${collapsed ? ' collapsed' : ''}" title="Expand/Collapse">▼</button>
         <span class="spec-section-num spec-section-num--l${level}">${esc(num)}</span>
         <input class="spec-section-title spec-section-title--l${level}" value="${esc(it.title || '')}" placeholder="Section title…" />

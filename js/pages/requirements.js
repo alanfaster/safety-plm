@@ -517,14 +517,30 @@ function renderTable(body) {
     };
   }
 
-  // Row checkbox delegation on tbody
+  // Row + section checkbox delegation on tbody
   body.querySelector('#req-table tbody')?.addEventListener('change', e => {
-    const cb = e.target.closest('.req-row-chk');
-    if (!cb) return;
-    if (cb.checked) _selection.add(cb.dataset.rid); else _selection.delete(cb.dataset.rid);
-    cb.closest('tr')?.classList.toggle('req-row-selected', cb.checked);
-    syncBulkBar();
-    syncCheckboxes();
+    const cb    = e.target.closest('.req-row-chk');
+    const secCb = e.target.closest('.req-sec-chk');
+
+    if (cb) {
+      if (cb.checked) _selection.add(cb.dataset.rid); else _selection.delete(cb.dataset.rid);
+      cb.closest('tr')?.classList.toggle('req-row-selected', cb.checked);
+      syncBulkBar();
+      syncCheckboxes();
+    } else if (secCb) {
+      const items = getItemsInSection(secCb.dataset.secId);
+      items.forEach(r => {
+        if (secCb.checked) _selection.add(r.id); else _selection.delete(r.id);
+        const tr = document.querySelector(`tr[data-rid="${r.id}"]`);
+        if (tr) {
+          tr.classList.toggle('req-row-selected', secCb.checked);
+          const rowCb = tr.querySelector('.req-row-chk');
+          if (rowCb) rowCb.checked = secCb.checked;
+        }
+      });
+      syncBulkBar();
+      syncCheckboxes();
+    }
   });
 
   scrollToAnchor();
@@ -553,14 +569,32 @@ function appendReqRow(tbody, r) {
   tbody.appendChild(tr);
 }
 
+function getItemsInSection(sectionId) {
+  const secIdx = _data.findIndex(r => r.id === sectionId);
+  if (secIdx === -1) return [];
+  const secLevel = _data[secIdx].level || 1;
+  const items = [];
+  for (let i = secIdx + 1; i < _data.length; i++) {
+    const r = _data[i];
+    if (r.type === 'title' && (r.level || 1) <= secLevel) break;
+    if (r.type !== 'title' && r.type !== 'info') items.push(r);
+  }
+  return items;
+}
+
 function reqSectionRowHTML(r) {
   const lvl       = r.level || 1;
   const collapsed = _collapsed.has(r.id);
   const nums      = computeReqSectionNumbers();
   const num       = nums[r.id] || '';
+  const secItems  = getItemsInSection(r.id);
+  const allSel    = secItems.length > 0 && secItems.every(it => _selection.has(it.id));
   return `
     <td class="spec-section-cell" colspan="20">
       <div class="spec-section-inner spec-section-inner--l${lvl}">
+        <input type="checkbox" class="req-sec-chk" data-sec-id="${r.id}"
+          title="Select all in section" ${allSel ? 'checked' : ''}
+          style="margin-right:6px;cursor:pointer;flex-shrink:0"/>
         <button class="spec-section-toggle${collapsed ? ' collapsed' : ''}"
           data-rid="${r.id}" title="Expand/Collapse">▼</button>
         <span class="spec-section-num spec-section-num--l${lvl}">${esc(num)}</span>
