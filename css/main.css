@@ -4825,9 +4825,9 @@ th.col-th-dragging * { pointer-events: none; }
 .req-trace-panel-rail-label {
   display: none;
   position: absolute;
-  top: 50%;
+  top: 48px;
   left: 50%;
-  transform: translateX(-50%) translateY(-50%) rotate(90deg);
+  transform: translateX(-50%) rotate(90deg);
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
