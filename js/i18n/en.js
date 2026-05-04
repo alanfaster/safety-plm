@@ -63,7 +63,7 @@ export default {
   'vcycle.requirements': 'Requirements',
   'vcycle.architecture': 'Architecture',
   'vcycle.design': 'Design',
-  'vcycle.implementation': 'Implementation',
+  'vcycle.implementation': 'Units',
   'vcycle.unit_testing': 'Unit Testing',
   'vcycle.integration_testing': 'Integration Testing',
   'vcycle.system_testing': 'System Testing',

@@ -121,6 +121,10 @@ export async function renderSidebar(ctx) {
       phaseName: (domain, phaseKey) => {
         const custom = cfg.find(c => c.domain === domain && c.phase === phaseKey)?.custom_name;
         if (custom) return custom;
+        if (phaseKey === 'implementation') {
+          const unitLabel = domain === 'sw' ? 'SW Units' : domain === 'hw' ? 'HW Units' : domain === 'mech' ? 'Mech Units' : 'Units';
+          return unitLabel;
+        }
         const base = phaseKey === 'item_definition' ? 'Definition' : t(`vcycle.${phaseKey}`);
         const prefix = domain === 'sw' ? 'SW' : domain === 'hw' ? 'HW' : domain === 'mech' ? 'Mech' : domain === 'system' ? 'System' : null;
         return prefix ? `${prefix} ${base}` : base;

@@ -200,7 +200,7 @@ function phaseHint(phase) {
     item_definition:     'Define the item scope, purpose, boundaries, and operating environment.',
     architecture:        'Describe the system architecture, components, interfaces, and allocation of requirements.',
     design:              'Detail the technical design: data flows, state machines, interfaces, and design decisions.',
-    implementation:      'Document implementation notes, coding guidelines, and configuration management.',
+    implementation:      'Manage SW/HW/Mech units — the individual implementable elements (functions, ISRs, tasks, components).',
     unit_testing:        'Define unit test plan, test cases, and coverage targets.',
     integration_testing: 'Define integration test plan, test cases, and interface verification.',
     system_testing:      'Define system-level test plan and functional verification strategy.',

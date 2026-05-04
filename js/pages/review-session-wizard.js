@@ -70,7 +70,7 @@ export async function renderReviewSessionWizard(container, ctx) {
   const _initPageName = _initQuery.get('pageName');  // page display name passed from Start Review button
   const PHASE_TITLE_LABELS = {
     item_definition:'Item Definition', requirements:'Requirements', architecture:'Architecture',
-    design:'Design', implementation:'Implementation', unit_testing:'Unit Testing',
+    design:'Design', implementation:'Units', unit_testing:'Unit Testing',
     integration_testing:'Integration Testing', system_testing:'System Testing', validation:'Validation',
   };
   const _initTitle = _initPageName
@@ -302,7 +302,7 @@ export async function renderReviewSessionWizard(container, ctx) {
   };
   const PHASE_LABELS = {
     item_definition:'Definition', requirements:'Requirements', architecture:'Architecture',
-    design:'Design', implementation:'Implementation', unit_testing:'Unit Testing',
+    design:'Design', implementation:'Units', unit_testing:'Unit Testing',
     integration_testing:'Integration Testing', system_testing:'System Testing', validation:'Validation',
   };
   // Which artifact type belongs to which phase (only under 'system' domain to avoid duplication)
