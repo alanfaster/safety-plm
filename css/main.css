@@ -6768,3 +6768,23 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .settings-check-item     { display:flex; align-items:center; gap:8px; cursor:pointer;
   font-size:13px; padding:6px 0; }
 .settings-check-item input[type=checkbox] { width:15px; height:15px; cursor:pointer; }
+
+/* ── External review mode panel ─────────────────────────────────────── */
+.rve-external-panel      { display:flex; flex-direction:column; height:100%; padding:24px; gap:16px; }
+.rve-external-header     { padding-bottom:16px; border-bottom:1px solid var(--border); }
+.rve-external-mode-badge { display:inline-block; background:#e8f0fe; color:#1558d6;
+  border-radius:12px; padding:4px 12px; font-size:12px; font-weight:600; margin-bottom:8px; }
+.rve-external-desc       { font-size:13px; color:var(--text-muted); margin:0; }
+.rve-external-body       { display:flex; flex-direction:column; gap:12px; flex:1; overflow-y:auto; }
+.rve-external-saved-badge{ color:#1e8e3e; font-size:12px; font-weight:600; margin-top:4px; }
+
+/* ── Wizard review mode toggle ──────────────────────────────────────── */
+.wiz-mode-toggle         { display:flex; gap:12px; }
+.wiz-mode-btn            { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;
+  padding:14px 16px; border:2px solid var(--border); border-radius:8px; background:var(--bg-card);
+  cursor:pointer; transition:border-color .15s, background .15s; text-align:center; }
+.wiz-mode-btn:hover      { border-color:var(--accent); background:var(--bg-hover,#f8faff); }
+.wiz-mode-btn.selected   { border-color:var(--accent); background:#e8f0fe; }
+.wiz-mode-icon           { font-size:22px; }
+.wiz-mode-name           { font-weight:600; font-size:13px; }
+.wiz-mode-sub            { font-size:11px; color:var(--text-muted); }

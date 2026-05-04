@@ -86,6 +86,9 @@ export async function renderReviewSessionWizard(container, ctx) {
     review_type: 'inspection',
     template_id: null,
     planned_date: new Date().toISOString().slice(0, 10),
+    review_mode: _defaultReviewMode,
+    external_evidence_url: '',
+    external_evidence_notes: '',
     selected: {},    // { [artifactType]: Set<id> }
     artifacts: {},   // { [artifactType]: [] }  all project artifacts loaded once
     items: [],       // project items
@@ -129,9 +132,14 @@ export async function renderReviewSessionWizard(container, ctx) {
 
   document.getElementById('wiz-btn-cancel').onclick = () => navigate(`${base}/reviews`);
 
-  // Load templates upfront
-  const { data: templates } = await sb.from('review_protocol_templates')
-    .select('*').eq('project_id', project.id).eq('is_active', true).order('name');
+  // Load templates + project config upfront
+  const [{ data: templates }, { data: pcRow }] = await Promise.all([
+    sb.from('review_protocol_templates').select('*').eq('project_id', project.id).eq('is_active', true).order('name'),
+    sb.from('project_config').select('config').eq('project_id', project.id).maybeSingle(),
+  ]);
+  const _projectConfig    = pcRow?.config || {};
+  const _defaultReviewMode = _projectConfig.review_mode || 'internal';
+  const _requiredFields    = _projectConfig.external_review_required_fields || ['url', 'verdict'];
 
   // Load pre-selected artifact IDs from sessionStorage (set by requirements page bulk bar)
   if (_initQuery.get('preselected')) {
@@ -223,12 +231,54 @@ export async function renderReviewSessionWizard(container, ctx) {
           </select>
           <p class="form-hint">Templates define checklist criteria. Managed in Project Settings → Review Protocols.</p>
         </div>
+
+        <div class="form-group">
+          <label class="form-label wiz-label-lg">Review Mode</label>
+          <div class="wiz-mode-toggle">
+            <button type="button" class="wiz-mode-btn ${state.review_mode === 'internal' ? 'selected' : ''}" data-mode="internal">
+              <span class="wiz-mode-icon">🏠</span>
+              <span class="wiz-mode-name">Internal</span>
+              <span class="wiz-mode-sub">Reviewers work inside this tool</span>
+            </button>
+            <button type="button" class="wiz-mode-btn ${state.review_mode === 'external' ? 'selected' : ''}" data-mode="external">
+              <span class="wiz-mode-icon">🔗</span>
+              <span class="wiz-mode-name">External</span>
+              <span class="wiz-mode-sub">GitHub PR, Crucible, or other tool</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="wiz-external-fields" style="${state.review_mode === 'external' ? '' : 'display:none'}">
+          ${_requiredFields.includes('url') ? `
+          <div class="form-group">
+            <label class="form-label">Evidence URL <span class="text-muted">(link to PR, document, ticket…)</span></label>
+            <input class="form-input" id="wiz-ext-url" type="url"
+              value="${escHtml(state.external_evidence_url)}"
+              placeholder="https://github.com/org/repo/pull/123"/>
+          </div>` : ''}
+          ${_requiredFields.includes('notes') ? `
+          <div class="form-group">
+            <label class="form-label">Reviewer Notes</label>
+            <textarea class="form-input" id="wiz-ext-notes" rows="3"
+              placeholder="Summary of the external review…">${escHtml(state.external_evidence_notes)}</textarea>
+          </div>` : ''}
+        </div>
       </div>
     `;
 
     document.getElementById('wiz-title').oninput    = e => { state.title = e.target.value; };
     document.getElementById('wiz-date').onchange     = e => { state.planned_date = e.target.value; };
     document.getElementById('wiz-template').onchange = e => { state.template_id = e.target.value || null; };
+    document.getElementById('wiz-ext-url')?.addEventListener('input', e => { state.external_evidence_url = e.target.value; });
+    document.getElementById('wiz-ext-notes')?.addEventListener('input', e => { state.external_evidence_notes = e.target.value; });
+
+    body.querySelectorAll('.wiz-mode-btn').forEach(btn => {
+      btn.onclick = () => {
+        state.review_mode = btn.dataset.mode;
+        body.querySelectorAll('.wiz-mode-btn').forEach(b => b.classList.toggle('selected', b.dataset.mode === state.review_mode));
+        document.getElementById('wiz-external-fields').style.display = state.review_mode === 'external' ? '' : 'none';
+      };
+    });
 
     body.querySelectorAll('.wiz-type-card').forEach(card => {
       card.onclick = () => {
@@ -1342,14 +1392,17 @@ export async function renderReviewSessionWizard(container, ctx) {
     const tpl = (templates || []).find(t => t.id === state.template_id);
 
     const { data: session, error: se } = await sb.from('review_sessions').insert({
-      project_id:       project.id,
-      template_id:      state.template_id || null,
-      template_version: tpl?.current_version || null,
-      created_by:       currentUser?.id || null,
-      title:            state.title,
-      review_type:      state.review_type,
-      status:           'in_progress',
-      planned_date:     state.planned_date || null,
+      project_id:               project.id,
+      template_id:              state.template_id || null,
+      template_version:         tpl?.current_version || null,
+      created_by:               currentUser?.id || null,
+      title:                    state.title,
+      review_type:              state.review_type,
+      status:                   'in_progress',
+      planned_date:             state.planned_date || null,
+      review_mode:              state.review_mode || 'internal',
+      external_evidence_url:    state.external_evidence_url || null,
+      external_evidence_notes:  state.external_evidence_notes || null,
     }).select().single();
 
     if (se || !session) {

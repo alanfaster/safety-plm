@@ -1104,15 +1104,79 @@ export async function renderReviewExecute(container, ctx) {
     `;
   }
 
+  // External review mode: show evidence form in the center column
+  function mountExternalEvidencePanel(col) {
+    const hasUrl   = session.external_evidence_url;
+    const hasNotes = session.external_evidence_notes;
+    const isCompleted = session.status === 'completed';
+
+    col.innerHTML = `
+      <div class="rve-external-panel">
+        <div class="rve-external-header">
+          <span class="rve-external-mode-badge">🔗 External Review</span>
+          <p class="rve-external-desc">
+            This session uses an external review tool. Record the evidence below and set a verdict
+            for each artifact in the Properties panel on the right.
+          </p>
+        </div>
+        <div class="rve-external-body">
+          <div class="form-group">
+            <label class="form-label">Evidence URL <span class="text-muted">(PR, document, ticket…)</span></label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input class="form-input" id="rve-ext-url" type="url" ${isCompleted ? 'readonly' : ''}
+                value="${escHtml(session.external_evidence_url || '')}"
+                placeholder="https://github.com/org/repo/pull/123" style="flex:1"/>
+              ${hasUrl ? `<a href="${escHtml(session.external_evidence_url)}" target="_blank" class="btn btn-secondary btn-sm">↗ Open</a>` : ''}
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Reviewer Notes</label>
+            <textarea class="form-input" id="rve-ext-notes" rows="6" ${isCompleted ? 'readonly' : ''}
+              placeholder="Summary of findings, decisions, and outcome from the external review…">${escHtml(session.external_evidence_notes || '')}</textarea>
+          </div>
+          ${!isCompleted ? `<button class="btn btn-primary" id="rve-ext-save">Save Evidence</button>` : ''}
+          ${hasUrl || hasNotes ? `
+            <div class="rve-external-saved-badge">✓ Evidence recorded</div>` : ''}
+        </div>
+      </div>`;
+
+    if (!isCompleted) {
+      document.getElementById('rve-ext-save')?.addEventListener('click', async () => {
+        const btn   = document.getElementById('rve-ext-save');
+        const url   = document.getElementById('rve-ext-url').value.trim();
+        const notes = document.getElementById('rve-ext-notes').value.trim();
+        btn.disabled = true;
+        const { error } = await sb.from('review_sessions').update({
+          external_evidence_url:   url   || null,
+          external_evidence_notes: notes || null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', sessionId);
+        btn.disabled = false;
+        if (error) { toast('Error: ' + error.message, 'error'); return; }
+        session.external_evidence_url   = url;
+        session.external_evidence_notes = notes;
+        toast('Evidence saved.', 'success');
+        mountExternalEvidencePanel(col);
+      });
+    }
+  }
+
   // Mounts the checklist once in the middle column — stays mounted across artifact switches
   function mountChecklist(snap) {
     const col = document.getElementById('rve-checklist-col');
     if (!col) return;
 
     snap = snap || _selectedSnapshot || snapshots?.[0];
+    if (!snap) return;
+
+    // External review mode: show evidence panel instead of checklist
+    if (session.review_mode === 'external') {
+      mountExternalEvidencePanel(col);
+      return;
+    }
+
     const isShared = session.checklist_mode === 'shared';
     const ckSnap   = isShared ? (snapshots?.[0] || snap) : snap;
-    if (!snap) return;
 
     const snapResponses = _allResponses.filter(r => r.snapshot_id === ckSnap.id);
     const snapFindings  = _findings.filter(f => f.snapshot_id === snap.id);
@@ -1713,6 +1777,27 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   async function completeSession() {
+    // Block if external required evidence fields are missing
+    if (session.review_mode === 'external') {
+      const pcRow = await sb.from('project_config').select('config').eq('project_id', project.id).maybeSingle();
+      const requiredFields = pcRow?.data?.config?.external_review_required_fields || ['url', 'verdict'];
+      const missingEvidence = [];
+      if (requiredFields.includes('url') && !session.external_evidence_url)
+        missingEvidence.push('Evidence URL is required');
+      if (requiredFields.includes('notes') && !session.external_evidence_notes)
+        missingEvidence.push('Reviewer notes are required');
+      if (missingEvidence.length) {
+        showModal({
+          title: '⚠ Missing external review evidence',
+          body: `<p style="margin:0 0 10px">Complete the required evidence fields before closing:</p>
+                 <ul style="margin:0;padding-left:18px">${missingEvidence.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul>`,
+          footer: `<button class="btn btn-primary" id="rve-evid-close">OK</button>`,
+        });
+        document.getElementById('rve-evid-close').onclick = hideModal;
+        return;
+      }
+    }
+
     // Block if any reviewer has not set OK on every artifact
     const blocking = [];
     for (const snap of (snapshots || [])) {
