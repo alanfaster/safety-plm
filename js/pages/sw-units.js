@@ -44,7 +44,7 @@ export async function renderSwUnits(container, ctx) {
     savedKeywords.filter(k => k.enabled !== false).forEach(k => { HDR_KW[k.id] = k.kw; });
   } else {
     // Legacy object format or defaults
-    const defaults = { unit:'@unit', name:'@name', type:'@type', asil:'@asil', sdd:'@sdd', req:'@req', author:'@author', date:'@date' };
+    const defaults = { unit:'@unit', name:'@name', type:'@type', asil:'@asil', sdd:'@sdd', req:'@req', author:'@author', date:'@date', status:'@status' };
     Object.assign(HDR_KW, { ...defaults, ...(savedKeywords || {}) });
   }
 
@@ -480,13 +480,15 @@ export async function renderSwUnits(container, ctx) {
           if (hdr.sdd)    descParts.push(`SDD: ${hdr.sdd}`);
           if (hdr.req)    descParts.push(`Req: ${hdr.req}`);
           if (hdr.author) descParts.push(`Author: ${hdr.author}`);
+          const validStatuses = ['draft','in_review','approved','deprecated'];
+          const unitStatus = (hdr.status && validStatuses.includes(hdr.status)) ? hdr.status : 'draft';
           await sb.from('sw_units').insert({
             project_id: project.id, parent_type: parentType, parent_id: parentId,
             unit_code: unitCode, name: unitName, unit_type: unitType,
             file_path: filePath, language: langFromHeader || lang,
             description: descParts.length ? descParts.join(' | ') : null,
             source_code: content, content_hash: hash,
-            needs_review: true, version: 1, status: 'draft',
+            needs_review: true, version: 1, status: unitStatus,
             created_by: currentUserId,
           });
           added++;

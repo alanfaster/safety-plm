@@ -983,6 +983,7 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     { id:'req',    label:'Requirements', kw:'@req',    builtin:true },
     { id:'author', label:'Author',       kw:'@author', builtin:true },
     { id:'date',   label:'Date',         kw:'@date',   builtin:true },
+    { id:'status', label:'Status',        kw:'@status', builtin:true },
   ];
 
   function _loadHdrKeys() {
@@ -1026,7 +1027,7 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
 
   const EXAMPLE_VALUES = {
     unit:'SWU-MOT-001', name:'Motor Control', type:'function', asil:'B',
-    sdd:'SDD-MOT-001', req:'SWR-001, SWR-002', author:'A. Guerrero', date:'2026-05-04',
+    sdd:'SDD-MOT-001', req:'SWR-001, SWR-002', author:'A. Guerrero', date:'2026-05-04', status:'draft',
   };
 
   function updateExample() {
