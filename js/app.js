@@ -304,13 +304,6 @@ route('/project/:projectId/item/:itemId/reviews/new', async ({ projectId, itemId
   await renderReviewSessionWizard(getContent(), ctx);
 });
 
-route('/project/:projectId/item/:itemId/system/:systemId/reviews/new', async ({ projectId, itemId, systemId }) => {
-  setLoading();
-  const ctx = await loadItemContext(projectId, itemId, systemId, 'reviews');
-  if (!ctx) { navigate('/projects'); return; }
-  const { renderReviewSessionWizard } = await import('./pages/review-session-wizard.js');
-  await renderReviewSessionWizard(getContent(), ctx);
-});
 
 
 route('/project/:projectId/item/:itemId/reviews/:sessionId/execute', async ({ projectId, itemId, sessionId }) => {
@@ -321,13 +314,6 @@ route('/project/:projectId/item/:itemId/reviews/:sessionId/execute', async ({ pr
   await renderReviewExecute(getContent(), { ...ctx, sessionId });
 });
 
-route('/project/:projectId/item/:itemId/system/:systemId/reviews/:sessionId/execute', async ({ projectId, itemId, systemId, sessionId }) => {
-  setLoading();
-  const ctx = await loadItemContext(projectId, itemId, systemId, 'reviews');
-  if (!ctx) { navigate('/projects'); return; }
-  const { renderReviewExecute } = await import('./pages/review-execute.js');
-  await renderReviewExecute(getContent(), { ...ctx, sessionId });
-});
 
 route('/project/:projectId/item/:itemId/reviews', async ({ projectId, itemId }) => {
   setLoading();

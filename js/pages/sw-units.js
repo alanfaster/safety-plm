@@ -261,10 +261,12 @@ export async function renderSwUnits(container, ctx) {
     renderTable();
   };
 
+  // Reviews are always item-level (not system-scoped)
+  const reviewBase = `/project/${project.id}/item/${item.id}`;
   document.getElementById('swu-bulk-review').onclick = () => {
     if (!_selection.size) return;
     const ids = [..._selection].join(',');
-    navigate(`${base}/reviews/new?artifact_type=sw_units&artifact_ids=${ids}`);
+    navigate(`${reviewBase}/reviews/new?artifact_type=sw_units&artifact_ids=${ids}`);
   };
 
   document.getElementById('swu-bulk-status').onclick = () => {
@@ -610,7 +612,7 @@ export async function renderSwUnits(container, ctx) {
     });
 
     wrap.querySelectorAll('.swu-needs-review-badge').forEach(badge => {
-      badge.onclick = () => navigate(`${base}/reviews/new?artifact_type=sw_units&artifact_id=${badge.dataset.id}`);
+      badge.onclick = () => navigate(`${reviewBase}/reviews/new?artifact_type=sw_units&artifact_ids=${badge.dataset.id}`);
     });
 
     // Drag-drop reorder
