@@ -222,7 +222,10 @@ export async function renderSwUnits(container, ctx) {
       tab === 'trace' ? 'Traceability' : 'Properties';
   }
   document.getElementById('swu-tab-props').onclick  = () => switchPanelTab('props');
-  document.getElementById('swu-tab-trace').onclick  = () => { switchPanelTab('trace'); };
+  document.getElementById('swu-tab-trace').onclick  = () => {
+    switchPanelTab('trace');
+    if (_selectedUnitId) _tp.openPanel(_selectedUnitId);
+  };
 
   document.getElementById('swu-btn-new').onclick    = () => openForm(null);
   document.getElementById('swu-form-close').onclick  = closeForm;
