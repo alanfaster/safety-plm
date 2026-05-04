@@ -41,10 +41,6 @@ export async function renderProjectSettings(container, ctx) {
   const traceFields         = config.traceability_fields   || [];
   const vmodelLinks         = config.vmodel_links          || [];
   const vmodelCanvasNodes   = config.vmodel_canvas_nodes   || [];
-  const reviewMode          = config.review_mode           || 'internal';
-  const externalRequiredFields = config.external_review_required_fields || ['url', 'verdict'];
-  const swUnitTypes         = config.sw_unit_types         || [];
-  const headerKeywords      = config.header_keywords        || {};
 
   // Build function types from DB rows (or defaults if none saved yet)
   let functionTypes;
@@ -99,8 +95,12 @@ const DEFAULT_FUNCTION_TYPES = [
 ];
 
 function render(container, project, phaOverrides, fhaOverrides, functionTypes, reqCustomCols, archSpecCustomCols, testTypes, traceFields, vmodelLinks, vmodelCanvasNodes, configId, fullConfig = {}, ftFirstLoad = false) {
-  const fields    = DEFAULT_PHA_FIELDS.map(f => ({ ...f, ...(phaOverrides[f.key] || {}) }));
-  const fhaFields = DEFAULT_FHA_FIELDS.map(f => ({ ...f, ...(fhaOverrides[f.key] || {}) }));
+  const fields         = DEFAULT_PHA_FIELDS.map(f => ({ ...f, ...(phaOverrides[f.key] || {}) }));
+  const fhaFields      = DEFAULT_FHA_FIELDS.map(f => ({ ...f, ...(fhaOverrides[f.key] || {}) }));
+  const headerKeywords = fullConfig.header_keywords || {};
+  const reviewMode     = fullConfig.review_mode || 'internal';
+  const externalRequiredFields = fullConfig.external_review_required_fields || ['url', 'verdict'];
+  const swUnitTypes    = fullConfig.sw_unit_types || [];
 
   container.innerHTML = `
     <div class="page-header">
@@ -933,12 +933,16 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     language: 'Language hint — overrides file extension detection',
   };
 
-  document.getElementById('hdrkeys-list').innerHTML = HDR_KEY_IDS.map(k => `
-    <div class="settings-check-item" style="align-items:center;gap:10px;margin-bottom:8px">
-      <label class="form-label" style="width:80px;margin-bottom:0;font-family:monospace">${escHtml(HDR_KEY_DEFAULTS[k])}</label>
-      <input class="form-input" id="hdrkey-${k}" value="${escHtml(headerKeywords[k] || HDR_KEY_DEFAULTS[k])}" style="width:160px"/>
-      <span class="text-muted" style="font-size:12px">${escHtml(HDR_KEY_DESCS[k])}</span>
-    </div>`).join('');
+  document.getElementById('hdrkeys-list').innerHTML = HDR_KEY_IDS.map(k => {
+    const def   = HDR_KEY_DEFAULTS[k];
+    const saved = escHtml(headerKeywords[k] || def);
+    const desc  = escHtml(HDR_KEY_DESCS[k]);
+    return '<div class="settings-check-item" style="align-items:center;gap:10px;margin-bottom:8px">'
+      + '<label class="form-label" style="width:80px;margin-bottom:0;font-family:monospace">' + escHtml(def) + '</label>'
+      + '<input class="form-input" id="hdrkey-' + k + '" value="' + saved + '" style="width:160px"/>'
+      + '<span class="text-muted" style="font-size:12px">' + desc + '</span>'
+      + '</div>';
+  }).join('');
 
   document.getElementById('btn-reset-hdrkeys').onclick = () => {
     HDR_KEY_IDS.forEach(k => {
