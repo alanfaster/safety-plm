@@ -10,6 +10,7 @@
  */
 
 import { VMODEL_NODES, PHASE_DB_SOURCE } from './vmodel-editor.js';
+import { toast } from '../toast.js';
 
 export function createTracePanel({
   sb,
@@ -392,11 +393,12 @@ export function createTracePanel({
           const updated = { ...(artifact.traceability || {}) };
           updated[fieldId] = [...(updated[fieldId] || []), code];
           const { error } = await sb.from(table).update({ traceability: updated }).eq('id', artifact.id);
-          if (error) { console.error('Trace save failed', error); return; }
+          if (error) { toast('Error saving link: ' + error.message, 'error'); return; }
           artifact.traceability = updated;
           const d = getData().find(r => r.id === artifact.id);
           if (d) d.traceability = updated;
-          openPanel(artifact.id, true);
+          delete _sourceData[fieldId]; // force refresh of dropdown options
+          await openPanel(artifact.id, true);
           onBadgeRefresh?.(artifact.id);
         });
       });
@@ -410,11 +412,12 @@ export function createTracePanel({
         const updated = { ...(artifact.traceability || {}) };
         updated[fieldId] = (updated[fieldId] || []).filter(c => c !== code);
         const { error } = await sb.from(table).update({ traceability: updated }).eq('id', artifact.id);
-        if (error) { console.error('Trace save failed', error); return; }
+        if (error) { toast('Error removing link: ' + error.message, 'error'); return; }
         artifact.traceability = updated;
         const d = getData().find(r => r.id === artifact.id);
         if (d) d.traceability = updated;
-        openPanel(artifact.id, true);
+        delete _sourceData[fieldId]; // force refresh of dropdown options
+        await openPanel(artifact.id, true);
         onBadgeRefresh?.(artifact.id);
       });
     });
