@@ -220,7 +220,7 @@ export async function renderSwUnits(container, ctx) {
         <span class="text-muted" style="font-size:12px">${units.length} of ${_allUnits.length} units</span>
         <button class="btn btn-ghost btn-sm" id="swu-col-menu-btn">⊞ Columns</button>
       </div>
-      <div id="swu-col-menu" style="display:none" class="swu-col-menu">
+      <div id="swu-col-menu" style="display:none;right:0;top:32px" class="swu-col-menu">
         ${ALL_COLS.map(c => `
           <label class="swu-col-check">
             <input type="checkbox" data-col="${c.id}" ${_hiddenCols.has(c.id) ? '' : 'checked'}/>

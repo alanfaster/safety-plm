@@ -6763,10 +6763,11 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .swu-needs-review-badge  { cursor:pointer; }
 
 /* SW Units table toolbar + column controls */
-.swu-table-toolbar       { display:flex; align-items:center; justify-content:space-between; padding:6px 0 8px; }
-.swu-col-menu            { position:absolute; z-index:200; background:var(--bg-card);
+.swu-table-toolbar       { display:flex; align-items:center; justify-content:space-between; padding:6px 0 8px; position:relative; }
+.swu-col-menu            { position:absolute; z-index:200;
+                           background:var(--bg-card, #ffffff);
                            border:1px solid var(--border); border-radius:6px;
-                           box-shadow:0 4px 16px rgba(0,0,0,.12); padding:8px 0; min-width:160px; }
+                           box-shadow:0 4px 16px rgba(0,0,0,.18); padding:8px 0; min-width:160px; }
 .swu-col-check           { display:flex; align-items:center; gap:8px; padding:5px 14px;
                            font-size:13px; cursor:pointer; }
 .swu-col-check:hover     { background:var(--bg-hover); }
