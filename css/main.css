@@ -6762,6 +6762,15 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .swu-code-editor         { font-family:monospace; font-size:12px; resize:vertical; min-height:180px; }
 .swu-needs-review-badge  { cursor:pointer; }
 .swu-upload-summary      { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.swu-upload-warnings     { margin-top:14px; border:1px solid var(--color-warning, #f59e0b);
+                           border-radius:6px; overflow:hidden; }
+.swu-warn-title          { background:var(--color-warning-bg, #fffbeb); padding:8px 12px;
+                           font-weight:600; font-size:13px; color:var(--color-warning-text, #92400e); }
+.swu-warn-desc           { padding:6px 12px 8px; font-size:12px; color:var(--color-text-muted); }
+.swu-warn-table          { width:100%; border-collapse:collapse; font-size:12px; }
+.swu-warn-table th       { background:var(--bg-hover); padding:5px 12px; text-align:left;
+                           font-weight:600; border-top:1px solid var(--border); }
+.swu-warn-table td       { padding:5px 12px; border-top:1px solid var(--border); }
 
 /* ── SW Units onboarding panel ──────────────────────────────────────── */
 .swu-onboarding          { max-width:720px; margin:0 auto; padding:32px 0 48px; }

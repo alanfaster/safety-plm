@@ -468,6 +468,18 @@ export async function renderSwUnits(container, ctx) {
       btn.textContent = '…';
 
       let added = 0, changed = 0, unchanged = 0;
+      const warnings = []; // { unitCode, filePath, conflict: { file_path, unit_code } }
+
+      // Pre-load all existing unit_codes in this scope to detect duplicates
+      const { data: existingUnits } = await sb.from('sw_units')
+        .select('id, unit_code, file_path')
+        .eq('project_id', project.id)
+        .eq('parent_type', parentType)
+        .eq('parent_id', parentId);
+      const unitCodeMap = {}; // unit_code → { file_path }
+      (existingUnits || []).forEach(u => { unitCodeMap[u.unit_code] = u; });
+      // Also track codes assigned during this import batch
+      const assignedThisRun = {}; // unit_code → filePath
 
       for (const { path, entry } of _zipFiles) {
         const content   = await entry.async('string');
@@ -490,6 +502,15 @@ export async function renderSwUnits(container, ctx) {
           const unitCode = hdr.unit || ('SWU-' + filePath.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase().slice(0, 20));
           const unitName = hdr.name || filePath.split('/').pop();
           const unitType = hdr.type || 'general';
+
+          // Duplicate unit_code check
+          if (unitCodeMap[unitCode] && unitCodeMap[unitCode].file_path !== filePath) {
+            warnings.push({ unitCode, filePath, conflict: unitCodeMap[unitCode] });
+          } else if (assignedThisRun[unitCode] && assignedThisRun[unitCode] !== filePath) {
+            warnings.push({ unitCode, filePath, conflict: { file_path: assignedThisRun[unitCode] } });
+          }
+          assignedThisRun[unitCode] = filePath;
+
           const descParts = [];
           if (hdr.asil)   descParts.push(`ASIL: ${hdr.asil}`);
           if (hdr.sdd)    descParts.push(`SDD: ${hdr.sdd}`);
@@ -506,6 +527,7 @@ export async function renderSwUnits(container, ctx) {
             needs_review: true, version: 1, status: unitStatus,
             created_by: currentUserId,
           });
+          unitCodeMap[unitCode] = { file_path: filePath };
           added++;
         } else if (existing.content_hash !== hash) {
           await sb.from('sw_unit_versions').insert({
@@ -526,11 +548,28 @@ export async function renderSwUnits(container, ctx) {
 
       const result = document.getElementById('swu-zip-result');
       result.style.display = '';
-      result.innerHTML = `<div class="swu-upload-summary">
+      let html = `<div class="swu-upload-summary">
         <span class="badge badge-approved">✓ ${added} new</span>
         <span class="badge badge-review">⚠ ${changed} changed</span>
         <span class="badge badge-draft">${unchanged} unchanged</span>
       </div>`;
+      if (warnings.length) {
+        html += `<div class="swu-upload-warnings">
+          <div class="swu-warn-title">⚠ Duplicate unit codes detected (${warnings.length})</div>
+          <div class="swu-warn-desc">The following files share a unit code that is already assigned to a different file. Fix the <code>@unit</code> header in your source files to ensure each unit has a unique code.</div>
+          <table class="swu-warn-table">
+            <thead><tr><th>Unit Code</th><th>This file</th><th>Already assigned to</th></tr></thead>
+            <tbody>${warnings.map(w => `
+              <tr>
+                <td class="mono">${escHtml(w.unitCode)}</td>
+                <td class="mono text-muted">${escHtml(w.filePath)}</td>
+                <td class="mono" style="color:var(--color-danger)">${escHtml(w.conflict.file_path)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      }
+      result.innerHTML = html;
       btn.textContent = 'Done';
 
       await loadList();
