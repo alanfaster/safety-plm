@@ -4820,29 +4820,14 @@ th.col-th-dragging * { pointer-events: none; }
 /* Collapsed rail */
 .req-trace-panel:not(.open) .req-trace-panel-hdr,
 .req-trace-panel:not(.open) .req-trace-panel-body { display: none; }
-.req-trace-panel-expand {
-  display: none;
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 15px;
-  color: var(--color-text-muted);
-  padding: 4px;
-  border-radius: 4px;
-  line-height: 1;
-}
-.req-trace-panel-expand:hover { color: var(--color-primary); background: var(--color-hover); }
-.req-trace-panel:not(.open) .req-trace-panel-expand { display: block; }
+.req-trace-panel:not(.open) { cursor: pointer; }
+.req-trace-panel:not(.open):hover { background: var(--color-hover); }
 .req-trace-panel-rail-label {
   display: none;
   position: absolute;
-  top: 36px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%) rotate(90deg);
+  transform: translateX(-50%) translateY(-50%) rotate(90deg);
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;

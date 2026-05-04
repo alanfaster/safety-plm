@@ -102,7 +102,6 @@ export async function renderSwUnits(container, ctx) {
         <div class="content-loading"><div class="spinner"></div></div>
       </div>
       <aside class="req-trace-panel" id="swu-props-panel">
-        <button class="req-trace-panel-expand" id="swu-props-expand" title="Expand Properties">☰</button>
         <span class="req-trace-panel-rail-label">Properties</span>
         <div class="req-trace-panel-hdr">
           <span class="req-trace-panel-title">Properties</span>
@@ -189,11 +188,11 @@ export async function renderSwUnits(container, ctx) {
   document.getElementById('swu-form-close').onclick  = closeForm;
   document.getElementById('swu-form-cancel').onclick = closeForm;
   document.getElementById('swu-btn-upload').onclick  = () => openUploadModal();
-  document.getElementById('swu-props-close').onclick  = () => closePropsPanel();
-  document.getElementById('swu-props-expand').onclick = () => {
+  document.getElementById('swu-props-close').onclick = () => closePropsPanel();
+  document.getElementById('swu-props-panel').addEventListener('click', e => {
     const panel = document.getElementById('swu-props-panel');
-    panel.classList.add('open');
-  };
+    if (!panel.classList.contains('open')) panel.classList.add('open');
+  });
 
   document.getElementById('swu-bulk-cancel').onclick = () => {
     _selection.clear();
