@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @unit    SWU-MOT-001
  * @name    Motor Control
  * @type    function
@@ -11,7 +11,7 @@
  *
  * Controls the brushless DC motor speed and direction. (v2)
  * Changes: PID_KP 1.2->1.5, OVER_TEMP 85->90, anti-windup + fault LED.
- * 
+ *
  * RENAME THIS FILE TO motor_control.c WHEN UPLOADING THE SECOND ZIP
  */
 
@@ -21,48 +21,63 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define MOTOR_MAX_RPM       8000
-#define MOTOR_MIN_RPM       0
-#define PID_KP              1.5f   /* CHANGED: 1.2 -> 1.5 */
+#define PID_KP              1.5f    /* ECR-2024-038: increased from 1.2 for faster response */
 #define PID_KI              0.05f
 #define PID_KD              0.01f
-#define OVER_TEMP_THRESHOLD 90     /* CHANGED: 85 -> 90 */
-#define INTEGRAL_LIMIT      500.0f /* NEW: anti-windup clamp */
+#define MOTOR_MAX_RPM       8000
+#define MOTOR_MIN_RPM       0
+#define OVER_TEMP_THRESHOLD 90.0f   /* ECR-2024-039: raised threshold from 85 °C */
+#define PWM_DUTY_MAX        1000u
+#define INTEGRAL_MAX        500.0f  /* anti-windup clamp */
+
+extern void pwm_set_duty(uint16_t duty);
 
 typedef struct {
     float setpoint;
     float integral;
     float prev_error;
     bool  enabled;
-} MotorState_t;
+} MotorCtx_t;
 
-static MotorState_t g_motor = { 0.0f, 0.0f, 0.0f, false };
+static MotorCtx_t g_motor;
 
-int motor_init(void) {
+/* ── motor_init ───────────────────────────────────────────────────────────── */
+void motor_init(void)
+{
     g_motor.setpoint   = 0.0f;
     g_motor.integral   = 0.0f;
     g_motor.prev_error = 0.0f;
     g_motor.enabled    = false;
-    return 0;
+    pwm_set_duty(0);
 }
 
-void motor_set_speed(float rpm) {
-    if (rpm < MOTOR_MIN_RPM) rpm = MOTOR_MIN_RPM;
-    if (rpm > MOTOR_MAX_RPM) rpm = MOTOR_MAX_RPM;
+/* ── motor_set_speed ──────────────────────────────────────────────────────── */
+void motor_set_speed(float rpm)
+{
+    if (rpm < (float)MOTOR_MIN_RPM) rpm = (float)MOTOR_MIN_RPM;
+    if (rpm > (float)MOTOR_MAX_RPM) rpm = (float)MOTOR_MAX_RPM;
     g_motor.setpoint = rpm;
+    g_motor.enabled  = (rpm > 0.0f);
 }
 
-void motor_run(float current_rpm, float dt) {
+/* ── motor_run ────────────────────────────────────────────────────────────── */
+void motor_run(float current_rpm, float dt)
+{
     if (!g_motor.enabled) return;
 
-    float error    = g_motor.setpoint - current_rpm;
-    g_motor.integral += error * dt;
+    if (safety_get_temperature() > OVER_TEMP_THRESHOLD) {
+        motor_emergency_stop();
+        return;
+    }
 
-    /* Anti-windup clamp â€” NEW */
-    if (g_motor.integral >  INTEGRAL_LIMIT) g_motor.integral =  INTEGRAL_LIMIT;
-    if (g_motor.integral < -INTEGRAL_LIMIT) g_motor.integral = -INTEGRAL_LIMIT;
+    float error        = g_motor.setpoint - current_rpm;
+    g_motor.integral  += error * dt;
 
-    float derivative   = (error - g_motor.prev_error) / dt;
+    /* Anti-windup: clamp integral accumulator */
+    if (g_motor.integral >  INTEGRAL_MAX) g_motor.integral =  INTEGRAL_MAX;
+    if (g_motor.integral < -INTEGRAL_MAX) g_motor.integral = -INTEGRAL_MAX;
+
+    float derivative   = (dt > 0.0f) ? ((error - g_motor.prev_error) / dt) : 0.0f;
     g_motor.prev_error = error;
 
     float output = PID_KP * error
@@ -72,26 +87,35 @@ void motor_run(float current_rpm, float dt) {
     if (output < 0.0f)   output = 0.0f;
     if (output > 100.0f) output = 100.0f;
 
-    if (safety_get_temperature() > OVER_TEMP_THRESHOLD) {
-        motor_emergency_stop();
-        return;
-    }
-
-    pwm_set_duty((uint8_t)output);
+    uint16_t duty = (uint16_t)((output / 100.0f) * (float)PWM_DUTY_MAX);
+    pwm_set_duty(duty);
 }
 
-void motor_emergency_stop(void) {
-    g_motor.enabled  = false;
-    g_motor.setpoint = 0.0f;
-    g_motor.integral = 0.0f;
+/* ── motor_emergency_stop ─────────────────────────────────────────────────── */
+void motor_emergency_stop(void)
+{
+    g_motor.enabled    = false;
+    g_motor.setpoint   = 0.0f;
+    g_motor.integral   = 0.0f;
+    g_motor.prev_error = 0.0f;
     pwm_set_duty(0);
-    fault_led_set(true);   /* NEW: illuminate fault LED */
+    fault_led_set(true);    /* illuminate fault indicator */
     safety_log_event(SAFETY_EVENT_MOTOR_ESTOP);
 }
 
-void motor_enable(bool enable) {
-    g_motor.enabled = enable;
-    if (!enable) {
+/* ── motor_is_running ─────────────────────────────────────────────────────── */
+bool motor_is_running(void)
+{
+    return g_motor.enabled && (g_motor.setpoint > 0.0f);
+}
+
+/* ── motor_enable ─────────────────────────────────────────────────────────── */
+void motor_enable(bool en)
+{
+    g_motor.enabled = en;
+    if (!en) {
+        g_motor.integral   = 0.0f;
+        g_motor.prev_error = 0.0f;
         pwm_set_duty(0);
     }
 }

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @unit    SWU-CFG-001
  * @name    Motor Calibration & Thresholds
  * @type    calibration
@@ -16,38 +16,62 @@
 #include "safety_monitor.h"
 #include <stdint.h>
 
-/* â”€â”€ PID gains â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── PID gains ───────────────────────────────────────────────────────────── */
+const float    CAL_PID_KP      = 1.2f;
+const float    CAL_PID_KI      = 0.05f;
+const float    CAL_PID_KD      = 0.01f;
 
-const float CAL_PID_KP          = 1.2f;   /* proportional gain */
-const float CAL_PID_KI          = 0.05f;  /* integral gain     */
-const float CAL_PID_KD          = 0.01f;  /* derivative gain   */
-const float CAL_PID_INTEGRAL_MAX = 500.0f; /* anti-windup clamp */
+/* ── Speed limits ────────────────────────────────────────────────────────── */
+const uint16_t CAL_MAX_RPM     = 8000u;
+const uint16_t CAL_MIN_RPM     = 50u;
+const uint16_t CAL_RAMP_STEP   = 200u;  /* RPM increments per ramp tick */
 
-/* â”€â”€ Speed limits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Thermal thresholds ──────────────────────────────────────────────────── */
+const float    CAL_OVER_TEMP   = 85.0f;   /* emergency cut-off °C */
+const float    CAL_WARN_TEMP   = 75.0f;   /* warning level °C */
 
-const uint16_t CAL_MOTOR_MAX_RPM   = 8000u;
-const uint16_t CAL_MOTOR_MIN_RPM   =   50u;  /* below this: considered stopped */
-const uint16_t CAL_MOTOR_RAMP_STEP =  200u;  /* RPM/cycle soft-start ramp      */
+/* ── Voltage rails ───────────────────────────────────────────────────────── */
+const uint16_t CAL_UNDERVOLT_MV = 10500u; /* minimum bus voltage */
+const uint16_t CAL_OVERVOLT_MV  = 15000u; /* maximum bus voltage */
 
-/* â”€â”€ Safety thresholds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ── Encoder resolution ──────────────────────────────────────────────────── */
+const uint16_t CAL_ENC_PPR = 1024u;   /* pulses per revolution */
 
-const float    CAL_OVER_TEMP_C       =  85.0f;  /* Â°C â€” emergency stop threshold */
-const float    CAL_WARN_TEMP_C       =  75.0f;  /* Â°C â€” log warning, reduce power */
-const uint16_t CAL_UNDERVOLT_MV      = 10500u;  /* mV â€” 10.5 V minimum supply    */
-const uint16_t CAL_OVERVOLT_MV       = 15000u;  /* mV â€” 15.0 V maximum supply    */
-
-/* â”€â”€ NTC thermistor lookup table (ADC count â†’ Â°C, 12-bit ADC, 3.3 V ref) â”€â”€ */
-/* Sampled at 10 Â°C intervals from -10 Â°C to 120 Â°C */
-
+/* ── NTC temperature lookup (ADC counts @ 12-bit / 3.3 V ref) ──────────── */
+/* Index 0 = -10 °C, step = 10 °C, index 13 = 120 °C                        */
 const uint16_t CAL_NTC_ADC[14] = {
-    3950, 3820, 3640, 3400, 3100,   /* -10, 0, 10, 20, 30 Â°C */
-    2760, 2390, 2020, 1680, 1380,   /*  40, 50, 60, 70, 80 Â°C */
-    1120,  900,  720,  580          /*  90, 100, 110, 120 Â°C  */
+    3950, 3820, 3640, 3400, 3100,
+    2760, 2390, 2020, 1680, 1380,
+    1120,  900,  720,  580
 };
-const int8_t CAL_NTC_TEMP_BASE   = -10;  /* Â°C at index 0 */
-const int8_t CAL_NTC_TEMP_STEP   =  10;  /* Â°C per step   */
 
-/* â”€â”€ Encoder resolution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const int8_t CAL_NTC_BASE = -10;   /* °C at index 0 */
+const int8_t CAL_NTC_STEP =  10;   /* °C per index step */
 
-const uint16_t CAL_ENC_PPR       = 1024u;  /* pulses per revolution (quadrature â†’ Ã—4) */
-const uint16_t CAL_ENC_SAMPLE_HZ = 1000u;  /* encoder sampled at 1 kHz (motor task)   */
+/* ── cal_ntc_to_celsius ───────────────────────────────────────────────────── */
+float cal_ntc_to_celsius(uint16_t adc)
+{
+    const uint8_t table_len = (uint8_t)(sizeof(CAL_NTC_ADC) / sizeof(CAL_NTC_ADC[0]));
+
+    /* ADC value decreases as temperature rises — clamp to table edges */
+    if (adc >= CAL_NTC_ADC[0]) {
+        return (float)CAL_NTC_BASE;
+    }
+    if (adc <= CAL_NTC_ADC[table_len - 1u]) {
+        return (float)CAL_NTC_BASE + (float)(table_len - 1u) * (float)CAL_NTC_STEP;
+    }
+
+    /* Find bracketing interval */
+    for (uint8_t i = 0u; i < (table_len - 1u); i++) {
+        if (adc <= CAL_NTC_ADC[i] && adc > CAL_NTC_ADC[i + 1u]) {
+            float t_lo  = (float)CAL_NTC_BASE + (float)i       * (float)CAL_NTC_STEP;
+            float t_hi  = (float)CAL_NTC_BASE + (float)(i + 1u) * (float)CAL_NTC_STEP;
+            float adc_lo = (float)CAL_NTC_ADC[i];
+            float adc_hi = (float)CAL_NTC_ADC[i + 1u];
+            /* Linear interpolation within the 10 °C bracket */
+            float frac  = (adc_lo - (float)adc) / (adc_lo - adc_hi);
+            return t_lo + frac * (t_hi - t_lo);
+        }
+    }
+    return 0.0f;   /* should not reach here */
+}

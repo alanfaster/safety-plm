@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @unit    SWU-SEN-001
  * @name    Speed Sensor Driver
  * @type    function
@@ -15,77 +15,55 @@
 #include "speed_sensor.h"
 #include <stdint.h>
 
-#define ENCODER_PPR         1024   /* pulses per revolution */
-#define SAMPLE_PERIOD_MS    10     /* sampling period in ms */
-#define RPM_FILTER_ALPHA    0.8f   /* low-pass filter coefficient */
+#define ENCODER_PPR         1024u   /* pulses per revolution */
+#define SAMPLE_PERIOD_MS    10u     /* sampling period — must match task period */
+#define RPM_FILTER_ALPHA    0.8f    /* IIR low-pass: higher = smoother */
 
-static uint32_t g_prev_count  = 0;
-static float    g_filtered_rpm = 0.0f;
+/* Precomputed: (60 * 1000) / (PPR * SAMPLE_MS) = 60000 / 10240 */
+#define RPM_SCALE_FACTOR    ((60.0f * 1000.0f) / ((float)ENCODER_PPR * (float)SAMPLE_PERIOD_MS))
 
-/**
- * @unit    SWU-SEN-001
- * @name    Speed Sensor Driver
- * @type    function
- * @asil    B
- * @sdd     SDD-SEN-001
- * @req     SWR-SEN-001, SWR-SEN-002
- * @author  A. Guerrero
- * @date    2026-05-04
- * @status  approved
- *
- * Reads quadrature encoder pulses and computes RPM.
- */
-void speed_sensor_init(void) {
-    g_prev_count   = 0;
-    g_filtered_rpm = 0.0f;
+extern void     encoder_hw_init(void);
+extern void     encoder_reset_count(void);
+extern uint32_t encoder_read_count(void);
+
+static uint32_t g_prev_count = 0u;
+static float    g_rpm        = 0.0f;
+
+/* ── speed_sensor_init ────────────────────────────────────────────────────── */
+void speed_sensor_init(void)
+{
+    g_prev_count = 0u;
+    g_rpm        = 0.0f;
     encoder_hw_init();
 }
 
-/**
- * @unit    SWU-SEN-001
- * @name    Speed Sensor Driver
- * @type    function
- * @asil    B
- * @sdd     SDD-SEN-001
- * @req     SWR-SEN-001, SWR-SEN-002
- * @author  A. Guerrero
- * @date    2026-05-04
- * @status  approved
- *
- * Reads quadrature encoder pulses and computes RPM.
- */
-float speed_sensor_read_rpm(void) {
-    uint32_t current_count = encoder_get_count();
-    uint32_t delta         = current_count - g_prev_count;
-    g_prev_count           = current_count;
+/* ── speed_sensor_read_rpm ────────────────────────────────────────────────── */
+float speed_sensor_read_rpm(void)
+{
+    uint32_t cur_count = encoder_read_count();
 
-    /* Convert pulse delta to RPM:
-     *   RPM = (delta / PPR) * (60000 / SAMPLE_PERIOD_MS) */
-    float raw_rpm = ((float)delta / ENCODER_PPR)
-                  * (60000.0f / SAMPLE_PERIOD_MS);
+    /* Handle 32-bit wrap-around gracefully */
+    uint32_t delta = cur_count - g_prev_count;   /* unsigned subtraction wraps correctly */
+    g_prev_count   = cur_count;
 
-    /* Apply low-pass filter */
-    g_filtered_rpm = RPM_FILTER_ALPHA * g_filtered_rpm
-                   + (1.0f - RPM_FILTER_ALPHA) * raw_rpm;
+    float raw_rpm = (float)delta * RPM_SCALE_FACTOR;
 
-    return g_filtered_rpm;
+    /* First-order IIR low-pass filter */
+    g_rpm = RPM_FILTER_ALPHA * g_rpm + (1.0f - RPM_FILTER_ALPHA) * raw_rpm;
+
+    return g_rpm;
 }
 
-/**
- * @unit    SWU-SEN-001
- * @name    Speed Sensor Driver
- * @type    function
- * @asil    B
- * @sdd     SDD-SEN-001
- * @req     SWR-SEN-001, SWR-SEN-002
- * @author  A. Guerrero
- * @date    2026-05-04
- * @status  approved
- *
- * Reads quadrature encoder pulses and computes RPM.
- */
-void speed_sensor_reset(void) {
+/* ── speed_sensor_reset ───────────────────────────────────────────────────── */
+void speed_sensor_reset(void)
+{
+    g_prev_count = 0u;
+    g_rpm        = 0.0f;
     encoder_reset_count();
-    g_prev_count   = 0;
-    g_filtered_rpm = 0.0f;
+}
+
+/* ── speed_sensor_is_stalled ──────────────────────────────────────────────── */
+bool speed_sensor_is_stalled(float min_rpm)
+{
+    return g_rpm < min_rpm;
 }
