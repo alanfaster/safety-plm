@@ -1,10 +1,15 @@
 /**
- * motor_control.c
- * SW Unit: Motor Control
- * Description: Controls the brushless DC motor speed and direction.
- *              Implements PID regulation and safety cut-off.
- * ASIL: B
- * Linked SDD: SDD-MOT-001
+ * @unit    SWU-MOT-001
+ * @name    Motor Control
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-MOT-001
+ * @req     SWR-MOT-001, SWR-MOT-002, SWR-MOT-003
+ * @author  A. Guerrero
+ * @language c
+ *
+ * Controls the brushless DC motor speed and direction.
+ * Implements PID regulation and safety cut-off.
  */
 
 #include "motor_control.h"

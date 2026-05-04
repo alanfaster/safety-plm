@@ -1,5 +1,12 @@
 /**
- * motor_control.h — Motor Control public API
+ * @unit    SWU-MOT-001-H
+ * @name    Motor Control API Header
+ * @type    general
+ * @asil    B
+ * @sdd     SDD-MOT-001
+ * @req     SWR-MOT-001
+ * @author  A. Guerrero
+ * @language c
  */
 #ifndef MOTOR_CONTROL_H
 #define MOTOR_CONTROL_H

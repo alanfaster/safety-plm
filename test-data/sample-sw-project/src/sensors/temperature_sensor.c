@@ -1,9 +1,14 @@
 /**
- * temperature_sensor.c
- * SW Unit: Temperature Sensor Driver
- * Description: Reads NTC thermistor via ADC and converts to Celsius.
- * ASIL: A
- * Linked SDD: SDD-SEN-002
+ * @unit    SWU-SEN-002
+ * @name    Temperature Sensor Driver
+ * @type    function
+ * @asil    A
+ * @sdd     SDD-SEN-002
+ * @req     SWR-SEN-003
+ * @author  A. Guerrero
+ * @language c
+ *
+ * Reads NTC thermistor via ADC and converts to Celsius.
  */
 
 #include "temperature_sensor.h"

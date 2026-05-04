@@ -1,10 +1,15 @@
 /**
- * safety_monitor.c
- * SW Unit: Safety Monitor
- * Description: Central safety supervision — monitors watchdog, temperature,
- *              voltage rail and transitions system to SAFE state on fault.
- * ASIL: B
- * Linked SDD: SDD-SAF-001
+ * @unit    SWU-SAF-001
+ * @name    Safety Monitor
+ * @type    state_machine
+ * @asil    B
+ * @sdd     SDD-SAF-001
+ * @req     SWR-SAF-001, SWR-SAF-002, SWR-SAF-003, SWR-SAF-004
+ * @author  A. Guerrero
+ * @language c
+ *
+ * Central safety supervision — monitors watchdog, temperature,
+ * voltage rail and transitions system to SAFE state on fault.
  */
 
 #include "safety_monitor.h"

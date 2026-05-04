@@ -1,10 +1,15 @@
 /**
- * motor_control.c  — VERSION 2 (modified for drift detection test)
- * Changes vs v1:
- *   - PID_KP changed from 1.2 to 1.5 (tuning)
- *   - OVER_TEMP_THRESHOLD raised from 85 to 90
- *   - motor_run: added anti-windup on integral
- *   - motor_emergency_stop: added FAULT LED output
+ * @unit    SWU-MOT-001
+ * @name    Motor Control
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-MOT-001
+ * @req     SWR-MOT-001, SWR-MOT-002, SWR-MOT-003
+ * @author  A. Guerrero
+ * @language c
+ *
+ * Controls the brushless DC motor speed and direction. (v2)
+ * Changes: PID_KP 1.2→1.5, OVER_TEMP 85→90, anti-windup + fault LED.
  *
  * RENAME THIS FILE TO motor_control.c WHEN UPLOADING THE SECOND ZIP
  */

@@ -1,5 +1,12 @@
 /**
- * safety_monitor.h — Safety Monitor public API
+ * @unit    SWU-SAF-001-H
+ * @name    Safety Monitor API Header
+ * @type    general
+ * @asil    B
+ * @sdd     SDD-SAF-001
+ * @req     SWR-SAF-001
+ * @author  A. Guerrero
+ * @language c
  */
 #ifndef SAFETY_MONITOR_H
 #define SAFETY_MONITOR_H

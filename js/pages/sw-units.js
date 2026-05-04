@@ -12,9 +12,35 @@ const STATUS_LABELS  = { draft:'Draft', in_review:'In Review', approved:'Approve
 const STATUS_CLASSES = { draft:'badge-draft', in_review:'badge-review', approved:'badge-approved', deprecated:'badge-deprecated' };
 const LANGUAGE_LABELS = { c:'C', cpp:'C++', python:'Python', java:'Java', js:'JavaScript', ts:'TypeScript', rust:'Rust', other:'Other' };
 
+const BUILTIN_UNIT_TYPES = [
+  { id: 'function',      label: 'Function / Method' },
+  { id: 'class',         label: 'Class' },
+  { id: 'isr',           label: 'Interrupt (ISR)' },
+  { id: 'task',          label: 'RTOS Task' },
+  { id: 'state_machine', label: 'State Machine' },
+  { id: 'calibration',   label: 'Calibration / Config' },
+  { id: 'general',       label: 'General Code' },
+];
+
 export async function renderSwUnits(container, ctx) {
   const { project, item } = ctx;
   const base = `/project/${project.id}/item/${item.id}`;
+
+  // Load project config to get custom unit types and header keywords
+  const { data: pcRow } = await sb.from('project_config').select('config').eq('project_id', project.id).maybeSingle();
+  const customUnitTypes = pcRow?.config?.sw_unit_types || [];
+  const allUnitTypes = [...BUILTIN_UNIT_TYPES, ...customUnitTypes];
+  const savedKeywords = pcRow?.config?.header_keywords || {};
+  const HDR_KW = {
+    unit:     savedKeywords.unit     || '@unit',
+    name:     savedKeywords.name     || '@name',
+    type:     savedKeywords.type     || '@type',
+    asil:     savedKeywords.asil     || '@asil',
+    sdd:      savedKeywords.sdd      || '@sdd',
+    req:      savedKeywords.req      || '@req',
+    author:   savedKeywords.author   || '@author',
+    language: savedKeywords.language || '@language',
+  };
 
   setBreadcrumb([
     { label: 'Projects', path: '/projects' },
@@ -59,18 +85,24 @@ export async function renderSwUnits(container, ctx) {
         </div>
         <div class="form-grid cols-2">
           <div class="form-group">
+            <label class="form-label">Unit Type</label>
+            <select class="form-input form-select" id="swu-field-unittype">
+              ${allUnitTypes.map(t => `<option value="${escHtml(t.id)}">${escHtml(t.label)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
             <label class="form-label">Language</label>
             <select class="form-input form-select" id="swu-field-language">
               <option value="">— select —</option>
               ${Object.entries(LANGUAGE_LABELS).map(([v,l]) => `<option value="${v}">${l}</option>`).join('')}
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label">Status</label>
-            <select class="form-input form-select" id="swu-field-status">
-              ${Object.entries(STATUS_LABELS).map(([v,l]) => `<option value="${v}">${l}</option>`).join('')}
-            </select>
-          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select class="form-input form-select" id="swu-field-status">
+            ${Object.entries(STATUS_LABELS).map(([v,l]) => `<option value="${v}">${l}</option>`).join('')}
+          </select>
         </div>
         <div class="form-group">
           <label class="form-label">File Path</label>
@@ -126,15 +158,18 @@ export async function renderSwUnits(container, ctx) {
       <table class="data-table">
         <thead>
           <tr>
-            <th>Code</th><th>Name</th><th>File</th><th>Lang</th>
+            <th>Code</th><th>Name</th><th>Type</th><th>File</th><th>Lang</th>
             <th>Version</th><th>Status</th><th>Review</th><th></th>
           </tr>
         </thead>
         <tbody>
-          ${units.map(u => `
+          ${units.map(u => {
+            const unitTypeLabel = allUnitTypes.find(t => t.id === u.unit_type)?.label || u.unit_type || '—';
+            return `
             <tr data-id="${u.id}">
               <td class="mono">${escHtml(u.unit_code)}</td>
               <td>${escHtml(u.name)}</td>
+              <td><span class="badge badge-draft" style="font-size:10px">${escHtml(unitTypeLabel)}</span></td>
               <td class="mono text-muted" style="font-size:11px">${escHtml(u.file_path || '—')}</td>
               <td>${escHtml(LANGUAGE_LABELS[u.language] || u.language || '—')}</td>
               <td class="text-muted">v${u.version}</td>
@@ -146,7 +181,8 @@ export async function renderSwUnits(container, ctx) {
                 <button class="btn btn-secondary btn-sm swu-edit-btn" data-id="${u.id}">Edit</button>
                 <button class="btn btn-ghost btn-sm swu-del-btn" data-id="${u.id}">Delete</button>
               </td>
-            </tr>`).join('')}
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
     `;
@@ -177,6 +213,7 @@ export async function renderSwUnits(container, ctx) {
     document.getElementById('swu-form-title').textContent = unit ? 'Edit SW Unit' : 'New SW Unit';
     document.getElementById('swu-field-code').value      = unit?.unit_code || '';
     document.getElementById('swu-field-name').value      = unit?.name || '';
+    document.getElementById('swu-field-unittype').value = unit?.unit_type || 'general';
     document.getElementById('swu-field-language').value  = unit?.language || '';
     document.getElementById('swu-field-status').value    = unit?.status || 'draft';
     document.getElementById('swu-field-filepath').value  = unit?.file_path || '';
@@ -196,6 +233,7 @@ export async function renderSwUnits(container, ctx) {
   async function saveForm() {
     const unit_code   = document.getElementById('swu-field-code').value.trim();
     const name        = document.getElementById('swu-field-name').value.trim();
+    const unit_type   = document.getElementById('swu-field-unittype').value || 'general';
     const language    = document.getElementById('swu-field-language').value;
     const status      = document.getElementById('swu-field-status').value;
     const file_path   = document.getElementById('swu-field-filepath').value.trim();
@@ -231,7 +269,7 @@ export async function renderSwUnits(container, ctx) {
       }
 
       const { error } = await sb.from('sw_units').update({
-        unit_code, name, language: language || null, status,
+        unit_code, name, unit_type, language: language || null, status,
         file_path: file_path || null, description: description || null,
         source_code: source_code || null, content_hash,
         ...needs_review_update,
@@ -243,7 +281,7 @@ export async function renderSwUnits(container, ctx) {
     } else {
       const { error } = await sb.from('sw_units').insert({
         project_id: project.id, parent_type: 'item', parent_id: item.id,
-        unit_code, name, language: language || null, status,
+        unit_code, name, unit_type, language: language || null, status,
         file_path: file_path || null, description: description || null,
         source_code: source_code || null, content_hash,
         needs_review: false, version: 1, created_by: currentUserId,
@@ -341,13 +379,23 @@ export async function renderSwUnits(container, ctx) {
           .eq('file_path', filePath)
           .maybeSingle();
 
+        const hdr = parseFileHeader(content);
+        const langFromHeader = hdr.language ? detectLanguage('file.' + hdr.language) : null;
+
         if (!existing) {
-          // Auto-generate unit_code
-          const unitCode = 'SWU-' + filePath.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase().slice(0, 20);
+          const unitCode = hdr.unit || ('SWU-' + filePath.replace(/[^a-zA-Z0-9]/g, '-').toUpperCase().slice(0, 20));
+          const unitName = hdr.name || filePath.split('/').pop();
+          const unitType = hdr.type || 'general';
+          const descParts = [];
+          if (hdr.asil)   descParts.push(`ASIL: ${hdr.asil}`);
+          if (hdr.sdd)    descParts.push(`SDD: ${hdr.sdd}`);
+          if (hdr.req)    descParts.push(`Req: ${hdr.req}`);
+          if (hdr.author) descParts.push(`Author: ${hdr.author}`);
           await sb.from('sw_units').insert({
             project_id: project.id, parent_type: 'item', parent_id: item.id,
-            unit_code: unitCode, name: filePath.split('/').pop(),
-            file_path: filePath, language: lang,
+            unit_code: unitCode, name: unitName, unit_type: unitType,
+            file_path: filePath, language: langFromHeader || lang,
+            description: descParts.length ? descParts.join(' | ') : null,
             source_code: content, content_hash: hash,
             needs_review: true, version: 1, status: 'draft',
             created_by: currentUserId,
@@ -384,6 +432,20 @@ export async function renderSwUnits(container, ctx) {
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────────
+
+  function parseFileHeader(content) {
+    const lines = content.split('\n').slice(0, 30); // Only scan first 30 lines
+    const result = {};
+    for (const line of lines) {
+      const trimmed = line.replace(/^[\s*/]+/, '').trim(); // Strip comment chars
+      for (const [field, kw] of Object.entries(HDR_KW)) {
+        if (trimmed.startsWith(kw)) {
+          result[field] = trimmed.slice(kw.length).trim().replace(/^[:\s]+/, '');
+        }
+      }
+    }
+    return result;
+  }
 
   async function hashContent(text) {
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));

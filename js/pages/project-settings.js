@@ -43,6 +43,8 @@ export async function renderProjectSettings(container, ctx) {
   const vmodelCanvasNodes   = config.vmodel_canvas_nodes   || [];
   const reviewMode          = config.review_mode           || 'internal';
   const externalRequiredFields = config.external_review_required_fields || ['url', 'verdict'];
+  const swUnitTypes         = config.sw_unit_types         || [];
+  const headerKeywords      = config.header_keywords        || {};
 
   // Build function types from DB rows (or defaults if none saved yet)
   let functionTypes;
@@ -120,6 +122,8 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         <button class="settings-tab" data-tab="testtypes">Test Types</button>
         <button class="settings-tab" data-tab="vmodel">V-Model Links</button>
         <button class="settings-tab" data-tab="reviews">Review Protocols</button>
+        <button class="settings-tab" data-tab="swunittypes">SW Unit Types</button>
+        <button class="settings-tab" data-tab="hdrkeys">Header Keywords</button>
         <button class="settings-tab" data-tab="reviewmode">Review Mode</button>
         <button class="settings-tab" data-tab="members">Team &amp; Roles</button>
       </div>
@@ -358,6 +362,82 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
 
       <div id="tab-reviews" class="settings-tab-panel" style="display:none">
         <div class="settings-section" id="tab-reviews-inner"></div>
+      </div>
+
+      <div id="tab-swunittypes" class="settings-tab-panel" style="display:none">
+        <div class="settings-section">
+          <h3 class="settings-section-title">SW Unit Types</h3>
+          <p class="settings-section-desc">
+            The built-in types below are always available. Add project-specific types for any
+            elements not covered (e.g. bootloader, communication stack, middleware module).
+          </p>
+
+          <div class="swut-builtin-list">
+            <div class="settings-label" style="margin-bottom:6px;font-size:12px;color:var(--text-muted)">BUILT-IN (always available, not editable)</div>
+            <div class="swut-builtin-grid">
+              <span class="badge badge-draft">function</span>
+              <span class="badge badge-draft">class</span>
+              <span class="badge badge-draft">isr</span>
+              <span class="badge badge-draft">task</span>
+              <span class="badge badge-draft">state_machine</span>
+              <span class="badge badge-draft">calibration</span>
+              <span class="badge badge-draft">general</span>
+            </div>
+          </div>
+
+          <div class="settings-label" style="margin:16px 0 6px;font-size:12px;color:var(--text-muted)">CUSTOM TYPES</div>
+          <table class="settings-table" id="swut-table">
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th style="width:160px">Key / ID</th>
+                <th style="width:60px;text-align:center">Delete</th>
+              </tr>
+            </thead>
+            <tbody id="swut-tbody"></tbody>
+          </table>
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="swut-new-label" placeholder="Label (e.g. Bootloader, Middleware)…" style="max-width:260px"/>
+            <input class="form-input" id="swut-new-key"   placeholder="Key (e.g. bootloader)…" style="max-width:180px"/>
+            <button class="btn btn-secondary btn-sm" id="btn-add-swuttype">＋ Add Type</button>
+          </div>
+          <div style="margin-top:16px">
+            <button class="btn btn-primary" id="btn-save-swuttypes">Save SW Unit Types</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-hdrkeys" class="settings-tab-panel" style="display:none">
+        <div class="settings-section">
+          <h3 class="settings-section-title">Header Parsing Keywords</h3>
+          <p class="settings-section-desc">
+            When importing SW unit files from a ZIP, the tool parses special comment headers to auto-populate fields.
+            Customize the keywords below to match your project's coding conventions.
+            See <a href="docs/sw-unit-coding-guidelines.md" target="_blank" style="color:var(--primary)">SW Unit Coding Guidelines</a> for the expected format.
+          </p>
+          <div class="settings-checklist" style="margin-bottom:16px">
+            ${[
+              ['hdrkey-unit',        '@unit',         'Unit code — maps to "Unit Code" field'],
+              ['hdrkey-name',        '@name',         'Unit name — maps to "Name" field'],
+              ['hdrkey-type',        '@type',         'Unit type — e.g. function, isr, task'],
+              ['hdrkey-asil',        '@asil',         'ASIL level — stored in description'],
+              ['hdrkey-sdd',         '@sdd',          'SDD reference — traceability to design doc'],
+              ['hdrkey-req',         '@req',          'Requirement references (comma-separated)'],
+              ['hdrkey-author',      '@author',       'Author name'],
+              ['hdrkey-language',    '@language',     'Language hint — overrides file extension detection'],
+            ].map(([id, def, desc]) => {
+              const saved = headerKeywords[id.replace('hdrkey-','')];
+              return `
+              <div class="settings-check-item" style="align-items:center;gap:10px;margin-bottom:8px">
+                <label class="form-label" style="width:80px;margin-bottom:0;font-family:monospace">${escHtml(def)}</label>
+                <input class="form-input" id="${id}" value="${escHtml(saved || def)}" style="width:160px"/>
+                <span class="text-muted" style="font-size:12px">${escHtml(desc)}</span>
+              </div>`;
+            }).join('')}
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btn-reset-hdrkeys" style="margin-right:8px">Reset to Defaults</button>
+          <button class="btn btn-primary" id="btn-save-hdrkeys">Save Keywords</button>
+        </div>
       </div>
 
       <div id="tab-reviewmode" class="settings-tab-panel" style="display:none">
@@ -778,6 +858,116 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     if (error) { toast(t('common.error'), 'error'); return; }
     fullConfig = newConfig;
     toast('Test types saved.', 'success');
+  };
+
+  // ── SW Unit Types tab ─────────────────────────────────────────────────────
+  const DEFAULT_SW_UNIT_TYPES = [
+    { id: 'function',      label: 'Function / Method' },
+    { id: 'class',         label: 'Class' },
+    { id: 'isr',           label: 'Interrupt (ISR)' },
+    { id: 'task',          label: 'RTOS Task' },
+    { id: 'state_machine', label: 'State Machine' },
+    { id: 'calibration',   label: 'Calibration / Config' },
+    { id: 'general',       label: 'General Code' },
+  ];
+  let _swUnitTypes = swUnitTypes.length ? swUnitTypes.map(t => ({ ...t })) : [];
+
+  function renderSwUnitTypesTable() {
+    const tbody = document.getElementById('swut-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = _swUnitTypes.length
+      ? _swUnitTypes.map((tt, i) => `
+          <tr>
+            <td><input class="form-input swut-label-input" data-idx="${i}" value="${escHtml(tt.label)}" placeholder="Label" style="max-width:300px"/></td>
+            <td><input class="form-input swut-key-input"   data-idx="${i}" value="${escHtml(tt.id)}"    placeholder="key"   style="max-width:140px;font-family:monospace;font-size:12px"/></td>
+            <td style="text-align:center">
+              <button class="btn btn-ghost btn-sm btn-del-swuttype" data-idx="${i}" style="color:var(--color-danger)" title="Delete">✕</button>
+            </td>
+          </tr>`).join('')
+      : `<tr><td colspan="3" style="color:var(--color-text-muted);font-size:13px;padding:12px 8px">No custom types yet. Add below.</td></tr>`;
+
+    tbody.querySelectorAll('.swut-label-input').forEach(inp => {
+      inp.oninput = () => { _swUnitTypes[parseInt(inp.dataset.idx)].label = inp.value; };
+    });
+    tbody.querySelectorAll('.swut-key-input').forEach(inp => {
+      inp.oninput = () => {
+        const clean = inp.value.trim().replace(/\s+/g,'_').toLowerCase();
+        _swUnitTypes[parseInt(inp.dataset.idx)].id = clean;
+        inp.value = clean;
+      };
+    });
+    tbody.querySelectorAll('.btn-del-swuttype').forEach(btn => {
+      btn.onclick = () => { _swUnitTypes.splice(parseInt(btn.dataset.idx), 1); renderSwUnitTypesTable(); };
+    });
+  }
+
+  renderSwUnitTypesTable();
+
+  document.getElementById('btn-add-swuttype').onclick = () => {
+    const labelEl = document.getElementById('swut-new-label');
+    const keyEl   = document.getElementById('swut-new-key');
+    const label   = labelEl.value.trim();
+    if (!label) { labelEl.focus(); return; }
+    const id = keyEl.value.trim().replace(/\s+/g,'_').toLowerCase() || label.toLowerCase().replace(/\s+/g,'_');
+    _swUnitTypes.push({ id, label });
+    labelEl.value = '';
+    keyEl.value   = '';
+    renderSwUnitTypesTable();
+  };
+  document.getElementById('swut-new-label').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-add-swuttype').click(); }
+  });
+
+  document.getElementById('btn-save-swuttypes').onclick = async () => {
+    const btn = document.getElementById('btn-save-swuttypes');
+    btn.disabled = true;
+    document.querySelectorAll('.swut-label-input').forEach(inp => {
+      const i = parseInt(inp.dataset.idx);
+      if (_swUnitTypes[i]) _swUnitTypes[i].label = inp.value.trim() || _swUnitTypes[i].label;
+    });
+    const newConfig = { ...fullConfig, sw_unit_types: _swUnitTypes };
+    let error;
+    if (configId) {
+      ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));
+    } else {
+      ({ error } = await sb.from('project_config').insert({ project_id: project.id, config: newConfig }));
+    }
+    btn.disabled = false;
+    if (error) { toast(t('common.error'), 'error'); return; }
+    fullConfig = newConfig;
+    toast('SW unit types saved.', 'success');
+  };
+
+  // ── Header Keywords tab ───────────────────────────────────────────────────
+  const HDR_KEY_IDS = ['unit','name','type','asil','sdd','req','author','language'];
+  const HDR_KEY_DEFAULTS = { unit:'@unit', name:'@name', type:'@type', asil:'@asil', sdd:'@sdd', req:'@req', author:'@author', language:'@language' };
+
+  document.getElementById('btn-reset-hdrkeys').onclick = () => {
+    HDR_KEY_IDS.forEach(k => {
+      const el = document.getElementById(`hdrkey-${k}`);
+      if (el) el.value = HDR_KEY_DEFAULTS[k];
+    });
+  };
+
+  document.getElementById('btn-save-hdrkeys').onclick = async () => {
+    const btn = document.getElementById('btn-save-hdrkeys');
+    btn.disabled = true;
+    const kw = {};
+    HDR_KEY_IDS.forEach(k => {
+      const el = document.getElementById(`hdrkey-${k}`);
+      kw[k] = (el?.value.trim() || HDR_KEY_DEFAULTS[k]);
+    });
+    const newConfig = { ...fullConfig, header_keywords: kw };
+    let error;
+    if (configId) {
+      ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));
+    } else {
+      ({ error } = await sb.from('project_config').insert({ project_id: project.id, config: newConfig }));
+    }
+    btn.disabled = false;
+    if (error) { toast(t('common.error'), 'error'); return; }
+    fullConfig = newConfig;
+    toast('Header keywords saved.', 'success');
   };
 
   // ── V-Model Links tab ─────────────────────────────────────────────────────

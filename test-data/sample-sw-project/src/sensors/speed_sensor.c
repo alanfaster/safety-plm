@@ -1,9 +1,14 @@
 /**
- * speed_sensor.c
- * SW Unit: Speed Sensor Driver
- * Description: Reads quadrature encoder pulses and computes RPM.
- * ASIL: B
- * Linked SDD: SDD-SEN-001
+ * @unit    SWU-SEN-001
+ * @name    Speed Sensor Driver
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-SEN-001
+ * @req     SWR-SEN-001, SWR-SEN-002
+ * @author  A. Guerrero
+ * @language c
+ *
+ * Reads quadrature encoder pulses and computes RPM.
  */
 
 #include "speed_sensor.h"
