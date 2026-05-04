@@ -6840,9 +6840,10 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rve-diff-toggle-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
 
 /* ── Project Settings sidenav layout ───────────────────────────── */
-.ps-layout            { display:flex; gap:0; min-height:600px; }
+.ps-layout            { display:flex; gap:0; min-height:600px; align-items:stretch; }
 .ps-sidenav           { width:220px; flex-shrink:0; border-right:1px solid var(--border);
-                        padding:12px 0; background:var(--bg-card); }
+                        padding:12px 0; background:var(--bg-card);
+                        position:sticky; top:0; max-height:100vh; overflow-y:auto; }
 .ps-nav-group         { margin-bottom:4px; }
 .ps-nav-group-label   { font-size:10px; font-weight:700; letter-spacing:.08em;
                         text-transform:uppercase; color:var(--color-text-muted);
