@@ -6788,3 +6788,28 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .wiz-mode-icon           { font-size:22px; }
 .wiz-mode-name           { font-weight:600; font-size:13px; }
 .wiz-mode-sub            { font-size:11px; color:var(--text-muted); }
+
+/* ── SW Unit diff viewer ─────────────────────────────────────────────── */
+.rve-diff-panel          { display:flex; flex-direction:column; height:100%; overflow:hidden; }
+.rve-diff-header         { display:flex; align-items:center; gap:8px; padding:8px 12px;
+  border-bottom:1px solid var(--border); background:var(--bg-card); flex-shrink:0; }
+.rve-diff-filepath       { font-size:12px; font-weight:600; color:var(--text); }
+.rve-diff-body           { flex:1; overflow:auto; background:#fafafa; }
+.rve-diff-findings-note  { font-size:11px; padding:4px 12px; border-top:1px solid var(--border);
+  flex-shrink:0; }
+.rve-diff-code           { font-family:monospace; font-size:12px; line-height:1.5; }
+.rve-diff-line           { display:flex; align-items:baseline; min-height:20px; }
+.rve-diff-line--add      { background:#e6ffed; }
+.rve-diff-line--del      { background:#ffebe9; }
+.rve-diff-line--ctx      { background:#fff; }
+.rve-diff-prefix         { width:16px; flex-shrink:0; text-align:center;
+  color:var(--text-muted); user-select:none; }
+.rve-diff-line--add .rve-diff-prefix { color:#1e8e3e; font-weight:700; }
+.rve-diff-line--del .rve-diff-prefix { color:#d93025; font-weight:700; }
+.rve-diff-linenum        { width:40px; flex-shrink:0; text-align:right; padding-right:8px;
+  color:#999; font-size:11px; cursor:pointer; user-select:none; }
+.rve-diff-linenum:hover  { color:var(--accent); text-decoration:underline; }
+.rve-diff-linenum--old   { cursor:default; }
+.rve-diff-linenum--old:hover { color:#999; text-decoration:none; }
+.rve-diff-linecontent    { flex:1; padding:0 8px; white-space:pre; overflow-x:auto; }
+.rve-diff-toggle-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }

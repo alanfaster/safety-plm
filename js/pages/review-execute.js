@@ -1161,6 +1161,147 @@ export async function renderReviewExecute(container, ctx) {
     }
   }
 
+  // SW unit diff viewer — compares snapshot source_code with previous version
+  async function mountSwUnitDiffPanel(col, snap) {
+    col.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
+
+    const snapData    = snap.snapshot_data || {};
+    const currentCode = snapData.source_code || '';
+    const unitId      = snap.artifact_id;
+    const version     = snapData.version || 1;
+
+    // Load previous version (version - 1) from sw_unit_versions
+    let prevCode = null;
+    if (version > 1) {
+      const { data: prevVer } = await sb.from('sw_unit_versions')
+        .select('source_code')
+        .eq('sw_unit_id', unitId)
+        .eq('version', version - 1)
+        .maybeSingle();
+      prevCode = prevVer?.source_code || null;
+    }
+
+    const language = snapData.language || '';
+    const filePath = snapData.file_path || snapData.name || '';
+
+    col.innerHTML = `
+      <div class="rve-diff-panel">
+        <div class="rve-diff-header">
+          <span class="rve-diff-filepath mono">${escHtml(filePath)}</span>
+          <span class="text-muted" style="font-size:11px">v${version}${prevCode != null ? ` vs v${version - 1}` : ' (first version)'}</span>
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn btn-ghost btn-xs rve-diff-toggle-btn" data-mode="diff" style="${prevCode == null ? 'display:none' : ''}">
+              Diff view
+            </button>
+            <button class="btn btn-ghost btn-xs rve-diff-toggle-btn" data-mode="full">Full file</button>
+          </div>
+        </div>
+        <div class="rve-diff-body" id="rve-diff-body"></div>
+        <div class="rve-diff-findings-note text-muted">
+          Click a line number to raise a finding on that line.
+        </div>
+      </div>`;
+
+    let _diffMode = prevCode != null ? 'diff' : 'full';
+    updateActiveModeBtn();
+    renderDiffContent();
+
+    col.querySelectorAll('.rve-diff-toggle-btn').forEach(btn => {
+      btn.onclick = () => { _diffMode = btn.dataset.mode; updateActiveModeBtn(); renderDiffContent(); };
+    });
+
+    function updateActiveModeBtn() {
+      col.querySelectorAll('.rve-diff-toggle-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.mode === _diffMode));
+    }
+
+    function renderDiffContent() {
+      const body = document.getElementById('rve-diff-body');
+      if (!body) return;
+
+      if (_diffMode === 'full' || prevCode == null) {
+        body.innerHTML = renderFullCode(currentCode, language);
+      } else {
+        body.innerHTML = renderLineDiff(prevCode, currentCode);
+      }
+
+      // Wire line number clicks to raise findings
+      body.querySelectorAll('.rve-diff-linenum').forEach(el => {
+        el.addEventListener('click', () => {
+          const lineNum = parseInt(el.dataset.line, 10);
+          openRaiseFindingModal({
+            snapshotId: snap.id,
+            criterion: `Line ${lineNum}: ${escHtml(filePath)}`,
+            comment: '',
+            lineNumber: lineNum,
+          });
+        });
+      });
+    }
+  }
+
+  function renderFullCode(code, language) {
+    const lines = code.split('\n');
+    const rows = lines.map((line, i) => `
+      <div class="rve-diff-line rve-diff-line--ctx">
+        <span class="rve-diff-linenum" data-line="${i + 1}" title="Click to raise finding">${i + 1}</span>
+        <span class="rve-diff-linecontent">${escHtml(line)}</span>
+      </div>`).join('');
+    return `<div class="rve-diff-code">${rows}</div>`;
+  }
+
+  function renderLineDiff(oldCode, newCode) {
+    const oldLines = oldCode.split('\n');
+    const newLines = newCode.split('\n');
+
+    // Simple LCS-based line diff
+    const diff = computeLineDiff(oldLines, newLines);
+    let newLineNum = 0;
+    let oldLineNum = 0;
+    const rows = diff.map(([type, line]) => {
+      if (type === 'eq') { oldLineNum++; newLineNum++; }
+      else if (type === 'del') { oldLineNum++; }
+      else if (type === 'add') { newLineNum++; }
+      const lineNum = type === 'del' ? oldLineNum : newLineNum;
+      const cls = type === 'add' ? 'rve-diff-line--add'
+                : type === 'del' ? 'rve-diff-line--del'
+                : 'rve-diff-line--ctx';
+      const prefix = type === 'add' ? '+' : type === 'del' ? '-' : ' ';
+      return `
+        <div class="rve-diff-line ${cls}">
+          <span class="rve-diff-prefix">${prefix}</span>
+          <span class="rve-diff-linenum ${type !== 'del' ? '' : 'rve-diff-linenum--old'}"
+            data-line="${lineNum}" title="${type !== 'del' ? 'Click to raise finding' : ''}">${lineNum}</span>
+          <span class="rve-diff-linecontent">${escHtml(line)}</span>
+        </div>`;
+    }).join('');
+    return `<div class="rve-diff-code">${rows}</div>`;
+  }
+
+  function computeLineDiff(oldLines, newLines) {
+    // Myers diff algorithm (simplified — patience-like LCS)
+    const result = [];
+    const m = oldLines.length, n = newLines.length;
+    const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = m - 1; i >= 0; i--)
+      for (let j = n - 1; j >= 0; j--)
+        dp[i][j] = oldLines[i] === newLines[j]
+          ? 1 + dp[i + 1][j + 1]
+          : Math.max(dp[i + 1][j], dp[i][j + 1]);
+
+    let i = 0, j = 0;
+    while (i < m || j < n) {
+      if (i < m && j < n && oldLines[i] === newLines[j]) {
+        result.push(['eq', oldLines[i]]); i++; j++;
+      } else if (j < n && (i >= m || dp[i][j + 1] >= dp[i + 1][j])) {
+        result.push(['add', newLines[j]]); j++;
+      } else {
+        result.push(['del', oldLines[i]]); i++;
+      }
+    }
+    return result;
+  }
+
   // Mounts the checklist once in the middle column — stays mounted across artifact switches
   function mountChecklist(snap) {
     const col = document.getElementById('rve-checklist-col');
@@ -1172,6 +1313,12 @@ export async function renderReviewExecute(container, ctx) {
     // External review mode: show evidence panel instead of checklist
     if (session.review_mode === 'external') {
       mountExternalEvidencePanel(col);
+      return;
+    }
+
+    // SW unit internal review: show diff viewer instead of checklist
+    if (snap.artifact_type === 'sw_units') {
+      mountSwUnitDiffPanel(col, snap);
       return;
     }
 
@@ -1654,7 +1801,7 @@ export async function renderReviewExecute(container, ctx) {
 
   // ── Raise Finding modal ──────────────────────────────────────────────────────
 
-  function openRaiseFindingModal({ snapshotId, templateItemId, criterion, verdict, comment, responseId, isOpenPoint }) {
+  function openRaiseFindingModal({ snapshotId, templateItemId, criterion, verdict, comment, responseId, isOpenPoint, lineNumber }) {
     showModal({
       title: '⚑ Raise Finding',
       body: `
@@ -1703,6 +1850,7 @@ export async function renderReviewExecute(container, ctx) {
         snapshot_id:      resolvedSnapshotId || null,
         template_item_id: templateItemId || null,
         response_id:      responseId || null,
+        line_number:      lineNumber || null,
         finding_code,
         title,
         severity:    document.getElementById('fnd-severity').value,
