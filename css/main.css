@@ -2953,7 +2953,7 @@ tr.req-title-row td { cursor: default; }
 
 
 /* Content area — normal flow scroll (parent #content scrolls) */
-.spec-content{flex:1;min-width:0;padding:16px 24px}
+.spec-content{flex:1;min-width:0;padding:16px 24px;overflow-x:auto}
 .spec-content--narrow{flex:0 0 55%;min-width:0}
 
 /* Hover insert pill (between rows) */
