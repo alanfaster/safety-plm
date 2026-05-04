@@ -303,7 +303,13 @@ export async function renderSwUnits(container, ctx) {
     { id:'actions',      name:'',        visible:true,  fixed:true  },
   ];
 
-  let _cols      = loadColConfig(COL_KEY, BUILTIN_COLS);
+  let _cols = loadColConfig(COL_KEY, BUILTIN_COLS);
+  // Always keep 'select' first and 'actions' last regardless of saved order
+  _cols = [
+    ..._cols.filter(c => c.id === 'select'),
+    ..._cols.filter(c => c.id !== 'select' && c.id !== 'actions'),
+    ..._cols.filter(c => c.id === 'actions'),
+  ];
   let _filters   = {};
   let _allUnits  = [];
   let _selection = new Set(); // selected unit IDs
