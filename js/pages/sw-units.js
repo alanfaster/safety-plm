@@ -296,7 +296,15 @@ export async function renderSwUnits(container, ctx) {
 
   document.getElementById('swu-bulk-delete').onclick = async () => {
     const n = _selection.size;
-    if (!confirm(`Delete ${n} SW unit${n > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    if (!confirm(`Delete ${n} SW unit${n > 1 ? 's' : ''}?\n\nThis cannot be undone.`)) return;
+    const fromFile = [..._selection].some(id => _allUnits.find(u => u.id === id)?.source_code);
+    if (fromFile && !confirm(
+      `⚠ Inconsistency warning\n\n` +
+      `One or more selected units were imported from source code.\n` +
+      `Deleting them here does NOT remove them from the codebase.\n\n` +
+      `If you re-upload the same ZIP, they will be recreated.\n\n` +
+      `Confirm deletion of all ${n} unit${n > 1 ? 's' : ''}?`
+    )) return;
     await Promise.all([..._selection].map(id => sb.from('sw_units').delete().eq('id', id)));
     _selection.clear();
     syncBulkBar();
@@ -583,7 +591,14 @@ export async function renderSwUnits(container, ctx) {
       } else if (btn.classList.contains('btn-hist-swu')) {
         if (unit) showVersionHistory(sb, { artifactType: 'sw_units', artifactId: unit.id, artifactCode: unit.unit_code, currentData: unit });
       } else if (btn.classList.contains('btn-del-swu')) {
-        if (!confirm('Delete this SW unit? This cannot be undone.')) return;
+        if (!confirm(`Delete SW unit "${unit?.unit_code}"?\n\nThis cannot be undone.`)) return;
+        if (unit?.source_code && !confirm(
+          `⚠ Inconsistency warning\n\n` +
+          `This unit was imported from source code (${unit.file_path || 'unknown file'}).\n` +
+          `Deleting it here does NOT remove it from the codebase.\n\n` +
+          `If you re-upload the same ZIP, it will be recreated.\n\n` +
+          `Confirm deletion anyway?`
+        )) return;
         const { error } = await sb.from('sw_units').delete().eq('id', id);
         if (error) { toast('Error: ' + error.message, 'error'); return; }
         toast('SW unit deleted.', 'success');
