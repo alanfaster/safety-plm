@@ -415,26 +415,7 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
             Customize the keywords below to match your project's coding conventions.
             See <a href="docs/sw-unit-coding-guidelines.md" target="_blank" style="color:var(--primary)">SW Unit Coding Guidelines</a> for the expected format.
           </p>
-          <div class="settings-checklist" style="margin-bottom:16px">
-            ${[
-              ['hdrkey-unit',        '@unit',         'Unit code — maps to "Unit Code" field'],
-              ['hdrkey-name',        '@name',         'Unit name — maps to "Name" field'],
-              ['hdrkey-type',        '@type',         'Unit type — e.g. function, isr, task'],
-              ['hdrkey-asil',        '@asil',         'ASIL level — stored in description'],
-              ['hdrkey-sdd',         '@sdd',          'SDD reference — traceability to design doc'],
-              ['hdrkey-req',         '@req',          'Requirement references (comma-separated)'],
-              ['hdrkey-author',      '@author',       'Author name'],
-              ['hdrkey-language',    '@language',     'Language hint — overrides file extension detection'],
-            ].map(([id, def, desc]) => {
-              const saved = headerKeywords[id.replace('hdrkey-','')];
-              return `
-              <div class="settings-check-item" style="align-items:center;gap:10px;margin-bottom:8px">
-                <label class="form-label" style="width:80px;margin-bottom:0;font-family:monospace">${escHtml(def)}</label>
-                <input class="form-input" id="${id}" value="${escHtml(saved || def)}" style="width:160px"/>
-                <span class="text-muted" style="font-size:12px">${escHtml(desc)}</span>
-              </div>`;
-            }).join('')}
-          </div>
+          <div class="settings-checklist" id="hdrkeys-list" style="margin-bottom:16px"></div>
           <button class="btn btn-secondary btn-sm" id="btn-reset-hdrkeys" style="margin-right:8px">Reset to Defaults</button>
           <button class="btn btn-primary" id="btn-save-hdrkeys">Save Keywords</button>
         </div>
@@ -941,6 +922,23 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
   // ── Header Keywords tab ───────────────────────────────────────────────────
   const HDR_KEY_IDS = ['unit','name','type','asil','sdd','req','author','language'];
   const HDR_KEY_DEFAULTS = { unit:'@unit', name:'@name', type:'@type', asil:'@asil', sdd:'@sdd', req:'@req', author:'@author', language:'@language' };
+  const HDR_KEY_DESCS = {
+    unit:     'Unit code — maps to "Unit Code" field',
+    name:     'Unit name — maps to "Name" field',
+    type:     'Unit type — e.g. function, isr, task',
+    asil:     'ASIL level — stored in description',
+    sdd:      'SDD reference — traceability to design doc',
+    req:      'Requirement references (comma-separated)',
+    author:   'Author name',
+    language: 'Language hint — overrides file extension detection',
+  };
+
+  document.getElementById('hdrkeys-list').innerHTML = HDR_KEY_IDS.map(k => `
+    <div class="settings-check-item" style="align-items:center;gap:10px;margin-bottom:8px">
+      <label class="form-label" style="width:80px;margin-bottom:0;font-family:monospace">${escHtml(HDR_KEY_DEFAULTS[k])}</label>
+      <input class="form-input" id="hdrkey-${k}" value="${escHtml(headerKeywords[k] || HDR_KEY_DEFAULTS[k])}" style="width:160px"/>
+      <span class="text-muted" style="font-size:12px">${escHtml(HDR_KEY_DESCS[k])}</span>
+    </div>`).join('');
 
   document.getElementById('btn-reset-hdrkeys').onclick = () => {
     HDR_KEY_IDS.forEach(k => {
