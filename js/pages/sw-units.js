@@ -92,7 +92,6 @@ export async function renderSwUnits(container, ctx) {
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-secondary" id="swu-btn-upload">⬆ Upload Code (ZIP)</button>
-          <button class="btn btn-primary btn-sm" id="swu-btn-review" style="display:none">✓ Start Review</button>
           <button class="btn btn-primary" id="swu-btn-new">＋ New SW Unit</button>
         </div>
       </div>
@@ -112,6 +111,16 @@ export async function renderSwUnits(container, ctx) {
           </p>
         </div>
       </aside>
+    </div>
+
+    <div class="req-bulk-bar" id="swu-bulk-bar">
+      <span class="req-bulk-count" id="swu-bulk-count">0 selected</span>
+      <div class="req-bulk-actions">
+        <button class="btn btn-primary btn-sm"   id="swu-bulk-review">✓ Review</button>
+        <button class="btn btn-secondary btn-sm" id="swu-bulk-status">✏ Edit Status</button>
+        <button class="btn btn-danger btn-sm"    id="swu-bulk-delete">🗑 Delete</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="swu-bulk-cancel">✕ Cancel</button>
     </div>
 
     <!-- Edit/Create panel (hidden by default) -->
@@ -179,10 +188,53 @@ export async function renderSwUnits(container, ctx) {
   document.getElementById('swu-btn-upload').onclick  = () => openUploadModal();
   document.getElementById('swu-props-close').onclick = () => closePropsPanel();
 
-  document.getElementById('swu-btn-review').onclick = () => {
+  document.getElementById('swu-bulk-cancel').onclick = () => {
+    _selection.clear();
+    syncBulkBar();
+    renderTable();
+  };
+
+  document.getElementById('swu-bulk-review').onclick = () => {
     if (!_selection.size) return;
     const ids = [..._selection].join(',');
     navigate(`${base}/reviews/new?artifact_type=sw_units&artifact_ids=${ids}`);
+  };
+
+  document.getElementById('swu-bulk-status').onclick = () => {
+    const existing = document.getElementById('swu-bulk-status-picker');
+    if (existing) { existing.remove(); return; }
+    const btn     = document.getElementById('swu-bulk-status');
+    const picker  = document.createElement('div');
+    picker.id     = 'swu-bulk-status-picker';
+    picker.className = 'req-bulk-status-picker';
+    picker.innerHTML = Object.entries(STATUS_LABELS).map(([v,l]) =>
+      `<button class="req-bulk-status-opt" data-status="${v}">${l}</button>`).join('');
+    document.body.appendChild(picker);
+    const rect = btn.getBoundingClientRect();
+    picker.style.left = rect.left + 'px';
+    picker.style.top  = (rect.top - picker.offsetHeight - 6) + 'px';
+    picker.querySelectorAll('.req-bulk-status-opt').forEach(opt => {
+      opt.onclick = async () => {
+        picker.remove();
+        const ids = [..._selection];
+        await Promise.all(ids.map(id => sb.from('sw_units').update({ status: opt.dataset.status, updated_at: new Date().toISOString() }).eq('id', id)));
+        toast(`${ids.length} unit${ids.length > 1 ? 's' : ''} set to "${STATUS_LABELS[opt.dataset.status]}".`, 'success');
+        await loadList();
+      };
+    });
+    setTimeout(() => document.addEventListener('click', function close(e) {
+      if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', close); }
+    }), 0);
+  };
+
+  document.getElementById('swu-bulk-delete').onclick = async () => {
+    const n = _selection.size;
+    if (!confirm(`Delete ${n} SW unit${n > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    await Promise.all([..._selection].map(id => sb.from('sw_units').delete().eq('id', id)));
+    _selection.clear();
+    syncBulkBar();
+    toast(`${n} unit${n > 1 ? 's' : ''} deleted.`, 'success');
+    await loadList();
   };
 
   // ── Properties panel ─────────────────────────────────────────────────────────
@@ -256,11 +308,12 @@ export async function renderSwUnits(container, ctx) {
   let _allUnits  = [];
   let _selection = new Set(); // selected unit IDs
 
-  function updateReviewBtn() {
-    const btn = document.getElementById('swu-btn-review');
-    if (!btn) return;
-    btn.style.display = _selection.size > 0 ? '' : 'none';
-    btn.textContent = _selection.size > 0 ? `✓ Start Review (${_selection.size})` : '✓ Start Review';
+  function syncBulkBar() {
+    const bar   = document.getElementById('swu-bulk-bar');
+    const count = document.getElementById('swu-bulk-count');
+    if (!bar) return;
+    bar.classList.toggle('req-bulk-bar--visible', _selection.size > 0);
+    if (count) count.textContent = `${_selection.size} selected`;
   }
 
   function getFilterValue(u, colId) {
@@ -324,7 +377,7 @@ export async function renderSwUnits(container, ctx) {
         </thead>
         <tbody>
           ${filtered.length
-            ? filtered.map(u => `<tr id="swu-row-${u.id}" data-id="${u.id}">${visCols.map(c => renderTd(c.id, u)).join('')}</tr>`).join('')
+            ? filtered.map(u => `<tr id="swu-row-${u.id}" data-id="${u.id}"${_selection.has(u.id)?' class="req-row-selected"':''}>${visCols.map(c => renderTd(c.id, u)).join('')}</tr>`).join('')
             : `<tr><td colspan="${visCols.length}" class="text-muted" style="text-align:center;padding:24px">No units match the current filter.</td></tr>`}
         </tbody>
       </table>`;
@@ -366,7 +419,7 @@ export async function renderSwUnits(container, ctx) {
     if (chkAll) {
       chkAll.onchange = () => {
         filtered.forEach(u => { if (chkAll.checked) _selection.add(u.id); else _selection.delete(u.id); });
-        updateReviewBtn();
+        syncBulkBar();
         renderTable();
       };
     }
@@ -376,8 +429,13 @@ export async function renderSwUnits(container, ctx) {
       cb.onchange = (e) => {
         e.stopPropagation();
         if (cb.checked) _selection.add(cb.dataset.id); else _selection.delete(cb.dataset.id);
-        updateReviewBtn();
-        renderTable();
+        syncBulkBar();
+        // Update row highlight without full re-render
+        const tr = document.getElementById(`swu-row-${cb.dataset.id}`);
+        if (tr) tr.classList.toggle('req-row-selected', cb.checked);
+        // Update select-all state
+        const allChk = wrap.querySelector('#swu-chk-all');
+        if (allChk) allChk.checked = filtered.length > 0 && filtered.every(u => _selection.has(u.id));
       };
     });
 
