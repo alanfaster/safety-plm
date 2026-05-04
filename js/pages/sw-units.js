@@ -105,8 +105,8 @@ export async function renderSwUnits(container, ctx) {
       </div>
       <aside class="req-trace-panel" id="swu-props-panel">
         <div class="swu-rail-tabs">
-          <button class="swu-rail-btn swu-rail-btn--active" id="swu-rail-props" title="Properties">≡</button>
-          <button class="swu-rail-btn" id="swu-rail-trace" title="Traceability">⛓</button>
+          <button class="swu-rail-btn swu-rail-btn--active" id="swu-rail-props" title="Properties">Properties</button>
+          <button class="swu-rail-btn" id="swu-rail-trace" title="Traceability">Traceability</button>
         </div>
         <div class="req-trace-panel-hdr">
           <div style="display:flex;gap:4px">

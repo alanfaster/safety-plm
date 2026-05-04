@@ -4833,14 +4833,16 @@ th.col-th-dragging * { pointer-events: none; }
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
-  width: 28px;
-  height: 28px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+  padding: 8px 4px;
   border-radius: 4px;
   color: var(--color-text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  white-space: nowrap;
 }
 .swu-rail-btn:hover { background: var(--color-hover); color: var(--color-primary); }
 .swu-rail-btn--active { background: var(--color-primary) !important; color: #fff !important; }
