@@ -92,14 +92,26 @@ export async function renderSwUnits(container, ctx) {
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-secondary" id="swu-btn-upload">⬆ Upload Code (ZIP)</button>
+          <button class="btn btn-primary btn-sm" id="swu-btn-review" style="display:none">✓ Start Review</button>
           <button class="btn btn-primary" id="swu-btn-new">＋ New SW Unit</button>
         </div>
       </div>
     </div>
-    <div class="page-body">
-      <div id="swu-list-wrap">
+    <div class="page-body spec-page-body" id="swu-outer">
+      <div class="spec-content" id="swu-list-wrap">
         <div class="content-loading"><div class="spinner"></div></div>
       </div>
+      <aside class="req-trace-panel" id="swu-props-panel">
+        <div class="req-trace-panel-hdr">
+          <span class="req-trace-panel-title">Properties</span>
+          <button class="btn-icon" id="swu-props-close" title="Close">✕</button>
+        </div>
+        <div class="req-trace-panel-body" id="swu-props-body">
+          <p style="padding:8px 4px;font-size:13px;color:var(--color-text-muted)">
+            Click on a SW unit row to see its properties.
+          </p>
+        </div>
+      </aside>
     </div>
 
     <!-- Edit/Create panel (hidden by default) -->
@@ -165,12 +177,69 @@ export async function renderSwUnits(container, ctx) {
   document.getElementById('swu-form-close').onclick  = closeForm;
   document.getElementById('swu-form-cancel').onclick = closeForm;
   document.getElementById('swu-btn-upload').onclick  = () => openUploadModal();
+  document.getElementById('swu-props-close').onclick = () => closePropsPanel();
+
+  document.getElementById('swu-btn-review').onclick = () => {
+    if (!_selection.size) return;
+    const ids = [..._selection].join(',');
+    navigate(`${base}/reviews/new?artifact_type=sw_units&artifact_ids=${ids}`);
+  };
+
+  // ── Properties panel ─────────────────────────────────────────────────────────
+  let _selectedUnitId = null;
+
+  function openPropsPanel(unit) {
+    _selectedUnitId = unit.id;
+    const panel = document.getElementById('swu-props-panel');
+    const body  = document.getElementById('swu-props-body');
+    if (!panel || !body) return;
+    panel.classList.add('open');
+
+    const typeLabel = allUnitTypes.find(t => t.id === unit.unit_type)?.label || unit.unit_type || '—';
+    body.innerHTML = `
+      <div style="padding:4px 0 12px">
+        <div style="font-size:16px;font-weight:600;margin-bottom:2px">${escHtml(unit.unit_code)}</div>
+        <div style="font-size:13px;color:var(--color-text-muted)">${escHtml(unit.name)}</div>
+      </div>
+      <div class="swu-props-grid">
+        <div class="swu-prop-row"><span class="swu-prop-label">Type</span><span class="swu-prop-val"><span class="badge badge-draft" style="font-size:11px">${escHtml(typeLabel)}</span></span></div>
+        <div class="swu-prop-row"><span class="swu-prop-label">Status</span><span class="swu-prop-val"><span class="badge ${STATUS_CLASSES[unit.status]||'badge-draft'}">${STATUS_LABELS[unit.status]||unit.status}</span></span></div>
+        <div class="swu-prop-row"><span class="swu-prop-label">Version</span><span class="swu-prop-val">v${unit.version}</span></div>
+        <div class="swu-prop-row"><span class="swu-prop-label">Language</span><span class="swu-prop-val">${escHtml(LANGUAGE_LABELS[unit.language]||unit.language||'—')}</span></div>
+        <div class="swu-prop-row"><span class="swu-prop-label">File</span><span class="swu-prop-val mono" style="font-size:11px;word-break:break-all">${escHtml(unit.file_path||'—')}</span></div>
+        ${unit.description ? `<div class="swu-prop-row" style="flex-direction:column;gap:4px"><span class="swu-prop-label">Description</span><span class="swu-prop-val" style="font-size:12px;color:var(--color-text-muted)">${escHtml(unit.description)}</span></div>` : ''}
+        ${unit.needs_review ? `<div class="swu-prop-row"><span class="swu-prop-label">Review</span><span class="badge badge-review">⚠ Changed</span></div>` : ''}
+      </div>
+      ${unit.source_code ? `
+        <div style="margin-top:16px">
+          <div style="font-size:11px;font-weight:600;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Source</div>
+          <pre style="font-size:11px;font-family:monospace;background:var(--bg-hover);border:1px solid var(--border);border-radius:4px;padding:10px;overflow-x:auto;max-height:320px;overflow-y:auto;white-space:pre">${escHtml(unit.source_code.slice(0, 2000))}${unit.source_code.length > 2000 ? '\n…' : ''}</pre>
+        </div>` : ''}
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" id="swu-props-edit">Edit</button>
+        <button class="btn btn-ghost btn-xs" id="swu-props-link" title="Copy link">🔗</button>
+      </div>`;
+
+    document.getElementById('swu-props-edit').onclick = () => openForm(unit);
+    document.getElementById('swu-props-link').onclick = () => copyElementLink(`swu-row-${unit.id}`);
+
+    // Highlight selected row
+    document.querySelectorAll('#swu-list-wrap tr[data-id]').forEach(r =>
+      r.classList.toggle('row-selected', r.dataset.id === unit.id));
+  }
+
+  function closePropsPanel() {
+    _selectedUnitId = null;
+    document.getElementById('swu-props-panel')?.classList.remove('open');
+    document.querySelectorAll('#swu-list-wrap tr[data-id]').forEach(r => r.classList.remove('row-selected'));
+  }
 
   // ── Column definitions ───────────────────────────────────────────────────────
   const COL_KEY = `swu_${project.id}_${parentId}`;
   const SKIP_FILTER = new Set(['actions']);
 
   const BUILTIN_COLS = [
+    { id:'select',       name:'',        visible:true,  fixed:true  },
     { id:'unit_code',    name:'Code',    visible:true,  fixed:false },
     { id:'name',         name:'Name',    visible:true,  fixed:false },
     { id:'unit_type',    name:'Type',    visible:true,  fixed:false },
@@ -182,9 +251,17 @@ export async function renderSwUnits(container, ctx) {
     { id:'actions',      name:'',        visible:true,  fixed:true  },
   ];
 
-  let _cols     = loadColConfig(COL_KEY, BUILTIN_COLS);
-  let _filters  = {};
-  let _allUnits = [];
+  let _cols      = loadColConfig(COL_KEY, BUILTIN_COLS);
+  let _filters   = {};
+  let _allUnits  = [];
+  let _selection = new Set(); // selected unit IDs
+
+  function updateReviewBtn() {
+    const btn = document.getElementById('swu-btn-review');
+    if (!btn) return;
+    btn.style.display = _selection.size > 0 ? '' : 'none';
+    btn.textContent = _selection.size > 0 ? `✓ Start Review (${_selection.size})` : '✓ Start Review';
+  }
 
   function getFilterValue(u, colId) {
     switch (colId) {
@@ -202,6 +279,7 @@ export async function renderSwUnits(container, ctx) {
 
   function renderTd(colId, u) {
     switch (colId) {
+      case 'select':       return `<td data-col="select" style="width:28px;padding:0 6px;text-align:center"><input type="checkbox" class="swu-row-chk" data-id="${u.id}" ${_selection.has(u.id)?'checked':''} title="Select"/></td>`;
       case 'unit_code':    return `<td data-col="unit_code"><span class="mono">${escHtml(u.unit_code)}</span></td>`;
       case 'name':         return `<td data-col="name">${escHtml(u.name)}</td>`;
       case 'unit_type':    return `<td data-col="unit_type"><span class="badge badge-draft" style="font-size:10px">${escHtml(allUnitTypes.find(t=>t.id===u.unit_type)?.label||u.unit_type||'—')}</span></td>`;
@@ -226,9 +304,13 @@ export async function renderSwUnits(container, ctx) {
     if (!wrap) return;
 
     const visCols  = _cols.filter(c => c.visible);
-    const filtered = applyColFilters(_allUnits, _filters, getFilterValue);
 
-    const theadRow = visCols.map(c => `<th data-col="${c.id}"${c.fixed ? '' : ' class="col-managed"'}>${escHtml(c.name)}</th>`).join('');
+    const filtered = applyColFilters(_allUnits, _filters, getFilterValue);
+    const allChecked = filtered.length > 0 && filtered.every(u => _selection.has(u.id));
+    const theadRow = visCols.map(c => {
+      if (c.id === 'select') return `<th data-col="select" style="width:28px;padding:0 6px;text-align:center"><input type="checkbox" id="swu-chk-all" ${allChecked?'checked':''} title="Select all"/></th>`;
+      return `<th data-col="${c.id}"${c.fixed ? '' : ' class="col-managed"'}>${escHtml(c.name)}</th>`;
+    }).join('');
     const filterRow = buildFilterRowHTML(_cols, SKIP_FILTER);
 
     wrap.innerHTML = `
@@ -276,8 +358,44 @@ export async function renderSwUnits(container, ctx) {
       badge.onclick = () => navigate(`${base}/reviews/new?artifact_type=sw_units&artifact_id=${badge.dataset.id}`);
     });
     wrap.querySelectorAll('.swu-link-btn').forEach(btn => {
-      btn.onclick = () => copyElementLink(`swu-row-${btn.dataset.id}`);
+      btn.onclick = (e) => { e.stopPropagation(); copyElementLink(`swu-row-${btn.dataset.id}`); };
     });
+
+    // Select-all checkbox
+    const chkAll = wrap.querySelector('#swu-chk-all');
+    if (chkAll) {
+      chkAll.onchange = () => {
+        filtered.forEach(u => { if (chkAll.checked) _selection.add(u.id); else _selection.delete(u.id); });
+        updateReviewBtn();
+        renderTable();
+      };
+    }
+
+    // Row checkboxes
+    wrap.querySelectorAll('.swu-row-chk').forEach(cb => {
+      cb.onchange = (e) => {
+        e.stopPropagation();
+        if (cb.checked) _selection.add(cb.dataset.id); else _selection.delete(cb.dataset.id);
+        updateReviewBtn();
+        renderTable();
+      };
+    });
+
+    // Row click → open props panel
+    wrap.querySelectorAll('tr[data-id]').forEach(tr => {
+      tr.style.cursor = 'pointer';
+      tr.onclick = (e) => {
+        if (e.target.closest('button,a,input,select')) return;
+        const unit = _allUnits.find(u => u.id === tr.dataset.id);
+        if (unit) openPropsPanel(unit);
+      };
+    });
+
+    // Re-highlight if a unit was already selected
+    if (_selectedUnitId) {
+      document.querySelectorAll('#swu-list-wrap tr[data-id]').forEach(r =>
+        r.classList.toggle('row-selected', r.dataset.id === _selectedUnitId));
+    }
 
     scrollToAnchor();
   }
