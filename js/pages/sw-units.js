@@ -102,9 +102,11 @@ export async function renderSwUnits(container, ctx) {
         <div class="content-loading"><div class="spinner"></div></div>
       </div>
       <aside class="req-trace-panel" id="swu-props-panel">
+        <button class="req-trace-panel-expand" id="swu-props-expand" title="Expand Properties">☰</button>
+        <span class="req-trace-panel-rail-label">Properties</span>
         <div class="req-trace-panel-hdr">
           <span class="req-trace-panel-title">Properties</span>
-          <button class="btn-icon" id="swu-props-close" title="Close">✕</button>
+          <button class="btn-icon" id="swu-props-close" title="Collapse">✕</button>
         </div>
         <div class="req-trace-panel-body" id="swu-props-body">
           <p style="padding:8px 4px;font-size:13px;color:var(--color-text-muted)">
@@ -187,7 +189,11 @@ export async function renderSwUnits(container, ctx) {
   document.getElementById('swu-form-close').onclick  = closeForm;
   document.getElementById('swu-form-cancel').onclick = closeForm;
   document.getElementById('swu-btn-upload').onclick  = () => openUploadModal();
-  document.getElementById('swu-props-close').onclick = () => closePropsPanel();
+  document.getElementById('swu-props-close').onclick  = () => closePropsPanel();
+  document.getElementById('swu-props-expand').onclick = () => {
+    const panel = document.getElementById('swu-props-panel');
+    panel.classList.add('open');
+  };
 
   document.getElementById('swu-bulk-cancel').onclick = () => {
     _selection.clear();
@@ -284,7 +290,8 @@ export async function renderSwUnits(container, ctx) {
   function closePropsPanel() {
     _selectedUnitId = null;
     document.getElementById('swu-props-panel')?.classList.remove('open');
-    document.querySelectorAll('#swu-list-wrap tr[data-id]').forEach(r => r.classList.remove('row-selected'));
+    document.querySelectorAll('#swu-list-wrap tr[data-id]').forEach(r =>
+      r.classList.remove('row-selected', 'req-row-selected'));
   }
 
   // ── Column definitions ───────────────────────────────────────────────────────

@@ -4780,8 +4780,8 @@ th.col-th-dragging * { pointer-events: none; }
 
 /* ── Requirement trace panel ─────────────────────────────────────────── */
 .req-trace-panel {
-  width: 0;
-  min-width: 0;
+  width: 32px;
+  min-width: 32px;
   overflow: hidden;
   border-left: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -4789,6 +4789,7 @@ th.col-th-dragging * { pointer-events: none; }
   flex-direction: column;
   transition: width 0.2s ease, min-width 0.2s ease;
   flex-shrink: 0;
+  position: relative;
 }
 .req-trace-panel.open {
   width: 420px;
@@ -4804,6 +4805,7 @@ th.col-th-dragging * { pointer-events: none; }
   position: sticky;
   top: 0;
   z-index: 1;
+  white-space: nowrap;
 }
 .req-trace-panel-title {
   font-size: 13px;
@@ -4815,6 +4817,41 @@ th.col-th-dragging * { pointer-events: none; }
   overflow-y: auto;
   padding: 12px;
 }
+/* Collapsed rail */
+.req-trace-panel:not(.open) .req-trace-panel-hdr,
+.req-trace-panel:not(.open) .req-trace-panel-body { display: none; }
+.req-trace-panel-expand {
+  display: none;
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--color-text-muted);
+  padding: 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.req-trace-panel-expand:hover { color: var(--color-primary); background: var(--color-hover); }
+.req-trace-panel:not(.open) .req-trace-panel-expand { display: block; }
+.req-trace-panel-rail-label {
+  display: none;
+  position: absolute;
+  top: 36px;
+  left: 50%;
+  transform: translateX(-50%) rotate(90deg);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.req-trace-panel:not(.open) .req-trace-panel-rail-label { display: block; }
 
 /* V-Model chain layout in trace panel */
 .rtrace-chain { display: flex; flex-direction: column; gap: 0; }
