@@ -163,6 +163,164 @@ export async function renderSwUnits(container, ctx) {
   document.getElementById('swu-form-cancel').onclick = closeForm;
   document.getElementById('swu-btn-upload').onclick  = () => openUploadModal();
 
+  // ── Column definitions ───────────────────────────────────────────────────────
+  const ALL_COLS = [
+    { id:'unit_code',   label:'Code',    render: u => `<span class="mono">${escHtml(u.unit_code)}</span>` },
+    { id:'name',        label:'Name',    render: u => escHtml(u.name) },
+    { id:'unit_type',   label:'Type',    render: u => `<span class="badge badge-draft" style="font-size:10px">${escHtml(allUnitTypes.find(t=>t.id===u.unit_type)?.label||u.unit_type||'—')}</span>` },
+    { id:'file_path',   label:'File',    render: u => `<span class="mono text-muted" style="font-size:11px">${escHtml(u.file_path||'—')}</span>` },
+    { id:'language',    label:'Lang',    render: u => escHtml(LANGUAGE_LABELS[u.language]||u.language||'—') },
+    { id:'version',     label:'Version', render: u => `<span class="text-muted">v${u.version}</span>` },
+    { id:'status',      label:'Status',  render: u => `<span class="badge ${STATUS_CLASSES[u.status]||'badge-draft'}">${STATUS_LABELS[u.status]||u.status}</span>` },
+    { id:'needs_review',label:'Review',  render: u => u.needs_review
+        ? `<span class="badge badge-review swu-needs-review-badge" data-id="${u.id}" style="cursor:pointer">⚠ Changed</span>`
+        : '<span class="text-muted">—</span>' },
+  ];
+
+  const STORAGE_KEY = `swu_cols_${project.id}`;
+  function loadColState() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null; } catch { return null; }
+  }
+  function saveColState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ order: _colOrder, hidden: [..._hiddenCols] }));
+  }
+
+  const saved = loadColState();
+  let _colOrder  = saved?.order  || ALL_COLS.map(c => c.id);
+  let _hiddenCols = new Set(saved?.hidden || []);
+  let _filters   = {};   // colId → filter string
+  let _allUnits  = [];   // full dataset for client-side filtering
+
+  function visibleCols() {
+    return _colOrder.map(id => ALL_COLS.find(c => c.id === id)).filter(c => c && !_hiddenCols.has(c.id));
+  }
+
+  function filteredUnits() {
+    return _allUnits.filter(u => {
+      for (const [colId, val] of Object.entries(_filters)) {
+        if (!val) continue;
+        const col = ALL_COLS.find(c => c.id === colId);
+        if (!col) continue;
+        const text = col.render(u).replace(/<[^>]+>/g, '').toLowerCase();
+        if (!text.includes(val.toLowerCase())) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderTable() {
+    const wrap = document.getElementById('swu-list-wrap');
+    if (!wrap) return;
+    const cols  = visibleCols();
+    const units = filteredUnits();
+
+    let html = `
+      <div class="swu-table-toolbar">
+        <span class="text-muted" style="font-size:12px">${units.length} of ${_allUnits.length} units</span>
+        <button class="btn btn-ghost btn-sm" id="swu-col-menu-btn">⊞ Columns</button>
+      </div>
+      <div id="swu-col-menu" style="display:none" class="swu-col-menu">
+        ${ALL_COLS.map(c => `
+          <label class="swu-col-check">
+            <input type="checkbox" data-col="${c.id}" ${_hiddenCols.has(c.id) ? '' : 'checked'}/>
+            ${escHtml(c.label)}
+          </label>`).join('')}
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            ${cols.map(c => `
+              <th draggable="true" data-col="${c.id}" class="swu-th-drag" title="Drag to reorder">
+                ${escHtml(c.label)}
+              </th>`).join('')}
+            <th style="width:100px"></th>
+          </tr>
+          <tr class="swu-filter-row">
+            ${cols.map(c => `
+              <th>
+                <input class="swu-filter-input" data-col="${c.id}"
+                  value="${escHtml(_filters[c.id]||'')}"
+                  placeholder="Filter…"/>
+              </th>`).join('')}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${units.length ? units.map(u => `
+            <tr data-id="${u.id}">
+              ${cols.map(c => `<td>${c.render(u)}</td>`).join('')}
+              <td class="rv-actions">
+                <button class="btn btn-secondary btn-sm swu-edit-btn" data-id="${u.id}">Edit</button>
+                <button class="btn btn-ghost btn-sm swu-del-btn" data-id="${u.id}">Delete</button>
+              </td>
+            </tr>`).join('')
+          : `<tr><td colspan="${cols.length + 1}" class="text-muted" style="text-align:center;padding:24px">No units match the current filter.</td></tr>`}
+        </tbody>
+      </table>`;
+
+    wrap.innerHTML = html;
+
+    // Column menu toggle
+    const menuBtn = document.getElementById('swu-col-menu-btn');
+    const menu    = document.getElementById('swu-col-menu');
+    menuBtn.onclick = (e) => { e.stopPropagation(); menu.style.display = menu.style.display === 'none' ? '' : 'none'; };
+    document.addEventListener('click', () => { if (menu) menu.style.display = 'none'; }, { once: false });
+    menu.querySelectorAll('input[data-col]').forEach(cb => {
+      cb.onchange = () => {
+        if (cb.checked) _hiddenCols.delete(cb.dataset.col);
+        else            _hiddenCols.add(cb.dataset.col);
+        saveColState();
+        renderTable();
+      };
+    });
+
+    // Filter inputs
+    wrap.querySelectorAll('.swu-filter-input').forEach(inp => {
+      inp.oninput = () => {
+        _filters[inp.dataset.col] = inp.value;
+        renderTable();
+      };
+    });
+
+    // Drag-to-reorder headers
+    let _dragCol = null;
+    wrap.querySelectorAll('.swu-th-drag').forEach(th => {
+      th.ondragstart = (e) => { _dragCol = th.dataset.col; e.dataTransfer.effectAllowed = 'move'; th.classList.add('dragging'); };
+      th.ondragend   = ()  => { wrap.querySelectorAll('.swu-th-drag').forEach(t => { t.classList.remove('dragging','drag-over'); }); };
+      th.ondragover  = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; th.classList.add('drag-over'); };
+      th.ondragleave = ()  => { th.classList.remove('drag-over'); };
+      th.ondrop      = (e) => {
+        e.preventDefault();
+        th.classList.remove('drag-over');
+        if (!_dragCol || _dragCol === th.dataset.col) return;
+        const from = _colOrder.indexOf(_dragCol);
+        const to   = _colOrder.indexOf(th.dataset.col);
+        if (from === -1 || to === -1) return;
+        _colOrder.splice(from, 1);
+        _colOrder.splice(to, 0, _dragCol);
+        saveColState();
+        renderTable();
+      };
+    });
+
+    // Row actions
+    wrap.querySelectorAll('.swu-edit-btn').forEach(btn => {
+      btn.onclick = () => openForm(_allUnits.find(u => u.id === btn.dataset.id));
+    });
+    wrap.querySelectorAll('.swu-del-btn').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('Delete this SW unit? This cannot be undone.')) return;
+        const { error } = await sb.from('sw_units').delete().eq('id', btn.dataset.id);
+        if (error) { toast('Error: ' + error.message, 'error'); return; }
+        toast('SW unit deleted.', 'success');
+        await loadList();
+      };
+    });
+    wrap.querySelectorAll('.swu-needs-review-badge').forEach(badge => {
+      badge.onclick = () => navigate(`${base}/reviews/new?artifact_type=sw_units&artifact_id=${badge.dataset.id}`);
+    });
+  }
+
   await loadList();
 
   // ── List ─────────────────────────────────────────────────────────────────────
@@ -256,54 +414,8 @@ export async function renderSwUnits(container, ctx) {
       return;
     }
 
-    wrap.innerHTML = `
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Code</th><th>Name</th><th>Type</th><th>File</th><th>Lang</th>
-            <th>Version</th><th>Status</th><th>Review</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${units.map(u => {
-            const unitTypeLabel = allUnitTypes.find(t => t.id === u.unit_type)?.label || u.unit_type || '—';
-            return `
-            <tr data-id="${u.id}">
-              <td class="mono">${escHtml(u.unit_code)}</td>
-              <td>${escHtml(u.name)}</td>
-              <td><span class="badge badge-draft" style="font-size:10px">${escHtml(unitTypeLabel)}</span></td>
-              <td class="mono text-muted" style="font-size:11px">${escHtml(u.file_path || '—')}</td>
-              <td>${escHtml(LANGUAGE_LABELS[u.language] || u.language || '—')}</td>
-              <td class="text-muted">v${u.version}</td>
-              <td><span class="badge ${STATUS_CLASSES[u.status] || 'badge-draft'}">${STATUS_LABELS[u.status] || u.status}</span></td>
-              <td>${u.needs_review
-                ? `<span class="badge badge-review swu-needs-review-badge" data-id="${u.id}" style="cursor:pointer" title="Changed since last review — click to review">⚠ Changed</span>`
-                : '<span class="text-muted">—</span>'}</td>
-              <td class="rv-actions">
-                <button class="btn btn-secondary btn-sm swu-edit-btn" data-id="${u.id}">Edit</button>
-                <button class="btn btn-ghost btn-sm swu-del-btn" data-id="${u.id}">Delete</button>
-              </td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    `;
-
-    wrap.querySelectorAll('.swu-edit-btn').forEach(btn => {
-      btn.onclick = () => openForm(units.find(u => u.id === btn.dataset.id));
-    });
-    wrap.querySelectorAll('.swu-del-btn').forEach(btn => {
-      btn.onclick = async () => {
-        if (!confirm('Delete this SW unit? This cannot be undone.')) return;
-        const { error } = await sb.from('sw_units').delete().eq('id', btn.dataset.id);
-        if (error) { toast('Error: ' + error.message, 'error'); return; }
-        toast('SW unit deleted.', 'success');
-        await loadList();
-      };
-    });
-    wrap.querySelectorAll('.swu-needs-review-badge').forEach(badge => {
-      badge.onclick = () => navigate(`${base}/reviews/new?artifact_type=sw_units&artifact_id=${badge.dataset.id}`);
-    });
+    _allUnits = units;
+    renderTable();
   }
 
   // ── Form ─────────────────────────────────────────────────────────────────────
