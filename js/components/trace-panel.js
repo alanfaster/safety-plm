@@ -394,6 +394,7 @@ export function createTracePanel({
           updated[fieldId] = [...(updated[fieldId] || []), code];
           const { error } = await sb.from(table).update({ traceability: updated }).eq('id', artifact.id);
           if (error) { toast('Error saving link: ' + error.message, 'error'); return; }
+          toast(`Linked ${code}`, 'success');
           artifact.traceability = updated;
           const d = getData().find(r => r.id === artifact.id);
           if (d) d.traceability = updated;
@@ -413,6 +414,7 @@ export function createTracePanel({
         updated[fieldId] = (updated[fieldId] || []).filter(c => c !== code);
         const { error } = await sb.from(table).update({ traceability: updated }).eq('id', artifact.id);
         if (error) { toast('Error removing link: ' + error.message, 'error'); return; }
+        toast(`Unlinked ${code}`, 'success');
         artifact.traceability = updated;
         const d = getData().find(r => r.id === artifact.id);
         if (d) d.traceability = updated;
