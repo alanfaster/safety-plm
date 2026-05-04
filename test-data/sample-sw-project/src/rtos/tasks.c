@@ -1,79 +1,81 @@
-﻿/**
- * @unit    SWU-RTOS-001
- * @name    Motor Control Task
- * @type    task
- * @asil    B
- * @sdd     SDD-RTOS-001
- * @req     SWR-RTOS-001, SWR-RTOS-002
- * @author  A. Guerrero
- * @date    2026-05-04
- * @status  approved
- *
- * FreeRTOS task running the motor PID control loop at 1 kHz.
- */
-
-#include "FreeRTOS.h"
+﻿#include "FreeRTOS.h"
 #include "task.h"
 #include "motor_control.h"
 #include "safety_monitor.h"
-#include <stdint.h>
 
-#define MOTOR_TASK_STACK  256u
-#define MOTOR_TASK_PRIO     4u
-#define MOTOR_PERIOD_MS     1u
+#define MOTOR_STACK  256u
+#define SAFETY_STACK 192u
+#define MOTOR_PRIO     4u
+#define SAFETY_PRIO    5u
+#define MOTOR_MS       1u
+#define SAFETY_MS     10u
 
-static StaticTask_t _motor_tcb;
-static StackType_t  _motor_stack[MOTOR_TASK_STACK];
+static StaticTask_t _mt; static StackType_t _ms[MOTOR_STACK];
+static StaticTask_t _st; static StackType_t _ss[SAFETY_STACK];
 
+/**
+ * @unit    SWU-TASK-001
+ * @name    motor_task
+ * @type    task
+ * @asil    B
+ * @sdd     SDD-RTOS-001
+ * @req     SWR-TASK-001, SWR-TASK-002
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ * 1 kHz FreeRTOS task — runs PID motor control loop.
+ */
 static void motor_task(void *arg)
 {
     (void)arg;
-    TickType_t wake = xTaskGetTickCount();
+    TickType_t w = xTaskGetTickCount();
     motor_init();
     for (;;) {
-        vTaskDelayUntil(&wake, pdMS_TO_TICKS(MOTOR_PERIOD_MS));
+        vTaskDelayUntil(&w, pdMS_TO_TICKS(MOTOR_MS));
         if (safety_is_safe_state()) { motor_emergency_stop(); continue; }
         motor_run(encoder_consume_delta(), 0.001f);
     }
 }
 
 /**
- * @unit    SWU-RTOS-002
- * @name    Safety Supervision Task
+ * @unit    SWU-TASK-002
+ * @name    safety_task
  * @type    task
  * @asil    B
  * @sdd     SDD-RTOS-002
- * @req     SWR-RTOS-003
+ * @req     SWR-TASK-003
  * @author  A. Guerrero
  * @date    2026-05-04
  * @status  approved
- *
- * FreeRTOS task running the safety monitor at 100 Hz.
- * Feeds the watchdog and checks temperature and voltage rails.
+ * 100 Hz FreeRTOS task — runs safety monitor and feeds watchdog.
  */
-
-#define SAFETY_TASK_STACK 192u
-#define SAFETY_TASK_PRIO    5u
-#define SAFETY_PERIOD_MS   10u
-
-static StaticTask_t _safety_tcb;
-static StackType_t  _safety_stack[SAFETY_TASK_STACK];
-
 static void safety_task(void *arg)
 {
     (void)arg;
-    TickType_t wake = xTaskGetTickCount();
+    TickType_t w = xTaskGetTickCount();
     safety_monitor_init();
     watchdog_init(50u);
     for (;;) {
-        vTaskDelayUntil(&wake, pdMS_TO_TICKS(SAFETY_PERIOD_MS));
+        vTaskDelayUntil(&w, pdMS_TO_TICKS(SAFETY_MS));
         safety_monitor_tick();
         watchdog_kick();
     }
 }
 
+/**
+ * @unit    SWU-TASK-003
+ * @name    tasks_create_all
+ * @type    function
+ * @asil    B
+ * @sdd     SDD-RTOS-001
+ * @req     SWR-TASK-004
+ * @author  A. Guerrero
+ * @date    2026-05-04
+ * @status  approved
+ * Creates all application tasks before the FreeRTOS scheduler starts.
+ */
 void tasks_create_all(void)
 {
-    xTaskCreateStatic(motor_task,  "motor",  MOTOR_TASK_STACK,  NULL, MOTOR_TASK_PRIO,  _motor_stack,  &_motor_tcb);
-    xTaskCreateStatic(safety_task, "safety", SAFETY_TASK_STACK, NULL, SAFETY_TASK_PRIO, _safety_stack, &_safety_tcb);
+    xTaskCreateStatic(motor_task,  "motor",  MOTOR_STACK,  NULL, MOTOR_PRIO,  _ms, &_mt);
+    xTaskCreateStatic(safety_task, "safety", SAFETY_STACK, NULL, SAFETY_PRIO, _ss, &_st);
 }
