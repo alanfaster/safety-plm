@@ -1,4 +1,4 @@
-import { sb, buildCode, nextIndex } from '../config.js';
+﻿import { sb, buildCode, nextIndex } from '../config.js';
 import { t } from '../i18n/index.js';
 import { showModal, hideModal } from '../components/modal.js';
 import { toast } from '../toast.js';
@@ -1491,7 +1491,7 @@ function reqTd(c, r) {
     </select>`;
   switch (c.id) {
     case 'select':
-      return `<td data-col="select" style="width:28px;padding:0 6px;text-align:center;vertical-align:middle"><input type="checkbox" class="req-row-chk" data-rid="${r.id}" ${_selection.has(r.id) ? 'checked' : ''} title="Select"/></td>`;
+      return `<td data-col="select" style="width:28px;padding:10px 6px 0;text-align:center;vertical-align:top"><input type="checkbox" class="req-row-chk" data-rid="${r.id}" ${_selection.has(r.id) ? 'checked' : ''} title="Select"/></td>`;
     case 'drag':
       return `<td data-col="drag" class="req-drag-cell" style="vertical-align:top;padding-top:6px">
         <span class="req-drag-handle" title="Drag to reorder">⠿</span>

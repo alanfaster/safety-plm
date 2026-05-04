@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Test Specifications — unit_testing, integration_testing, system_testing
  *
  * Layout : spec-nav (Contents) | table | detail panel (right slide-in)
@@ -496,7 +496,7 @@ function testRowHTML(r) {
   return _cols.filter(c => c.visible).map(c => {
     switch (c.id) {
       case 'select':
-        return `<td data-col="select" style="width:28px;padding:0 6px;text-align:center;vertical-align:middle"><input type="checkbox" class="ts-row-chk" data-id="${r.id}" title="Select"/></td>`;
+        return `<td data-col="select" style="width:28px;padding:10px 6px 0;text-align:center;vertical-align:top"><input type="checkbox" class="ts-row-chk" data-id="${r.id}" title="Select"/></td>`;
       case 'drag':
         return `<td data-col="drag" class="spec-drag-cell" style="vertical-align:top;padding-top:4px"><span class="spec-drag-handle" title="Drag">⠿</span></td>`;
       case 'code':

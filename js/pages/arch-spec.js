@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Architecture Specification — arch-spec.js (v2)
  *
  * UX:
@@ -602,7 +602,7 @@ function rowHTML(it) {
   return visibleCols.map(c => {
     switch (c.id) {
       case 'select':
-        return `<td data-col="select" style="width:28px;padding:0 6px;text-align:center;vertical-align:middle"><input type="checkbox" class="spec-row-chk" data-id="${it.id}" title="Select"/></td>`;
+        return `<td data-col="select" style="width:28px;padding:10px 6px 0;text-align:center;vertical-align:top"><input type="checkbox" class="spec-row-chk" data-id="${it.id}" title="Select"/></td>`;
       case 'drag':
         return `<td data-col="drag" style="width:24px;padding:4px 4px 0;text-align:center;vertical-align:top;cursor:grab"><span class="spec-drag-handle" title="Drag to reorder">⠿</span></td>`;
       case 'id':

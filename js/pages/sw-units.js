@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SW Units — CRUD + code upload for software unit artifacts.
  * Route: /project/:projectId/item/:itemId/sw-units
  */
@@ -338,7 +338,7 @@ export async function renderSwUnits(container, ctx) {
 
   function renderTd(colId, u) {
     switch (colId) {
-      case 'select':       return `<td data-col="select" style="width:28px;padding:0 6px;text-align:center;vertical-align:middle"><input type="checkbox" class="swu-row-chk" data-id="${u.id}" ${_selection.has(u.id)?'checked':''} title="Select"/></td>`;
+      case 'select':       return `<td data-col="select" style="width:28px;padding:10px 6px 0;text-align:center;vertical-align:top"><input type="checkbox" class="swu-row-chk" data-id="${u.id}" ${_selection.has(u.id)?'checked':''} title="Select"/></td>`;
       case 'unit_code':    return `<td data-col="unit_code"><span class="mono">${escHtml(u.unit_code)}</span></td>`;
       case 'name':         return `<td data-col="name">${escHtml(u.name)}</td>`;
       case 'unit_type':    return `<td data-col="unit_type"><span class="badge badge-draft" style="font-size:10px">${escHtml(allUnitTypes.find(t=>t.id===u.unit_type)?.label||u.unit_type||'—')}</span></td>`;
