@@ -85,6 +85,12 @@ export async function renderVcycle(container, { project, item, system, phase, do
     return;
   }
 
+  if (phase === 'implementation' && domain === 'sw') {
+    const { renderSwUnits } = await import('./sw-units.js');
+    await renderSwUnits(container, { project, item, system });
+    return;
+  }
+
   if (['unit_testing', 'integration_testing', 'system_testing'].includes(phase)) {
     await renderTestSpecs(container, { project, item, system, phase, domain, pageId });
     return;

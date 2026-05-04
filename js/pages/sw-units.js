@@ -157,10 +157,88 @@ export async function renderSwUnits(container, ctx) {
     if (error) { wrap.innerHTML = `<p class="text-muted">${escHtml(error.message)}</p>`; return; }
 
     if (!units?.length) {
-      wrap.innerHTML = `<div class="rv-empty">
-        <p>No SW units yet.</p>
-        <p>Create units manually or upload a ZIP of your source code.</p>
-      </div>`;
+      wrap.innerHTML = `
+        <div class="swu-onboarding">
+          <div class="swu-onboarding-hero">
+            <div class="swu-onboarding-icon">⌨</div>
+            <h2>No SW Units yet</h2>
+            <p class="text-muted">SW Units represent the individual software elements that make up this ${parentType === 'system' ? 'system' : 'item'} — functions, ISRs, tasks, state machines, etc.</p>
+          </div>
+
+          <div class="swu-onboarding-steps">
+            <div class="swu-onboarding-step">
+              <div class="swu-step-num">1</div>
+              <div class="swu-step-body">
+                <strong>Prepare your source files</strong>
+                <p>Add a traceability header to each file so the tool can auto-populate unit code, name, type, ASIL level, and requirement links on import.</p>
+                <pre class="swu-header-example">/**
+ * ${HDR_KW.unit}    SWU-001
+ * ${HDR_KW.name}    Motor Control
+ * ${HDR_KW.type}    function
+ * ${HDR_KW.asil}    B
+ * ${HDR_KW.sdd}     SDD-MOT-001
+ * ${HDR_KW.req}     SWR-001, SWR-002
+ * ${HDR_KW.author}  Your Name
+ */</pre>
+                <p style="margin-top:6px">
+                  <a href="docs/sw-unit-coding-guidelines.md" target="_blank" class="swu-link">📄 Read the full coding guidelines</a>
+                  &nbsp;·&nbsp;
+                  <a href="#" class="swu-link" id="swu-link-settings">⚙ Customize keywords in Project Settings</a>
+                </p>
+              </div>
+            </div>
+
+            <div class="swu-onboarding-step">
+              <div class="swu-step-num">2</div>
+              <div class="swu-step-body">
+                <strong>Pack your source files into a ZIP</strong>
+                <p>Zip the project folder keeping relative paths. Supported extensions: <code>.c .cpp .h .hpp .py .js .ts .java .rs .go</code></p>
+                <p>You can strip a common prefix (e.g. <code>src/</code>) during import if needed.</p>
+              </div>
+            </div>
+
+            <div class="swu-onboarding-step">
+              <div class="swu-step-num">3</div>
+              <div class="swu-step-body">
+                <strong>Upload the ZIP</strong>
+                <p>Click <strong>⬆ Upload Code (ZIP)</strong> above. The tool will:</p>
+                <ul class="swu-onboarding-list">
+                  <li>Parse headers and create one SW unit per file</li>
+                  <li>Compute a SHA-256 hash per file for drift detection</li>
+                  <li>Show a summary: <em>X new · Y changed · Z unchanged</em></li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="swu-onboarding-step">
+              <div class="swu-step-num">4</div>
+              <div class="swu-step-body">
+                <strong>Or create units manually</strong>
+                <p>Click <strong>＋ New SW Unit</strong> to define a unit without source code — useful for units that are not yet implemented.</p>
+              </div>
+            </div>
+
+            <div class="swu-onboarding-step">
+              <div class="swu-step-num">5</div>
+              <div class="swu-step-body">
+                <strong>Review changed units</strong>
+                <p>When you upload a new version of the ZIP, files whose content changed are flagged <span class="swu-needs-review-badge" style="cursor:default">⚠ Changed</span>. Click the badge to start a peer review session for those units.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="swu-onboarding-actions">
+            <button class="btn btn-primary" id="swu-ob-upload">⬆ Upload Code (ZIP)</button>
+            <button class="btn btn-secondary" id="swu-ob-new">＋ New SW Unit manually</button>
+          </div>
+        </div>`;
+
+      document.getElementById('swu-ob-upload').onclick = () => openUploadModal();
+      document.getElementById('swu-ob-new').onclick    = () => openForm(null);
+      document.getElementById('swu-link-settings')?.addEventListener('click', e => {
+        e.preventDefault();
+        navigate(`/project/${project.id}/settings`);
+      });
       return;
     }
 

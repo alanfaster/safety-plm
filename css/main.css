@@ -6763,6 +6763,31 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .swu-needs-review-badge  { cursor:pointer; }
 .swu-upload-summary      { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
 
+/* ── SW Units onboarding panel ──────────────────────────────────────── */
+.swu-onboarding          { max-width:720px; margin:0 auto; padding:32px 0 48px; }
+.swu-onboarding-hero     { text-align:center; margin-bottom:40px; }
+.swu-onboarding-icon     { font-size:48px; margin-bottom:12px; }
+.swu-onboarding-hero h2  { font-size:22px; font-weight:600; margin-bottom:8px; }
+.swu-onboarding-steps    { display:flex; flex-direction:column; gap:0; }
+.swu-onboarding-step     { display:flex; gap:20px; padding:20px 0; border-bottom:1px solid var(--border); }
+.swu-onboarding-step:last-child { border-bottom:none; }
+.swu-step-num            { flex-shrink:0; width:32px; height:32px; border-radius:50%;
+                           background:var(--primary); color:#fff;
+                           display:flex; align-items:center; justify-content:center;
+                           font-weight:700; font-size:14px; margin-top:2px; }
+.swu-step-body           { flex:1; }
+.swu-step-body strong    { font-size:15px; display:block; margin-bottom:6px; }
+.swu-step-body p         { color:var(--color-text-muted); font-size:13px; margin:0 0 6px; }
+.swu-step-body code      { background:var(--bg-hover); padding:1px 5px; border-radius:3px; font-family:monospace; font-size:12px; }
+.swu-header-example      { background:var(--bg-hover); border:1px solid var(--border); border-radius:6px;
+                           padding:12px 16px; font-family:monospace; font-size:12px; line-height:1.6;
+                           color:var(--color-text); white-space:pre; overflow-x:auto; margin:10px 0; }
+.swu-onboarding-list     { color:var(--color-text-muted); font-size:13px; margin:6px 0 0 18px; padding:0; }
+.swu-onboarding-list li  { margin-bottom:4px; }
+.swu-link                { color:var(--primary); text-decoration:none; font-size:12px; }
+.swu-link:hover          { text-decoration:underline; }
+.swu-onboarding-actions  { display:flex; gap:12px; margin-top:36px; justify-content:center; }
+
 /* ── Project settings checklist ────────────────────────────────────── */
 .settings-checklist      { display:flex; flex-direction:column; gap:8px; }
 .settings-check-item     { display:flex; align-items:center; gap:8px; cursor:pointer;
