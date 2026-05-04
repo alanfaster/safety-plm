@@ -570,7 +570,9 @@ export async function renderSwUnits(container, ctx) {
         </div>`;
       }
       result.innerHTML = html;
-      btn.textContent = 'Done';
+      btn.textContent = 'Close';
+      btn.disabled = false;
+      btn.onclick = () => { hideModal(); };
 
       await loadList();
     };
