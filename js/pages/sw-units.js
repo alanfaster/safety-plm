@@ -253,33 +253,102 @@ export async function renderSwUnits(container, ctx) {
     if (!panel || !body) return;
     panel.classList.add('open');
 
-    const typeLabel = allUnitTypes.find(t => t.id === unit.unit_type)?.label || unit.unit_type || '—';
     body.innerHTML = `
-      <div style="padding:4px 0 12px">
-        <div style="font-size:16px;font-weight:600;margin-bottom:2px">${escHtml(unit.unit_code)}</div>
-        <div style="font-size:13px;color:var(--color-text-muted)">${escHtml(unit.name)}</div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label class="form-label">Unit Code</label>
+        <input class="form-input" id="swup-code" value="${escHtml(unit.unit_code)}"/>
       </div>
-      <div class="swu-props-grid">
-        <div class="swu-prop-row"><span class="swu-prop-label">Type</span><span class="swu-prop-val"><span class="badge badge-draft" style="font-size:11px">${escHtml(typeLabel)}</span></span></div>
-        <div class="swu-prop-row"><span class="swu-prop-label">Status</span><span class="swu-prop-val"><span class="badge ${STATUS_CLASSES[unit.status]||'badge-draft'}">${STATUS_LABELS[unit.status]||unit.status}</span></span></div>
-        <div class="swu-prop-row"><span class="swu-prop-label">Version</span><span class="swu-prop-val">v${unit.version}</span></div>
-        <div class="swu-prop-row"><span class="swu-prop-label">Language</span><span class="swu-prop-val">${escHtml(LANGUAGE_LABELS[unit.language]||unit.language||'—')}</span></div>
-        <div class="swu-prop-row"><span class="swu-prop-label">File</span><span class="swu-prop-val mono" style="font-size:11px;word-break:break-all">${escHtml(unit.file_path||'—')}</span></div>
-        ${unit.description ? `<div class="swu-prop-row" style="flex-direction:column;gap:4px"><span class="swu-prop-label">Description</span><span class="swu-prop-val" style="font-size:12px;color:var(--color-text-muted)">${escHtml(unit.description)}</span></div>` : ''}
-        ${unit.needs_review ? `<div class="swu-prop-row"><span class="swu-prop-label">Review</span><span class="badge badge-review">⚠ Changed</span></div>` : ''}
+      <div class="form-group" style="margin-bottom:10px">
+        <label class="form-label">Name</label>
+        <input class="form-input" id="swup-name" value="${escHtml(unit.name)}"/>
       </div>
-      ${unit.source_code ? `
-        <div style="margin-top:16px">
-          <div style="font-size:11px;font-weight:600;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Source</div>
-          <pre style="font-size:11px;font-family:monospace;background:var(--bg-hover);border:1px solid var(--border);border-radius:4px;padding:10px;overflow-x:auto;max-height:320px;overflow-y:auto;white-space:pre">${escHtml(unit.source_code.slice(0, 2000))}${unit.source_code.length > 2000 ? '\n…' : ''}</pre>
-        </div>` : ''}
-      <div style="margin-top:16px;display:flex;gap:8px">
-        <button class="btn btn-secondary btn-sm" id="swu-props-edit">Edit</button>
-        <button class="btn btn-ghost btn-xs" id="swu-props-link" title="Copy link">🔗</button>
+      <div class="form-group" style="margin-bottom:10px">
+        <label class="form-label">Unit Type</label>
+        <select class="form-input form-select" id="swup-type">
+          ${allUnitTypes.map(t => `<option value="${escHtml(t.id)}"${unit.unit_type===t.id?' selected':''}>${escHtml(t.label)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label class="form-label">Status</label>
+        <select class="form-input form-select" id="swup-status">
+          ${Object.entries(STATUS_LABELS).map(([v,l]) => `<option value="${v}"${unit.status===v?' selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label class="form-label">Language</label>
+        <select class="form-input form-select" id="swup-lang">
+          <option value="">— select —</option>
+          ${Object.entries(LANGUAGE_LABELS).map(([v,l]) => `<option value="${v}"${unit.language===v?' selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label class="form-label">File Path</label>
+        <input class="form-input mono" id="swup-filepath" style="font-size:11px" value="${escHtml(unit.file_path||'')}"/>
+      </div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label class="form-label">Description</label>
+        <textarea class="form-input" id="swup-desc" rows="2">${escHtml(unit.description||'')}</textarea>
+      </div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label class="form-label">Source Code</label>
+        <textarea class="form-input swu-code-editor" id="swup-src" rows="10" spellcheck="false">${escHtml(unit.source_code||'')}</textarea>
+      </div>
+      ${unit.needs_review ? `<div style="margin-bottom:10px"><span class="badge badge-review">⚠ Changed — review pending</span></div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-primary btn-sm" id="swup-save">Save</button>
+        <button class="btn btn-ghost btn-xs" id="swup-link" title="Copy link">🔗</button>
+        <span class="text-muted" style="font-size:11px;align-self:center">v${unit.version}</span>
       </div>`;
 
-    document.getElementById('swu-props-edit').onclick = () => openForm(unit);
-    document.getElementById('swu-props-link').onclick = () => copyElementLink(`swu-row-${unit.id}`);
+    document.getElementById('swup-link').onclick = () => copyElementLink(`swu-row-${unit.id}`);
+    document.getElementById('swup-save').onclick  = async () => {
+      const saveBtn     = document.getElementById('swup-save');
+      const unit_code   = document.getElementById('swup-code').value.trim();
+      const name        = document.getElementById('swup-name').value.trim();
+      const unit_type   = document.getElementById('swup-type').value || 'general';
+      const status      = document.getElementById('swup-status').value;
+      const language    = document.getElementById('swup-lang').value;
+      const file_path   = document.getElementById('swup-filepath').value.trim();
+      const description = document.getElementById('swup-desc').value.trim();
+      const source_code = document.getElementById('swup-src').value;
+
+      if (!unit_code) { toast('Enter a unit code.', 'error'); return; }
+      if (!name)      { toast('Enter a name.', 'error'); return; }
+      saveBtn.disabled = true;
+
+      let content_hash = unit.content_hash;
+      let extra = {};
+      if (source_code) {
+        content_hash = await hashContent(source_code);
+        if (content_hash !== unit.content_hash) {
+          await sb.from('sw_unit_versions').insert({
+            sw_unit_id: unit.id, version: unit.version,
+            source_code: unit.source_code, content_hash: unit.content_hash,
+            file_path: unit.file_path, uploaded_by: currentUserId,
+          });
+          extra = { needs_review: true, version: (unit.version || 1) + 1 };
+        }
+      }
+
+      const { error } = await sb.from('sw_units').update({
+        unit_code, name, unit_type, status,
+        language: language || null,
+        file_path: file_path || null,
+        description: description || null,
+        source_code: source_code || null,
+        content_hash,
+        ...extra,
+        updated_at: new Date().toISOString(),
+      }).eq('id', unit.id);
+
+      saveBtn.disabled = false;
+      if (error) { toast('Error: ' + error.message, 'error'); return; }
+      toast('SW unit saved.', 'success');
+      await loadList();
+      // Re-open panel with updated data
+      const updated = _allUnits.find(u => u.id === unit.id);
+      if (updated) openPropsPanel(updated);
+    };
 
     // Highlight selected row
     document.querySelectorAll('#swu-list-wrap tr[data-id]').forEach(r =>
@@ -362,7 +431,6 @@ export async function renderSwUnits(container, ctx) {
         <button class="btn btn-ghost btn-xs btn-move-up"  data-id="${u.id}" title="Move up">↑</button>
         <button class="btn btn-ghost btn-xs btn-move-dn"  data-id="${u.id}" title="Move down">↓</button>
         <button class="btn btn-ghost btn-xs btn-view-swu" data-id="${u.id}" title="View properties">👁</button>
-        <button class="btn btn-ghost btn-xs btn-edit-swu" data-id="${u.id}" title="Edit">✏</button>
         <button class="btn btn-ghost btn-xs btn-link-swu" data-id="${u.id}" title="Copy link">🔗</button>
         <button class="btn btn-ghost btn-xs btn-hist-swu" data-id="${u.id}" title="Version history">🕐</button>
         <button class="btn btn-ghost btn-xs btn-del-swu"  data-id="${u.id}" title="Delete" style="color:var(--color-danger)">✕</button>
@@ -424,8 +492,6 @@ export async function renderSwUnits(container, ctx) {
 
       if (btn.classList.contains('btn-view-swu')) {
         if (unit) openPropsPanel(unit);
-      } else if (btn.classList.contains('btn-edit-swu')) {
-        if (unit) openForm(unit);
       } else if (btn.classList.contains('btn-link-swu')) {
         e.stopPropagation();
         copyElementLink(`swu-row-${id}`);
