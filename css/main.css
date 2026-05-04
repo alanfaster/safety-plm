@@ -6838,3 +6838,19 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rve-diff-linenum--old:hover { color:#999; text-decoration:none; }
 .rve-diff-linecontent    { flex:1; padding:0 8px; white-space:pre; overflow-x:auto; }
 .rve-diff-toggle-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+
+/* ── Project Settings sidenav layout ───────────────────────────── */
+.ps-layout            { display:flex; gap:0; min-height:600px; }
+.ps-sidenav           { width:220px; flex-shrink:0; border-right:1px solid var(--border);
+                        padding:12px 0; background:var(--bg-card); }
+.ps-nav-group         { margin-bottom:4px; }
+.ps-nav-group-label   { font-size:10px; font-weight:700; letter-spacing:.08em;
+                        text-transform:uppercase; color:var(--color-text-muted);
+                        padding:10px 16px 4px; }
+.ps-nav-item          { display:block; width:100%; text-align:left; background:none; border:none;
+                        padding:7px 16px; font-size:13px; color:var(--color-text);
+                        cursor:pointer; border-radius:0; transition:background .1s; }
+.ps-nav-item:hover    { background:var(--bg-hover); }
+.ps-nav-item.active   { background:var(--primary-light, #e8f0fe); color:var(--primary);
+                        font-weight:600; border-right:3px solid var(--primary); }
+.ps-content           { flex:1; min-width:0; padding:0 32px 32px; overflow-y:auto; }

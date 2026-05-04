@@ -112,21 +112,42 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         <button class="btn btn-secondary" id="btn-back-project">◀ Back to Project</button>
       </div>
     </div>
-    <div class="page-body">
-      <div class="settings-tabs">
-        <button class="settings-tab active" data-tab="pha">PHA Fields</button>
-        <button class="settings-tab" data-tab="fha">FHA Fields</button>
-        <button class="settings-tab" data-tab="funtypes">Function Types</button>
-        <button class="settings-tab" data-tab="reqcols">Req Columns</button>
-        <button class="settings-tab" data-tab="archspeccols">Arch Spec Columns</button>
-        <button class="settings-tab" data-tab="testtypes">Test Types</button>
-        <button class="settings-tab" data-tab="vmodel">V-Model Links</button>
-        <button class="settings-tab" data-tab="reviews">Review Protocols</button>
-        <button class="settings-tab" data-tab="swunittypes">SW Unit Types</button>
-        <button class="settings-tab" data-tab="hdrkeys">Header Keywords</button>
-        <button class="settings-tab" data-tab="reviewmode">Review Mode</button>
-        <button class="settings-tab" data-tab="members">Team &amp; Roles</button>
-      </div>
+    <div class="page-body ps-layout">
+      <nav class="ps-sidenav">
+        <div class="ps-nav-group">
+          <div class="ps-nav-group-label">General</div>
+          <button class="ps-nav-item" data-tab="members">👥 Team &amp; Roles</button>
+        </div>
+        <div class="ps-nav-group">
+          <div class="ps-nav-group-label">Safety Analysis</div>
+          <button class="ps-nav-item" data-tab="pha">PHA Fields</button>
+          <button class="ps-nav-item" data-tab="fha">FHA Fields</button>
+        </div>
+        <div class="ps-nav-group">
+          <div class="ps-nav-group-label">Requirements &amp; Arch</div>
+          <button class="ps-nav-item" data-tab="reqcols">Requirement Columns</button>
+          <button class="ps-nav-item" data-tab="archspeccols">Arch Spec Columns</button>
+          <button class="ps-nav-item" data-tab="funtypes">Function Types</button>
+        </div>
+        <div class="ps-nav-group">
+          <div class="ps-nav-group-label">Testing &amp; Traceability</div>
+          <button class="ps-nav-item" data-tab="testtypes">Test Types</button>
+          <button class="ps-nav-item" data-tab="tracefields">Traceability Fields</button>
+          <button class="ps-nav-item" data-tab="vmodel">V-Model Links</button>
+        </div>
+        <div class="ps-nav-group">
+          <div class="ps-nav-group-label">SW Development</div>
+          <button class="ps-nav-item" data-tab="swunittypes">SW Unit Types</button>
+          <button class="ps-nav-item" data-tab="hdrkeys">Header Keywords</button>
+        </div>
+        <div class="ps-nav-group">
+          <div class="ps-nav-group-label">Reviews</div>
+          <button class="ps-nav-item" data-tab="reviews">Review Protocols</button>
+          <button class="ps-nav-item" data-tab="reviewmode">Review Mode</button>
+        </div>
+      </nav>
+
+      <div class="ps-content">
 
       <div id="tab-pha" class="settings-tab-panel">
         <div class="settings-section">
@@ -458,28 +479,34 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
       <div id="tab-members" class="settings-tab-panel" style="display:none">
         <div class="settings-section" id="tab-members-inner"></div>
       </div>
+
+      </div><!-- /.ps-content -->
     </div>
   `;
 
-  // Tabs
+  // Sidenav
   let _reviewsMounted = false;
   let _membersMounted = false;
-  container.querySelectorAll('.settings-tab').forEach(tab => {
-    tab.onclick = () => {
-      container.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      container.querySelectorAll('.settings-tab-panel').forEach(p => p.style.display = 'none');
-      container.querySelector(`#tab-${tab.dataset.tab}`).style.display = '';
-      if (tab.dataset.tab === 'reviews' && !_reviewsMounted) {
-        _reviewsMounted = true;
-        mountReviewTemplatesTab(container.querySelector('#tab-reviews-inner'), project, sb, toast);
-      }
-      if (tab.dataset.tab === 'members' && !_membersMounted) {
-        _membersMounted = true;
-        mountMembersTab(container.querySelector('#tab-members-inner'), project, sb, toast);
-      }
-    };
+
+  function switchTo(tabId) {
+    container.querySelectorAll('.ps-nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
+    container.querySelectorAll('.settings-tab-panel').forEach(p => p.style.display = 'none');
+    const panel = container.querySelector('#tab-' + tabId);
+    if (panel) panel.style.display = '';
+    if (tabId === 'reviews' && !_reviewsMounted) {
+      _reviewsMounted = true;
+      mountReviewTemplatesTab(container.querySelector('#tab-reviews-inner'), project, sb, toast);
+    }
+    if (tabId === 'members' && !_membersMounted) {
+      _membersMounted = true;
+      mountMembersTab(container.querySelector('#tab-members-inner'), project, sb, toast);
+    }
+  }
+
+  container.querySelectorAll('.ps-nav-item').forEach(btn => {
+    btn.onclick = () => switchTo(btn.dataset.tab);
   });
+  switchTo('members');
 
   // Review mode tab: toggle external fields visibility
   document.getElementById('ps-review-mode')?.addEventListener('change', () => {
