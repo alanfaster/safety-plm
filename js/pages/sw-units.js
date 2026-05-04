@@ -10,6 +10,7 @@ import { showModal, hideModal } from '../components/modal.js';
 import { copyElementLink, scrollToAnchor } from '../deep-link.js';
 import { loadColConfig, saveColConfig, wireColMgr } from '../components/col-mgr.js';
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
+import { showVersionHistory } from '../components/version-history.js';
 
 const STATUS_LABELS  = { draft:'Draft', in_review:'In Review', approved:'Approved', deprecated:'Deprecated' };
 const STATUS_CLASSES = { draft:'badge-draft', in_review:'badge-review', approved:'badge-approved', deprecated:'badge-deprecated' };
@@ -288,9 +289,10 @@ export async function renderSwUnits(container, ctx) {
 
   // ── Column definitions ───────────────────────────────────────────────────────
   const COL_KEY = `swu_${project.id}_${parentId}`;
-  const SKIP_FILTER = new Set(['select', 'actions']);
+  const SKIP_FILTER = new Set(['drag', 'select', 'actions']);
 
   const BUILTIN_COLS = [
+    { id:'drag',         name:'',        visible:true,  fixed:true  },
     { id:'select',       name:'',        visible:true,  fixed:true  },
     { id:'unit_code',    name:'Code',    visible:true,  fixed:false },
     { id:'name',         name:'Name',    visible:true,  fixed:false },
@@ -304,10 +306,10 @@ export async function renderSwUnits(container, ctx) {
   ];
 
   let _cols = loadColConfig(COL_KEY, BUILTIN_COLS);
-  // Always keep 'select' first and 'actions' last regardless of saved order
   _cols = [
+    ..._cols.filter(c => c.id === 'drag'),
     ..._cols.filter(c => c.id === 'select'),
-    ..._cols.filter(c => c.id !== 'select' && c.id !== 'actions'),
+    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select' && c.id !== 'actions'),
     ..._cols.filter(c => c.id === 'actions'),
   ];
   let _filters   = {};
@@ -338,6 +340,7 @@ export async function renderSwUnits(container, ctx) {
 
   function renderTd(colId, u) {
     switch (colId) {
+      case 'drag':         return `<td data-col="drag" class="req-drag-cell" style="vertical-align:top;padding-top:6px"><span class="req-drag-handle" title="Drag to reorder">⠿</span></td>`;
       case 'select':       return `<td data-col="select" style="width:28px;padding:10px 6px 0;text-align:center;vertical-align:top"><input type="checkbox" class="swu-row-chk" data-id="${u.id}" ${_selection.has(u.id)?'checked':''} title="Select"/></td>`;
       case 'unit_code':    return `<td data-col="unit_code"><span class="mono">${escHtml(u.unit_code)}</span></td>`;
       case 'name':         return `<td data-col="name">${escHtml(u.name)}</td>`;
@@ -349,10 +352,14 @@ export async function renderSwUnits(container, ctx) {
       case 'needs_review': return `<td data-col="needs_review">${u.needs_review
         ? `<span class="badge badge-review swu-needs-review-badge" data-id="${u.id}" style="cursor:pointer">⚠ Changed</span>`
         : '<span class="text-muted">—</span>'}</td>`;
-      case 'actions':      return `<td data-col="actions" class="rv-actions">
-        <button class="btn btn-ghost btn-xs btn-copy-link swu-link-btn" data-id="${u.id}" title="Copy link">🔗</button>
-        <button class="btn btn-secondary btn-sm swu-edit-btn" data-id="${u.id}">Edit</button>
-        <button class="btn btn-ghost btn-sm swu-del-btn" data-id="${u.id}">Delete</button>
+      case 'actions':      return `<td data-col="actions" class="actions-cell">
+        <button class="btn btn-ghost btn-xs btn-move-up"  data-id="${u.id}" title="Move up">↑</button>
+        <button class="btn btn-ghost btn-xs btn-move-dn"  data-id="${u.id}" title="Move down">↓</button>
+        <button class="btn btn-ghost btn-xs btn-view-swu" data-id="${u.id}" title="View properties">👁</button>
+        <button class="btn btn-ghost btn-xs btn-edit-swu" data-id="${u.id}" title="Edit">✏</button>
+        <button class="btn btn-ghost btn-xs btn-link-swu" data-id="${u.id}" title="Copy link">🔗</button>
+        <button class="btn btn-ghost btn-xs btn-hist-swu" data-id="${u.id}" title="Version history">🕐</button>
+        <button class="btn btn-ghost btn-xs btn-del-swu"  data-id="${u.id}" title="Delete" style="color:var(--color-danger)">✕</button>
       </td>`;
       default: return `<td data-col="${escHtml(colId)}"></td>`;
     }
@@ -383,7 +390,7 @@ export async function renderSwUnits(container, ctx) {
         </thead>
         <tbody>
           ${filtered.length
-            ? filtered.map(u => `<tr id="swu-row-${u.id}" data-id="${u.id}"${_selection.has(u.id)?' class="req-row-selected"':''}>${visCols.map(c => renderTd(c.id, u)).join('')}</tr>`).join('')
+            ? filtered.map(u => `<tr id="swu-row-${u.id}" data-id="${u.id}" data-sort-order="${u.sort_order??0}" draggable="true"${_selection.has(u.id)?' class="req-row-selected"':''}>${visCols.map(c => renderTd(c.id, u)).join('')}</tr>`).join('')
             : `<tr><td colspan="${visCols.length}" class="text-muted" style="text-align:center;padding:24px">No units match the current filter.</td></tr>`}
         </tbody>
       </table>`;
@@ -401,24 +408,42 @@ export async function renderSwUnits(container, ctx) {
       renderTable();
     });
 
-    wrap.querySelectorAll('.swu-edit-btn').forEach(btn => {
-      btn.onclick = () => openForm(_allUnits.find(u => u.id === btn.dataset.id));
-    });
-    wrap.querySelectorAll('.swu-del-btn').forEach(btn => {
-      btn.onclick = async () => {
+    // Action buttons via event delegation
+    const tbody = tableEl.querySelector('tbody');
+    tbody.addEventListener('click', async e => {
+      const btn = e.target.closest('button[data-id]');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      const unit = _allUnits.find(u => u.id === id);
+
+      if (btn.classList.contains('btn-view-swu')) {
+        if (unit) openPropsPanel(unit);
+      } else if (btn.classList.contains('btn-edit-swu')) {
+        if (unit) openForm(unit);
+      } else if (btn.classList.contains('btn-link-swu')) {
+        e.stopPropagation();
+        copyElementLink(`swu-row-${id}`);
+      } else if (btn.classList.contains('btn-hist-swu')) {
+        if (unit) showVersionHistory({ table: 'sw_unit_versions', id, label: unit.unit_code });
+      } else if (btn.classList.contains('btn-del-swu')) {
         if (!confirm('Delete this SW unit? This cannot be undone.')) return;
-        const { error } = await sb.from('sw_units').delete().eq('id', btn.dataset.id);
+        const { error } = await sb.from('sw_units').delete().eq('id', id);
         if (error) { toast('Error: ' + error.message, 'error'); return; }
         toast('SW unit deleted.', 'success');
+        if (_selectedUnitId === id) closePropsPanel();
         await loadList();
-      };
+      } else if (btn.classList.contains('btn-move-up') || btn.classList.contains('btn-move-dn')) {
+        const dir = btn.classList.contains('btn-move-up') ? -1 : 1;
+        await moveUnit(id, dir);
+      }
     });
+
     wrap.querySelectorAll('.swu-needs-review-badge').forEach(badge => {
       badge.onclick = () => navigate(`${base}/reviews/new?artifact_type=sw_units&artifact_id=${badge.dataset.id}`);
     });
-    wrap.querySelectorAll('.swu-link-btn').forEach(btn => {
-      btn.onclick = (e) => { e.stopPropagation(); copyElementLink(`swu-row-${btn.dataset.id}`); };
-    });
+
+    // Drag-drop reorder
+    wireDragDrop(tbody);
 
     // Select-all checkbox
     const chkAll = wrap.querySelector('#swu-chk-all');
@@ -474,7 +499,8 @@ export async function renderSwUnits(container, ctx) {
       .eq('project_id', project.id)
       .eq('parent_type', parentType)
       .eq('parent_id', parentId)
-      .order('unit_code');
+      .order('sort_order', { ascending: true })
+      .order('unit_code', { ascending: true });
 
     const wrap = document.getElementById('swu-list-wrap');
     if (error) { wrap.innerHTML = `<p class="text-muted">${escHtml(error.message)}</p>`; return; }
@@ -558,6 +584,7 @@ export async function renderSwUnits(container, ctx) {
     }
 
     _allUnits = units;
+    _allUnits.forEach((u, i) => { if (u.sort_order == null) u.sort_order = i; });
     renderTable();
   }
 
@@ -651,6 +678,91 @@ export async function renderSwUnits(container, ctx) {
     toast(_editingId ? 'SW unit updated.' : 'SW unit created.', 'success');
     closeForm();
     await loadList();
+  }
+
+  // ── Move up/down ─────────────────────────────────────────────────────────────
+
+  async function moveUnit(id, dir) {
+    const idx     = _allUnits.findIndex(u => u.id === id);
+    const swapIdx = idx + dir;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= _allUnits.length) return;
+    const a = _allUnits[idx];
+    const b = _allUnits[swapIdx];
+    const aOrd = a.sort_order ?? idx;
+    const bOrd = b.sort_order ?? swapIdx;
+    _allUnits[idx]    = b;
+    _allUnits[swapIdx] = a;
+    a.sort_order = bOrd;
+    b.sort_order = aOrd;
+    await Promise.all([
+      sb.from('sw_units').update({ sort_order: bOrd }).eq('id', a.id),
+      sb.from('sw_units').update({ sort_order: aOrd }).eq('id', b.id),
+    ]);
+    renderTable();
+  }
+
+  // ── Drag-drop reorder ─────────────────────────────────────────────────────────
+
+  function wireDragDrop(tbody) {
+    let dragId = null, dragTr = null;
+
+    tbody.querySelectorAll('tr[draggable]').forEach(tr => {
+      tr.addEventListener('dragstart', e => {
+        if (!e.target.closest('.req-drag-handle') && e.target !== tr) { e.preventDefault(); return; }
+        dragId = tr.dataset.id;
+        dragTr = tr;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', dragId);
+        setTimeout(() => tr.classList.add('req-row-dragging'), 0);
+      });
+      tr.addEventListener('dragend', () => {
+        tr.classList.remove('req-row-dragging');
+        tbody.querySelectorAll('.req-drop-above,.req-drop-below').forEach(el =>
+          el.classList.remove('req-drop-above','req-drop-below'));
+        dragId = null; dragTr = null;
+      });
+    });
+
+    tbody.addEventListener('dragover', e => {
+      if (!dragId) return;
+      const tr = e.target.closest('tr[data-id]');
+      if (!tr || tr.dataset.id === dragId) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      tbody.querySelectorAll('.req-drop-above,.req-drop-below').forEach(el =>
+        el.classList.remove('req-drop-above','req-drop-below'));
+      const rect = tr.getBoundingClientRect();
+      tr.classList.add(e.clientY < rect.top + rect.height / 2 ? 'req-drop-above' : 'req-drop-below');
+    });
+
+    tbody.addEventListener('dragleave', e => {
+      const tr = e.target.closest('tr[data-id]');
+      if (tr && !tr.contains(e.relatedTarget)) tr.classList.remove('req-drop-above','req-drop-below');
+    });
+
+    tbody.addEventListener('drop', async e => {
+      e.preventDefault();
+      const targetTr = e.target.closest('tr[data-id]');
+      if (!targetTr || !dragId || !dragTr) return;
+      tbody.querySelectorAll('.req-drop-above,.req-drop-below').forEach(el =>
+        el.classList.remove('req-drop-above','req-drop-below'));
+      const targetId = targetTr.dataset.id;
+      if (targetId === dragId) return;
+
+      const fromIdx  = _allUnits.findIndex(u => u.id === dragId);
+      const toIdx    = _allUnits.findIndex(u => u.id === targetId);
+      if (fromIdx < 0 || toIdx < 0) return;
+      const rect      = targetTr.getBoundingClientRect();
+      const insertIdx = e.clientY < rect.top + rect.height / 2 ? toIdx : toIdx + 1;
+      const [removed] = _allUnits.splice(fromIdx, 1);
+      const adjusted  = insertIdx > fromIdx ? insertIdx - 1 : insertIdx;
+      _allUnits.splice(adjusted, 0, removed);
+      _allUnits.forEach((u, i) => { u.sort_order = i; });
+      await Promise.all(_allUnits.map(u =>
+        sb.from('sw_units').update({ sort_order: u.sort_order }).eq('id', u.id)
+      ));
+      renderTable();
+    });
   }
 
   // ── ZIP Upload Modal ──────────────────────────────────────────────────────────
