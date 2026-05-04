@@ -64,10 +64,12 @@ export async function renderReviewSessionWizard(container, ctx) {
   const { data: { user: currentUser } } = await sb.auth.getUser();
 
   // Pre-populate title from URL context if wizard was launched from a page button
-  const _initQuery   = new URLSearchParams(window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '');
-  const _initPhase   = _initQuery.get('phase');
-  const _initDomain  = _initQuery.get('domain');
-  const _initPageName = _initQuery.get('pageName');  // page display name passed from Start Review button
+  const _initQuery    = new URLSearchParams(window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '');
+  const _initPhase    = _initQuery.get('phase');
+  const _initDomain   = _initQuery.get('domain');
+  const _initPageName = _initQuery.get('pageName');
+  const _scopeSystemId = _initQuery.get('scope_system_id') || null;
+  const _scopeDomain   = _initQuery.get('scope_domain') || null;
   const PHASE_TITLE_LABELS = {
     item_definition:'Item Definition', requirements:'Requirements', architecture:'Architecture',
     design:'Design', implementation:'Units', unit_testing:'Unit Testing',
@@ -1393,6 +1395,9 @@ export async function renderReviewSessionWizard(container, ctx) {
 
     const { data: session, error: se } = await sb.from('review_sessions').insert({
       project_id:               project.id,
+      item_id:                  item.id,
+      system_id:                _scopeSystemId || null,
+      domain:                   _scopeDomain || null,
       template_id:              state.template_id || null,
       template_version:         tpl?.current_version || null,
       created_by:               currentUser?.id || null,

@@ -298,6 +298,7 @@ route('/project/:projectId/item/:itemId/system/:systemId', async ({ projectId, i
 // ── Review routes ─────────────────────────────────────────────────────
 route('/project/:projectId/item/:itemId/reviews/new', async ({ projectId, itemId }) => {
   setLoading();
+  // Always item-level sidebar for review wizard; system/domain scope passed via query string
   const ctx = await loadItemContext(projectId, itemId, null, 'reviews');
   if (!ctx) { navigate('/projects'); return; }
   const { renderReviewSessionWizard } = await import('./pages/review-session-wizard.js');

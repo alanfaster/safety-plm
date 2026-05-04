@@ -63,9 +63,13 @@ export async function renderReviewDashboard(container, ctx) {
   await loadSessions();
 
   async function loadSessions() {
-    const { data: sessions } = await sb.from('review_sessions')
+    let q = sb.from('review_sessions')
       .select('*, review_protocol_templates(name, artifact_type, review_type)')
-      .eq('project_id', project.id).order('created_at', { ascending: false });
+      .eq('project_id', project.id)
+      .order('created_at', { ascending: false });
+    // Filter by item_id when set; fall back to project-wide for legacy sessions without item_id
+    q = q.or(`item_id.eq.${item.id},item_id.is.null`);
+    const { data: sessions } = await q;
 
     const sessionIds = (sessions || []).map(s => s.id);
     let snapshots = [];
@@ -83,6 +87,14 @@ export async function renderReviewDashboard(container, ctx) {
       const { data: authorProfiles } = await sb.from('user_profiles')
         .select('user_id, display_name').in('user_id', authorIds);
       (authorProfiles || []).forEach(p => { authorMap[p.user_id] = p.display_name; });
+    }
+
+    // Load system names for scope display
+    const systemIds = [...new Set((sessions || []).map(s => s.system_id).filter(Boolean))];
+    const systemMap = {};
+    if (systemIds.length) {
+      const { data: sysRows } = await sb.from('systems').select('id, system_code, name').in('id', systemIds);
+      (sysRows || []).forEach(s => { systemMap[s.id] = `${s.system_code} · ${s.name}`; });
     }
 
     const wrap = document.getElementById('rv-sessions-wrap');
@@ -106,6 +118,7 @@ export async function renderReviewDashboard(container, ctx) {
         <thead>
           <tr>
             <th>Title</th>
+            <th>Scope</th>
             <th>Type</th>
             <th>Protocol</th>
             <th>Artifacts</th>
@@ -123,6 +136,11 @@ export async function renderReviewDashboard(container, ctx) {
             return `
               <tr class="rv-session-row" data-id="${s.id}">
                 <td class="rv-session-title">${escHtml(s.title)}</td>
+                <td>${s.system_id
+                  ? `<span class="badge badge-draft" style="font-size:10px" title="${escHtml(systemMap[s.system_id]||s.system_id)}">${escHtml((systemMap[s.system_id]||s.system_id).split('·')[0].trim())}${s.domain ? ' · '+s.domain.toUpperCase() : ''}</span>`
+                  : s.domain
+                    ? `<span class="badge badge-draft" style="font-size:10px">${s.domain.toUpperCase()}</span>`
+                    : '<span class="text-muted" style="font-size:11px">Item</span>'}</td>
                 <td><span class="rv-type-tag">${escHtml(REVIEW_TYPE_LABELS[s.review_type] || s.review_type)}</span></td>
                 <td>${tpl ? `<span class="rv-tpl-name">${escHtml(tpl.name)}</span>` : '<span class="text-muted">—</span>'}</td>
                 <td>
