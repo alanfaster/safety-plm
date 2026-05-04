@@ -432,13 +432,31 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         <div class="settings-section">
           <h3 class="settings-section-title">Header Parsing Keywords</h3>
           <p class="settings-section-desc">
-            When importing SW unit files from a ZIP, the tool parses special comment headers to auto-populate fields.
-            Customize the keywords below to match your project's coding conventions.
-            See <a href="docs/sw-unit-coding-guidelines.md" target="_blank" style="color:var(--primary)">SW Unit Coding Guidelines</a> for the expected format.
+            Define which keywords the parser recognises when importing SW unit files from a ZIP.
+            Disable keywords you don't use — the parser will skip them.
+            Add custom keywords for any project-specific fields.
+            See <a href="docs/sw-unit-coding-guidelines.md" target="_blank" style="color:var(--primary)">SW Unit Coding Guidelines</a> for the expected header format.
           </p>
-          <div class="settings-checklist" id="hdrkeys-list" style="margin-bottom:16px"></div>
-          <button class="btn btn-secondary btn-sm" id="btn-reset-hdrkeys" style="margin-right:8px">Reset to Defaults</button>
-          <button class="btn btn-primary" id="btn-save-hdrkeys">Save Keywords</button>
+          <table class="settings-table" id="hdrkeys-table">
+            <thead>
+              <tr>
+                <th style="width:40px;text-align:center">On</th>
+                <th>Field label</th>
+                <th style="width:160px">Keyword</th>
+                <th style="width:60px;text-align:center">Delete</th>
+              </tr>
+            </thead>
+            <tbody id="hdrkeys-tbody"></tbody>
+          </table>
+          <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input class="form-input" id="hdrkey-new-label" placeholder="Field label (e.g. Date, Ticket)…" style="max-width:220px"/>
+            <input class="form-input" id="hdrkey-new-kw"    placeholder="Keyword (e.g. @date)…" style="max-width:160px"/>
+            <button class="btn btn-secondary btn-sm" id="btn-add-hdrkey">＋ Add Keyword</button>
+          </div>
+          <div style="margin-top:16px;display:flex;gap:8px">
+            <button class="btn btn-primary" id="btn-save-hdrkeys">Save Keywords</button>
+            <button class="btn btn-ghost btn-sm" id="btn-reset-hdrkeys">↺ Reset to defaults</button>
+          </div>
         </div>
       </div>
 
@@ -947,46 +965,79 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
   };
 
   // ── Header Keywords tab ───────────────────────────────────────────────────
-  const HDR_KEY_IDS = ['unit','name','type','asil','sdd','req','author','language'];
-  const HDR_KEY_DEFAULTS = { unit:'@unit', name:'@name', type:'@type', asil:'@asil', sdd:'@sdd', req:'@req', author:'@author', language:'@language' };
-  const HDR_KEY_DESCS = {
-    unit:     'Unit code — maps to "Unit Code" field',
-    name:     'Unit name — maps to "Name" field',
-    type:     'Unit type — e.g. function, isr, task',
-    asil:     'ASIL level — stored in description',
-    sdd:      'SDD reference — traceability to design doc',
-    req:      'Requirement references (comma-separated)',
-    author:   'Author name',
-    language: 'Language hint — overrides file extension detection',
+  const BUILTIN_HDR_KEYS = [
+    { id:'unit',     label:'Unit Code',    kw:'@unit',     builtin:true },
+    { id:'name',     label:'Name',         kw:'@name',     builtin:true },
+    { id:'type',     label:'Unit Type',    kw:'@type',     builtin:true },
+    { id:'asil',     label:'ASIL Level',   kw:'@asil',     builtin:true },
+    { id:'sdd',      label:'SDD Ref',      kw:'@sdd',      builtin:true },
+    { id:'req',      label:'Requirements', kw:'@req',      builtin:true },
+    { id:'author',   label:'Author',       kw:'@author',   builtin:true },
+    { id:'language', label:'Language',     kw:'@language', builtin:true },
+    { id:'date',     label:'Date',         kw:'@date',     builtin:true },
+    { id:'time',     label:'Time',         kw:'@time',     builtin:true },
+  ];
+
+  function _loadHdrKeys() {
+    const saved = fullConfig.header_keywords;
+    if (Array.isArray(saved) && saved.length) return saved.map(k => ({ ...k }));
+    // Legacy object format or empty — build from built-ins
+    return BUILTIN_HDR_KEYS.map(k => ({
+      ...k,
+      kw:      (saved && saved[k.id]) ? saved[k.id] : k.kw,
+      enabled: true,
+    }));
+  }
+
+  let _hdrKeys = _loadHdrKeys();
+
+  function renderHdrKeysTable() {
+    const tbody = document.getElementById('hdrkeys-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = _hdrKeys.map((k, i) => ''
+      + '<tr>'
+      + '<td style="text-align:center"><label class="toggle-switch"><input type="checkbox" class="hdrkey-enabled" data-idx="' + i + '" ' + (k.enabled ? 'checked' : '') + '/><span class="toggle-slider"></span></label></td>'
+      + '<td><input class="form-input hdrkey-label-input" data-idx="' + i + '" value="' + escHtml(k.label) + '" style="width:100%;max-width:200px" ' + (k.builtin ? '' : '') + '/></td>'
+      + '<td><input class="form-input hdrkey-kw-input" data-idx="' + i + '" value="' + escHtml(k.kw) + '" style="width:140px;font-family:monospace"/></td>'
+      + '<td style="text-align:center">' + (k.builtin ? '<span class="text-muted" style="font-size:11px">built-in</span>' : '<button class="btn btn-ghost btn-sm btn-del-hdrkey" data-idx="' + i + '">✕</button>') + '</td>'
+      + '</tr>'
+    ).join('');
+
+    tbody.querySelectorAll('.hdrkey-enabled').forEach(cb => {
+      cb.onchange = () => { _hdrKeys[+cb.dataset.idx].enabled = cb.checked; };
+    });
+    tbody.querySelectorAll('.hdrkey-label-input').forEach(inp => {
+      inp.oninput = () => { _hdrKeys[+inp.dataset.idx].label = inp.value; };
+    });
+    tbody.querySelectorAll('.hdrkey-kw-input').forEach(inp => {
+      inp.oninput = () => { _hdrKeys[+inp.dataset.idx].kw = inp.value.trim(); };
+    });
+    tbody.querySelectorAll('.btn-del-hdrkey').forEach(btn => {
+      btn.onclick = () => { _hdrKeys.splice(+btn.dataset.idx, 1); renderHdrKeysTable(); };
+    });
+  }
+
+  renderHdrKeysTable();
+
+  document.getElementById('btn-add-hdrkey').onclick = () => {
+    const label = document.getElementById('hdrkey-new-label').value.trim();
+    const kw    = document.getElementById('hdrkey-new-kw').value.trim();
+    if (!label || !kw) { toast('Enter both a label and a keyword.', 'error'); return; }
+    _hdrKeys.push({ id: 'custom_' + Date.now(), label, kw, enabled: true, builtin: false });
+    document.getElementById('hdrkey-new-label').value = '';
+    document.getElementById('hdrkey-new-kw').value    = '';
+    renderHdrKeysTable();
   };
 
-  document.getElementById('hdrkeys-list').innerHTML = HDR_KEY_IDS.map(k => {
-    const def   = HDR_KEY_DEFAULTS[k];
-    const saved = escHtml(headerKeywords[k] || def);
-    const desc  = escHtml(HDR_KEY_DESCS[k]);
-    return '<div class="settings-check-item" style="align-items:center;gap:10px;margin-bottom:8px">'
-      + '<label class="form-label" style="width:80px;margin-bottom:0;font-family:monospace">' + escHtml(def) + '</label>'
-      + '<input class="form-input" id="hdrkey-' + k + '" value="' + saved + '" style="width:160px"/>'
-      + '<span class="text-muted" style="font-size:12px">' + desc + '</span>'
-      + '</div>';
-  }).join('');
-
   document.getElementById('btn-reset-hdrkeys').onclick = () => {
-    HDR_KEY_IDS.forEach(k => {
-      const el = document.getElementById(`hdrkey-${k}`);
-      if (el) el.value = HDR_KEY_DEFAULTS[k];
-    });
+    _hdrKeys = BUILTIN_HDR_KEYS.map(k => ({ ...k, enabled: true }));
+    renderHdrKeysTable();
   };
 
   document.getElementById('btn-save-hdrkeys').onclick = async () => {
     const btn = document.getElementById('btn-save-hdrkeys');
     btn.disabled = true;
-    const kw = {};
-    HDR_KEY_IDS.forEach(k => {
-      const el = document.getElementById(`hdrkey-${k}`);
-      kw[k] = (el?.value.trim() || HDR_KEY_DEFAULTS[k]);
-    });
-    const newConfig = { ...fullConfig, header_keywords: kw };
+    const newConfig = { ...fullConfig, header_keywords: _hdrKeys };
     let error;
     if (configId) {
       ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));

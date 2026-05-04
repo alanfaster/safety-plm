@@ -37,17 +37,16 @@ export async function renderSwUnits(container, ctx) {
   const { data: pcRow } = await sb.from('project_config').select('config').eq('project_id', project.id).maybeSingle();
   const customUnitTypes = pcRow?.config?.sw_unit_types || [];
   const allUnitTypes = [...BUILTIN_UNIT_TYPES, ...customUnitTypes];
-  const savedKeywords = pcRow?.config?.header_keywords || {};
-  const HDR_KW = {
-    unit:     savedKeywords.unit     || '@unit',
-    name:     savedKeywords.name     || '@name',
-    type:     savedKeywords.type     || '@type',
-    asil:     savedKeywords.asil     || '@asil',
-    sdd:      savedKeywords.sdd      || '@sdd',
-    req:      savedKeywords.req      || '@req',
-    author:   savedKeywords.author   || '@author',
-    language: savedKeywords.language || '@language',
-  };
+  // Build active keyword map from config (array format) or legacy object format
+  const savedKeywords = pcRow?.config?.header_keywords;
+  const HDR_KW = {};
+  if (Array.isArray(savedKeywords)) {
+    savedKeywords.filter(k => k.enabled !== false).forEach(k => { HDR_KW[k.id] = k.kw; });
+  } else {
+    // Legacy object format or defaults
+    const defaults = { unit:'@unit', name:'@name', type:'@type', asil:'@asil', sdd:'@sdd', req:'@req', author:'@author', language:'@language', date:'@date', time:'@time' };
+    Object.assign(HDR_KW, { ...defaults, ...(savedKeywords || {}) });
+  }
 
   const crumbs = [
     { label: 'Projects', path: '/projects' },
