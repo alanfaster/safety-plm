@@ -518,7 +518,7 @@ export async function renderSwUnits(container, ctx) {
           if (hdr.author) descParts.push(`Author: ${hdr.author}`);
           const validStatuses = ['draft','in_review','approved','deprecated'];
           const unitStatus = (hdr.status && validStatuses.includes(hdr.status)) ? hdr.status : 'draft';
-          await sb.from('sw_units').insert({
+          const { error: insErr } = await sb.from('sw_units').insert({
             project_id: project.id, parent_type: parentType, parent_id: parentId,
             unit_code: unitCode, name: unitName, unit_type: unitType,
             file_path: filePath, language: langFromHeader || lang,
@@ -527,20 +527,24 @@ export async function renderSwUnits(container, ctx) {
             needs_review: true, version: 1, status: unitStatus,
             created_by: currentUserId,
           });
-          unitCodeMap[unitCode] = { file_path: filePath };
-          added++;
+          if (insErr) {
+            warnings.push({ unitCode, filePath, conflict: { file_path: `DB error: ${insErr.message}` } });
+          } else {
+            unitCodeMap[unitCode] = { file_path: filePath };
+            added++;
+          }
         } else if (existing.content_hash !== hash) {
           await sb.from('sw_unit_versions').insert({
             sw_unit_id: existing.id, version: existing.version,
             source_code: existing.source_code, content_hash: existing.content_hash,
             file_path: filePath, uploaded_by: currentUserId,
           });
-          await sb.from('sw_units').update({
+          const { error: updErr } = await sb.from('sw_units').update({
             source_code: content, content_hash: hash,
             version: (existing.version || 1) + 1,
             needs_review: true, updated_at: new Date().toISOString(),
           }).eq('id', existing.id);
-          changed++;
+          if (!updErr) changed++;
         } else {
           unchanged++;
         }
@@ -555,15 +559,15 @@ export async function renderSwUnits(container, ctx) {
       </div>`;
       if (warnings.length) {
         html += `<div class="swu-upload-warnings">
-          <div class="swu-warn-title">⚠ Duplicate unit codes detected (${warnings.length})</div>
-          <div class="swu-warn-desc">The following files share a unit code that is already assigned to a different file. Fix the <code>@unit</code> header in your source files to ensure each unit has a unique code.</div>
+          <div class="swu-warn-title">⚠ ${warnings.length} issue(s) during import</div>
+          <div class="swu-warn-desc">These files could not be imported or have duplicate unit codes. Fix the <code>@unit</code> header and re-upload.</div>
           <table class="swu-warn-table">
-            <thead><tr><th>Unit Code</th><th>This file</th><th>Already assigned to</th></tr></thead>
+            <thead><tr><th>Unit Code</th><th>File</th><th>Issue</th></tr></thead>
             <tbody>${warnings.map(w => `
               <tr>
                 <td class="mono">${escHtml(w.unitCode)}</td>
                 <td class="mono text-muted">${escHtml(w.filePath)}</td>
-                <td class="mono" style="color:var(--color-danger)">${escHtml(w.conflict.file_path)}</td>
+                <td style="color:var(--color-danger);font-size:12px">${escHtml(w.conflict.file_path)}</td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -572,9 +576,7 @@ export async function renderSwUnits(container, ctx) {
       result.innerHTML = html;
       btn.textContent = 'Close';
       btn.disabled = false;
-      btn.onclick = () => { hideModal(); };
-
-      await loadList();
+      btn.onclick = async () => { hideModal(); await loadList(); };
     };
   }
 
