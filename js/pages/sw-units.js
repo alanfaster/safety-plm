@@ -577,6 +577,12 @@ export async function renderSwUnits(container, ctx) {
       btn.textContent = 'Close';
       btn.disabled = false;
       btn.onclick = async () => { hideModal(); await loadList(); };
+
+      if (warnings.length) {
+        toast(`Import done — ${added} new, ${changed} changed, ${warnings.length} error(s). Check the report.`, 'error');
+      } else {
+        toast(`Import done — ${added} new · ${changed} changed · ${unchanged} unchanged`, 'success');
+      }
     };
   }
 
