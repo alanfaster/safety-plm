@@ -9,7 +9,7 @@
  *   tp.openPanel(artifactId);
  */
 
-import { VMODEL_NODES, PHASE_DB_SOURCE } from './vmodel-editor.js';
+import { VMODEL_NODES, PHASE_DB_SOURCE, ARTIFACT_TABLE_CONFIG } from './vmodel-editor.js';
 import { toast } from '../toast.js';
 
 export function createTracePanel({
@@ -48,6 +48,19 @@ export function createTracePanel({
     }
   }
 
+  // ── Generic fetch helpers driven by ARTIFACT_TABLE_CONFIG ───────────────────
+  async function fetchItems(node, parentType, parentId, extraCols = '') {
+    const tableName = PHASE_DB_SOURCE[node.phase];
+    const cfg = ARTIFACT_TABLE_CONFIG[tableName];
+    if (!cfg || !parentId) return [];
+    let q = sb.from(tableName)
+      .select(`${cfg.codeCol}, ${cfg.labelCol}${extraCols ? ', ' + extraCols : ''}`)
+      .eq('parent_type', parentType).eq('parent_id', parentId);
+    q = cfg.filters(q, node);
+    const { data } = await q;
+    return (data || []).map(r => ({ code: r[cfg.codeCol], label: r[cfg.labelCol] || '', ...r }));
+  }
+
   // ── Load candidate items for each linked node ───────────────────────────────
   async function loadSourceData() {
     deriveFields();
@@ -58,39 +71,7 @@ export function createTracePanel({
       const parentType   = isItemDomain ? 'item' : 'system';
       const parentId     = isItemDomain ? item?.id : system?.id;
       if (!parentId) { _sourceData[field.id] = []; continue; }
-
-      const dbSource = PHASE_DB_SOURCE[node.phase];
-
-      if (dbSource === 'requirements') {
-        const { data } = await sb.from('requirements').select('req_code, title')
-          .eq('parent_type', parentType).eq('parent_id', parentId)
-          .eq('domain', node.domain).not('type', 'in', '("title","info")')
-          .order('sort_order', { ascending: true });
-        _sourceData[field.id] = (data || []).map(r => ({ code: r.req_code, label: r.title || '' }));
-
-      } else if (dbSource === 'arch_spec_items') {
-        const { data } = await sb.from('arch_spec_items').select('spec_code, title')
-          .eq('parent_type', parentType).eq('parent_id', parentId)
-          .eq('domain', node.domain).neq('type', 'section')
-          .order('sort_order', { ascending: true });
-        _sourceData[field.id] = (data || []).map(r => ({ code: r.spec_code || r.id, label: r.title || '' }));
-
-      } else if (dbSource === 'test_specs') {
-        const { data } = await sb.from('test_specs').select('test_code, name')
-          .eq('parent_type', parentType).eq('parent_id', parentId)
-          .eq('domain', node.domain).eq('phase', node.phase)
-          .order('sort_order', { ascending: true });
-        _sourceData[field.id] = (data || []).map(r => ({ code: r.test_code, label: r.name || '' }));
-
-      } else if (dbSource === 'sw_units') {
-        const { data } = await sb.from('sw_units').select('unit_code, name')
-          .eq('parent_type', parentType).eq('parent_id', parentId)
-          .order('sort_order', { ascending: true });
-        _sourceData[field.id] = (data || []).map(r => ({ code: r.unit_code, label: r.name || '' }));
-
-      } else {
-        _sourceData[field.id] = [];
-      }
+      _sourceData[field.id] = await fetchItems(node, parentType, parentId);
     }
   }
 
@@ -105,37 +86,10 @@ export function createTracePanel({
       const parentType   = isItemDomain ? 'item' : 'system';
       const parentId     = isItemDomain ? item?.id : system?.id;
       if (!parentId) { result[field.id] = []; continue; }
-
-      const dbSource = PHASE_DB_SOURCE[node.phase];
-      let rows = [];
-
-      if (dbSource === 'requirements') {
-        const { data } = await sb.from('requirements').select('req_code, title, traceability')
-          .eq('parent_type', parentType).eq('parent_id', parentId).eq('domain', node.domain)
-          .not('type', 'in', '("title","info")');
-        rows = (data || []).filter(r => Array.isArray(r.traceability?.[nodeId]) && r.traceability[nodeId].includes(itemCode))
-          .map(r => ({ code: r.req_code, label: r.title || '' }));
-
-      } else if (dbSource === 'arch_spec_items') {
-        const { data } = await sb.from('arch_spec_items').select('spec_code, title, traceability')
-          .eq('parent_type', parentType).eq('parent_id', parentId).eq('domain', node.domain).neq('type', 'section');
-        rows = (data || []).filter(r => Array.isArray(r.traceability?.[nodeId]) && r.traceability[nodeId].includes(itemCode))
-          .map(r => ({ code: r.spec_code || r.id, label: r.title || '' }));
-
-      } else if (dbSource === 'test_specs') {
-        const { data } = await sb.from('test_specs').select('test_code, name, traceability')
-          .eq('parent_type', parentType).eq('parent_id', parentId).eq('domain', node.domain).eq('phase', node.phase);
-        rows = (data || []).filter(r => Array.isArray(r.traceability?.[nodeId]) && r.traceability[nodeId].includes(itemCode))
-          .map(r => ({ code: r.test_code, label: r.name || '' }));
-
-      } else if (dbSource === 'sw_units') {
-        const { data } = await sb.from('sw_units').select('unit_code, name, traceability')
-          .eq('parent_type', parentType).eq('parent_id', parentId);
-        rows = (data || []).filter(r => Array.isArray(r.traceability?.[nodeId]) && r.traceability[nodeId].includes(itemCode))
-          .map(r => ({ code: r.unit_code, label: r.name || '' }));
-      }
-
-      result[field.id] = rows;
+      const rows = await fetchItems(node, parentType, parentId, 'traceability');
+      result[field.id] = rows
+        .filter(r => Array.isArray(r.traceability?.[nodeId]) && r.traceability[nodeId].includes(itemCode))
+        .map(r => ({ code: r.code, label: r.label }));
     }
     return result;
   }
@@ -301,21 +255,14 @@ export function createTracePanel({
 
         const field  = _fields.find(f => f.id === fieldId);
         if (!field) { detail.innerHTML = ''; return; }
+        const cfg = ARTIFACT_TABLE_CONFIG[field.source];
         let html = '';
-        const src = field.source;
-
-        if (src === 'requirements') {
-          const { data } = await sb.from('requirements').select('req_code, title, description, type, priority, status').eq('req_code', code).maybeSingle();
-          if (data) html = buildItemDetailHTML({ code: data.req_code, title: data.title, description: data.description, badges: [data.type, data.priority, data.status].filter(Boolean) });
-        } else if (src === 'arch_spec_items') {
-          const { data } = await sb.from('arch_spec_items').select('spec_code, title, description, type, status').eq('spec_code', code).maybeSingle();
-          if (data) html = buildItemDetailHTML({ code: data.spec_code, title: data.title, description: data.description, badges: [data.type, data.status].filter(Boolean) });
-        } else if (src === 'test_specs') {
-          const { data } = await sb.from('test_specs').select('test_code, name, description, type, status, result').eq('test_code', code).maybeSingle();
-          if (data) html = buildItemDetailHTML({ code: data.test_code, title: data.name, description: data.description, badges: [data.type, data.status, data.result].filter(Boolean) });
-        } else if (src === 'sw_units') {
-          const { data } = await sb.from('sw_units').select('unit_code, name, description, unit_type, status').eq('unit_code', code).maybeSingle();
-          if (data) html = buildItemDetailHTML({ code: data.unit_code, title: data.name, description: data.description, badges: [data.unit_type, data.status].filter(Boolean) });
+        if (cfg) {
+          const { data } = await sb.from(field.source).select(cfg.detailCols).eq(cfg.codeCol, code).maybeSingle();
+          if (data) html = buildItemDetailHTML({
+            code: data[cfg.codeCol], title: data[cfg.labelCol],
+            description: data.description, badges: cfg.detailBadges(data),
+          });
         }
         detail.innerHTML = html || '<span style="font-size:11px;color:var(--color-text-muted)">No details available.</span>';
       });

@@ -66,6 +66,39 @@ export const PHASE_DB_SOURCE = {
   system_testing:      'test_specs',
 };
 
+// Single source of truth: how to query each artifact table.
+// Adding a new V-model artifact type = add one entry here.
+export const ARTIFACT_TABLE_CONFIG = {
+  requirements: {
+    codeCol:    'req_code',
+    labelCol:   'title',
+    detailCols: 'req_code,title,description,type,priority,status',
+    detailBadges: r => [r.type, r.priority, r.status].filter(Boolean),
+    filters:    (q, node) => q.eq('domain', node.domain).not('type', 'in', '("title","info")'),
+  },
+  arch_spec_items: {
+    codeCol:    'spec_code',
+    labelCol:   'title',
+    detailCols: 'spec_code,title,description,type,status',
+    detailBadges: r => [r.type, r.status].filter(Boolean),
+    filters:    (q, node) => q.eq('domain', node.domain).neq('type', 'section'),
+  },
+  test_specs: {
+    codeCol:    'test_code',
+    labelCol:   'name',
+    detailCols: 'test_code,name,description,type,status,result',
+    detailBadges: r => [r.type, r.status, r.result].filter(Boolean),
+    filters:    (q, node) => q.eq('domain', node.domain).eq('phase', node.phase),
+  },
+  sw_units: {
+    codeCol:    'unit_code',
+    labelCol:   'name',
+    detailCols: 'unit_code,name,description,unit_type,status',
+    detailBadges: r => [r.unit_type, r.status].filter(Boolean),
+    filters:    (q, _node) => q.order('sort_order', { ascending: true }),
+  },
+};
+
 // ── ASPICE SW default ─────────────────────────────────────────────────────────
 
 const ASPICE_NODES = [

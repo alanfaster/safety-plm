@@ -6,7 +6,7 @@
  */
 
 import { sb } from '../config.js';
-import { VMODEL_NODES, PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
+import { VMODEL_NODES, PHASE_DB_SOURCE, ARTIFACT_TABLE_CONFIG } from '../components/vmodel-editor.js';
 import { wireBottomPanel } from '../utils/bottom-panel.js';
 import { toast } from '../toast.js';
 
@@ -2077,36 +2077,23 @@ function computeLinkCov(srcNodeId, dstNodeId, srcNode, item, systems, itemCache)
 
 async function fetchNodeItems(node, parentType, parentId) {
   if (!parentId) return [];
-  const table = PHASE_DB_SOURCE[node.phase];
-  if (!table) return [];
+  const tableName = PHASE_DB_SOURCE[node.phase];
+  if (!tableName) return [];
+  const cfg = ARTIFACT_TABLE_CONFIG[tableName];
+  if (!cfg) return [];
   try {
-    if (table === 'requirements') {
-      const { data } = await sb.from('requirements')
-        .select('req_code,title,traceability')
-        .eq('parent_type', parentType).eq('parent_id', parentId)
-        .eq('domain', node.domain).not('type','in','("title","info")');
-      return (data||[]).map(r=>({ code:r.req_code, label:r.title||'', traceability:r.traceability||{} }));
-    } else if (table === 'arch_spec_items') {
-      const { data } = await sb.from('arch_spec_items')
-        .select('spec_code,title,traceability')
-        .eq('parent_type', parentType).eq('parent_id', parentId)
-        .eq('domain', node.domain).neq('type','section');
-      return (data||[]).map(r=>({ code:r.spec_code, label:r.title||'', traceability:r.traceability||{} }));
-    } else if (table === 'test_specs') {
-      const { data } = await sb.from('test_specs')
-        .select('test_code,name,traceability')
-        .eq('parent_type', parentType).eq('parent_id', parentId)
-        .eq('domain', node.domain).eq('phase', node.phase);
-      return (data||[]).map(r=>({ code:r.test_code, label:r.name||'', traceability:r.traceability||{} }));
-    } else if (table === 'sw_units') {
-      const { data } = await sb.from('sw_units')
-        .select('unit_code,name,traceability')
-        .eq('parent_type', parentType).eq('parent_id', parentId)
-        .order('sort_order', { ascending: true });
-      return (data||[]).map(r=>({ code:r.unit_code, label:r.name||'', traceability:r.traceability||{} }));
-    }
-  } catch {}
-  return [];
+    let q = sb.from(tableName)
+      .select(`${cfg.codeCol},${cfg.labelCol},traceability`)
+      .eq('parent_type', parentType)
+      .eq('parent_id', parentId);
+    q = cfg.filters(q, node);
+    const { data } = await q;
+    return (data || []).map(r => ({
+      code:         r[cfg.codeCol],
+      label:        r[cfg.labelCol] || '',
+      traceability: r.traceability || {},
+    }));
+  } catch { return []; }
 }
 
 // ── Table ─────────────────────────────────────────────────────────────────────
