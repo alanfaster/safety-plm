@@ -401,9 +401,8 @@ export async function renderSwUnits(container, ctx) {
             source_code: unit.source_code, content_hash: unit.content_hash,
             file_path: unit.file_path, uploaded_by: currentUserId,
           });
-          extra = { needs_review: true, version: (unit.version || 1) + 1 };
+          extra = { needs_review: true };
           unit.content_hash = content_hash;
-          unit.version = (unit.version || 1) + 1;
         }
       }
 
@@ -831,7 +830,7 @@ export async function renderSwUnits(container, ctx) {
           source_code: existing.source_code, content_hash: existing.content_hash,
           file_path, uploaded_by: currentUserId,
         });
-        needs_review_update = { needs_review: true, version: (existing.version || 1) + 1 };
+        needs_review_update = { needs_review: true };
       }
 
       const { error } = await sb.from('sw_units').update({
@@ -1091,7 +1090,6 @@ export async function renderSwUnits(container, ctx) {
             const { error: updErr } = await sb.from('sw_units').update({
               source_code: code, content_hash: hash,
               file_path: filePath,
-              version: (existing.version || 1) + 1,
               needs_review: true, updated_at: new Date().toISOString(),
             }).eq('id', existing.id);
             if (!updErr) changed++;
