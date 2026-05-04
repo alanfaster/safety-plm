@@ -59,6 +59,8 @@ export const VMODEL_NODES = [
 export const PHASE_DB_SOURCE = {
   requirements:        'requirements',
   architecture:        'arch_spec_items',
+  design:              'arch_spec_items',
+  implementation:      'sw_units',
   unit_testing:        'test_specs',
   integration_testing: 'test_specs',
   system_testing:      'test_specs',

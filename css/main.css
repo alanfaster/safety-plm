@@ -6796,6 +6796,8 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .swu-prop-val     { flex:1; word-break:break-word; }
 
 .swu-upload-summary      { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.swu-panel-tab { font-size:11px; padding:2px 8px; border-radius:4px; }
+.swu-panel-tab--active { background:var(--color-primary) !important; color:#fff !important; }
 .swup-from-file-notice   { font-size:11px; color:var(--color-text-muted); background:var(--bg-hover);
                            border:1px solid var(--color-border); border-radius:4px;
                            padding:6px 10px; margin-bottom:12px; }

@@ -11,6 +11,8 @@ import { copyElementLink, scrollToAnchor } from '../deep-link.js';
 import { loadColConfig, saveColConfig, wireColMgr } from '../components/col-mgr.js';
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 import { showVersionHistory } from '../components/version-history.js';
+import { createTracePanel } from '../components/trace-panel.js';
+import { VMODEL_NODES } from '../components/vmodel-editor.js';
 
 const STATUS_LABELS  = { draft:'Draft', in_review:'In Review', approved:'Approved', deprecated:'Deprecated' };
 const STATUS_CLASSES = { draft:'badge-draft', in_review:'badge-review', approved:'badge-approved', deprecated:'badge-deprecated' };
@@ -104,12 +106,20 @@ export async function renderSwUnits(container, ctx) {
       <aside class="req-trace-panel" id="swu-props-panel">
         <span class="req-trace-panel-rail-label">Properties</span>
         <div class="req-trace-panel-hdr">
-          <span class="req-trace-panel-title">Properties</span>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-ghost btn-xs swu-panel-tab swu-panel-tab--active" id="swu-tab-props" data-tab="props">Properties</button>
+            <button class="btn btn-ghost btn-xs swu-panel-tab" id="swu-tab-trace" data-tab="trace">⛓ Trace</button>
+          </div>
           <button class="btn-icon" id="swu-props-close" title="Collapse">✕</button>
         </div>
         <div class="req-trace-panel-body" id="swu-props-body">
           <p style="padding:8px 4px;font-size:13px;color:var(--color-text-muted)">
             Click on a SW unit row to see its properties.
+          </p>
+        </div>
+        <div class="req-trace-panel-body" id="swu-trace-body" style="display:none">
+          <p style="padding:8px 4px;font-size:13px;color:var(--color-text-muted)">
+            Click ⛓ on a SW unit to view its V-Model trace links.
           </p>
         </div>
       </aside>
@@ -183,6 +193,36 @@ export async function renderSwUnits(container, ctx) {
 
   const { data: { user } } = await sb.auth.getUser();
   const currentUserId = user?.id;
+
+  // Initialise trace panel
+  const vmodelLinks = pcRow?.config?.vmodel_links || [];
+  const swImplNodeId = VMODEL_NODES.find(n => n.domain === 'sw' && n.phase === 'implementation')?.id;
+  const _tp = createTracePanel({
+    sb, vmodelLinks, nodeId: swImplNodeId,
+    item, system, project,
+    table: 'sw_units',
+    getCode:  u => u.unit_code,
+    getTitle: u => u.name,
+    getData:  () => _allUnits,
+    panelEl:     document.getElementById('swu-props-panel'),
+    panelBodyEl: document.getElementById('swu-trace-body'),
+    rowSelector: 'tr[data-id]',
+    rowActiveClass: 'req-row-trace-active',
+  });
+  _tp.deriveFields();
+  await _tp.loadSourceData();
+
+  // Tab switching: Properties ↔ Trace
+  function switchPanelTab(tab) {
+    document.getElementById('swu-props-body').style.display  = tab === 'props' ? '' : 'none';
+    document.getElementById('swu-trace-body').style.display  = tab === 'trace' ? '' : 'none';
+    document.querySelectorAll('.swu-panel-tab').forEach(b =>
+      b.classList.toggle('swu-panel-tab--active', b.dataset.tab === tab));
+    document.querySelector('.req-trace-panel-rail-label').textContent =
+      tab === 'trace' ? 'Traceability' : 'Properties';
+  }
+  document.getElementById('swu-tab-props').onclick  = () => switchPanelTab('props');
+  document.getElementById('swu-tab-trace').onclick  = () => { switchPanelTab('trace'); };
 
   document.getElementById('swu-btn-new').onclick    = () => openForm(null);
   document.getElementById('swu-form-close').onclick  = closeForm;
@@ -453,12 +493,13 @@ export async function renderSwUnits(container, ctx) {
         ? `<span class="badge badge-review swu-needs-review-badge" data-id="${u.id}" style="cursor:pointer">⚠ Changed</span>`
         : '<span class="text-muted">—</span>'}</td>`;
       case 'actions':      return `<td data-col="actions" class="actions-cell">
-        <button class="btn btn-ghost btn-xs btn-move-up"  data-id="${u.id}" title="Move up">↑</button>
-        <button class="btn btn-ghost btn-xs btn-move-dn"  data-id="${u.id}" title="Move down">↓</button>
-        <button class="btn btn-ghost btn-xs btn-view-swu" data-id="${u.id}" title="View properties">👁</button>
-        <button class="btn btn-ghost btn-xs btn-link-swu" data-id="${u.id}" title="Copy link">🔗</button>
-        <button class="btn btn-ghost btn-xs btn-hist-swu" data-id="${u.id}" title="Version history">🕐</button>
-        <button class="btn btn-ghost btn-xs btn-del-swu"  data-id="${u.id}" title="Delete" style="color:var(--color-danger)">✕</button>
+        <button class="btn btn-ghost btn-xs btn-move-up"   data-id="${u.id}" title="Move up">↑</button>
+        <button class="btn btn-ghost btn-xs btn-move-dn"   data-id="${u.id}" title="Move down">↓</button>
+        <button class="btn btn-ghost btn-xs btn-view-swu"  data-id="${u.id}" title="View properties">👁</button>
+        <button class="btn btn-ghost btn-xs btn-trace-swu" data-id="${u.id}" title="Traceability">⛓</button>
+        <button class="btn btn-ghost btn-xs btn-link-swu"  data-id="${u.id}" title="Copy link">🔗</button>
+        <button class="btn btn-ghost btn-xs btn-hist-swu"  data-id="${u.id}" title="Version history">🕐</button>
+        <button class="btn btn-ghost btn-xs btn-del-swu"   data-id="${u.id}" title="Delete" style="color:var(--color-danger)">✕</button>
       </td>`;
       default: return `<td data-col="${escHtml(colId)}"></td>`;
     }
@@ -516,7 +557,9 @@ export async function renderSwUnits(container, ctx) {
       const unit = _allUnits.find(u => u.id === id);
 
       if (btn.classList.contains('btn-view-swu')) {
-        if (unit) openPropsPanel(unit);
+        if (unit) { switchPanelTab('props'); openPropsPanel(unit); }
+      } else if (btn.classList.contains('btn-trace-swu')) {
+        if (unit) { switchPanelTab('trace'); _tp.openPanel(unit.id); }
       } else if (btn.classList.contains('btn-link-swu')) {
         e.stopPropagation();
         copyElementLink(`swu-row-${id}`);
@@ -573,7 +616,7 @@ export async function renderSwUnits(container, ctx) {
       tr.onclick = (e) => {
         if (e.target.closest('button,a,input,select')) return;
         const unit = _allUnits.find(u => u.id === tr.dataset.id);
-        if (unit) openPropsPanel(unit);
+        if (unit) { switchPanelTab('props'); openPropsPanel(unit); }
       };
     });
 
