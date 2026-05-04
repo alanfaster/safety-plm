@@ -978,7 +978,7 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     { id:'unit',   label:'Unit Code',    kw:'@unit',   builtin:true },
     { id:'name',   label:'Name',         kw:'@name',   builtin:true },
     { id:'type',   label:'Unit Type',    kw:'@type',   builtin:true },
-    { id:'asil',   label:'ASIL Level',   kw:'@asil',   builtin:true },
+    { id:'asil',   label:'ASIL Level',   kw:'@asil',   builtin:true, enabled:false },
     { id:'sdd',    label:'SDD Ref',      kw:'@sdd',    builtin:true },
     { id:'req',    label:'Requirements', kw:'@req',    builtin:true },
     { id:'author', label:'Author',       kw:'@author', builtin:true },
