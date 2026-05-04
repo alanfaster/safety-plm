@@ -449,10 +449,19 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
             <tbody id="hdrkeys-tbody"></tbody>
           </table>
           <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input class="form-input" id="hdrkey-new-label" placeholder="Field label (e.g. Date, Ticket)…" style="max-width:220px"/>
-            <input class="form-input" id="hdrkey-new-kw"    placeholder="Keyword (e.g. @date)…" style="max-width:160px"/>
+            <input class="form-input" id="hdrkey-new-label" placeholder="Field label (e.g. Ticket, Version)…" style="max-width:220px"/>
+            <input class="form-input" id="hdrkey-new-kw"    placeholder="Keyword (e.g. @ticket)…" style="max-width:160px"/>
             <button class="btn btn-secondary btn-sm" id="btn-add-hdrkey">＋ Add Keyword</button>
           </div>
+
+          <div style="margin-top:24px">
+            <div style="font-size:12px;font-weight:600;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">
+              Header example — copy &amp; paste into your source files
+              <button class="btn btn-ghost btn-sm" id="btn-copy-hdrexample" style="margin-left:8px;font-size:11px">⎘ Copy</button>
+            </div>
+            <pre id="hdrkey-example" class="swu-header-example"></pre>
+          </div>
+
           <div style="margin-top:16px;display:flex;gap:8px">
             <button class="btn btn-primary" id="btn-save-hdrkeys">Save Keywords</button>
             <button class="btn btn-ghost btn-sm" id="btn-reset-hdrkeys">↺ Reset to defaults</button>
@@ -966,16 +975,14 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
 
   // ── Header Keywords tab ───────────────────────────────────────────────────
   const BUILTIN_HDR_KEYS = [
-    { id:'unit',     label:'Unit Code',    kw:'@unit',     builtin:true },
-    { id:'name',     label:'Name',         kw:'@name',     builtin:true },
-    { id:'type',     label:'Unit Type',    kw:'@type',     builtin:true },
-    { id:'asil',     label:'ASIL Level',   kw:'@asil',     builtin:true },
-    { id:'sdd',      label:'SDD Ref',      kw:'@sdd',      builtin:true },
-    { id:'req',      label:'Requirements', kw:'@req',      builtin:true },
-    { id:'author',   label:'Author',       kw:'@author',   builtin:true },
-    { id:'language', label:'Language',     kw:'@language', builtin:true },
-    { id:'date',     label:'Date',         kw:'@date',     builtin:true },
-    { id:'time',     label:'Time',         kw:'@time',     builtin:true },
+    { id:'unit',   label:'Unit Code',    kw:'@unit',   builtin:true },
+    { id:'name',   label:'Name',         kw:'@name',   builtin:true },
+    { id:'type',   label:'Unit Type',    kw:'@type',   builtin:true },
+    { id:'asil',   label:'ASIL Level',   kw:'@asil',   builtin:true },
+    { id:'sdd',    label:'SDD Ref',      kw:'@sdd',    builtin:true },
+    { id:'req',    label:'Requirements', kw:'@req',    builtin:true },
+    { id:'author', label:'Author',       kw:'@author', builtin:true },
+    { id:'date',   label:'Date',         kw:'@date',   builtin:true },
   ];
 
   function _loadHdrKeys() {
@@ -1004,20 +1011,47 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     ).join('');
 
     tbody.querySelectorAll('.hdrkey-enabled').forEach(cb => {
-      cb.onchange = () => { _hdrKeys[+cb.dataset.idx].enabled = cb.checked; };
+      cb.onchange = () => { _hdrKeys[+cb.dataset.idx].enabled = cb.checked; updateExample(); };
     });
     tbody.querySelectorAll('.hdrkey-label-input').forEach(inp => {
       inp.oninput = () => { _hdrKeys[+inp.dataset.idx].label = inp.value; };
     });
     tbody.querySelectorAll('.hdrkey-kw-input').forEach(inp => {
-      inp.oninput = () => { _hdrKeys[+inp.dataset.idx].kw = inp.value.trim(); };
+      inp.oninput = () => { _hdrKeys[+inp.dataset.idx].kw = inp.value.trim(); updateExample(); };
     });
     tbody.querySelectorAll('.btn-del-hdrkey').forEach(btn => {
-      btn.onclick = () => { _hdrKeys.splice(+btn.dataset.idx, 1); renderHdrKeysTable(); };
+      btn.onclick = () => { _hdrKeys.splice(+btn.dataset.idx, 1); renderHdrKeysTableAndExample(); };
     });
   }
 
-  renderHdrKeysTable();
+  const EXAMPLE_VALUES = {
+    unit:'SWU-MOT-001', name:'Motor Control', type:'function', asil:'B',
+    sdd:'SDD-MOT-001', req:'SWR-001, SWR-002', author:'A. Guerrero', date:'2026-05-04',
+  };
+
+  function updateExample() {
+    const el = document.getElementById('hdrkey-example');
+    if (!el) return;
+    const active = _hdrKeys.filter(k => k.enabled !== false);
+    const maxKw  = Math.max(...active.map(k => k.kw.length), 0);
+    const lines  = active.map(k => {
+      const val = EXAMPLE_VALUES[k.id] || 'your-value';
+      return ' * ' + k.kw.padEnd(maxKw + 2) + val;
+    });
+    el.textContent = '/**\n' + lines.join('\n') + '\n */';
+  }
+
+  function renderHdrKeysTableAndExample() {
+    renderHdrKeysTable();
+    updateExample();
+  }
+
+  renderHdrKeysTableAndExample();
+
+  document.getElementById('btn-copy-hdrexample').onclick = () => {
+    const text = document.getElementById('hdrkey-example').textContent;
+    navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard.', 'success'));
+  };
 
   document.getElementById('btn-add-hdrkey').onclick = () => {
     const label = document.getElementById('hdrkey-new-label').value.trim();
@@ -1026,12 +1060,12 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     _hdrKeys.push({ id: 'custom_' + Date.now(), label, kw, enabled: true, builtin: false });
     document.getElementById('hdrkey-new-label').value = '';
     document.getElementById('hdrkey-new-kw').value    = '';
-    renderHdrKeysTable();
+    renderHdrKeysTableAndExample();
   };
 
   document.getElementById('btn-reset-hdrkeys').onclick = () => {
     _hdrKeys = BUILTIN_HDR_KEYS.map(k => ({ ...k, enabled: true }));
-    renderHdrKeysTable();
+    renderHdrKeysTableAndExample();
   };
 
   document.getElementById('btn-save-hdrkeys').onclick = async () => {

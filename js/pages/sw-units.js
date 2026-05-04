@@ -44,7 +44,7 @@ export async function renderSwUnits(container, ctx) {
     savedKeywords.filter(k => k.enabled !== false).forEach(k => { HDR_KW[k.id] = k.kw; });
   } else {
     // Legacy object format or defaults
-    const defaults = { unit:'@unit', name:'@name', type:'@type', asil:'@asil', sdd:'@sdd', req:'@req', author:'@author', language:'@language', date:'@date', time:'@time' };
+    const defaults = { unit:'@unit', name:'@name', type:'@type', asil:'@asil', sdd:'@sdd', req:'@req', author:'@author', date:'@date' };
     Object.assign(HDR_KW, { ...defaults, ...(savedKeywords || {}) });
   }
 
