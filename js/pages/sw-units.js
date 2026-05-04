@@ -7,6 +7,7 @@ import { navigate } from '../router.js';
 import { setBreadcrumb } from '../components/topbar.js';
 import { toast } from '../toast.js';
 import { showModal, hideModal } from '../components/modal.js';
+import { copyElementLink, scrollToAnchor } from '../deep-link.js';
 
 const STATUS_LABELS  = { draft:'Draft', in_review:'In Review', approved:'Approved', deprecated:'Deprecated' };
 const STATUS_CLASSES = { draft:'badge-draft', in_review:'badge-review', approved:'badge-approved', deprecated:'badge-deprecated' };
@@ -247,9 +248,10 @@ export async function renderSwUnits(container, ctx) {
         </thead>
         <tbody>
           ${units.length ? units.map(u => `
-            <tr data-id="${u.id}">
+            <tr data-id="${u.id}" id="swu-row-${u.id}">
               ${cols.map(c => `<td>${c.render(u)}</td>`).join('')}
               <td class="rv-actions">
+                <button class="btn btn-ghost btn-xs btn-copy-link swu-link-btn" data-id="${u.id}" title="Copy link to this unit">🔗</button>
                 <button class="btn btn-secondary btn-sm swu-edit-btn" data-id="${u.id}">Edit</button>
                 <button class="btn btn-ghost btn-sm swu-del-btn" data-id="${u.id}">Delete</button>
               </td>
@@ -319,6 +321,11 @@ export async function renderSwUnits(container, ctx) {
     wrap.querySelectorAll('.swu-needs-review-badge').forEach(badge => {
       badge.onclick = () => navigate(`${base}/reviews/new?artifact_type=sw_units&artifact_id=${badge.dataset.id}`);
     });
+    wrap.querySelectorAll('.swu-link-btn').forEach(btn => {
+      btn.onclick = () => copyElementLink(`swu-row-${btn.dataset.id}`);
+    });
+
+    scrollToAnchor();
   }
 
   await loadList();
