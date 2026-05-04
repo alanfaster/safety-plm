@@ -37,6 +37,7 @@ const ARTIFACT_DISPLAY_FIELDS = {
   arch_spec_items:      ['spec_code','title','type','status'],
   test_specs:           ['test_code','name','description','level','status','method'],
   safety_analysis_rows: ['analysis_code','title','analysis_type','status'],
+  sw_units:             ['unit_code','name','file_path','language','version','status'],
 };
 
 

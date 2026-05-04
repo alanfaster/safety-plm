@@ -6751,3 +6751,20 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
   background:none; border:none; padding:0; }
 .rvck-block-toggle:hover { background:var(--bg-hover,#f1f5f9); }
 .rvck-block-chevron      { font-size:10px; color:var(--text-muted); margin-right:4px; flex-shrink:0; }
+
+/* ── SW Units page ──────────────────────────────────────────────────── */
+.swu-form-panel          { position:fixed; right:0; top:0; bottom:0; width:480px; background:var(--bg-card);
+  border-left:1px solid var(--border); box-shadow:-4px 0 16px rgba(0,0,0,.1);
+  display:flex; flex-direction:column; z-index:200; overflow:hidden; }
+.swu-form-header         { display:flex; align-items:center; justify-content:space-between;
+  padding:16px 20px; border-bottom:1px solid var(--border); font-weight:600; }
+.swu-form-body           { flex:1; overflow-y:auto; padding:20px; }
+.swu-code-editor         { font-family:monospace; font-size:12px; resize:vertical; min-height:180px; }
+.swu-needs-review-badge  { cursor:pointer; }
+.swu-upload-summary      { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+
+/* ── Project settings checklist ────────────────────────────────────── */
+.settings-checklist      { display:flex; flex-direction:column; gap:8px; }
+.settings-check-item     { display:flex; align-items:center; gap:8px; cursor:pointer;
+  font-size:13px; padding:6px 0; }
+.settings-check-item input[type=checkbox] { width:15px; height:15px; cursor:pointer; }

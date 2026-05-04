@@ -16,6 +16,7 @@ const ARTIFACT_TYPE_LABELS = {
   arch_spec_items:      'Architecture Spec Items',
   test_specs:           'Test Specs',
   safety_analysis_rows: 'Safety Analysis',
+  sw_units:             'SW Units',
 };
 
 const ARTIFACT_TYPE_ICONS = {
@@ -23,6 +24,7 @@ const ARTIFACT_TYPE_ICONS = {
   arch_spec_items:      '🏗',
   test_specs:           '🧪',
   safety_analysis_rows: '⚠️',
+  sw_units:             '⌨',
 };
 
 const REVIEW_TYPES = [
@@ -274,6 +276,7 @@ export async function renderReviewSessionWizard(container, ctx) {
         fetchArtifacts('arch_spec_items', project.id),
         fetchArtifacts('test_specs', project.id),
         fetchArtifacts('safety_analysis_rows', project.id),
+        fetchArtifacts('sw_units', project.id),
       ]);
       state.items = itemsData || [];
       const typeKeys = Object.keys(ARTIFACT_TYPE_LABELS);
@@ -1428,6 +1431,12 @@ export async function renderReviewSessionWizard(container, ctx) {
         .eq('project_id', projectId).order('analysis_code');
       return (data || []).map(r => ({ ...r, code: r.analysis_code, type: r.analysis_type }));
     }
+    if (type === 'sw_units') {
+      const { data } = await sb.from('sw_units')
+        .select('id, unit_code, name, status, language, file_path, version, needs_review, parent_type, parent_id, updated_at')
+        .eq('project_id', projectId).order('unit_code');
+      return (data || []).map(r => ({ ...r, code: r.unit_code, title: r.name }));
+    }
     return [];
   }
 
@@ -1437,6 +1446,7 @@ export async function renderReviewSessionWizard(container, ctx) {
       arch_spec_items:      'arch_spec_items',
       test_specs:           'test_specs',
       safety_analysis_rows: 'safety_analyses',
+      sw_units:             'sw_units',
     };
     const table = tableMap[type];
     if (!table) return null;

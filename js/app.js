@@ -321,6 +321,14 @@ route('/project/:projectId/item/:itemId/reviews', async ({ projectId, itemId }) 
   await renderReviewDashboard(getContent(), ctx);
 });
 
+route('/project/:projectId/item/:itemId/sw-units', async ({ projectId, itemId }) => {
+  setLoading();
+  const ctx = await loadItemContext(projectId, itemId, null, 'sw-units');
+  if (!ctx) { navigate('/projects'); return; }
+  const { renderSwUnits } = await import('./pages/sw-units.js');
+  await renderSwUnits(getContent(), ctx);
+});
+
 // ── Project settings route ────────────────────────────────────────────
 route('/project/:projectId/settings', async ({ projectId }) => {
   setLoading();

@@ -202,6 +202,7 @@ function buildSingleSystemSidebar({ projectId, itemId, itemName, activePage, act
 
   html += buildSafetyGroup({ groupKey: `item-${itemId}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
   html += buildTraceabilityEntry({ base, activePage });
+  html += buildSwUnitsEntry({ base, activePage });
   html += buildReviewsEntry({ base, activePage });
   html += addSystemBtn();
   return html;
@@ -453,6 +454,17 @@ function buildReviewsEntry({ base, activePage }) {
       <button class="sb-item ${active ? 'active' : ''}" data-nav="${base}/reviews" title="Review Sessions">
         <span class="sb-item-icon">✓</span>
         <span class="sb-item-label">Reviews</span>
+      </button>
+    </div>`;
+}
+
+function buildSwUnitsEntry({ base, activePage }) {
+  const active = activePage === 'sw-units';
+  return `
+    <div class="sb-phase-row">
+      <button class="sb-item ${active ? 'active' : ''}" data-nav="${base}/sw-units" title="SW Units">
+        <span class="sb-item-icon">⌨</span>
+        <span class="sb-item-label">SW Units</span>
       </button>
     </div>`;
 }

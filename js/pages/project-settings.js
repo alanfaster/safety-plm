@@ -41,6 +41,8 @@ export async function renderProjectSettings(container, ctx) {
   const traceFields         = config.traceability_fields   || [];
   const vmodelLinks         = config.vmodel_links          || [];
   const vmodelCanvasNodes   = config.vmodel_canvas_nodes   || [];
+  const reviewMode          = config.review_mode           || 'internal';
+  const externalRequiredFields = config.external_review_required_fields || ['url', 'verdict'];
 
   // Build function types from DB rows (or defaults if none saved yet)
   let functionTypes;
@@ -118,6 +120,7 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         <button class="settings-tab" data-tab="testtypes">Test Types</button>
         <button class="settings-tab" data-tab="vmodel">V-Model Links</button>
         <button class="settings-tab" data-tab="reviews">Review Protocols</button>
+        <button class="settings-tab" data-tab="reviewmode">Review Mode</button>
         <button class="settings-tab" data-tab="members">Team &amp; Roles</button>
       </div>
 
@@ -357,6 +360,40 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         <div class="settings-section" id="tab-reviews-inner"></div>
       </div>
 
+      <div id="tab-reviewmode" class="settings-tab-panel" style="display:none">
+        <div class="settings-section">
+          <h3 class="settings-section-title">Review Mode</h3>
+          <p class="settings-section-desc">
+            Choose how reviews are conducted for this project. This becomes the default when creating new review sessions but can be overridden per session.
+          </p>
+          <div class="form-group" style="max-width:400px">
+            <label class="form-label">Default review mode</label>
+            <select class="form-input form-select" id="ps-review-mode">
+              <option value="internal" ${reviewMode === 'internal' ? 'selected' : ''}>Internal — reviewers work inside this tool</option>
+              <option value="external" ${reviewMode === 'external' ? 'selected' : ''}>External — review is done in another tool (GitHub PR, Crucible, etc.)</option>
+            </select>
+          </div>
+          <div id="ps-external-fields" style="${reviewMode === 'internal' ? 'display:none' : ''}">
+            <div class="form-label" style="margin-bottom:8px">Required fields for external review evidence</div>
+            <div class="settings-checklist">
+              <label class="settings-check-item">
+                <input type="checkbox" id="ps-req-url" ${externalRequiredFields.includes('url') ? 'checked' : ''}/>
+                <span>Evidence URL <span class="text-muted">(link to PR, document, ticket…)</span></span>
+              </label>
+              <label class="settings-check-item">
+                <input type="checkbox" id="ps-req-verdict" ${externalRequiredFields.includes('verdict') ? 'checked' : ''}/>
+                <span>Per-artifact verdict <span class="text-muted">(OK / NOK for each reviewed artifact)</span></span>
+              </label>
+              <label class="settings-check-item">
+                <input type="checkbox" id="ps-req-notes" ${externalRequiredFields.includes('notes') ? 'checked' : ''}/>
+                <span>Reviewer notes <span class="text-muted">(free-text comments on the review)</span></span>
+              </label>
+            </div>
+          </div>
+          <button class="btn btn-primary" style="margin-top:16px" id="ps-save-reviewmode">Save</button>
+        </div>
+      </div>
+
       <div id="tab-members" class="settings-tab-panel" style="display:none">
         <div class="settings-section" id="tab-members-inner"></div>
       </div>
@@ -381,6 +418,29 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
         mountMembersTab(container.querySelector('#tab-members-inner'), project, sb, toast);
       }
     };
+  });
+
+  // Review mode tab: toggle external fields visibility
+  document.getElementById('ps-review-mode')?.addEventListener('change', () => {
+    const isExternal = document.getElementById('ps-review-mode').value === 'external';
+    document.getElementById('ps-external-fields').style.display = isExternal ? '' : 'none';
+  });
+
+  document.getElementById('ps-save-reviewmode')?.addEventListener('click', async () => {
+    const btn = document.getElementById('ps-save-reviewmode');
+    btn.disabled = true;
+    const review_mode = document.getElementById('ps-review-mode').value;
+    const required = [];
+    if (document.getElementById('ps-req-url')?.checked)     required.push('url');
+    if (document.getElementById('ps-req-verdict')?.checked) required.push('verdict');
+    if (document.getElementById('ps-req-notes')?.checked)   required.push('notes');
+
+    const newConfig = { ...config, review_mode, external_review_required_fields: required };
+    const { error } = await sb.from('project_config').upsert({ project_id: project.id, config: newConfig }, { onConflict: 'project_id' });
+    btn.disabled = false;
+    if (error) { toast('Error saving: ' + error.message, 'error'); return; }
+    toast('Review mode saved.', 'success');
+    Object.assign(config, { review_mode, external_review_required_fields: required });
   });
 
   document.getElementById('btn-back-project').onclick = () => {
