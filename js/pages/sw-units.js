@@ -288,7 +288,7 @@ export async function renderSwUnits(container, ctx) {
 
   // ── Column definitions ───────────────────────────────────────────────────────
   const COL_KEY = `swu_${project.id}_${parentId}`;
-  const SKIP_FILTER = new Set(['actions']);
+  const SKIP_FILTER = new Set(['select', 'actions']);
 
   const BUILTIN_COLS = [
     { id:'select',       name:'',        visible:true,  fixed:true  },
