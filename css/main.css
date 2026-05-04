@@ -4825,16 +4825,18 @@ th.col-th-dragging * { pointer-events: none; }
 .req-trace-panel-rail-label {
   display: none;
   position: absolute;
-  top: 48px;
-  left: 50%;
-  transform: translateX(-50%) rotate(90deg);
+  top: 12px;
+  left: 0;
+  right: 0;
+  writing-mode: vertical-lr;
+  text-align: left;
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-text-muted);
-  white-space: nowrap;
   pointer-events: none;
+  padding-left: 11px;
 }
 .req-trace-panel:not(.open) .req-trace-panel-rail-label { display: block; }
 
