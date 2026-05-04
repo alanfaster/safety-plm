@@ -17,6 +17,7 @@ import { toast } from '../toast.js';
 import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr } from '../components/col-mgr.js';
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 import { showVersionHistory } from '../components/version-history.js';
+import { copyElementLink } from '../deep-link.js';
 
 const SPEC_STATUSES = ['draft', 'review', 'approved'];
 const SPEC_TYPES    = ['overview', 'component', 'interface', 'behavior', 'deployment', 'info'];
@@ -579,6 +580,7 @@ function buildRowEl(it) {
     tr.draggable = false;
     tr.innerHTML = sectionRowHTML(it);
   } else {
+    tr.id        = 'spec-row-' + it.id;
     tr.className = 'spec-row';
     tr.draggable = true;
     tr.innerHTML = rowHTML(it);
@@ -688,11 +690,13 @@ function rowHTML(it) {
       }
       case 'actions':
         return `<td data-col="actions" class="spec-row-actions">
-          <button class="btn btn-ghost btn-xs spec-move-up"   title="Move up">↑</button>
-          <button class="btn btn-ghost btn-xs spec-move-dn"   title="Move down">↓</button>
-          <button class="btn btn-ghost btn-xs spec-add-below" title="Add row below">+</button>
-          <button class="btn btn-ghost btn-xs spec-history-btn" title="Version history">🕐</button>
-          <button class="btn btn-ghost btn-xs spec-del-btn"   title="Delete row" style="color:var(--color-danger)">✕</button>
+          <button class="btn btn-ghost btn-xs spec-move-up"   data-id="${it.id}" title="Move up">↑</button>
+          <button class="btn btn-ghost btn-xs spec-move-dn"   data-id="${it.id}" title="Move down">↓</button>
+          <button class="btn btn-ghost btn-xs spec-add-below" data-id="${it.id}" title="Add row below">+</button>
+          <button class="btn btn-ghost btn-xs spec-view-btn"  data-id="${it.id}" title="View detail">👁</button>
+          <button class="btn btn-ghost btn-xs btn-copy-link spec-link-btn" data-id="${it.id}" title="Copy link">🔗</button>
+          <button class="btn btn-ghost btn-xs spec-history-btn" data-id="${it.id}" title="Version history">🕐</button>
+          <button class="btn btn-ghost btn-xs spec-del-btn"   data-id="${it.id}" title="Delete row" style="color:var(--color-danger)">✕</button>
         </td>`;
       default:
         if (c.custom) {
@@ -810,6 +814,15 @@ function wireRow(tr, it) {
   tr.querySelector('.spec-move-up').addEventListener('click',   () => moveRow(it.id, -1));
   tr.querySelector('.spec-move-dn').addEventListener('click',   () => moveRow(it.id,  1));
   tr.querySelector('.spec-add-below').addEventListener('click', () => addRow(it.id));
+  tr.querySelector('.spec-view-btn')?.addEventListener('click', e => {
+    e.stopPropagation();
+    // No detail panel in arch-spec; scroll row into view as visual feedback
+    document.getElementById('spec-row-' + it.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  tr.querySelector('.spec-link-btn')?.addEventListener('click', e => {
+    e.stopPropagation();
+    copyElementLink('spec-row-' + it.id);
+  });
   tr.querySelector('.spec-history-btn')?.addEventListener('click', () =>
     showVersionHistory(sb, { artifactType: 'arch_spec_items', artifactId: it.id, artifactCode: it.spec_code || it.id, currentData: it }));
   tr.querySelector('.spec-del-btn').addEventListener('click',   () => deleteRow(it));

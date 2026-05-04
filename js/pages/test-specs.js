@@ -12,6 +12,7 @@ import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr } from '..
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 import { VMODEL_NODES, PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
 import { showVersionHistory } from '../components/version-history.js';
+import { copyElementLink } from '../deep-link.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -475,6 +476,7 @@ function buildRowEl(r) {
     tr.draggable = false;
     tr.innerHTML = sectionRowHTML(r);
   } else {
+    tr.id        = 'ts-row-' + r.id;
     tr.className = `spec-row ts-row${r.id === _selectedId ? ' ts-row--selected' : ''}`;
     tr.draggable = true;
     tr.innerHTML = testRowHTML(r);
@@ -546,11 +548,13 @@ function testRowHTML(r) {
           : `<td data-col="result" style="color:#ccc;font-size:11px">not run</td>`;
       case 'actions':
         return `<td data-col="actions" class="spec-row-actions">
-          <button class="btn btn-ghost btn-xs spec-move-up"   title="Move up">↑</button>
-          <button class="btn btn-ghost btn-xs spec-move-dn"   title="Move down">↓</button>
-          <button class="btn btn-ghost btn-xs spec-add-below" title="Add test below">+</button>
-          <button class="btn btn-ghost btn-xs spec-history-btn" title="Version history">🕐</button>
-          <button class="btn btn-ghost btn-xs spec-del-btn"   title="Delete" style="color:var(--color-danger)">✕</button>
+          <button class="btn btn-ghost btn-xs spec-move-up"   data-id="${r.id}" title="Move up">↑</button>
+          <button class="btn btn-ghost btn-xs spec-move-dn"   data-id="${r.id}" title="Move down">↓</button>
+          <button class="btn btn-ghost btn-xs spec-add-below" data-id="${r.id}" title="Add test below">+</button>
+          <button class="btn btn-ghost btn-xs spec-view-btn"  data-id="${r.id}" title="View detail">👁</button>
+          <button class="btn btn-ghost btn-xs btn-copy-link spec-link-btn" data-id="${r.id}" title="Copy link">🔗</button>
+          <button class="btn btn-ghost btn-xs spec-history-btn" data-id="${r.id}" title="Version history">🕐</button>
+          <button class="btn btn-ghost btn-xs spec-del-btn"   data-id="${r.id}" title="Delete" style="color:var(--color-danger)">✕</button>
         </td>`;
       default:
         return `<td data-col="${c.id}"></td>`;
@@ -582,6 +586,12 @@ function wireTestRow(tr, r) {
   });
   tr.querySelector('.spec-add-below')?.addEventListener('click', e => {
     e.stopPropagation(); createTest(r);
+  });
+  tr.querySelector('.spec-view-btn')?.addEventListener('click', e => {
+    e.stopPropagation(); openDetail(r.id);
+  });
+  tr.querySelector('.spec-link-btn')?.addEventListener('click', e => {
+    e.stopPropagation(); copyElementLink('ts-row-' + r.id);
   });
   tr.querySelector('.spec-history-btn')?.addEventListener('click', e => {
     e.stopPropagation();
