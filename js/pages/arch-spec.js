@@ -23,8 +23,8 @@ const SPEC_TYPES    = ['overview', 'component', 'interface', 'behavior', 'deploy
 const UML_TYPES     = ['none', 'component', 'state', 'usecase', 'class'];
 
 const SPEC_BUILTIN_COLS = [
-  { id: 'select',           name: '',                 fixed: true,  visible: true },
   { id: 'drag',             name: '',                 fixed: true,  visible: true },
+  { id: 'select',           name: '',                 fixed: true,  visible: true },
   { id: 'id',               name: 'ID',               fixed: true,  visible: true },
   { id: 'description',      name: 'Description',      fixed: true,  visible: true },
   { id: 'system',           name: 'System',           visible: true },
@@ -64,9 +64,9 @@ export async function renderArchSpec(container, { project, item, system, parentT
   _builtins  = SPEC_BUILTIN_COLS; // will be updated in loadSpec after project_config fetch
   _cols      = loadColConfig(`spec_${parentId}`, _builtins);
   _cols = [
-    ..._cols.filter(c => c.id === 'select'),
-    ..._cols.filter(c => c.id !== 'select' && c.id !== 'actions' && c.id !== 'drag'),
     ..._cols.filter(c => c.id === 'drag'),
+    ..._cols.filter(c => c.id === 'select'),
+    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select' && c.id !== 'actions'),
     ..._cols.filter(c => c.id === 'actions'),
   ];
   _collapsed  = new Set();
@@ -319,9 +319,9 @@ async function loadSpec() {
   ];
   _cols = loadColConfig(`spec_${_ctx.parentId}`, _builtins);
   _cols = [
-    ..._cols.filter(c => c.id === 'select'),
-    ..._cols.filter(c => c.id !== 'select' && c.id !== 'actions' && c.id !== 'drag'),
     ..._cols.filter(c => c.id === 'drag'),
+    ..._cols.filter(c => c.id === 'select'),
+    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select' && c.id !== 'actions'),
     ..._cols.filter(c => c.id === 'actions'),
   ];
 

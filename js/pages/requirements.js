@@ -16,8 +16,8 @@ const ASIL_LEVELS    = ['QM','ASIL-A','ASIL-B','ASIL-C','ASIL-D'];
 const DAL_LEVELS     = ['DAL-E','DAL-D','DAL-C','DAL-B','DAL-A'];
 
 const REQ_BUILTIN_COLS = [
-  { id: 'select',           name: '',                 fixed: true,  visible: true },
   { id: 'drag',             name: '',                 fixed: true,  visible: true },
+  { id: 'select',           name: '',                 fixed: true,  visible: true },
   { id: 'code',             name: 'Code',             fixed: true,  visible: true },
   { id: 'title',            name: 'Title',            fixed: true,  visible: true },
   { id: 'type',             name: 'Type',             visible: true },
@@ -351,9 +351,9 @@ async function loadData() {
   ];
   _cols = loadColConfig(_colKey, _builtins);
   _cols = [
-    ..._cols.filter(c => c.id === 'select'),
     ..._cols.filter(c => c.id === 'drag'),
-    ..._cols.filter(c => c.id !== 'select' && c.id !== 'drag' && c.id !== 'actions'),
+    ..._cols.filter(c => c.id === 'select'),
+    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select' && c.id !== 'actions'),
     ..._cols.filter(c => c.id === 'actions'),
   ];
 

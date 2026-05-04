@@ -57,8 +57,8 @@ const RESULT_COLORS = { pass: '#34A853', fail: '#EA4335', blocked: '#F29900' };
 const RESULT_LABELS = { pass: '✓ PASS', fail: '✗ FAIL', blocked: '⊘ BLOCKED' };
 
 const BUILTIN_COLS = [
-  { id: 'select',  name: '',             fixed: true,  visible: true },
   { id: 'drag',    name: '',             fixed: true,  visible: true },
+  { id: 'select',  name: '',             fixed: true,  visible: true },
   { id: 'code',    name: 'ID',           fixed: true,  visible: true },
   { id: 'name',    name: 'Name',         fixed: true,  visible: true },
   { id: 'type',    name: 'Type',         visible: true },
@@ -112,9 +112,9 @@ export async function renderTestSpecs(container, { project, item, system, phase,
   _colKey      = `ts_${parentId}_${phase}`;
   _cols        = loadColConfig(_colKey, BUILTIN_COLS);
   _cols = [
-    ..._cols.filter(c => c.id === 'select'),
-    ..._cols.filter(c => c.id !== 'select' && c.id !== 'actions' && c.id !== 'drag'),
     ..._cols.filter(c => c.id === 'drag'),
+    ..._cols.filter(c => c.id === 'select'),
+    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select' && c.id !== 'actions'),
     ..._cols.filter(c => c.id === 'actions'),
   ];
 
