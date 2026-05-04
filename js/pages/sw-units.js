@@ -228,7 +228,7 @@ export async function renderSwUnits(container, ctx) {
   document.getElementById('swu-form-close').onclick  = closeForm;
   document.getElementById('swu-form-cancel').onclick = closeForm;
   document.getElementById('swu-btn-upload').onclick  = () => openUploadModal();
-  document.getElementById('swu-props-close').onclick = () => closePropsPanel();
+  document.getElementById('swu-props-close').onclick = e => { e.stopPropagation(); closePropsPanel(); };
   document.getElementById('swu-props-panel').addEventListener('click', e => {
     const panel = document.getElementById('swu-props-panel');
     if (!panel.classList.contains('open')) panel.classList.add('open');
