@@ -2098,6 +2098,12 @@ async function fetchNodeItems(node, parentType, parentId) {
         .eq('parent_type', parentType).eq('parent_id', parentId)
         .eq('domain', node.domain).eq('phase', node.phase);
       return (data||[]).map(r=>({ code:r.test_code, label:r.name||'', traceability:r.traceability||{} }));
+    } else if (table === 'sw_units') {
+      const { data } = await sb.from('sw_units')
+        .select('unit_code,name,traceability')
+        .eq('parent_type', parentType).eq('parent_id', parentId)
+        .order('sort_order', { ascending: true });
+      return (data||[]).map(r=>({ code:r.unit_code, label:r.name||'', traceability:r.traceability||{} }));
     }
   } catch {}
   return [];
