@@ -253,18 +253,23 @@ export async function renderSwUnits(container, ctx) {
     if (!panel || !body) return;
     panel.classList.add('open');
 
+    const fromFile = !!unit.source_code; // fields locked if unit came from a source file
+    const ro = fromFile ? ' disabled' : '';
+    const roClass = fromFile ? ' swup-readonly' : '';
+
     body.innerHTML = `
+      ${fromFile ? `<div class="swup-from-file-notice">⛓ Fields sourced from file — edit the source file and re-upload to change them.</div>` : ''}
       <div class="form-group" style="margin-bottom:10px">
         <label class="form-label">Unit Code</label>
-        <input class="form-input" id="swup-code" value="${escHtml(unit.unit_code)}"/>
+        <input class="form-input${roClass}" id="swup-code" value="${escHtml(unit.unit_code)}"${ro}/>
       </div>
       <div class="form-group" style="margin-bottom:10px">
         <label class="form-label">Name</label>
-        <input class="form-input" id="swup-name" value="${escHtml(unit.name)}"/>
+        <input class="form-input${roClass}" id="swup-name" value="${escHtml(unit.name)}"${ro}/>
       </div>
       <div class="form-group" style="margin-bottom:10px">
         <label class="form-label">Unit Type</label>
-        <select class="form-input form-select" id="swup-type">
+        <select class="form-input form-select${roClass}" id="swup-type"${ro}>
           ${allUnitTypes.map(t => `<option value="${escHtml(t.id)}"${unit.unit_type===t.id?' selected':''}>${escHtml(t.label)}</option>`).join('')}
         </select>
       </div>
@@ -276,22 +281,22 @@ export async function renderSwUnits(container, ctx) {
       </div>
       <div class="form-group" style="margin-bottom:10px">
         <label class="form-label">Language</label>
-        <select class="form-input form-select" id="swup-lang">
+        <select class="form-input form-select${roClass}" id="swup-lang"${ro}>
           <option value="">— select —</option>
           ${Object.entries(LANGUAGE_LABELS).map(([v,l]) => `<option value="${v}"${unit.language===v?' selected':''}>${l}</option>`).join('')}
         </select>
       </div>
       <div class="form-group" style="margin-bottom:10px">
         <label class="form-label">File Path</label>
-        <input class="form-input mono" id="swup-filepath" style="font-size:11px" value="${escHtml(unit.file_path||'')}"/>
+        <input class="form-input mono${roClass}" id="swup-filepath" style="font-size:11px" value="${escHtml(unit.file_path||'')}"${ro}/>
       </div>
       <div class="form-group" style="margin-bottom:10px">
         <label class="form-label">Description</label>
-        <textarea class="form-input" id="swup-desc" rows="2">${escHtml(unit.description||'')}</textarea>
+        <textarea class="form-input${roClass}" id="swup-desc" rows="2"${ro}>${escHtml(unit.description||'')}</textarea>
       </div>
       <div class="form-group" style="margin-bottom:10px">
         <label class="form-label">Source Code</label>
-        <textarea class="form-input swu-code-editor" id="swup-src" rows="10" spellcheck="false">${escHtml(unit.source_code||'')}</textarea>
+        <textarea class="form-input swu-code-editor${roClass}" id="swup-src" rows="10" spellcheck="false"${ro}>${escHtml(unit.source_code||'')}</textarea>
       </div>
       ${unit.needs_review ? `<div style="margin-bottom:10px"><span class="badge badge-review">⚠ Changed — review pending</span></div>` : ''}
       <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
@@ -319,7 +324,7 @@ export async function renderSwUnits(container, ctx) {
 
       let content_hash = unit.content_hash;
       let extra = {};
-      if (source_code) {
+      if (source_code && !fromFile) {
         content_hash = await hashContent(source_code);
         if (content_hash !== unit.content_hash) {
           await sb.from('sw_unit_versions').insert({
@@ -366,9 +371,9 @@ export async function renderSwUnits(container, ctx) {
       _saveTimer = setTimeout(autosave, 800);
     }
 
-    body.querySelectorAll('select').forEach(el => el.addEventListener('change', autosave));
-    body.querySelectorAll('input').forEach(el => el.addEventListener('input', debouncedSave));
-    body.querySelectorAll('textarea').forEach(el => el.addEventListener('input', debouncedSave));
+    body.querySelectorAll('select:not(:disabled)').forEach(el => el.addEventListener('change', autosave));
+    body.querySelectorAll('input:not(:disabled)').forEach(el => el.addEventListener('input', debouncedSave));
+    body.querySelectorAll('textarea:not(:disabled)').forEach(el => el.addEventListener('input', debouncedSave));
 
     // Highlight selected row
     document.querySelectorAll('#swu-list-wrap tr[data-id]').forEach(r =>
