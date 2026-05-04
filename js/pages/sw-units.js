@@ -514,10 +514,6 @@ export async function renderSwUnits(container, ctx) {
         ? `<span class="badge badge-review swu-needs-review-badge" data-id="${u.id}" style="cursor:pointer">⚠ Changed</span>`
         : '<span class="text-muted">—</span>'}</td>`;
       case 'actions':      return `<td data-col="actions" class="actions-cell">
-        <button class="btn btn-ghost btn-xs btn-move-up"   data-id="${u.id}" title="Move up">↑</button>
-        <button class="btn btn-ghost btn-xs btn-move-dn"   data-id="${u.id}" title="Move down">↓</button>
-        <button class="btn btn-ghost btn-xs btn-view-swu"  data-id="${u.id}" title="View properties">👁</button>
-        <button class="btn btn-ghost btn-xs btn-trace-swu" data-id="${u.id}" title="Traceability">⛓</button>
         <button class="btn btn-ghost btn-xs btn-link-swu"  data-id="${u.id}" title="Copy link">🔗</button>
         <button class="btn btn-ghost btn-xs btn-hist-swu"  data-id="${u.id}" title="Version history">🕐</button>
         <button class="btn btn-ghost btn-xs btn-del-swu"   data-id="${u.id}" title="Delete" style="color:var(--color-danger)">✕</button>
