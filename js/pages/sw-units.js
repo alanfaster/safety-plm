@@ -581,7 +581,7 @@ export async function renderSwUnits(container, ctx) {
         e.stopPropagation();
         copyElementLink(`swu-row-${id}`);
       } else if (btn.classList.contains('btn-hist-swu')) {
-        if (unit) showVersionHistory({ table: 'sw_unit_versions', id, label: unit.unit_code });
+        if (unit) showVersionHistory(sb, { artifactType: 'sw_units', artifactId: unit.id, artifactCode: unit.unit_code, currentData: unit });
       } else if (btn.classList.contains('btn-del-swu')) {
         if (!confirm('Delete this SW unit? This cannot be undone.')) return;
         const { error } = await sb.from('sw_units').delete().eq('id', id);
