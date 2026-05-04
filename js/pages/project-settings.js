@@ -122,12 +122,12 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
           <div class="ps-nav-group-label">Safety Analysis</div>
           <button class="ps-nav-item" data-tab="pha">PHA Fields</button>
           <button class="ps-nav-item" data-tab="fha">FHA Fields</button>
+          <button class="ps-nav-item" data-tab="funtypes">Function Types</button>
         </div>
         <div class="ps-nav-group">
           <div class="ps-nav-group-label">Requirements &amp; Arch</div>
           <button class="ps-nav-item" data-tab="reqcols">Requirement Columns</button>
           <button class="ps-nav-item" data-tab="archspeccols">Arch Spec Columns</button>
-          <button class="ps-nav-item" data-tab="funtypes">Function Types</button>
         </div>
         <div class="ps-nav-group">
           <div class="ps-nav-group-label">Testing &amp; Traceability</div>
