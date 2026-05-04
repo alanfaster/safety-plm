@@ -202,7 +202,6 @@ function buildSingleSystemSidebar({ projectId, itemId, itemName, activePage, act
 
   html += buildSafetyGroup({ groupKey: `item-${itemId}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
   html += buildTraceabilityEntry({ base, activePage });
-  html += buildSwUnitsEntry({ base, activePage });
   html += buildReviewsEntry({ base, activePage });
   html += addSystemBtn();
   return html;
@@ -265,7 +264,6 @@ function buildSystemSidebar({ projectId, itemId, systemId, systemName, activePag
     });
   }
 
-  html += buildSwUnitsEntry({ base, activePage });
   html += buildSafetyGroup({ groupKey: `sys-${systemId}-safety`, safetyItems, activePage, routePrefix: `${base}/safety` });
   return html;
 }
@@ -288,7 +286,6 @@ function systemBlock({ s, i, total, projectId, itemId, activePage, activePageId,
       parentType: 'system', parentId: s.id,
     });
   }
-  body += buildSwUnitsEntry({ base, activePage });
   body += buildSafetyGroup({ groupKey: `sys-${s.id}-safety`, safetyItems, activePage, routePrefix: `${base}/safety`, sysId: s.id });
 
   return `
