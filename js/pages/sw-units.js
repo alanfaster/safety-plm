@@ -8,6 +8,8 @@ import { setBreadcrumb } from '../components/topbar.js';
 import { toast } from '../toast.js';
 import { showModal, hideModal } from '../components/modal.js';
 import { copyElementLink, scrollToAnchor } from '../deep-link.js';
+import { loadColConfig, saveColConfig, wireColMgr } from '../components/col-mgr.js';
+import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 
 const STATUS_LABELS  = { draft:'Draft', in_review:'In Review', approved:'Approved', deprecated:'Deprecated' };
 const STATUS_CLASSES = { draft:'badge-draft', in_review:'badge-review', approved:'badge-approved', deprecated:'badge-deprecated' };
@@ -165,147 +167,99 @@ export async function renderSwUnits(container, ctx) {
   document.getElementById('swu-btn-upload').onclick  = () => openUploadModal();
 
   // ── Column definitions ───────────────────────────────────────────────────────
-  const ALL_COLS = [
-    { id:'unit_code',   label:'Code',    render: u => `<span class="mono">${escHtml(u.unit_code)}</span>` },
-    { id:'name',        label:'Name',    render: u => escHtml(u.name) },
-    { id:'unit_type',   label:'Type',    render: u => `<span class="badge badge-draft" style="font-size:10px">${escHtml(allUnitTypes.find(t=>t.id===u.unit_type)?.label||u.unit_type||'—')}</span>` },
-    { id:'file_path',   label:'File',    render: u => `<span class="mono text-muted" style="font-size:11px">${escHtml(u.file_path||'—')}</span>` },
-    { id:'language',    label:'Lang',    render: u => escHtml(LANGUAGE_LABELS[u.language]||u.language||'—') },
-    { id:'version',     label:'Version', render: u => `<span class="text-muted">v${u.version}</span>` },
-    { id:'status',      label:'Status',  render: u => `<span class="badge ${STATUS_CLASSES[u.status]||'badge-draft'}">${STATUS_LABELS[u.status]||u.status}</span>` },
-    { id:'needs_review',label:'Review',  render: u => u.needs_review
-        ? `<span class="badge badge-review swu-needs-review-badge" data-id="${u.id}" style="cursor:pointer">⚠ Changed</span>`
-        : '<span class="text-muted">—</span>' },
+  const COL_KEY = `swu_${project.id}_${parentId}`;
+  const SKIP_FILTER = new Set(['actions']);
+
+  const BUILTIN_COLS = [
+    { id:'unit_code',    name:'Code',    visible:true,  fixed:false },
+    { id:'name',         name:'Name',    visible:true,  fixed:false },
+    { id:'unit_type',    name:'Type',    visible:true,  fixed:false },
+    { id:'file_path',    name:'File',    visible:true,  fixed:false },
+    { id:'language',     name:'Lang',    visible:true,  fixed:false },
+    { id:'version',      name:'Version', visible:true,  fixed:false },
+    { id:'status',       name:'Status',  visible:true,  fixed:false },
+    { id:'needs_review', name:'Review',  visible:true,  fixed:false },
+    { id:'actions',      name:'',        visible:true,  fixed:true  },
   ];
 
-  const STORAGE_KEY = `swu_cols_${project.id}`;
-  function loadColState() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null; } catch { return null; }
-  }
-  function saveColState() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ order: _colOrder, hidden: [..._hiddenCols] }));
+  let _cols     = loadColConfig(COL_KEY, BUILTIN_COLS);
+  let _filters  = {};
+  let _allUnits = [];
+
+  function getFilterValue(u, colId) {
+    switch (colId) {
+      case 'unit_code':    return u.unit_code || '';
+      case 'name':         return u.name || '';
+      case 'unit_type':    return allUnitTypes.find(t => t.id === u.unit_type)?.label || u.unit_type || '';
+      case 'file_path':    return u.file_path || '';
+      case 'language':     return LANGUAGE_LABELS[u.language] || u.language || '';
+      case 'version':      return `v${u.version}`;
+      case 'status':       return STATUS_LABELS[u.status] || u.status || '';
+      case 'needs_review': return u.needs_review ? 'changed' : '';
+      default:             return '';
+    }
   }
 
-  const saved = loadColState();
-  let _colOrder  = saved?.order  || ALL_COLS.map(c => c.id);
-  let _hiddenCols = new Set(saved?.hidden || []);
-  let _filters   = {};   // colId → filter string
-  let _allUnits  = [];   // full dataset for client-side filtering
-
-  function visibleCols() {
-    return _colOrder.map(id => ALL_COLS.find(c => c.id === id)).filter(c => c && !_hiddenCols.has(c.id));
-  }
-
-  function filteredUnits() {
-    return _allUnits.filter(u => {
-      for (const [colId, val] of Object.entries(_filters)) {
-        if (!val) continue;
-        const col = ALL_COLS.find(c => c.id === colId);
-        if (!col) continue;
-        const text = col.render(u).replace(/<[^>]+>/g, '').toLowerCase();
-        if (!text.includes(val.toLowerCase())) return false;
-      }
-      return true;
-    });
+  function renderTd(colId, u) {
+    switch (colId) {
+      case 'unit_code':    return `<td data-col="unit_code"><span class="mono">${escHtml(u.unit_code)}</span></td>`;
+      case 'name':         return `<td data-col="name">${escHtml(u.name)}</td>`;
+      case 'unit_type':    return `<td data-col="unit_type"><span class="badge badge-draft" style="font-size:10px">${escHtml(allUnitTypes.find(t=>t.id===u.unit_type)?.label||u.unit_type||'—')}</span></td>`;
+      case 'file_path':    return `<td data-col="file_path" class="mono text-muted" style="font-size:11px">${escHtml(u.file_path||'—')}</td>`;
+      case 'language':     return `<td data-col="language">${escHtml(LANGUAGE_LABELS[u.language]||u.language||'—')}</td>`;
+      case 'version':      return `<td data-col="version" class="text-muted">v${u.version}</td>`;
+      case 'status':       return `<td data-col="status"><span class="badge ${STATUS_CLASSES[u.status]||'badge-draft'}">${STATUS_LABELS[u.status]||u.status}</span></td>`;
+      case 'needs_review': return `<td data-col="needs_review">${u.needs_review
+        ? `<span class="badge badge-review swu-needs-review-badge" data-id="${u.id}" style="cursor:pointer">⚠ Changed</span>`
+        : '<span class="text-muted">—</span>'}</td>`;
+      case 'actions':      return `<td data-col="actions" class="rv-actions">
+        <button class="btn btn-ghost btn-xs btn-copy-link swu-link-btn" data-id="${u.id}" title="Copy link">🔗</button>
+        <button class="btn btn-secondary btn-sm swu-edit-btn" data-id="${u.id}">Edit</button>
+        <button class="btn btn-ghost btn-sm swu-del-btn" data-id="${u.id}">Delete</button>
+      </td>`;
+      default: return `<td data-col="${escHtml(colId)}"></td>`;
+    }
   }
 
   function renderTable() {
     const wrap = document.getElementById('swu-list-wrap');
     if (!wrap) return;
-    const cols  = visibleCols();
-    const units = filteredUnits();
 
-    let html = `
+    const visCols  = _cols.filter(c => c.visible);
+    const filtered = applyColFilters(_allUnits, _filters, getFilterValue);
+
+    const theadRow = visCols.map(c => `<th data-col="${c.id}"${c.fixed ? '' : ' class="col-managed"'}>${escHtml(c.name)}</th>`).join('');
+    const filterRow = buildFilterRowHTML(_cols, SKIP_FILTER);
+
+    wrap.innerHTML = `
       <div class="swu-table-toolbar">
-        <span class="text-muted" style="font-size:12px">${units.length} of ${_allUnits.length} units</span>
-        <button class="btn btn-ghost btn-sm" id="swu-col-menu-btn">⊞ Columns</button>
+        <span class="text-muted" style="font-size:12px">${filtered.length} of ${_allUnits.length} units</span>
       </div>
-      <div id="swu-col-menu" style="display:none;right:0;top:32px" class="swu-col-menu">
-        ${ALL_COLS.map(c => `
-          <label class="swu-col-check">
-            <input type="checkbox" data-col="${c.id}" ${_hiddenCols.has(c.id) ? '' : 'checked'}/>
-            ${escHtml(c.label)}
-          </label>`).join('')}
-      </div>
-      <table class="data-table">
+      <table class="data-table" id="swu-table">
         <thead>
-          <tr>
-            ${cols.map(c => `
-              <th draggable="true" data-col="${c.id}" class="swu-th-drag" title="Drag to reorder">
-                ${escHtml(c.label)}
-              </th>`).join('')}
-            <th style="width:100px"></th>
-          </tr>
-          <tr class="swu-filter-row">
-            ${cols.map(c => `
-              <th>
-                <input class="swu-filter-input" data-col="${c.id}"
-                  value="${escHtml(_filters[c.id]||'')}"
-                  placeholder="Filter…"/>
-              </th>`).join('')}
-            <th></th>
-          </tr>
+          <tr id="swu-thead-row">${theadRow}</tr>
+          ${filterRow}
         </thead>
         <tbody>
-          ${units.length ? units.map(u => `
-            <tr data-id="${u.id}" id="swu-row-${u.id}">
-              ${cols.map(c => `<td>${c.render(u)}</td>`).join('')}
-              <td class="rv-actions">
-                <button class="btn btn-ghost btn-xs btn-copy-link swu-link-btn" data-id="${u.id}" title="Copy link to this unit">🔗</button>
-                <button class="btn btn-secondary btn-sm swu-edit-btn" data-id="${u.id}">Edit</button>
-                <button class="btn btn-ghost btn-sm swu-del-btn" data-id="${u.id}">Delete</button>
-              </td>
-            </tr>`).join('')
-          : `<tr><td colspan="${cols.length + 1}" class="text-muted" style="text-align:center;padding:24px">No units match the current filter.</td></tr>`}
+          ${filtered.length
+            ? filtered.map(u => `<tr id="swu-row-${u.id}" data-id="${u.id}">${visCols.map(c => renderTd(c.id, u)).join('')}</tr>`).join('')
+            : `<tr><td colspan="${visCols.length}" class="text-muted" style="text-align:center;padding:24px">No units match the current filter.</td></tr>`}
         </tbody>
       </table>`;
 
-    wrap.innerHTML = html;
+    const tableEl  = wrap.querySelector('#swu-table');
+    const theadEl  = tableEl.querySelector('thead');
+    const theadRowEl = wrap.querySelector('#swu-thead-row');
 
-    // Column menu toggle
-    const menuBtn = document.getElementById('swu-col-menu-btn');
-    const menu    = document.getElementById('swu-col-menu');
-    menuBtn.onclick = (e) => { e.stopPropagation(); menu.style.display = menu.style.display === 'none' ? '' : 'none'; };
-    document.addEventListener('click', () => { if (menu) menu.style.display = 'none'; }, { once: false });
-    menu.querySelectorAll('input[data-col]').forEach(cb => {
-      cb.onchange = () => {
-        if (cb.checked) _hiddenCols.delete(cb.dataset.col);
-        else            _hiddenCols.add(cb.dataset.col);
-        saveColState();
-        renderTable();
-      };
+    wireColFilterIcons(theadEl, _filters, () => {
+      renderTable();
+    }, SKIP_FILTER);
+
+    wireColMgr(theadRowEl, tableEl, COL_KEY, _cols, updatedCols => {
+      _cols = updatedCols;
+      renderTable();
     });
 
-    // Filter inputs
-    wrap.querySelectorAll('.swu-filter-input').forEach(inp => {
-      inp.oninput = () => {
-        _filters[inp.dataset.col] = inp.value;
-        renderTable();
-      };
-    });
-
-    // Drag-to-reorder headers
-    let _dragCol = null;
-    wrap.querySelectorAll('.swu-th-drag').forEach(th => {
-      th.ondragstart = (e) => { _dragCol = th.dataset.col; e.dataTransfer.effectAllowed = 'move'; th.classList.add('dragging'); };
-      th.ondragend   = ()  => { wrap.querySelectorAll('.swu-th-drag').forEach(t => { t.classList.remove('dragging','drag-over'); }); };
-      th.ondragover  = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; th.classList.add('drag-over'); };
-      th.ondragleave = ()  => { th.classList.remove('drag-over'); };
-      th.ondrop      = (e) => {
-        e.preventDefault();
-        th.classList.remove('drag-over');
-        if (!_dragCol || _dragCol === th.dataset.col) return;
-        const from = _colOrder.indexOf(_dragCol);
-        const to   = _colOrder.indexOf(th.dataset.col);
-        if (from === -1 || to === -1) return;
-        _colOrder.splice(from, 1);
-        _colOrder.splice(to, 0, _dragCol);
-        saveColState();
-        renderTable();
-      };
-    });
-
-    // Row actions
     wrap.querySelectorAll('.swu-edit-btn').forEach(btn => {
       btn.onclick = () => openForm(_allUnits.find(u => u.id === btn.dataset.id));
     });
