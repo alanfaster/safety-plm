@@ -104,7 +104,10 @@ export async function renderSwUnits(container, ctx) {
         <div class="content-loading"><div class="spinner"></div></div>
       </div>
       <aside class="req-trace-panel" id="swu-props-panel">
-        <span class="req-trace-panel-rail-label">Properties</span>
+        <div class="swu-rail-tabs">
+          <button class="swu-rail-btn swu-rail-btn--active" id="swu-rail-props" title="Properties">≡</button>
+          <button class="swu-rail-btn" id="swu-rail-trace" title="Traceability">⛓</button>
+        </div>
         <div class="req-trace-panel-hdr">
           <div style="display:flex;gap:4px">
             <button class="btn btn-ghost btn-xs swu-panel-tab swu-panel-tab--active" id="swu-tab-props" data-tab="props">Properties</button>
@@ -212,18 +215,33 @@ export async function renderSwUnits(container, ctx) {
   _tp.deriveFields();
   await _tp.loadSourceData();
 
-  // Tab switching: Properties ↔ Trace
+  let _activeTab = 'props';
+
   function switchPanelTab(tab) {
-    document.getElementById('swu-props-body').style.display  = tab === 'props' ? '' : 'none';
-    document.getElementById('swu-trace-body').style.display  = tab === 'trace' ? '' : 'none';
+    _activeTab = tab;
+    document.getElementById('swu-props-body').style.display = tab === 'props' ? '' : 'none';
+    document.getElementById('swu-trace-body').style.display = tab === 'trace' ? '' : 'none';
     document.querySelectorAll('.swu-panel-tab').forEach(b =>
       b.classList.toggle('swu-panel-tab--active', b.dataset.tab === tab));
-    document.querySelector('.req-trace-panel-rail-label').textContent =
-      tab === 'trace' ? 'Traceability' : 'Properties';
+    document.getElementById('swu-rail-props')?.classList.toggle('swu-rail-btn--active', tab === 'props');
+    document.getElementById('swu-rail-trace')?.classList.toggle('swu-rail-btn--active', tab === 'trace');
   }
-  document.getElementById('swu-tab-props').onclick  = () => switchPanelTab('props');
-  document.getElementById('swu-tab-trace').onclick  = () => {
+
+  document.getElementById('swu-tab-props').onclick = () => switchPanelTab('props');
+  document.getElementById('swu-tab-trace').onclick = () => {
     switchPanelTab('trace');
+    if (_selectedUnitId) _tp.openPanel(_selectedUnitId);
+  };
+
+  document.getElementById('swu-rail-props').onclick = e => {
+    e.stopPropagation();
+    switchPanelTab('props');
+    document.getElementById('swu-props-panel').classList.add('open');
+  };
+  document.getElementById('swu-rail-trace').onclick = e => {
+    e.stopPropagation();
+    switchPanelTab('trace');
+    document.getElementById('swu-props-panel').classList.add('open');
     if (_selectedUnitId) _tp.openPanel(_selectedUnitId);
   };
 
@@ -234,7 +252,7 @@ export async function renderSwUnits(container, ctx) {
   document.getElementById('swu-props-close').onclick = e => { e.stopPropagation(); closePropsPanel(); };
   document.getElementById('swu-props-panel').addEventListener('click', e => {
     const panel = document.getElementById('swu-props-panel');
-    if (!panel.classList.contains('open')) panel.classList.add('open');
+    if (!panel.classList.contains('open') && !e.target.closest('button')) panel.classList.add('open');
   });
 
   document.getElementById('swu-bulk-cancel').onclick = () => {
@@ -619,7 +637,17 @@ export async function renderSwUnits(container, ctx) {
       tr.onclick = (e) => {
         if (e.target.closest('button,a,input,select')) return;
         const unit = _allUnits.find(u => u.id === tr.dataset.id);
-        if (unit) { switchPanelTab('props'); openPropsPanel(unit); }
+        if (unit) {
+          const panel = document.getElementById('swu-props-panel');
+          const isOpen = panel.classList.contains('open');
+          if (!isOpen) switchPanelTab('props');
+          if (_activeTab === 'trace') {
+            openPropsPanel(unit); // still highlights row + sets _selectedUnitId
+            _tp.openPanel(unit.id);
+          } else {
+            openPropsPanel(unit);
+          }
+        }
       };
     });
 
