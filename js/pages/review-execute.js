@@ -1399,75 +1399,84 @@ export async function renderReviewExecute(container, ctx) {
     // ── Selection → floating "+" button ────────────────────────────────────────
 
     function wireSelectionButton(body, snap) {
-      let _selBtn = null;
+      let _selBtn   = null;
+      let _dragFrom = null; // lineNum where mousedown started
+      let _dragging = false;
 
-      // Listen on document so we catch mouseup even when released over
-      // an absolutely-positioned thread card that may stop bubbling
-      const onDocMouseUp = () => {
-        setTimeout(() => {
-          _selBtn?.remove(); _selBtn = null;
+      function getLineNum(el) {
+        const line = el?.closest?.('.rve-diff-line[data-linenum]');
+        return line ? parseInt(line.dataset.linenum, 10) : null;
+      }
 
-          const sel = window.getSelection();
-          if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+      function applyHighlight(from, to) {
+        const lo = Math.min(from, to), hi = Math.max(from, to);
+        body.querySelectorAll('.rve-diff-line[data-linenum]').forEach(el => {
+          const n = parseInt(el.dataset.linenum, 10);
+          el.classList.toggle('rve-diff-line--selected', n >= lo && n <= hi);
+        });
+      }
 
-          // Only act when the selection starts inside our diff body
-          const range = sel.getRangeAt(0);
-          const startNode = range.startContainer.nodeType === 3
-            ? range.startContainer.parentElement
-            : range.startContainer;
-          if (!body.contains(startNode)) return;
+      function clearSelection() {
+        _dragFrom = null; _dragging = false;
+        _selBtn?.remove(); _selBtn = null;
+        body.querySelectorAll('.rve-diff-line--selected')
+          .forEach(el => el.classList.remove('rve-diff-line--selected'));
+      }
 
-          const { lineFrom, lineTo } = getSelectedLineRange(body, range);
-          if (!lineFrom) return;
+      function showAddBtn(lineFrom, lineTo) {
+        _selBtn?.remove();
+        const lastLine = body.querySelector(`.rve-diff-line[data-linenum="${lineTo}"]`)
+                      || body.querySelector(`.rve-diff-line[data-linenum="${lineFrom}"]`);
+        if (!lastLine) return;
+        _selBtn = document.createElement('div');
+        _selBtn.className   = 'rve-sel-add-btn';
+        _selBtn.textContent = '+ Add comment';
+        _selBtn.title = lineFrom === lineTo ? `Comment on line ${lineFrom}` : `Comment on lines ${lineFrom}–${lineTo}`;
+        lastLine.appendChild(_selBtn);
+        _selBtn.addEventListener('mousedown', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          const lf = lineFrom, lt = lineTo;
+          clearSelection();
+          openInlineForm(body, snap, lf, lt, filePath);
+        });
+      }
 
-          // Highlight selected lines
-          body.querySelectorAll('.rve-diff-line').forEach(el => {
-            const n = parseInt(el.dataset.linenum, 10);
-            el.classList.toggle('rve-diff-line--selected', n >= lineFrom && n <= lineTo);
-          });
+      // Use event delegation on the persistent body element
+      body.addEventListener('mousedown', e => {
+        if (e.target.closest('.rve-sel-add-btn, .rve-inline-form, .rve-inline-thread')) return;
+        clearSelection();
+        const n = getLineNum(e.target);
+        if (!n) return;
+        _dragFrom = n;
+        _dragging = true;
+        e.preventDefault(); // prevent native text selection
+      });
 
-          // Floating "+" button after the last selected line
-          const lastLine = body.querySelector(`.rve-diff-line[data-linenum="${lineTo}"]`)
-                        || body.querySelector(`.rve-diff-line[data-linenum="${lineFrom}"]`);
-          if (!lastLine) return;
+      body.addEventListener('mousemove', e => {
+        if (!_dragging || !_dragFrom) return;
+        const n = getLineNum(e.target);
+        if (!n) return;
+        applyHighlight(_dragFrom, n);
+        _selBtn?.remove(); _selBtn = null;
+      });
 
-          _selBtn = document.createElement('div');
-          _selBtn.className = 'rve-sel-add-btn';
-          _selBtn.title     = lineFrom === lineTo ? `Comment on line ${lineFrom}` : `Comment on lines ${lineFrom}–${lineTo}`;
-          _selBtn.textContent = '+ Add comment';
-          lastLine.appendChild(_selBtn);
-
-          _selBtn.addEventListener('mousedown', e => {
-            e.preventDefault(); // don't clear selection
-            const lf = lineFrom, lt = lineTo;
-            _selBtn.remove(); _selBtn = null;
-            sel.removeAllRanges();
-            body.querySelectorAll('.rve-diff-line--selected').forEach(el => el.classList.remove('rve-diff-line--selected'));
-            openInlineForm(body, snap, lf, lt, filePath);
-          });
-        }, 10);
+      const onDocMouseUp = e => {
+        if (!_dragging || !_dragFrom) return;
+        _dragging = false;
+        const n = getLineNum(e.target) || _dragFrom;
+        const lineFrom = Math.min(_dragFrom, n);
+        const lineTo   = Math.max(_dragFrom, n);
+        applyHighlight(lineFrom, lineTo);
+        showAddBtn(lineFrom, lineTo);
+        _dragFrom = null;
       };
       document.addEventListener('mouseup', onDocMouseUp);
 
-      // Clear highlight + button on click outside
-      body.addEventListener('mousedown', e => {
-        if (e.target.closest('.rve-sel-add-btn, .rve-inline-form')) return;
-        _selBtn?.remove(); _selBtn = null;
-        body.querySelectorAll('.rve-diff-line--selected').forEach(el => el.classList.remove('rve-diff-line--selected'));
+      // Click outside diff body clears the selection
+      document.addEventListener('mousedown', e => {
+        if (!e.target.closest('#rve-diff-body')) clearSelection();
       });
-    }
-
-    function getSelectedLineRange(body, range) {
-      const getLineEl = node => {
-        let el = node.nodeType === 3 ? node.parentElement : node;
-        return el?.closest?.('.rve-diff-line[data-linenum]');
-      };
-      const startEl = getLineEl(range.startContainer);
-      const endEl   = getLineEl(range.endContainer);
-      const lineFrom = startEl ? parseInt(startEl.dataset.linenum, 10) : null;
-      const lineTo   = endEl   ? parseInt(endEl.dataset.linenum, 10)   : lineFrom;
-      if (!lineFrom) return {};
-      return { lineFrom: Math.min(lineFrom, lineTo), lineTo: Math.max(lineFrom, lineTo) };
     }
 
     // ── Inline form ─────────────────────────────────────────────────────────────
