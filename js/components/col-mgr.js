@@ -375,22 +375,15 @@ export function wireColResize(theadRow, key) {
       th.style.width    = w + 'px';
       th.style.minWidth = '0';
       th.style.maxWidth = w + 'px';
-      th.style.overflow = 'hidden';
-      // Apply same width to all body cells in this column
+      // Sync all body cells so they match
       tableEl?.querySelectorAll(`td[data-col="${colId}"]`).forEach(td => {
         td.style.width    = w + 'px';
         td.style.maxWidth = w + 'px';
-        td.style.overflow = 'hidden';
       });
     };
 
-    // Apply stored width, else measure current rendered width once
-    if (widths[colId]) {
-      setW(widths[colId]);
-    } else {
-      const measured = th.offsetWidth;
-      if (measured > 0) setW(measured);
-    }
+    // Only apply stored width — columns without stored width auto-fill remaining space
+    if (widths[colId]) setW(widths[colId]);
 
     const handle = document.createElement('div');
     handle.className = 'col-resize-handle';
