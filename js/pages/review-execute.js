@@ -1401,19 +1401,21 @@ export async function renderReviewExecute(container, ctx) {
     function wireSelectionButton(body, snap) {
       let _selBtn = null;
 
-      body.addEventListener('mouseup', () => {
-        // Small delay so selection is finalized
+      // Listen on document so we catch mouseup even when released over
+      // an absolutely-positioned thread card that may stop bubbling
+      const onDocMouseUp = () => {
         setTimeout(() => {
           _selBtn?.remove(); _selBtn = null;
 
           const sel = window.getSelection();
           if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
 
-          const range  = sel.getRangeAt(0);
-          const codeEl = body.querySelector('.rve-diff-code');
-          // Use startContainer — the drag may end over an absolutely-positioned thread card,
-          // which takes commonAncestorContainer outside .rve-diff-code
-          if (!codeEl || !codeEl.contains(range.startContainer)) return;
+          // Only act when the selection starts inside our diff body
+          const range = sel.getRangeAt(0);
+          const startNode = range.startContainer.nodeType === 3
+            ? range.startContainer.parentElement
+            : range.startContainer;
+          if (!body.contains(startNode)) return;
 
           const { lineFrom, lineTo } = getSelectedLineRange(body, range);
           if (!lineFrom) return;
@@ -1444,7 +1446,8 @@ export async function renderReviewExecute(container, ctx) {
             openInlineForm(body, snap, lf, lt, filePath);
           });
         }, 10);
-      });
+      };
+      document.addEventListener('mouseup', onDocMouseUp);
 
       // Clear highlight + button on click outside
       body.addEventListener('mousedown', e => {
