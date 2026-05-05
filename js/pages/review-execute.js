@@ -283,7 +283,7 @@ export async function renderReviewExecute(container, ctx) {
         <div class="diff-finding-info">
           <span class="mono diff-finding-code">${escHtml(f.finding_code)}</span>
           <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}">${SEVERITY_LABELS[f.severity] || f.severity}</span>
-          <span class="diff-finding-title">${escHtml(f.title)}</span>
+          <span class="diff-finding-title">${escHtml(f.description || f.title)}</span>
           <span class="badge rv-fs-${f.status}">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
         </div>
         ${f.created_by === currentUserId
@@ -382,7 +382,7 @@ export async function renderReviewExecute(container, ctx) {
           row.innerHTML = `<div class="diff-finding-info">
             <span class="mono diff-finding-code">${escHtml(f.finding_code)}</span>
             <span class="badge rv-fs-closed">Closed</span>
-            <span class="diff-finding-title">${escHtml(f.title)}</span>
+            <span class="diff-finding-title">${escHtml(f.description || f.title)}</span>
           </div>`;
           mountChecklist(snap);
           afterFindingMutation();
@@ -402,7 +402,7 @@ export async function renderReviewExecute(container, ctx) {
       <div class="rve-props-finding-row" data-finding-id="${f.id}" data-severity="${f.severity}" data-status="${f.status}">
         <div class="rve-props-finding-row-main">
           <span class="rve-props-finding-code mono">${escHtml(f.finding_code)}</span>
-          <span class="rve-props-finding-title">${escHtml(f.title)}</span>
+          <span class="rve-props-finding-title">${escHtml(f.description || f.title)}</span>
           <span class="badge ${FINDING_STATUS_CLASSES[f.status] || ''}" style="font-size:10px;margin-left:auto;flex-shrink:0">${FINDING_STATUS_LABELS[f.status] || f.status}</span>
           <a class="rve-props-fnd-goto btn btn-ghost btn-xs" data-fid="${f.id}" title="Go to finding">↗</a>
         </div>
@@ -1765,15 +1765,16 @@ export async function renderReviewExecute(container, ctx) {
             <button class="btn btn-ghost btn-xs" id="rve-finding-raise-btn" style="margin-left:8px">+ Raise Finding</button>
           </div>
           <div class="rve-props-finding-form" id="rve-finding-form" style="display:none;margin-top:8px">
-            <input class="form-input" id="rve-finding-title" placeholder="Finding title…" style="margin-bottom:6px"/>
-            <select class="form-input form-select" id="rve-finding-severity" style="margin-bottom:6px">
-              <option value="major">Major</option>
-              <option value="critical">Critical</option>
-              <option value="minor">Minor</option>
-              <option value="observation">Observation</option>
-            </select>
-            <textarea class="form-input" id="rve-finding-desc" rows="2" placeholder="Description / evidence…"></textarea>
-            <div style="display:flex;gap:6px;margin-top:6px">
+            <div style="display:flex;gap:6px;margin-bottom:6px">
+              <select class="form-input form-select" id="rve-finding-severity" style="flex:0 0 110px">
+                <option value="major">Major</option>
+                <option value="critical">Critical</option>
+                <option value="minor">Minor</option>
+                <option value="observation">Observation</option>
+              </select>
+              <textarea class="form-input" id="rve-finding-desc" rows="2" placeholder="Description *" style="flex:1;resize:vertical"></textarea>
+            </div>
+            <div style="display:flex;gap:6px">
               <button class="btn btn-primary btn-sm" id="rve-finding-save">Save Finding</button>
               <button class="btn btn-ghost btn-sm" id="rve-finding-cancel">Cancel</button>
             </div>
@@ -1833,7 +1834,7 @@ export async function renderReviewExecute(container, ctx) {
           _stagedVerdict = v;
           findingForm.style.display = '';
           findingForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          panel.querySelector('#rve-finding-title')?.focus();
+          panel.querySelector('#rve-finding-desc')?.focus();
         } else {
           _stagedVerdict = null;
           findingForm.style.display = 'none';
@@ -1849,11 +1850,10 @@ export async function renderReviewExecute(container, ctx) {
     });
 
     panel.querySelector('#rve-finding-save')?.addEventListener('click', async () => {
-      const title = panel.querySelector('#rve-finding-title')?.value.trim();
       const desc  = panel.querySelector('#rve-finding-desc')?.value.trim();
       const sev   = panel.querySelector('#rve-finding-severity')?.value || 'major';
-      if (!title) { panel.querySelector('#rve-finding-title')?.focus(); toast('Enter a finding title.', 'error'); return; }
       if (!desc)  { panel.querySelector('#rve-finding-desc')?.focus();  toast('Enter a description.', 'error');  return; }
+      const title = desc.slice(0, 80);
 
       const saveBtn = panel.querySelector('#rve-finding-save');
       saveBtn.disabled = true;
@@ -1870,8 +1870,7 @@ export async function renderReviewExecute(container, ctx) {
 
       _findings.push(finding);
       findingForm.style.display = 'none';
-      panel.querySelector('#rve-finding-title').value = '';
-      panel.querySelector('#rve-finding-desc').value  = '';
+      panel.querySelector('#rve-finding-desc').value = '';
       toast(`Finding ${findingCode} created.`, 'success');
       const staged = _stagedVerdict; _stagedVerdict = null;
       if (staged) {
