@@ -361,13 +361,11 @@ export function wireColResize(theadRow, key) {
   const tableEl = theadRow.closest('table');
   const widths  = loadColWidths(key);
   const hasStored = Object.keys(widths).length > 0;
-  const colSetters = {}; // colId → setW fn, for snapshot on first resize
+  const colSetters = {}; // colId → setW fn, for snapshot
 
   if (tableEl) {
     tableEl.style.width = '100%';
-    // First load: auto-fit fills available width naturally.
-    // After first resize: fixed so columns can shrink below content min.
-    tableEl.style.tableLayout = hasStored ? 'fixed' : 'auto';
+    tableEl.style.tableLayout = 'fixed';
   }
 
   theadRow.querySelectorAll('th[data-col]').forEach(th => {
@@ -394,19 +392,6 @@ export function wireColResize(theadRow, key) {
     handle.addEventListener('mousedown', e => {
       e.preventDefault();
       e.stopPropagation();
-
-      // First resize ever: snapshot all rendered widths then switch to fixed
-      if (tableEl && tableEl.style.tableLayout !== 'fixed') {
-        tableEl.style.tableLayout = 'fixed';
-        theadRow.querySelectorAll('th[data-col]').forEach(t => {
-          const id = t.dataset.col;
-          if (id === 'drag' || id === 'select' || id === 'actions') return;
-          const w = t.offsetWidth;
-          widths[id] = w;
-          colSetters[id]?.(w);
-        });
-      }
-
       const startX = e.clientX;
       const startW = th.offsetWidth;
       document.body.style.userSelect = 'none';
@@ -428,4 +413,18 @@ export function wireColResize(theadRow, key) {
       document.addEventListener('mouseup',   onUp);
     });
   });
+
+  // First load: no stored widths → let browser render once with auto layout,
+  // then snapshot the natural widths so fixed layout fills 100% from the start.
+  if (!hasStored && tableEl) {
+    tableEl.style.tableLayout = 'auto';
+    requestAnimationFrame(() => {
+      tableEl.style.tableLayout = 'fixed';
+      theadRow.querySelectorAll('th[data-col]').forEach(t => {
+        const id = t.dataset.col;
+        if (id === 'drag' || id === 'select' || id === 'actions') return;
+        colSetters[id]?.(t.offsetWidth);
+      });
+    });
+  }
 }
