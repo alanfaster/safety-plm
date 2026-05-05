@@ -155,8 +155,26 @@ export async function renderReviewSessionWizard(container, ctx) {
   const _requiredFields    = _projectConfig.external_review_required_fields || ['url', 'verdict'];
   state.review_mode = _defaultReviewMode;
 
-  // Load pre-selected artifact IDs from sessionStorage (set by requirements page bulk bar)
-  if (_initQuery.get('preselected')) {
+  // Load pre-selected artifact IDs from sessionStorage
+  const PRESELECT_KEYS = {
+    requirements:         'wiz_preselected_requirements',
+    sw_units:             'wiz_preselected_sw_units',
+    arch_spec_items:      'wiz_preselected_arch_spec_items',
+    test_specs:           'wiz_preselected_test_specs',
+    safety_analysis_rows: 'wiz_preselected_safety_analysis_rows',
+  };
+  if (_initQuery.get('preselected') && _initArtifactType) {
+    const ssKey = PRESELECT_KEYS[_initArtifactType];
+    if (ssKey) {
+      const stored = sessionStorage.getItem(ssKey);
+      if (stored) {
+        if (!state.selected[_initArtifactType]) state.selected[_initArtifactType] = new Set();
+        JSON.parse(stored).forEach(id => state.selected[_initArtifactType].add(id));
+        sessionStorage.removeItem(ssKey);
+      }
+    }
+  } else if (_initQuery.get('preselected')) {
+    // Legacy: requirements used artifact_type-less preselected
     const stored = sessionStorage.getItem('wiz_preselected_requirements');
     if (stored) {
       if (!state.selected['requirements']) state.selected['requirements'] = new Set();
@@ -166,13 +184,18 @@ export async function renderReviewSessionWizard(container, ctx) {
   }
 
   // Auto-select template matching the artifact type for this page context
-  if (!state.template_id && _initPhase && templates?.length) {
+  if (!state.template_id && templates?.length) {
     const PHASE_TO_ART_TYPE = {
-      requirements: 'requirements', architecture: 'arch_spec_items',
-      unit_testing: 'test_specs', integration_testing: 'test_specs',
-      system_testing: 'test_specs', validation: 'test_specs',
+      requirements:        'requirements',
+      architecture:        'arch_spec_items',
+      design:              'arch_spec_items',
+      implementation:      'sw_units',
+      unit_testing:        'test_specs',
+      integration_testing: 'test_specs',
+      system_testing:      'test_specs',
+      validation:          'test_specs',
     };
-    const targetArtType = PHASE_TO_ART_TYPE[_initPhase];
+    const targetArtType = _initArtifactType || PHASE_TO_ART_TYPE[_initPhase];
     if (targetArtType) {
       const match = templates.find(t => t.artifact_type === targetArtType);
       if (match) state.template_id = match.id;

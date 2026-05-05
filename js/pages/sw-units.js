@@ -265,8 +265,10 @@ export async function renderSwUnits(container, ctx) {
   const scopeParams = system ? `&scope_system_id=${system.id}&scope_domain=sw` : '&scope_domain=sw';
   document.getElementById('swu-bulk-review').onclick = () => {
     if (!_selection.size) return;
-    const ids = [..._selection].join(',');
-    navigate(`${reviewBase}/reviews/new?artifact_type=sw_units&artifact_ids=${ids}${scopeParams}`);
+    sessionStorage.setItem('wiz_preselected_sw_units', JSON.stringify([..._selection]));
+    const parentTypePfx = system ? 'system' : 'item';
+    const parentIdCtx   = system ? system.id : item.id;
+    navigate(`${reviewBase}/reviews/new?artifact_type=sw_units&phase=implementation&domain=sw&parentType=${parentTypePfx}&parentId=${parentIdCtx}&preselected=1${scopeParams}`);
   };
 
   document.getElementById('swu-bulk-status').onclick = () => {
@@ -612,7 +614,12 @@ export async function renderSwUnits(container, ctx) {
     });
 
     wrap.querySelectorAll('.swu-needs-review-badge').forEach(badge => {
-      badge.onclick = () => navigate(`${reviewBase}/reviews/new?artifact_type=sw_units&artifact_ids=${badge.dataset.id}${scopeParams}`);
+      badge.onclick = () => {
+        sessionStorage.setItem('wiz_preselected_sw_units', JSON.stringify([badge.dataset.id]));
+        const parentTypePfx = system ? 'system' : 'item';
+        const parentIdCtx   = system ? system.id : item.id;
+        navigate(`${reviewBase}/reviews/new?artifact_type=sw_units&phase=implementation&domain=sw&parentType=${parentTypePfx}&parentId=${parentIdCtx}&preselected=1${scopeParams}`);
+      };
     });
 
     // Drag-drop reorder
