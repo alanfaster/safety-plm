@@ -1409,9 +1409,11 @@ export async function renderReviewExecute(container, ctx) {
           const sel = window.getSelection();
           if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
 
-          const range     = sel.getRangeAt(0);
-          const codeEl    = body.querySelector('.rve-diff-code');
-          if (!codeEl || !codeEl.contains(range.commonAncestorContainer)) return;
+          const range  = sel.getRangeAt(0);
+          const codeEl = body.querySelector('.rve-diff-code');
+          // Use startContainer — the drag may end over an absolutely-positioned thread card,
+          // which takes commonAncestorContainer outside .rve-diff-code
+          if (!codeEl || !codeEl.contains(range.startContainer)) return;
 
           const { lineFrom, lineTo } = getSelectedLineRange(body, range);
           if (!lineFrom) return;
