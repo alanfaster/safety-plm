@@ -781,7 +781,6 @@ function rowHTML(it) {
       }
       case 'actions':
         return `<td data-col="actions" class="spec-row-actions">
-          <button class="btn btn-ghost btn-xs spec-add-below" data-id="${it.id}" title="Add row below">+</button>
           <button class="btn btn-ghost btn-xs btn-copy-link spec-link-btn" data-id="${it.id}" title="Copy link">🔗</button>
           <button class="btn btn-ghost btn-xs spec-history-btn" data-id="${it.id}" title="Version history">🕐</button>
           <button class="btn btn-ghost btn-xs spec-del-btn"   data-id="${it.id}" title="Delete row" style="color:var(--color-danger)">✕</button>
@@ -907,7 +906,6 @@ function wireRow(tr, it) {
   });
 
   // ── Row actions ───────────────────────────────────────────────────────────
-  tr.querySelector('.spec-add-below').addEventListener('click', e => { e.stopPropagation(); addRow(it.id); });
   tr.querySelector('.spec-link-btn')?.addEventListener('click', e => {
     e.stopPropagation();
     copyElementLink('spec-row-' + it.id);
