@@ -1244,13 +1244,30 @@ export async function renderReviewExecute(container, ctx) {
 
       const rows     = _diffMode === 'full' || prevCode == null ? buildRows(currentCode) : buildDiffRows(prevCode, currentCode);
       const fIdx     = buildFindingsIndex();
+
+      // Build annotated line set: lineNum → { isFirst, isLast, severities[] }
+      const annotated = {};
+      _findings.filter(f => f.snapshot_id === snap.id && f.line_number != null).forEach(f => {
+        const from = f.line_number, to = f.line_to || f.line_number;
+        for (let n = from; n <= to; n++) {
+          if (!annotated[n]) annotated[n] = { isFirst: false, isLast: false, severities: [] };
+          if (n === from) annotated[n].isFirst = true;
+          if (n === to)   annotated[n].isLast  = true;
+          annotated[n].severities.push(f.severity);
+        }
+      });
+
       let html = '<div class="rve-diff-code">';
 
       rows.forEach(({ lineNum, type, line }) => {
         const cls    = type === 'add' ? 'rve-diff-line--add' : type === 'del' ? 'rve-diff-line--del' : 'rve-diff-line--ctx';
         const prefix = type === 'add' ? '+' : type === 'del' ? '-' : ' ';
         const canSelect = type !== 'del';
-        html += `<div class="rve-diff-line ${cls}" ${canSelect ? `data-linenum="${lineNum}"` : ''}>`;
+
+        const ann = canSelect && annotated[lineNum];
+        const annClass = ann ? ` rve-diff-line--ann${ann.isFirst ? ' rve-diff-line--ann-first' : ''}${ann.isLast ? ' rve-diff-line--ann-last' : ''}` : '';
+
+        html += `<div class="rve-diff-line ${cls}${annClass}" ${canSelect ? `data-linenum="${lineNum}"` : ''}>`;
         if (_diffMode !== 'full' && prevCode != null) html += `<span class="rve-diff-prefix">${prefix}</span>`;
         html += `<span class="rve-diff-linenum rve-diff-linenum--num ${type === 'del' ? 'rve-diff-linenum--old' : ''}">${lineNum}</span>`;
         html += `<span class="rve-diff-linecontent">${escHtml(line)}</span>`;
