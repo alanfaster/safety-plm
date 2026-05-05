@@ -6875,12 +6875,12 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rve-diff-header         { display:flex; align-items:center; gap:8px; padding:8px 12px;
   border-bottom:1px solid var(--border); background:var(--bg-card); flex-shrink:0; }
 .rve-diff-filepath       { font-size:12px; font-weight:600; color:var(--text); }
-.rve-diff-body           { flex:1; overflow:auto; background:#fafafa; padding:4px 0; }
+.rve-diff-body           { flex:1; overflow:auto; background:#fafafa; }
 .rve-diff-findings-note  { font-size:11px; padding:4px 12px; border-top:1px solid var(--border); flex-shrink:0; }
-/* Two-column layout: code | comments */
-.rve-diff-layout         { display:flex; flex-direction:row; align-items:flex-start; padding:0 8px 8px; min-height:100%; }
-.rve-diff-code           { flex:1 1 auto; min-width:0; font-family:monospace; font-size:12px; }
-.rve-diff-comment-col    { width:260px; flex-shrink:0; position:relative; margin-left:10px; }
+/* Code + right-margin comments */
+.rve-diff-wrap           { position:relative; padding-right:276px; }
+.rve-diff-code           { font-family:monospace; font-size:12px; }
+.rve-diff-comment-col    { position:absolute; top:0; right:0; width:268px; }
 .rve-diff-thread-wrap    { position:absolute; left:0; right:0; }
 .rve-diff-thread-connector { position:absolute; left:10px; width:2px; background:rgba(245,158,11,.35); }
 .rve-diff-line           { display:flex; align-items:center; height:22px; }

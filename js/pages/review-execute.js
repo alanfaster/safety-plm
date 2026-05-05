@@ -1260,7 +1260,7 @@ export async function renderReviewExecute(container, ctx) {
         }
       });
 
-      // ── Left: code lines ────────────────────────────────────────────────────
+      // ── Code lines ─────────────────────────────────────────────────────────────
       let codeHtml = '';
       rows.forEach(({ lineNum, type, line }) => {
         const cls       = type === 'add' ? 'rve-diff-line--add' : type === 'del' ? 'rve-diff-line--del' : 'rve-diff-line--ctx';
@@ -1276,45 +1276,34 @@ export async function renderReviewExecute(container, ctx) {
         codeHtml += `</div>`;
       });
 
-      // ── Right: comment threads positioned next to their last line ────────────
-      // Build a row-index map so we know the pixel offset of each line
+      // ── Comment threads — absolutely positioned in right margin ─────────────
       const lineToRowIdx = {};
       rows.forEach(({ lineNum, type }, idx) => { if (type !== 'del') lineToRowIdx[lineNum] = idx; });
 
-      // Stack threads: if two threads would overlap, push the lower one down
       const sortedFindings = Object.values(fIdx).flat()
         .sort((a, b) => (a.line_to || a.line_number) - (b.line_to || b.line_number));
 
       let commentHtml = '';
-      let nextAvailableTop = 0; // tracks bottom edge of last placed thread (px)
-
+      let nextAvailableTop = 0;
       sortedFindings.forEach(f => {
         const anchorLine = f.line_to || f.line_number;
         const rowIdx     = lineToRowIdx[anchorLine] ?? (anchorLine - 1);
         const naturalTop = rowIdx * LINE_H;
         const top        = Math.max(naturalTop, nextAvailableTop);
-
-        // Estimate thread height: header + finding rows (approx 52px per finding)
-        const threadH = 26 + 52;
+        const threadH    = 26 + 56; // approx header + one finding row
         nextAvailableTop = top + threadH + 4;
-
-        // Connector line from anchor row to thread if pushed down
         const connectorH = top - naturalTop;
-
         commentHtml += `<div class="rve-diff-thread-wrap" style="top:${top}px">`;
-        if (connectorH > 0) {
+        if (connectorH > 0)
           commentHtml += `<div class="rve-diff-thread-connector" style="height:${connectorH}px;top:${-connectorH}px"></div>`;
-        }
         commentHtml += renderThread([f]);
         commentHtml += `</div>`;
       });
 
-      const totalH = Math.max(rows.length * LINE_H, nextAvailableTop);
-
       body.innerHTML = `
-        <div class="rve-diff-layout">
+        <div class="rve-diff-wrap">
           <div class="rve-diff-code">${codeHtml}</div>
-          <div class="rve-diff-comment-col" style="height:${totalH}px">${commentHtml}</div>
+          <div class="rve-diff-comment-col">${commentHtml}</div>
         </div>`;
 
       wireThreadActions(body);
@@ -1398,7 +1387,7 @@ export async function renderReviewExecute(container, ctx) {
 
       // Place form in the comment column, aligned with lineTo
       const commentCol = body.querySelector('.rve-diff-comment-col');
-      if (!commentCol) return;
+      if (!commentCol) { toast('Comment column not found', 'error'); return; }
 
       const form = document.createElement('div');
       form.className = 'rve-inline-form rve-diff-thread-wrap';
