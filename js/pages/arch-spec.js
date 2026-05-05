@@ -18,6 +18,8 @@ import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr } from '..
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 import { showVersionHistory } from '../components/version-history.js';
 import { copyElementLink } from '../deep-link.js';
+import { createTracePanel } from '../components/trace-panel.js';
+import { VMODEL_NODES } from '../components/vmodel-editor.js';
 
 const SPEC_STATUSES = ['draft', 'review', 'approved'];
 const SPEC_TYPES    = ['overview', 'component', 'interface', 'behavior', 'deployment', 'info'];
@@ -37,15 +39,19 @@ const SPEC_BUILTIN_COLS = [
 ];
 
 // Module-level state
-let _ctx       = null;   // { project, parentType, parentId }
-let _items     = [];     // ordered array of spec items (in-memory cache)
-let _umlOpenId = null;   // id of item whose UML editor is currently open
-let _cols      = [];     // active column config
-let _builtins  = SPEC_BUILTIN_COLS; // builtins + project custom cols
+let _ctx        = null;   // { project, parentType, parentId }
+let _items      = [];     // ordered array of spec items (in-memory cache)
+let _umlOpenId  = null;   // id of item whose UML editor is currently open
+let _cols       = [];     // active column config
+let _builtins   = SPEC_BUILTIN_COLS; // builtins + project custom cols
 let _collapsed  = new Set(); // collapsed section ids
 let _colFilters = {};        // { [colId]: string } — active column filter values
 let _systems    = [];        // systems for the current item (used by system_component column)
 let _selection  = new Set(); // selected item IDs
+let _activeItem = null;      // currently selected item in props panel
+let _activeTab  = 'props';   // 'props' | 'trace'
+let _tp         = null;      // trace panel instance
+let _saveTimer  = null;      // autosave debounce
 
 function syncBulkBar() {
   const bar   = document.getElementById('spec-bulk-bar');
@@ -103,6 +109,29 @@ export async function renderArchSpec(container, { project, item, system, parentT
       <div class="spec-content" id="spec-body">
         <div class="content-loading"><div class="spinner"></div></div>
       </div>
+      <aside class="req-trace-panel" id="spec-props-panel">
+        <div class="swu-rail-tabs">
+          <button class="swu-rail-btn swu-rail-btn--active" id="spec-rail-props">Properties</button>
+          <button class="swu-rail-btn" id="spec-rail-trace">Traceability</button>
+        </div>
+        <div class="req-trace-panel-hdr">
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-ghost btn-xs swu-panel-tab swu-panel-tab--active" data-tab="props">Properties</button>
+            <button class="btn btn-ghost btn-xs swu-panel-tab" data-tab="trace">⛓ Trace</button>
+          </div>
+          <button class="btn-icon" id="spec-props-close" title="Collapse">✕</button>
+        </div>
+        <div class="req-trace-panel-body" id="spec-props-body">
+          <p style="padding:8px 4px;font-size:13px;color:var(--color-text-muted)">
+            Click on a row to see its properties.
+          </p>
+        </div>
+        <div class="req-trace-panel-body" id="spec-trace-body" style="display:none">
+          <p style="padding:8px 4px;font-size:13px;color:var(--color-text-muted)">
+            Select an item to view its V-Model trace links.
+          </p>
+        </div>
+      </aside>
     </div>
     <div class="spec-fab" id="spec-fab">
       <button class="btn btn-primary"   id="btn-new-spec">＋ New Item</button>
@@ -172,6 +201,68 @@ export async function renderArchSpec(container, { project, item, system, parentT
     toast(`${n} item${n > 1 ? 's' : ''} deleted.`, 'success');
     renderTable(document.getElementById('spec-body'));
   };
+
+  // ── Properties / Traceability panel wiring ───────────────────────────────────
+  const { data: pcRowForTrace } = await sb.from('project_config')
+    .select('config').eq('project_id', _ctx.project.id).maybeSingle();
+  const vmodelLinks = pcRowForTrace?.config?.vmodel_links || [];
+  const archNodeId  = VMODEL_NODES.find(n => {
+    const dom = _ctx.domain === 'system' ? 'system' : _ctx.domain || 'system';
+    return n.phase === 'design' && (n.domain === dom || n.domain === 'system');
+  })?.id || VMODEL_NODES.find(n => n.phase === 'design')?.id;
+
+  _tp = createTracePanel({
+    sb, vmodelLinks, nodeId: archNodeId,
+    item, system, project,
+    table: 'arch_spec_items',
+    getCode:  u => u.spec_code,
+    getTitle: u => u.title,
+    getData:  () => _items.filter(it => it.type !== 'section'),
+    panelEl:     document.getElementById('spec-props-panel'),
+    panelBodyEl: document.getElementById('spec-trace-body'),
+    rowSelector: 'tr[data-id]',
+    rowActiveClass: 'req-row-trace-active',
+  });
+  _tp.deriveFields();
+  await _tp.loadSourceData();
+
+  function switchPanelTab(tab) {
+    _activeTab = tab;
+    document.getElementById('spec-props-body').style.display  = tab === 'props' ? '' : 'none';
+    document.getElementById('spec-trace-body').style.display  = tab === 'trace' ? '' : 'none';
+    document.querySelectorAll('#spec-props-panel .swu-panel-tab').forEach(b =>
+      b.classList.toggle('swu-panel-tab--active', b.dataset.tab === tab));
+    document.getElementById('spec-rail-props')?.classList.toggle('swu-rail-btn--active', tab === 'props');
+    document.getElementById('spec-rail-trace')?.classList.toggle('swu-rail-btn--active', tab === 'trace');
+  }
+
+  document.getElementById('spec-props-panel').addEventListener('click', e => {
+    const panel = document.getElementById('spec-props-panel');
+    if (!panel.classList.contains('open')) {
+      panel.classList.add('open');
+      if (_activeItem) switchPanelTab(_activeTab);
+    }
+  });
+
+  document.getElementById('spec-props-close').onclick = e => {
+    e.stopPropagation();
+    document.getElementById('spec-props-panel').classList.remove('open');
+  };
+
+  document.getElementById('spec-rail-props').onclick = e => {
+    e.stopPropagation();
+    switchPanelTab('props');
+    document.getElementById('spec-props-panel').classList.add('open');
+  };
+  document.getElementById('spec-rail-trace').onclick = e => {
+    e.stopPropagation();
+    switchPanelTab('trace');
+    document.getElementById('spec-props-panel').classList.add('open');
+  };
+
+  document.querySelectorAll('#spec-props-panel .swu-panel-tab').forEach(btn => {
+    btn.onclick = e => { e.stopPropagation(); switchPanelTab(btn.dataset.tab); };
+  });
 
   await loadSpec();
   applyGotoTarget();
@@ -690,10 +781,7 @@ function rowHTML(it) {
       }
       case 'actions':
         return `<td data-col="actions" class="spec-row-actions">
-          <button class="btn btn-ghost btn-xs spec-move-up"   data-id="${it.id}" title="Move up">↑</button>
-          <button class="btn btn-ghost btn-xs spec-move-dn"   data-id="${it.id}" title="Move down">↓</button>
           <button class="btn btn-ghost btn-xs spec-add-below" data-id="${it.id}" title="Add row below">+</button>
-          <button class="btn btn-ghost btn-xs spec-view-btn"  data-id="${it.id}" title="View detail">👁</button>
           <button class="btn btn-ghost btn-xs btn-copy-link spec-link-btn" data-id="${it.id}" title="Copy link">🔗</button>
           <button class="btn btn-ghost btn-xs spec-history-btn" data-id="${it.id}" title="Version history">🕐</button>
           <button class="btn btn-ghost btn-xs spec-del-btn"   data-id="${it.id}" title="Delete row" style="color:var(--color-danger)">✕</button>
@@ -810,22 +898,25 @@ function wireRow(tr, it) {
   // ── UML area ──────────────────────────────────────────────────────────────
   wireUmlArea(it);
 
-  // ── Row actions ───────────────────────────────────────────────────────────
-  tr.querySelector('.spec-move-up').addEventListener('click',   () => moveRow(it.id, -1));
-  tr.querySelector('.spec-move-dn').addEventListener('click',   () => moveRow(it.id,  1));
-  tr.querySelector('.spec-add-below').addEventListener('click', () => addRow(it.id));
-  tr.querySelector('.spec-view-btn')?.addEventListener('click', e => {
-    e.stopPropagation();
-    // No detail panel in arch-spec; scroll row into view as visual feedback
-    document.getElementById('spec-row-' + it.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // ── Row click → open properties panel ────────────────────────────────────
+  tr.addEventListener('click', e => {
+    if (e.target.closest('button,input,select,textarea,a,.spec-add-uml-btn')) return;
+    document.querySelectorAll('tr[data-id]').forEach(r => r.classList.remove('req-row-trace-active'));
+    tr.classList.add('req-row-trace-active');
+    openPropsPanel(it);
   });
+
+  // ── Row actions ───────────────────────────────────────────────────────────
+  tr.querySelector('.spec-add-below').addEventListener('click', e => { e.stopPropagation(); addRow(it.id); });
   tr.querySelector('.spec-link-btn')?.addEventListener('click', e => {
     e.stopPropagation();
     copyElementLink('spec-row-' + it.id);
   });
-  tr.querySelector('.spec-history-btn')?.addEventListener('click', () =>
-    showVersionHistory(sb, { artifactType: 'arch_spec_items', artifactId: it.id, artifactCode: it.spec_code || it.id, currentData: it }));
-  tr.querySelector('.spec-del-btn').addEventListener('click',   () => deleteRow(it));
+  tr.querySelector('.spec-history-btn')?.addEventListener('click', e => {
+    e.stopPropagation();
+    showVersionHistory(sb, { artifactType: 'arch_spec_items', artifactId: it.id, artifactCode: it.spec_code || it.id, currentData: it });
+  });
+  tr.querySelector('.spec-del-btn').addEventListener('click', e => { e.stopPropagation(); deleteRow(it); });
 }
 
 // ── Section row wiring ────────────────────────────────────────────────────────
@@ -876,6 +967,82 @@ function wireSectionRow(tr, it) {
   tr.querySelector('.spec-sec-move-up').addEventListener('click', () => moveSectionBlock(it.id, -1));
   tr.querySelector('.spec-sec-move-dn').addEventListener('click', () => moveSectionBlock(it.id,  1));
   tr.querySelector('.spec-sec-del').addEventListener('click', () => deleteRow(it));
+}
+
+// ── Properties panel ─────────────────────────────────────────────────────────
+
+function openPropsPanel(it) {
+  _activeItem = it;
+  const panel = document.getElementById('spec-props-panel');
+  const body  = document.getElementById('spec-props-body');
+  if (!panel || !body) return;
+
+  if (_activeTab === 'trace') {
+    _tp?.openPanel(it.id);
+    panel.classList.add('open');
+    return;
+  }
+
+  const statusBadge = cls => `<span class="badge badge-${cls}">${esc(it.status || 'draft')}</span>`;
+  const sBadge = { draft: statusBadge('draft'), review: statusBadge('review'), approved: statusBadge('approved') }[it.status] || statusBadge('draft');
+
+  body.innerHTML = `
+    <div class="swup-props-form" style="padding:10px 12px">
+      <div class="swup-field-row" style="margin-bottom:10px">
+        <span class="mono" style="font-size:12px;font-weight:700;color:var(--color-text-muted)">${esc(it.spec_code || '')}</span>
+        ${sBadge}
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label" style="font-size:11px">Title</label>
+        <input class="form-input" id="sprop-title" value="${esc(it.title || '')}" style="font-size:12px"/>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label" style="font-size:11px">Type</label>
+        <select class="form-input form-select" id="sprop-type" style="font-size:12px">
+          ${SPEC_TYPES.map(t => `<option value="${t}"${it.type===t?' selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label" style="font-size:11px">Status</label>
+        <select class="form-input form-select" id="sprop-status" style="font-size:12px">
+          ${SPEC_STATUSES.map(s => `<option value="${s}"${it.status===s?' selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label" style="font-size:11px">Description</label>
+        <textarea class="form-input" id="sprop-desc" rows="4" style="font-size:12px;resize:vertical">${esc(it.description || '')}</textarea>
+      </div>
+      <div class="swup-autosave-indicator" id="sprop-saving" style="font-size:10px;color:var(--color-text-muted);min-height:14px"></div>
+    </div>`;
+
+  panel.classList.add('open');
+
+  async function autosave() {
+    const patch = {
+      title:       body.querySelector('#sprop-title')?.value.trim()       || it.title,
+      type:        body.querySelector('#sprop-type')?.value                || it.type,
+      status:      body.querySelector('#sprop-status')?.value              || it.status,
+      description: body.querySelector('#sprop-desc')?.value               ?? it.description,
+      updated_at:  new Date().toISOString(),
+    };
+    const ind = document.getElementById('sprop-saving');
+    if (ind) ind.textContent = 'Saving…';
+    const { error } = await sb.from('arch_spec_items').update(patch).eq('id', it.id);
+    if (error) { toast('Save error: ' + error.message, 'error'); return; }
+    Object.assign(it, patch);
+    // Refresh the table row in-place
+    const tr = document.querySelector(`tr[data-id="${it.id}"]`);
+    if (tr) { tr.innerHTML = rowHTML(it, _cols); wireRow(tr, it); }
+    if (ind) { ind.textContent = 'Saved'; setTimeout(() => { if (ind) ind.textContent = ''; }, 1500); }
+  }
+
+  body.querySelectorAll('select').forEach(el => el.addEventListener('change', autosave));
+  body.querySelectorAll('input,textarea').forEach(el => {
+    el.addEventListener('input', () => {
+      clearTimeout(_saveTimer);
+      _saveTimer = setTimeout(autosave, 800);
+    });
+  });
 }
 
 function applyCollapsed() {
