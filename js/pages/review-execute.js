@@ -1286,12 +1286,12 @@ export async function renderReviewExecute(container, ctx) {
       rows.forEach(({ lineNum, type }, idx) => { if (type !== 'del') lineToRowIdx[lineNum] = idx; });
 
       const sortedFindings = Object.values(fIdx).flat()
-        .sort((a, b) => (a.line_to || a.line_number) - (b.line_to || b.line_number));
+        .sort((a, b) => a.line_number - b.line_number);
 
       let commentHtml = '';
       let nextAvailableTop = 0;
       sortedFindings.forEach(f => {
-        const anchorLine = f.line_to || f.line_number;
+        const anchorLine = f.line_number;
         const rowIdx     = lineToRowIdx[anchorLine] ?? (anchorLine - 1);
         const naturalTop = rowIdx * LINE_H;
         const top        = Math.max(naturalTop, nextAvailableTop);
