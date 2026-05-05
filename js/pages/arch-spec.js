@@ -266,7 +266,7 @@ export async function renderArchSpec(container, { project, item, system, parentT
 
   wirePanelResize(document.getElementById('spec-props-panel'), `spec_props_${_ctx.parentId}`);
   wirePanelResize(document.getElementById('spec-nav'), `spec_nav_${_ctx.parentId}`,
-    { side: 'right', minWidth: 32, maxWidth: 400, defaultWidth: 220, alwaysApply: true });
+    { side: 'right', minWidth: 100, maxWidth: 400, defaultWidth: 220, collapseClass: 'spec-nav--hidden' });
 
   await loadSpec();
   applyGotoTarget();

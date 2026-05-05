@@ -269,7 +269,7 @@ const LS_PANEL_W = 'alm_panel_w_';
  */
 export function wirePanelResize(panelEl, key, {
   side = 'left', minWidth = 160, maxWidth = 700, defaultWidth = 420,
-  openClass = 'open', alwaysApply = false,
+  openClass = 'open', collapseClass = null, alwaysApply = false,
 } = {}) {
   const stored = parseInt(localStorage.getItem(LS_PANEL_W + key));
   let currentW = (stored >= minWidth && stored <= maxWidth) ? stored : defaultWidth;
@@ -280,15 +280,31 @@ export function wirePanelResize(panelEl, key, {
     panelEl.style.minWidth = w + 'px';
   };
 
-  if (alwaysApply) {
+  const clearWidth = () => {
+    panelEl.style.width    = '';
+    panelEl.style.minWidth = '';
+  };
+
+  if (collapseClass) {
+    // Panel collapses by ADDING collapseClass (e.g. spec-nav--hidden)
+    const mo = new MutationObserver(() => {
+      if (panelEl.classList.contains(collapseClass)) clearWidth();
+      else applyWidth(currentW);
+    });
+    mo.observe(panelEl, { attributes: true, attributeFilter: ['class'] });
+    if (panelEl.classList.contains(collapseClass)) clearWidth();
+    else applyWidth(currentW);
+  } else if (alwaysApply) {
     applyWidth(currentW);
   } else {
-    // Re-apply saved width whenever panel opens
+    // Apply saved width on open, clear on close so CSS collapsed size takes over
     const mo = new MutationObserver(() => {
       if (panelEl.classList.contains(openClass)) applyWidth(currentW);
+      else clearWidth();
     });
     mo.observe(panelEl, { attributes: true, attributeFilter: ['class'] });
     if (panelEl.classList.contains(openClass)) applyWidth(currentW);
+    else clearWidth();
   }
 
   const handle = document.createElement('div');
