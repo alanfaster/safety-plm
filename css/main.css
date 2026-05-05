@@ -4789,7 +4789,10 @@ th.col-th-dragging * { pointer-events: none; }
   flex-direction: column;
   transition: width 0.2s ease, min-width 0.2s ease;
   flex-shrink: 0;
-  position: relative;
+  position: sticky;
+  top: 0;
+  height: calc(100vh - var(--topbar-height));
+  align-self: flex-start;
 }
 .req-trace-panel.open {
   width: 420px;
