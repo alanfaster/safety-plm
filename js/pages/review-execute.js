@@ -1161,7 +1161,7 @@ export async function renderReviewExecute(container, ctx) {
     }
   }
 
-  // SW unit diff viewer — Crucible-style inline comments on source lines
+  // SW unit diff viewer — GitHub PR-style line-range selection comments
   async function mountSwUnitDiffPanel(col, snap) {
     col.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
 
@@ -1177,7 +1177,6 @@ export async function renderReviewExecute(container, ctx) {
       prevCode = prevVer?.source_code || null;
     }
 
-    const language = snapData.language || '';
     const filePath = snapData.file_path || snapData.name || '';
 
     col.innerHTML = `
@@ -1190,7 +1189,7 @@ export async function renderReviewExecute(container, ctx) {
             <button class="btn btn-ghost btn-xs rve-diff-toggle-btn" data-mode="full">Full</button>
           </div>
         </div>
-        <div class="rve-diff-body" id="rve-diff-body"></div>
+        <div class="rve-diff-body" id="rve-diff-body" style="position:relative"></div>
       </div>`;
 
     let _diffMode = prevCode != null ? 'diff' : 'full';
@@ -1206,86 +1205,223 @@ export async function renderReviewExecute(container, ctx) {
         b.classList.toggle('active', b.dataset.mode === _diffMode));
     }
 
-    function getLineFindings() {
-      // findings for this snapshot keyed by line_number
-      const map = {};
-      _findings.filter(f => f.snapshot_id === snap.id && f.line_number != null).forEach(f => {
-        if (!map[f.line_number]) map[f.line_number] = [];
-        map[f.line_number].push(f);
-      });
-      return map;
-    }
+    // ── Build row data ──────────────────────────────────────────────────────────
 
-    function renderDiffContent() {
-      const body = document.getElementById('rve-diff-body');
-      if (!body) return;
-      const lineFindings = getLineFindings();
-
-      const rawRows = _diffMode === 'full' || prevCode == null
-        ? buildFullRows(currentCode)
-        : buildDiffRows(prevCode, currentCode);
-
-      // Inject inline finding threads after each line that has findings
-      const htmlParts = rawRows.map(({ lineNum, html }) => {
-        let out = html;
-        const flist = lineNum ? (lineFindings[lineNum] || []) : [];
-        if (flist.length) {
-          out += renderInlineThread(flist, lineNum);
-        }
-        return out;
-      });
-
-      body.innerHTML = `<div class="rve-diff-code">${htmlParts.join('')}</div>`;
-
-      // Line number click — open inline form
-      body.querySelectorAll('.rve-diff-linenum[data-line]').forEach(el => {
-        el.addEventListener('click', () => {
-          const lineNum = parseInt(el.dataset.line, 10);
-          toggleInlineForm(body, snap, lineNum, filePath);
-        });
-      });
-
-      // Wire existing thread actions (resolve/reopen)
-      wireThreadActions(body, snap);
-    }
-
-    function buildFullRows(code) {
+    function buildRows(code) {
       return code.split('\n').map((line, i) => ({
-        lineNum: i + 1,
-        html: `<div class="rve-diff-line rve-diff-line--ctx" data-linenum="${i + 1}">
-          <span class="rve-diff-linenum rve-diff-linenum--btn" data-line="${i + 1}" title="Add comment">+</span>
-          <span class="rve-diff-linenum rve-diff-linenum--num">${i + 1}</span>
-          <span class="rve-diff-linecontent">${escHtml(line)}</span>
-        </div>`,
+        lineNum: i + 1, type: 'ctx', line,
       }));
     }
 
     function buildDiffRows(oldCode, newCode) {
       const diff = computeLineDiff(oldCode.split('\n'), newCode.split('\n'));
-      let newLineNum = 0, oldLineNum = 0;
+      let newN = 0, oldN = 0;
       return diff.map(([type, line]) => {
-        if (type === 'eq') { oldLineNum++; newLineNum++; }
-        else if (type === 'del') { oldLineNum++; }
-        else if (type === 'add') { newLineNum++; }
-        const lineNum = type === 'del' ? oldLineNum : newLineNum;
-        const cls    = type === 'add' ? 'rve-diff-line--add' : type === 'del' ? 'rve-diff-line--del' : 'rve-diff-line--ctx';
-        const prefix = type === 'add' ? '+' : type === 'del' ? '-' : ' ';
-        const canComment = type !== 'del';
-        return {
-          lineNum: canComment ? lineNum : null,
-          html: `<div class="rve-diff-line ${cls}" ${canComment ? `data-linenum="${lineNum}"` : ''}>
-            <span class="rve-diff-prefix">${prefix}</span>
-            ${canComment
-              ? `<span class="rve-diff-linenum rve-diff-linenum--btn" data-line="${lineNum}" title="Add comment">+</span>
-                 <span class="rve-diff-linenum rve-diff-linenum--num">${lineNum}</span>`
-              : `<span class="rve-diff-linenum rve-diff-linenum--num rve-diff-linenum--old">${lineNum}</span>`}
-            <span class="rve-diff-linecontent">${escHtml(line)}</span>
-          </div>`,
-        };
+        if (type === 'eq') { oldN++; newN++; }
+        else if (type === 'del') oldN++;
+        else newN++;
+        return { lineNum: type === 'del' ? oldN : newN, type, line };
       });
     }
 
-    function renderInlineThread(findings, lineNum) {
+    // ── Findings index ──────────────────────────────────────────────────────────
+    // keyed by line_number (= line_from); each entry: { lineTo, findings[] }
+    function buildFindingsIndex() {
+      const idx = {};
+      _findings.filter(f => f.snapshot_id === snap.id && f.line_number != null).forEach(f => {
+        const key = f.line_number;
+        if (!idx[key]) idx[key] = [];
+        idx[key].push(f);
+      });
+      return idx;
+    }
+
+    // ── Render ──────────────────────────────────────────────────────────────────
+
+    function renderDiffContent() {
+      const body = document.getElementById('rve-diff-body');
+      if (!body) return;
+
+      const rows     = _diffMode === 'full' || prevCode == null ? buildRows(currentCode) : buildDiffRows(prevCode, currentCode);
+      const fIdx     = buildFindingsIndex();
+      let html = '<div class="rve-diff-code">';
+
+      rows.forEach(({ lineNum, type, line }) => {
+        const cls    = type === 'add' ? 'rve-diff-line--add' : type === 'del' ? 'rve-diff-line--del' : 'rve-diff-line--ctx';
+        const prefix = type === 'add' ? '+' : type === 'del' ? '-' : ' ';
+        const canSelect = type !== 'del';
+        html += `<div class="rve-diff-line ${cls}" ${canSelect ? `data-linenum="${lineNum}"` : ''}>`;
+        if (_diffMode !== 'full' && prevCode != null) html += `<span class="rve-diff-prefix">${prefix}</span>`;
+        html += `<span class="rve-diff-linenum rve-diff-linenum--num ${type === 'del' ? 'rve-diff-linenum--old' : ''}">${lineNum}</span>`;
+        html += `<span class="rve-diff-linecontent">${escHtml(line)}</span>`;
+        html += `</div>`;
+
+        // Inject threads after the last line of each finding's range
+        const findings = fIdx[lineNum] || [];
+        findings.forEach(f => {
+          const lineTo = f.line_to || f.line_number;
+          // Show thread after last line of range (approximate by placing at line_number)
+          if (!fIdx[lineTo] || lineTo === lineNum) {
+            html += renderThread([f]);
+          }
+        });
+        // Group findings whose line_to is this line
+        const endingHere = Object.values(fIdx).flat().filter(f => f.line_to === lineNum && f.line_number !== lineNum);
+        if (endingHere.length) html += renderThread(endingHere);
+      });
+
+      html += '</div>';
+      body.innerHTML = html;
+
+      wireSelectionButton(body, snap);
+      wireThreadActions(body);
+    }
+
+    // ── Selection → floating "+" button ────────────────────────────────────────
+
+    function wireSelectionButton(body, snap) {
+      let _selBtn = null;
+
+      body.addEventListener('mouseup', () => {
+        // Small delay so selection is finalized
+        setTimeout(() => {
+          _selBtn?.remove(); _selBtn = null;
+
+          const sel = window.getSelection();
+          if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+
+          const range     = sel.getRangeAt(0);
+          const codeEl    = body.querySelector('.rve-diff-code');
+          if (!codeEl || !codeEl.contains(range.commonAncestorContainer)) return;
+
+          const { lineFrom, lineTo } = getSelectedLineRange(body, range);
+          if (!lineFrom) return;
+
+          // Highlight selected lines
+          body.querySelectorAll('.rve-diff-line').forEach(el => {
+            const n = parseInt(el.dataset.linenum, 10);
+            el.classList.toggle('rve-diff-line--selected', n >= lineFrom && n <= lineTo);
+          });
+
+          // Floating "+" button after the last selected line
+          const lastLine = body.querySelector(`.rve-diff-line[data-linenum="${lineTo}"]`)
+                        || body.querySelector(`.rve-diff-line[data-linenum="${lineFrom}"]`);
+          if (!lastLine) return;
+
+          _selBtn = document.createElement('div');
+          _selBtn.className = 'rve-sel-add-btn';
+          _selBtn.title     = lineFrom === lineTo ? `Comment on line ${lineFrom}` : `Comment on lines ${lineFrom}–${lineTo}`;
+          _selBtn.textContent = '+ Add comment';
+          lastLine.appendChild(_selBtn);
+
+          _selBtn.addEventListener('mousedown', e => {
+            e.preventDefault(); // don't clear selection
+            const lf = lineFrom, lt = lineTo;
+            _selBtn.remove(); _selBtn = null;
+            sel.removeAllRanges();
+            body.querySelectorAll('.rve-diff-line--selected').forEach(el => el.classList.remove('rve-diff-line--selected'));
+            openInlineForm(body, snap, lf, lt, filePath);
+          });
+        }, 10);
+      });
+
+      // Clear highlight + button on click outside
+      body.addEventListener('mousedown', e => {
+        if (e.target.closest('.rve-sel-add-btn, .rve-inline-form')) return;
+        _selBtn?.remove(); _selBtn = null;
+        body.querySelectorAll('.rve-diff-line--selected').forEach(el => el.classList.remove('rve-diff-line--selected'));
+      });
+    }
+
+    function getSelectedLineRange(body, range) {
+      const getLineEl = node => {
+        let el = node.nodeType === 3 ? node.parentElement : node;
+        return el?.closest?.('.rve-diff-line[data-linenum]');
+      };
+      const startEl = getLineEl(range.startContainer);
+      const endEl   = getLineEl(range.endContainer);
+      const lineFrom = startEl ? parseInt(startEl.dataset.linenum, 10) : null;
+      const lineTo   = endEl   ? parseInt(endEl.dataset.linenum, 10)   : lineFrom;
+      if (!lineFrom) return {};
+      return { lineFrom: Math.min(lineFrom, lineTo), lineTo: Math.max(lineFrom, lineTo) };
+    }
+
+    // ── Inline form ─────────────────────────────────────────────────────────────
+
+    function openInlineForm(body, snap, lineFrom, lineTo, filePath) {
+      body.querySelector('.rve-inline-form')?.remove();
+
+      const rangeLabel = lineFrom === lineTo ? `line ${lineFrom}` : `lines ${lineFrom}–${lineTo}`;
+      const anchor = body.querySelector(`.rve-diff-line[data-linenum="${lineTo}"]`)
+                  || body.querySelector(`.rve-diff-line[data-linenum="${lineFrom}"]`);
+      if (!anchor) return;
+
+      const form = document.createElement('div');
+      form.className = 'rve-inline-form';
+      form.dataset.lineFrom = lineFrom;
+      form.dataset.lineTo   = lineTo;
+      form.innerHTML = `
+        <div class="rve-inline-form-inner">
+          <div class="rve-if-label">
+            ⚑ Comment on <strong>${rangeLabel}</strong>
+            <span class="mono text-muted" style="font-size:10px;margin-left:6px">${escHtml(filePath)}</span>
+          </div>
+          <input  class="form-input rve-if-title" placeholder="Title *"/>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <select class="form-input form-select rve-if-severity" style="flex:0 0 130px">
+              ${Object.entries(SEVERITY_LABELS).map(([v,l]) => `<option value="${v}"${v==='major'?' selected':''}>${l}</option>`).join('')}
+            </select>
+            <textarea class="form-input rve-if-desc" rows="2" placeholder="Description (optional)" style="flex:1;resize:vertical"></textarea>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-primary btn-sm rve-if-save">⚑ Add Finding</button>
+            <button class="btn btn-ghost btn-sm rve-if-cancel">Cancel</button>
+          </div>
+        </div>`;
+
+      const thread = body.querySelector(`.rve-inline-thread[data-linefrom="${lineFrom}"]`);
+      (thread || anchor).after(form);
+      form.querySelector('.rve-if-title').focus();
+
+      form.querySelector('.rve-if-cancel').onclick = () => {
+        form.remove();
+        body.querySelectorAll('.rve-diff-line--selected').forEach(el => el.classList.remove('rve-diff-line--selected'));
+      };
+
+      form.querySelector('.rve-if-save').onclick = async () => {
+        const title = form.querySelector('.rve-if-title').value.trim();
+        if (!title) { form.querySelector('.rve-if-title').focus(); return; }
+        const saveBtn = form.querySelector('.rve-if-save');
+        saveBtn.disabled = true;
+        const finding_code = `FND-${String(_findings.length + 1).padStart(3,'0')}`;
+        const { data: finding, error } = await sb.from('review_findings').insert({
+          session_id:  sessionId, snapshot_id: snap.id,
+          finding_code, title,
+          severity:    form.querySelector('.rve-if-severity').value,
+          description: form.querySelector('.rve-if-desc').value.trim(),
+          line_number: lineFrom,
+          line_to:     lineTo !== lineFrom ? lineTo : null,
+          status: 'open', created_by: currentUserId,
+        }).select().single();
+        saveBtn.disabled = false;
+        if (error) { toast('Error: ' + error.message, 'error'); return; }
+        _findings.push(finding);
+        const label = lineFrom === lineTo ? `line ${lineFrom}` : `lines ${lineFrom}–${lineTo}`;
+        toast(`${finding_code} added on ${label}.`, 'success');
+        form.remove();
+        body.querySelectorAll('.rve-diff-line--selected').forEach(el => el.classList.remove('rve-diff-line--selected'));
+        afterFindingMutation();
+        renderDiffContent();
+      };
+    }
+
+    // ── Inline thread rendering ─────────────────────────────────────────────────
+
+    function renderThread(findings) {
+      const lineFrom = findings[0].line_number;
+      const lineTo   = findings[0].line_to || lineFrom;
+      const rangeLabel = lineFrom === lineTo ? `Line ${lineFrom}` : `Lines ${lineFrom}–${lineTo}`;
+
       const items = findings.map(f => `
         <div class="rve-inline-finding" data-fid="${f.id}" data-status="${f.status}">
           <div class="rve-inline-finding-hdr">
@@ -1299,78 +1435,20 @@ export async function renderReviewExecute(container, ctx) {
           ${f.description ? `<div class="rve-inline-finding-desc">${escHtml(f.description)}</div>` : ''}
         </div>`).join('');
 
-      return `<div class="rve-inline-thread" data-linenum="${lineNum}">${items}</div>`;
+      return `<div class="rve-inline-thread" data-linefrom="${lineFrom}" data-lineto="${lineTo}">
+        <div class="rve-inline-thread-range">${rangeLabel}</div>
+        ${items}
+      </div>`;
     }
 
-    function toggleInlineForm(body, snap, lineNum, filePath) {
-      // Remove any existing open form
-      const existing = body.querySelector('.rve-inline-form');
-      const existingLine = existing ? parseInt(existing.dataset.linenum, 10) : null;
-      if (existing) existing.remove();
-      if (existingLine === lineNum) return; // toggle off
+    // ── Thread actions ──────────────────────────────────────────────────────────
 
-      const anchor = body.querySelector(`.rve-diff-line[data-linenum="${lineNum}"]`);
-      if (!anchor) return;
-
-      const form = document.createElement('div');
-      form.className = 'rve-inline-form';
-      form.dataset.linenum = lineNum;
-      form.innerHTML = `
-        <div class="rve-inline-form-inner">
-          <div style="font-size:11px;color:var(--color-text-muted);margin-bottom:6px">
-            Comment on line ${lineNum} · <span class="mono">${escHtml(filePath)}</span>
-          </div>
-          <input class="form-input rve-if-title" placeholder="Title *" style="margin-bottom:6px"/>
-          <div style="display:flex;gap:6px;margin-bottom:6px">
-            <select class="form-input form-select rve-if-severity" style="flex:0 0 140px">
-              ${Object.entries(SEVERITY_LABELS).map(([v, l]) => `<option value="${v}"${v==='major'?' selected':''}>${l}</option>`).join('')}
-            </select>
-            <textarea class="form-input rve-if-desc" rows="2" placeholder="Description (optional)" style="flex:1;resize:vertical"></textarea>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-primary btn-sm rve-if-save">⚑ Add Finding</button>
-            <button class="btn btn-ghost btn-sm rve-if-cancel">Cancel</button>
-          </div>
-        </div>`;
-
-      // Insert after the line (or after its thread if one exists)
-      const thread = body.querySelector(`.rve-inline-thread[data-linenum="${lineNum}"]`);
-      const insertAfter = thread || anchor;
-      insertAfter.after(form);
-      form.querySelector('.rve-if-title').focus();
-
-      form.querySelector('.rve-if-cancel').onclick = () => form.remove();
-      form.querySelector('.rve-if-save').onclick   = async () => {
-        const title = form.querySelector('.rve-if-title').value.trim();
-        if (!title) { form.querySelector('.rve-if-title').focus(); return; }
-        const saveBtn = form.querySelector('.rve-if-save');
-        saveBtn.disabled = true;
-        const finding_code = `FND-${String(_findings.length + 1).padStart(3,'0')}`;
-        const { data: finding, error } = await sb.from('review_findings').insert({
-          session_id: sessionId, snapshot_id: snap.id,
-          finding_code, title,
-          severity:    form.querySelector('.rve-if-severity').value,
-          description: form.querySelector('.rve-if-desc').value.trim(),
-          line_number: lineNum,
-          status: 'open', created_by: currentUserId,
-        }).select().single();
-        saveBtn.disabled = false;
-        if (error) { toast('Error: ' + error.message, 'error'); return; }
-        _findings.push(finding);
-        toast(`${finding_code} added on line ${lineNum}.`, 'success');
-        form.remove();
-        afterFindingMutation();
-        renderDiffContent(); // re-render to show new inline thread
-      };
-    }
-
-    function wireThreadActions(body, snap) {
+    function wireThreadActions(body) {
       body.querySelectorAll('.rve-inline-resolve').forEach(btn => {
         btn.onclick = async () => {
-          const fid = btn.dataset.fid;
-          const { error } = await sb.from('review_findings').update({ status: 'closed' }).eq('id', fid);
+          const { error } = await sb.from('review_findings').update({ status: 'closed' }).eq('id', btn.dataset.fid);
           if (error) { toast('Error: ' + error.message, 'error'); return; }
-          const f = _findings.find(x => x.id === fid);
+          const f = _findings.find(x => x.id === btn.dataset.fid);
           if (f) f.status = 'closed';
           toast('Finding resolved.', 'success');
           afterFindingMutation();
@@ -1384,38 +1462,20 @@ export async function renderReviewExecute(container, ctx) {
     const lines = code.split('\n');
     const rows = lines.map((line, i) => `
       <div class="rve-diff-line rve-diff-line--ctx">
-        <span class="rve-diff-linenum" data-line="${i + 1}" title="Click to raise finding">${i + 1}</span>
+        <span class="rve-diff-linenum" data-line="${i + 1}">${i + 1}</span>
         <span class="rve-diff-linecontent">${escHtml(line)}</span>
       </div>`).join('');
     return `<div class="rve-diff-code">${rows}</div>`;
   }
 
   function renderLineDiff(oldCode, newCode) {
-    const oldLines = oldCode.split('\n');
-    const newLines = newCode.split('\n');
-
-    // Simple LCS-based line diff
-    const diff = computeLineDiff(oldLines, newLines);
-    let newLineNum = 0;
-    let oldLineNum = 0;
-    const rows = diff.map(([type, line]) => {
-      if (type === 'eq') { oldLineNum++; newLineNum++; }
-      else if (type === 'del') { oldLineNum++; }
-      else if (type === 'add') { newLineNum++; }
-      const lineNum = type === 'del' ? oldLineNum : newLineNum;
-      const cls = type === 'add' ? 'rve-diff-line--add'
-                : type === 'del' ? 'rve-diff-line--del'
-                : 'rve-diff-line--ctx';
-      const prefix = type === 'add' ? '+' : type === 'del' ? '-' : ' ';
-      return `
-        <div class="rve-diff-line ${cls}">
-          <span class="rve-diff-prefix">${prefix}</span>
-          <span class="rve-diff-linenum ${type !== 'del' ? '' : 'rve-diff-linenum--old'}"
-            data-line="${lineNum}" title="${type !== 'del' ? 'Click to raise finding' : ''}">${lineNum}</span>
-          <span class="rve-diff-linecontent">${escHtml(line)}</span>
-        </div>`;
-    }).join('');
-    return `<div class="rve-diff-code">${rows}</div>`;
+    return `<div class="rve-diff-code">${computeLineDiff(oldCode.split('\n'), newCode.split('\n')).map(([type, line], _, arr) => {
+      const cls = type === 'add' ? 'rve-diff-line--add' : type === 'del' ? 'rve-diff-line--del' : 'rve-diff-line--ctx';
+      return `<div class="rve-diff-line ${cls}">
+        <span class="rve-diff-prefix">${type==='add'?'+':type==='del'?'-':' '}</span>
+        <span class="rve-diff-linecontent">${escHtml(line)}</span>
+      </div>`;
+    }).join('')}</div>`;
   }
 
   function computeLineDiff(oldLines, newLines) {
