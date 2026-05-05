@@ -6871,15 +6871,15 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .wiz-mode-sub            { font-size:11px; color:var(--text-muted); }
 
 /* ── SW Unit diff viewer ─────────────────────────────────────────────── */
-.rve-diff-panel          { display:flex; flex-direction:column; }
+.rve-diff-panel          { display:flex; flex-direction:column; height:100%; }
 .rve-diff-header         { display:flex; align-items:center; gap:8px; padding:8px 12px;
   border-bottom:1px solid var(--border); background:var(--bg-card); flex-shrink:0; }
 .rve-diff-filepath       { font-size:12px; font-weight:600; color:var(--text); }
-.rve-diff-body           { overflow:auto; background:#fafafa; padding:4px 0; }
-.rve-diff-findings-note  { font-size:11px; padding:4px 12px; border-top:1px solid var(--border); }
+.rve-diff-body           { flex:1; overflow:auto; background:#fafafa; padding:4px 0; }
+.rve-diff-findings-note  { font-size:11px; padding:4px 12px; border-top:1px solid var(--border); flex-shrink:0; }
 /* Two-column layout: code | comments */
-.rve-diff-layout         { display:flex; flex-direction:row; align-items:flex-start; padding:0 8px 8px; }
-.rve-diff-code           { flex:1; min-width:0; font-family:monospace; font-size:12px; }
+.rve-diff-layout         { display:flex; flex-direction:row; align-items:flex-start; padding:0 8px 8px; min-height:100%; }
+.rve-diff-code           { flex:1 1 auto; min-width:0; font-family:monospace; font-size:12px; }
 .rve-diff-comment-col    { width:260px; flex-shrink:0; position:relative; margin-left:10px; }
 .rve-diff-thread-wrap    { position:absolute; left:0; right:0; }
 .rve-diff-thread-connector { position:absolute; left:10px; width:2px; background:rgba(245,158,11,.35); }
