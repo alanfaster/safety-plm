@@ -1403,30 +1403,24 @@ export async function renderReviewExecute(container, ctx) {
       let _dragFrom = null;
       let _dragCur  = null;
 
-      function getLineEl(el) {
-        // Walk up from any element to find the nearest diff line with a line number
+      function getLineNum(el) {
         let cur = el;
         while (cur && cur !== body) {
-          if (cur.dataset && cur.dataset.linenum) return cur;
+          if (cur.dataset?.linenum) return parseInt(cur.dataset.linenum, 10);
           cur = cur.parentElement;
         }
         return null;
       }
-      function getLineNum(el) {
-        const line = getLineEl(el);
-        return line ? parseInt(line.dataset.linenum, 10) : null;
-      }
 
       function applyHighlight(from, to) {
-        if (!from) return;
-        const lo = Math.min(from, to || from), hi = Math.max(from, to || from);
+        const lo = Math.min(from, to), hi = Math.max(from, to);
         body.querySelectorAll('.rve-diff-line[data-linenum]').forEach(el => {
           const n = parseInt(el.dataset.linenum, 10);
           el.classList.toggle('rve-diff-line--selected', n >= lo && n <= hi);
         });
       }
 
-      function clearSelection() {
+      function clearAll() {
         _dragFrom = null; _dragCur = null;
         _selBtn?.remove(); _selBtn = null;
         body.querySelectorAll('.rve-diff-line--selected')
@@ -1443,32 +1437,29 @@ export async function renderReviewExecute(container, ctx) {
         _selBtn.textContent = '+ Add comment';
         _selBtn.title = lineFrom === lineTo ? `Comment on line ${lineFrom}` : `Comment on lines ${lineFrom}–${lineTo}`;
         lastLine.appendChild(_selBtn);
-        _selBtn.addEventListener('pointerdown', e => {
+        _selBtn.addEventListener('mousedown', e => {
           e.stopPropagation();
           const lf = lineFrom, lt = lineTo;
-          clearSelection();
+          clearAll();
           openInlineForm(body, snap, lf, lt, filePath);
         });
       }
 
-      // Pointer capture: once drag starts, all pointer events go to body
-      body.addEventListener('pointerdown', e => {
-        // Ignore clicks on thread cards, forms, or the add-btn itself
+      // mousedown on a code line starts the drag
+      body.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
         if (e.target.closest('.rve-inline-thread, .rve-inline-form, .rve-sel-add-btn')) return;
         const n = getLineNum(e.target);
-        if (!n) { clearSelection(); return; }
-        clearSelection();
+        if (!n) { clearAll(); return; }
+        clearAll();
         _dragFrom = n; _dragCur = n;
         applyHighlight(n, n);
-        body.setPointerCapture(e.pointerId);
-        e.preventDefault(); // prevent text selection
       });
 
-      body.addEventListener('pointermove', e => {
-        if (_dragFrom == null) return;
-        // elementFromPoint gives us the real element under the pointer even during capture
-        const el = document.elementFromPoint(e.clientX, e.clientY);
-        const n  = el ? getLineNum(el) : null;
+      // mouseover fires for every element the pointer enters — bubbles up to body
+      body.addEventListener('mouseover', e => {
+        if (_dragFrom == null || e.buttons !== 1) return;
+        const n = getLineNum(e.target);
         if (n && n !== _dragCur) {
           _dragCur = n;
           applyHighlight(_dragFrom, _dragCur);
@@ -1476,22 +1467,21 @@ export async function renderReviewExecute(container, ctx) {
         }
       });
 
-      body.addEventListener('pointerup', e => {
-        if (_dragFrom == null) return;
-        body.releasePointerCapture(e.pointerId);
-        const lineFrom = Math.min(_dragFrom, _dragCur ?? _dragFrom);
-        const lineTo   = Math.max(_dragFrom, _dragCur ?? _dragFrom);
+      // mouseup on document to catch releases anywhere
+      const onUp = e => {
+        if (e.button !== 0 || _dragFrom == null) return;
+        const lineFrom = Math.min(_dragFrom, _dragCur);
+        const lineTo   = Math.max(_dragFrom, _dragCur);
         applyHighlight(lineFrom, lineTo);
         _dragFrom = null; _dragCur = null;
         showAddBtn(lineFrom, lineTo);
-      });
+      };
+      document.addEventListener('mouseup', onUp);
 
-      body.addEventListener('pointercancel', () => clearSelection());
-
-      // Click outside the diff body (not captured) clears state
-      document.addEventListener('pointerdown', e => {
-        if (_dragFrom != null) return; // mid-drag, ignore
-        if (!e.target.closest('#rve-diff-body')) clearSelection();
+      // click outside clears
+      document.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        if (!e.target.closest('#rve-diff-body')) clearAll();
       });
     }
 
