@@ -359,12 +359,15 @@ const MIN_COL_W = 8; // minimum column width in px — just enough to show it ex
 
 export function wireColResize(theadRow, key) {
   const tableEl = theadRow.closest('table');
-  const widths   = loadColWidths(key);
+  const widths  = loadColWidths(key);
+  const hasStored = Object.keys(widths).length > 0;
+  const colSetters = {}; // colId → setW fn, for snapshot on first resize
 
-  // Switch to fixed layout so column widths are respected regardless of content
   if (tableEl) {
-    tableEl.style.tableLayout = 'fixed';
-    tableEl.style.width       = '100%';
+    tableEl.style.width = '100%';
+    // First load: auto-fit fills available width naturally.
+    // After first resize: fixed so columns can shrink below content min.
+    tableEl.style.tableLayout = hasStored ? 'fixed' : 'auto';
   }
 
   theadRow.querySelectorAll('th[data-col]').forEach(th => {
@@ -375,14 +378,13 @@ export function wireColResize(theadRow, key) {
       th.style.width    = w + 'px';
       th.style.minWidth = '0';
       th.style.maxWidth = w + 'px';
-      // Sync all body cells so they match
       tableEl?.querySelectorAll(`td[data-col="${colId}"]`).forEach(td => {
         td.style.width    = w + 'px';
         td.style.maxWidth = w + 'px';
       });
     };
 
-    // Only apply stored width — columns without stored width auto-fill remaining space
+    colSetters[colId] = setW;
     if (widths[colId]) setW(widths[colId]);
 
     const handle = document.createElement('div');
@@ -392,6 +394,19 @@ export function wireColResize(theadRow, key) {
     handle.addEventListener('mousedown', e => {
       e.preventDefault();
       e.stopPropagation();
+
+      // First resize ever: snapshot all rendered widths then switch to fixed
+      if (tableEl && tableEl.style.tableLayout !== 'fixed') {
+        tableEl.style.tableLayout = 'fixed';
+        theadRow.querySelectorAll('th[data-col]').forEach(t => {
+          const id = t.dataset.col;
+          if (id === 'drag' || id === 'select' || id === 'actions') return;
+          const w = t.offsetWidth;
+          widths[id] = w;
+          colSetters[id]?.(w);
+        });
+      }
+
       const startX = e.clientX;
       const startW = th.offsetWidth;
       document.body.style.userSelect = 'none';
