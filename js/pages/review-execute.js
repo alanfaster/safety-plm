@@ -1407,11 +1407,12 @@ export async function renderReviewExecute(container, ctx) {
       form.innerHTML = `
         <div class="rve-inline-form-inner">
           <div class="rve-if-label">⚑ <strong>${rangeLabel}</strong></div>
-          <input class="form-input rve-if-title" placeholder="Title *" style="margin-bottom:6px"/>
-          <select class="form-input form-select rve-if-severity" style="margin-bottom:6px">
-            ${Object.entries(SEVERITY_LABELS).map(([v,l]) => `<option value="${v}"${v==='major'?' selected':''}>${l}</option>`).join('')}
-          </select>
-          <textarea class="form-input rve-if-desc" rows="2" placeholder="Description (optional)" style="resize:vertical;margin-bottom:6px"></textarea>
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <select class="form-input form-select rve-if-severity" style="flex:0 0 110px">
+              ${Object.entries(SEVERITY_LABELS).map(([v,l]) => `<option value="${v}"${v==='major'?' selected':''}>${l}</option>`).join('')}
+            </select>
+            <textarea class="form-input rve-if-desc" rows="2" placeholder="Description *" style="flex:1;resize:vertical"></textarea>
+          </div>
           <div style="display:flex;gap:6px">
             <button class="btn btn-primary btn-sm rve-if-save">⚑ Add</button>
             <button class="btn btn-ghost btn-sm rve-if-cancel">Cancel</button>
@@ -1419,7 +1420,7 @@ export async function renderReviewExecute(container, ctx) {
         </div>`;
 
       commentCol.appendChild(form);
-      form.querySelector('.rve-if-title').focus();
+      form.querySelector('.rve-if-desc').focus();
 
       form.querySelector('.rve-if-cancel').onclick = () => {
         form.remove();
@@ -1427,16 +1428,17 @@ export async function renderReviewExecute(container, ctx) {
       };
 
       form.querySelector('.rve-if-save').onclick = async () => {
-        const title = form.querySelector('.rve-if-title').value.trim();
-        if (!title) { form.querySelector('.rve-if-title').focus(); return; }
+        const desc = form.querySelector('.rve-if-desc').value.trim();
+        if (!desc) { form.querySelector('.rve-if-desc').focus(); return; }
         const saveBtn = form.querySelector('.rve-if-save');
         saveBtn.disabled = true;
         const finding_code = `FND-${String(_findings.length + 1).padStart(3,'0')}`;
+        const title = desc.slice(0, 80); // auto-title from description
         const { data: finding, error } = await sb.from('review_findings').insert({
           session_id:  sessionId, snapshot_id: snap.id,
           finding_code, title,
           severity:    form.querySelector('.rve-if-severity').value,
-          description: form.querySelector('.rve-if-desc').value.trim(),
+          description: desc,
           line_number: lineFrom,
           line_to:     lineTo !== lineFrom ? lineTo : null,
           status: 'open', created_by: currentUserId,
@@ -1468,7 +1470,6 @@ export async function renderReviewExecute(container, ctx) {
           <div class="rve-inline-finding-hdr">
             <span class="rve-inline-finding-code mono">${escHtml(f.finding_code)}</span>
             <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}" style="font-size:10px">${SEVERITY_LABELS[f.severity] || f.severity}</span>
-            <span class="rve-inline-finding-title">${escHtml(f.title)}</span>
             <span class="rve-inline-finding-actions">
               ${isOpen
                 ? `<button class="btn btn-ghost btn-xs rve-if-action" data-action="resolve" data-fid="${f.id}" title="Mark resolved">✓ Resolve</button>`
@@ -1478,7 +1479,7 @@ export async function renderReviewExecute(container, ctx) {
             </span>
           </div>
           <div class="rve-inline-finding-body" id="rve-fbody-${f.id}">
-            ${f.description ? `<div class="rve-inline-finding-desc">${escHtml(f.description)}</div>` : ''}
+            <div class="rve-inline-finding-desc">${escHtml(f.description || f.title || '')}</div>
           </div>
         </div>`;
       }).join('');
@@ -1514,12 +1515,11 @@ export async function renderReviewExecute(container, ctx) {
             if (bodyEl.querySelector('.rve-if-edit-form')) { renderDiffContent(); return; }
             bodyEl.innerHTML = `
               <div class="rve-if-edit-form">
-                <input  class="form-input rve-ife-title"    value="${escHtml(f.title)}" style="margin-bottom:6px"/>
                 <div style="display:flex;gap:6px;margin-bottom:6px">
-                  <select class="form-input form-select rve-ife-severity" style="flex:0 0 130px">
+                  <select class="form-input form-select rve-ife-severity" style="flex:0 0 110px">
                     ${Object.entries(SEVERITY_LABELS).map(([v,l]) => `<option value="${v}"${f.severity===v?' selected':''}>${l}</option>`).join('')}
                   </select>
-                  <textarea class="form-input rve-ife-desc" rows="2" style="flex:1;resize:vertical">${escHtml(f.description||'')}</textarea>
+                  <textarea class="form-input rve-ife-desc" rows="2" style="flex:1;resize:vertical">${escHtml(f.description||f.title||'')}</textarea>
                 </div>
                 <div style="display:flex;gap:8px">
                   <button class="btn btn-primary btn-sm rve-ife-save">Save</button>
@@ -1528,17 +1528,17 @@ export async function renderReviewExecute(container, ctx) {
               </div>`;
             bodyEl.querySelector('.rve-ife-cancel').onclick = () => renderDiffContent();
             bodyEl.querySelector('.rve-ife-save').onclick   = async () => {
-              const title = bodyEl.querySelector('.rve-ife-title').value.trim();
-              if (!title) return;
+              const desc = bodyEl.querySelector('.rve-ife-desc').value.trim();
+              if (!desc) return;
               const { error } = await sb.from('review_findings').update({
-                title,
+                title:       desc.slice(0, 80),
                 severity:    bodyEl.querySelector('.rve-ife-severity').value,
-                description: bodyEl.querySelector('.rve-ife-desc').value.trim(),
+                description: desc,
               }).eq('id', fid);
               if (error) { toast('Error: ' + error.message, 'error'); return; }
-              f.title       = title;
+              f.title       = desc.slice(0, 80);
               f.severity    = bodyEl.querySelector('.rve-ife-severity').value;
-              f.description = bodyEl.querySelector('.rve-ife-desc').value.trim();
+              f.description = desc;
               toast('Finding updated.', 'success');
               afterFindingMutation();
               renderDiffContent();
