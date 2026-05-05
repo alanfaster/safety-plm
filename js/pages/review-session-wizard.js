@@ -125,6 +125,7 @@ export async function renderReviewSessionWizard(container, ctx) {
       <div class="wiz-wrap">
         <div class="wiz-steps" id="wiz-steps">
           <div class="wiz-step active" data-step="1"><span class="wiz-step-num">1</span><span class="wiz-step-label">Setup</span></div>
+          ${!(_initQuery.get('preselected') && _initArtifactType) ? `
           ${!_initQuery.get('preselected') ? `
           <div class="wiz-step-sep">›</div>
           <div class="wiz-step" data-step="2"><span class="wiz-step-num">2</span><span class="wiz-step-label">Artifacts</span></div>` : ''}
@@ -132,7 +133,7 @@ export async function renderReviewSessionWizard(container, ctx) {
           <div class="wiz-step" data-step="3"><span class="wiz-step-num">3</span><span class="wiz-step-label">Reviewers</span></div>
           ${!(_initPhase && _initQuery.get('parentId')) ? `
           <div class="wiz-step-sep">›</div>
-          <div class="wiz-step" data-step="4"><span class="wiz-step-num">4</span><span class="wiz-step-label">Confirm</span></div>` : ''}
+          <div class="wiz-step" data-step="4"><span class="wiz-step-num">4</span><span class="wiz-step-label">Confirm</span></div>` : ''}` : ''}
         </div>
         <div class="wiz-body" id="wiz-body"></div>
         <div class="wiz-footer">
@@ -216,8 +217,9 @@ export async function renderReviewSessionWizard(container, ctx) {
       s.classList.toggle('done',   parseInt(s.dataset.step) < state.step);
     });
     document.getElementById('wiz-btn-back').style.display = state.step > 1 ? '' : 'none';
-    const isCtxMode  = !!(_initPhase && _initQuery.get('parentId'));
-    const isLastStep = state.step === 4 || (isCtxMode && state.step === 3);
+    const isCtxMode      = !!(_initPhase && _initQuery.get('parentId'));
+    const isFullPreselect = !!(_initQuery.get('preselected') && _initArtifactType);
+    const isLastStep     = state.step === 4 || (isCtxMode && state.step === 3) || (isFullPreselect && state.step === 1);
     document.getElementById('wiz-btn-next').textContent = isLastStep ? '▶ Start Review' : 'Next ▶';
 
     if (state.step === 1) renderStep1(body);
@@ -1393,7 +1395,14 @@ export async function renderReviewSessionWizard(container, ctx) {
           return;
         }
       }
-      // Skip artifact step when items were pre-selected from the page
+      // If artifacts pre-selected AND artifact type known → create session directly (skip steps 2 & 3)
+      if (_initQuery.get('preselected') && _initArtifactType) {
+        const totalSelected = Object.values(state.selected).reduce((sum, s) => sum + s.size, 0);
+        if (!totalSelected) { toast('No artifacts were pre-selected.', 'error'); return; }
+        await createSession();
+        return;
+      }
+      // Requirements-style: pre-selected but no explicit artifact type → skip artifacts, show reviewers
       state.step = _initQuery.get('preselected') ? 3 : 2;
     } else if (state.step === 2) {
       state.step = 3;
