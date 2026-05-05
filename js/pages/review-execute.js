@@ -1213,13 +1213,17 @@ export async function renderReviewExecute(container, ctx) {
 
     let _diffMode = prevCode != null ? 'diff' : 'full';
     updateActiveModeBtn();
-    refreshDiff();
-
     function refreshDiff() { renderDiffContent(); updateNavBar(); }
+
+    refreshDiff();
 
     // Wire selection listener once — survives re-renders since body element persists
     const _diffBody = col.querySelector('#rve-diff-body');
     if (_diffBody) wireSelectionButton(_diffBody, snap);
+
+    // Expose so mountChecklist can refresh without remounting
+    col._swDiffSnap    = snap.id;
+    col._swDiffRefresh = refreshDiff;
 
     col.querySelectorAll('.rve-diff-toggle-btn').forEach(btn => {
       btn.onclick = () => { _diffMode = btn.dataset.mode; updateActiveModeBtn(); renderDiffContent(); updateNavBar(); };
@@ -1394,23 +1398,26 @@ export async function renderReviewExecute(container, ctx) {
         </div>`;
 
       wireThreadActions(body);
+
+      // Wire mouseenter directly on each line (not delegation) — most reliable during drag
+      if (body._sel) {
+        const { S, applyHighlight } = body._sel;
+        body.querySelectorAll('.rve-diff-line[data-linenum]').forEach(lineEl => {
+          lineEl.addEventListener('mouseenter', e => {
+            if (S.from == null || e.buttons !== 1) return;
+            const n = parseInt(lineEl.dataset.linenum, 10);
+            if (n !== S.cur) { S.cur = n; applyHighlight(S.from, n); }
+          });
+        });
+      }
     } // end _renderDiffContent
 
     // ── Selection → floating "+" button ────────────────────────────────────────
 
+    // Shared drag state stored on the persistent body element
+    // so renderDiffContent (which re-wires mouseenter per render) can access it
     function wireSelectionButton(body, snap) {
-      let _selBtn   = null;
-      let _dragFrom = null;
-      let _dragCur  = null;
-
-      function getLineNum(el) {
-        let cur = el;
-        while (cur && cur !== body) {
-          if (cur.dataset?.linenum) return parseInt(cur.dataset.linenum, 10);
-          cur = cur.parentElement;
-        }
-        return null;
-      }
+      const S = { from: null, cur: null, btn: null }; // drag state
 
       function applyHighlight(from, to) {
         const lo = Math.min(from, to), hi = Math.max(from, to);
@@ -1421,23 +1428,24 @@ export async function renderReviewExecute(container, ctx) {
       }
 
       function clearAll() {
-        _dragFrom = null; _dragCur = null;
-        _selBtn?.remove(); _selBtn = null;
+        S.from = null; S.cur = null;
+        S.btn?.remove(); S.btn = null;
         body.querySelectorAll('.rve-diff-line--selected')
           .forEach(el => el.classList.remove('rve-diff-line--selected'));
       }
 
       function showAddBtn(lineFrom, lineTo) {
-        _selBtn?.remove(); _selBtn = null;
+        S.btn?.remove(); S.btn = null;
         const lastLine = body.querySelector(`.rve-diff-line[data-linenum="${lineTo}"]`)
                       || body.querySelector(`.rve-diff-line[data-linenum="${lineFrom}"]`);
         if (!lastLine) return;
-        _selBtn = document.createElement('div');
-        _selBtn.className   = 'rve-sel-add-btn';
-        _selBtn.textContent = '+ Add comment';
-        _selBtn.title = lineFrom === lineTo ? `Comment on line ${lineFrom}` : `Comment on lines ${lineFrom}–${lineTo}`;
-        lastLine.appendChild(_selBtn);
-        _selBtn.addEventListener('mousedown', e => {
+        const btn = document.createElement('div');
+        btn.className   = 'rve-sel-add-btn';
+        btn.textContent = '+ Add comment';
+        btn.title = lineFrom === lineTo ? `Comment on line ${lineFrom}` : `Comment on lines ${lineFrom}–${lineTo}`;
+        lastLine.appendChild(btn);
+        S.btn = btn;
+        btn.addEventListener('mousedown', e => {
           e.stopPropagation();
           const lf = lineFrom, lt = lineTo;
           clearAll();
@@ -1445,42 +1453,34 @@ export async function renderReviewExecute(container, ctx) {
         });
       }
 
-      // mousedown on a code line starts the drag
+      // Expose so _renderDiffContent can wire mouseenter on freshly created line elements
+      body._sel = { S, applyHighlight, clearAll };
+
+      // mousedown on the body — start drag if on a code line
       body.addEventListener('mousedown', e => {
         if (e.button !== 0) return;
         if (e.target.closest('.rve-inline-thread, .rve-inline-form, .rve-sel-add-btn')) return;
-        const n = getLineNum(e.target);
-        if (!n) { clearAll(); return; }
+        const lineEl = e.target.closest('.rve-diff-line[data-linenum]');
+        if (!lineEl) { clearAll(); return; }
         clearAll();
-        _dragFrom = n; _dragCur = n;
+        const n = parseInt(lineEl.dataset.linenum, 10);
+        S.from = n; S.cur = n;
         applyHighlight(n, n);
       });
 
-      // mouseover fires for every element the pointer enters — bubbles up to body
-      body.addEventListener('mouseover', e => {
-        if (_dragFrom == null || e.buttons !== 1) return;
-        const n = getLineNum(e.target);
-        if (n && n !== _dragCur) {
-          _dragCur = n;
-          applyHighlight(_dragFrom, _dragCur);
-          _selBtn?.remove(); _selBtn = null;
-        }
+      // mouseup on document — finish drag, show button
+      document.addEventListener('mouseup', e => {
+        if (e.button !== 0 || S.from == null) return;
+        const lineFrom = Math.min(S.from, S.cur);
+        const lineTo   = Math.max(S.from, S.cur);
+        applyHighlight(lineFrom, lineTo);
+        S.from = null; S.cur = null;
+        showAddBtn(lineFrom, lineTo);
       });
 
-      // mouseup on document to catch releases anywhere
-      const onUp = e => {
-        if (e.button !== 0 || _dragFrom == null) return;
-        const lineFrom = Math.min(_dragFrom, _dragCur);
-        const lineTo   = Math.max(_dragFrom, _dragCur);
-        applyHighlight(lineFrom, lineTo);
-        _dragFrom = null; _dragCur = null;
-        showAddBtn(lineFrom, lineTo);
-      };
-      document.addEventListener('mouseup', onUp);
-
-      // click outside clears
+      // click outside diff body — clear
       document.addEventListener('mousedown', e => {
-        if (e.button !== 0) return;
+        if (e.button !== 0 || S.from != null) return; // mid-drag: ignore
         if (!e.target.closest('#rve-diff-body')) clearAll();
       });
     }
@@ -1719,9 +1719,14 @@ export async function renderReviewExecute(container, ctx) {
       return;
     }
 
-    // SW unit internal review: show diff viewer instead of checklist
+    // SW unit internal review: show diff viewer instead of checklist.
+    // If already mounted for this snap, just refresh — do NOT remount (destroys listeners).
     if (snap.artifact_type === 'sw_units') {
-      mountSwUnitDiffPanel(col, snap);
+      if (col._swDiffSnap === snap.id && col._swDiffRefresh) {
+        col._swDiffRefresh();
+      } else {
+        mountSwUnitDiffPanel(col, snap);
+      }
       return;
     }
 
