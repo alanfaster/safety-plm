@@ -438,7 +438,19 @@ export async function renderReviewExecute(container, ctx) {
     container.querySelectorAll('.rve-props-fnd-goto').forEach(a => {
       a.addEventListener('click', e => {
         e.stopPropagation();
-        const fid      = a.dataset.fid;
+        const fid = a.dataset.fid;
+
+        // SW unit diff view — finding has a line number, navigate inline
+        const diffBody = document.getElementById('rve-diff-body');
+        if (diffBody?._scrollToFinding) {
+          const f = _findings.find(x => x.id === fid);
+          if (f?.line_number != null) {
+            diffBody._scrollToFinding(fid);
+            return;
+          }
+        }
+
+        // Checklist-based finding
         const checklist = document.getElementById('rve-checklist-col');
         if (!checklist) return;
         const findingCard = checklist.querySelector(`.rvck-inline-finding[data-finding-id="${fid}"]`);
@@ -1184,7 +1196,12 @@ export async function renderReviewExecute(container, ctx) {
         <div class="rve-diff-header">
           <span class="rve-diff-filepath mono">${escHtml(filePath)}</span>
           <span class="text-muted" style="font-size:11px">v${version}${prevCode != null ? ` vs v${version - 1}` : ' (first version)'}</span>
-          <div style="margin-left:auto;display:flex;gap:6px">
+          <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+            <div class="rve-diff-nav" id="rve-diff-nav" style="display:none;align-items:center;gap:4px">
+              <button class="btn btn-ghost btn-xs" id="rve-nav-prev" title="Previous comment">‹</button>
+              <span class="rve-diff-nav-label" id="rve-nav-label" style="font-size:11px;min-width:40px;text-align:center"></span>
+              <button class="btn btn-ghost btn-xs" id="rve-nav-next" title="Next comment">›</button>
+            </div>
             <button class="btn btn-ghost btn-xs rve-diff-toggle-btn" data-mode="diff" style="${prevCode == null ? 'display:none' : ''}">Diff</button>
             <button class="btn btn-ghost btn-xs rve-diff-toggle-btn" data-mode="full">Full</button>
           </div>
@@ -1196,20 +1213,85 @@ export async function renderReviewExecute(container, ctx) {
 
     let _diffMode = prevCode != null ? 'diff' : 'full';
     updateActiveModeBtn();
-    renderDiffContent();
+    refreshDiff();
+
+    function refreshDiff() { renderDiffContent(); updateNavBar(); }
 
     // Wire selection listener once — survives re-renders since body element persists
     const _diffBody = col.querySelector('#rve-diff-body');
     if (_diffBody) wireSelectionButton(_diffBody, snap);
 
     col.querySelectorAll('.rve-diff-toggle-btn').forEach(btn => {
-      btn.onclick = () => { _diffMode = btn.dataset.mode; updateActiveModeBtn(); renderDiffContent(); };
+      btn.onclick = () => { _diffMode = btn.dataset.mode; updateActiveModeBtn(); renderDiffContent(); updateNavBar(); };
     });
 
     function updateActiveModeBtn() {
       col.querySelectorAll('.rve-diff-toggle-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.mode === _diffMode));
     }
+
+    // ── Comment navigation ──────────────────────────────────────────────────────
+    let _navIdx = 0; // current position in sorted findings list
+
+    function getNavFindings() {
+      return _findings.filter(f => f.snapshot_id === snap.id && f.line_number != null)
+        .slice().sort((a, b) => a.line_number - b.line_number);
+    }
+
+    function updateNavBar() {
+      const navEl   = col.querySelector('#rve-diff-nav');
+      const labelEl = col.querySelector('#rve-nav-label');
+      if (!navEl || !labelEl) return;
+      const nf = getNavFindings();
+      if (nf.length === 0) { navEl.style.display = 'none'; return; }
+      navEl.style.display = 'flex';
+      _navIdx = Math.min(_navIdx, nf.length - 1);
+      labelEl.textContent = `${_navIdx + 1}/${nf.length}`;
+    }
+
+    function scrollToFinding(fid) {
+      const nf  = getNavFindings();
+      const idx = nf.findIndex(f => f.id === fid);
+      if (idx !== -1) _navIdx = idx;
+      const f   = fid ? nf.find(f => f.id === fid) : nf[_navIdx];
+      if (!f) return;
+      updateNavBar();
+      // Scroll the thread into view
+      const body = col.querySelector('#rve-diff-body');
+      if (!body) return;
+      const thread = body.querySelector(`.rve-inline-thread[data-linefrom="${f.line_number}"]`);
+      if (thread) {
+        thread.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        thread.classList.add('rve-thread-highlight');
+        setTimeout(() => thread.classList.remove('rve-thread-highlight'), 2500);
+      }
+      // Also highlight annotated lines in code
+      body.querySelectorAll('.rve-diff-line').forEach(el => {
+        const n = parseInt(el.dataset.linenum, 10);
+        const active = n >= f.line_number && n <= (f.line_to || f.line_number);
+        el.classList.toggle('rve-diff-line--nav-active', active);
+      });
+      setTimeout(() => body.querySelectorAll('.rve-diff-line--nav-active')
+        .forEach(el => el.classList.remove('rve-diff-line--nav-active')), 2500);
+    }
+
+    col.querySelector('#rve-nav-prev')?.addEventListener('click', () => {
+      const nf = getNavFindings();
+      if (!nf.length) return;
+      _navIdx = (_navIdx - 1 + nf.length) % nf.length;
+      scrollToFinding(nf[_navIdx].id);
+    });
+    col.querySelector('#rve-nav-next')?.addEventListener('click', () => {
+      const nf = getNavFindings();
+      if (!nf.length) return;
+      _navIdx = (_navIdx + 1) % nf.length;
+      scrollToFinding(nf[_navIdx].id);
+    });
+
+    // Expose for Properties panel "goto" button
+    if (_diffBody) _diffBody._scrollToFinding = scrollToFinding;
+
+    updateNavBar();
 
     // ── Build row data ──────────────────────────────────────────────────────────
 
@@ -1451,7 +1533,7 @@ export async function renderReviewExecute(container, ctx) {
         form.remove();
         body.querySelectorAll('.rve-diff-line--selected').forEach(el => el.classList.remove('rve-diff-line--selected'));
         afterFindingMutation();
-        renderDiffContent();
+        refreshDiff();
       };
     }
 
@@ -1506,13 +1588,13 @@ export async function renderReviewExecute(container, ctx) {
             f.status = newStatus;
             toast(action === 'resolve' ? `${f.finding_code} resolved.` : `${f.finding_code} reopened.`, 'success');
             afterFindingMutation();
-            renderDiffContent();
+            refreshDiff();
 
           } else if (action === 'edit') {
             const bodyEl = document.getElementById(`rve-fbody-${fid}`);
             if (!bodyEl) return;
             // Toggle edit form
-            if (bodyEl.querySelector('.rve-if-edit-form')) { renderDiffContent(); return; }
+            if (bodyEl.querySelector('.rve-if-edit-form')) { refreshDiff(); return; }
             bodyEl.innerHTML = `
               <div class="rve-if-edit-form">
                 <div style="display:flex;gap:6px;margin-bottom:6px">
@@ -1526,7 +1608,7 @@ export async function renderReviewExecute(container, ctx) {
                   <button class="btn btn-ghost btn-sm rve-ife-cancel">Cancel</button>
                 </div>
               </div>`;
-            bodyEl.querySelector('.rve-ife-cancel').onclick = () => renderDiffContent();
+            bodyEl.querySelector('.rve-ife-cancel').onclick = () => refreshDiff();
             bodyEl.querySelector('.rve-ife-save').onclick   = async () => {
               const desc = bodyEl.querySelector('.rve-ife-desc').value.trim();
               if (!desc) return;
@@ -1541,7 +1623,7 @@ export async function renderReviewExecute(container, ctx) {
               f.description = desc;
               toast('Finding updated.', 'success');
               afterFindingMutation();
-              renderDiffContent();
+              refreshDiff();
             };
 
           } else if (action === 'delete') {
@@ -1552,7 +1634,7 @@ export async function renderReviewExecute(container, ctx) {
             if (i >= 0) _findings.splice(i, 1);
             toast(`${f.finding_code} deleted.`, 'success');
             afterFindingMutation();
-            renderDiffContent();
+            refreshDiff();
           }
         };
       });

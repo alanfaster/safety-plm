@@ -6923,6 +6923,25 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rve-diff-line--ann.rve-diff-line--selected { background:rgba(59,130,246,.14) !important;
   border-left-color:var(--color-primary); }
 
+/* Nav-active highlight (keyboard/button navigation to a finding) */
+.rve-diff-line--nav-active { background:rgba(59,130,246,.18) !important;
+  border-left:3px solid var(--color-primary);
+  transition:background .15s, border-color .15s; }
+
+/* Thread highlight when jumped to from Properties panel */
+@keyframes rve-thread-pulse {
+  0%   { box-shadow:0 0 0 0 rgba(59,130,246,.5); }
+  60%  { box-shadow:0 0 0 6px rgba(59,130,246,0); }
+  100% { box-shadow:0 0 0 0 rgba(59,130,246,0); }
+}
+.rve-thread-highlight { outline:2px solid var(--color-primary);
+  animation:rve-thread-pulse .6s ease 2; }
+
+/* Diff comment navigation bar */
+.rve-diff-nav { display:flex; align-items:center; gap:4px; }
+.rve-diff-nav-label { font-size:11px; color:var(--color-text-muted);
+  min-width:36px; text-align:center; }
+
 /* Inline finding threads (right column) */
 .rve-inline-thread       { border:1px solid #f59e0b; border-radius:6px;
   background:#fffbeb; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); }
