@@ -1225,11 +1225,11 @@ export async function renderReviewExecute(container, ctx) {
     }
 
     // ── Findings index ──────────────────────────────────────────────────────────
-    // keyed by line_number (= line_from); each entry: { lineTo, findings[] }
+    // keyed by the LAST line of the range so thread renders exactly once after it
     function buildFindingsIndex() {
       const idx = {};
       _findings.filter(f => f.snapshot_id === snap.id && f.line_number != null).forEach(f => {
-        const key = f.line_number;
+        const key = f.line_to || f.line_number;
         if (!idx[key]) idx[key] = [];
         idx[key].push(f);
       });
@@ -1256,18 +1256,9 @@ export async function renderReviewExecute(container, ctx) {
         html += `<span class="rve-diff-linecontent">${escHtml(line)}</span>`;
         html += `</div>`;
 
-        // Inject threads after the last line of each finding's range
-        const findings = fIdx[lineNum] || [];
-        findings.forEach(f => {
-          const lineTo = f.line_to || f.line_number;
-          // Show thread after last line of range (approximate by placing at line_number)
-          if (!fIdx[lineTo] || lineTo === lineNum) {
-            html += renderThread([f]);
-          }
-        });
-        // Group findings whose line_to is this line
-        const endingHere = Object.values(fIdx).flat().filter(f => f.line_to === lineNum && f.line_number !== lineNum);
-        if (endingHere.length) html += renderThread(endingHere);
+        // Render thread once after the last line of each finding's range
+        const findings = fIdx[lineNum];
+        if (findings?.length) html += renderThread(findings);
       });
 
       html += '</div>';
