@@ -254,3 +254,122 @@ function positionPanel(panel, anchor) {
 function escPanel(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+// ── Panel resize (drag handle on left edge) ───────────────────────────────────
+
+const LS_PANEL_W = 'alm_panel_w_';
+
+/**
+ * Makes a right-side panel user-resizable by dragging its left edge.
+ * @param {HTMLElement} panelEl  — the panel element
+ * @param {string}      key      — localStorage key suffix
+ * @param {object}      opts     — { minWidth=280, maxWidth=700, defaultWidth=420 }
+ */
+export function wirePanelResize(panelEl, key, { minWidth = 280, maxWidth = 700, defaultWidth = 420 } = {}) {
+  const stored = parseInt(localStorage.getItem(LS_PANEL_W + key));
+  const savedW = (stored >= minWidth && stored <= maxWidth) ? stored : defaultWidth;
+
+  // Apply saved width whenever panel opens
+  const applyWidth = w => {
+    panelEl.style.width    = w + 'px';
+    panelEl.style.minWidth = w + 'px';
+  };
+
+  // Observe open state changes to apply stored width
+  const mo = new MutationObserver(() => {
+    if (panelEl.classList.contains('open')) applyWidth(savedW);
+  });
+  mo.observe(panelEl, { attributes: true, attributeFilter: ['class'] });
+  if (panelEl.classList.contains('open')) applyWidth(savedW);
+
+  const handle = document.createElement('div');
+  handle.className = 'panel-resize-handle';
+  panelEl.prepend(handle);
+
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelEl.offsetWidth;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor     = 'col-resize';
+
+    const onMove = e => {
+      const w = Math.max(minWidth, Math.min(maxWidth, startW - (e.clientX - startX)));
+      applyWidth(w);
+    };
+    const onUp = () => {
+      localStorage.setItem(LS_PANEL_W + key, panelEl.offsetWidth);
+      document.body.style.userSelect = '';
+      document.body.style.cursor     = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+  });
+}
+
+// ── Column resize (drag handle on right edge of each <th>) ───────────────────
+
+const LS_COL_W = 'alm_col_w_';
+
+export function loadColWidths(key) {
+  try { return JSON.parse(localStorage.getItem(LS_COL_W + key) || '{}'); } catch { return {}; }
+}
+
+export function saveColWidths(key, widths) {
+  localStorage.setItem(LS_COL_W + key, JSON.stringify(widths));
+}
+
+/**
+ * Adds drag-to-resize handles to all <th data-col> elements in theadRow.
+ * Persists widths to localStorage under key.
+ * @param {HTMLTableRowElement} theadRow
+ * @param {string}              key      — same key used for col config
+ */
+export function wireColResize(theadRow, key) {
+  const widths = loadColWidths(key);
+
+  theadRow.querySelectorAll('th[data-col]').forEach(th => {
+    const colId = th.dataset.col;
+    if (colId === 'drag' || colId === 'select' || colId === 'actions') return;
+
+    // Apply stored width
+    if (widths[colId]) {
+      th.style.width    = widths[colId] + 'px';
+      th.style.minWidth = widths[colId] + 'px';
+    }
+
+    // Ensure th is positioned for the absolute handle
+    if (!th.style.position) th.style.position = 'relative';
+
+    const handle = document.createElement('div');
+    handle.className = 'col-resize-handle';
+    th.appendChild(handle);
+
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startW = th.offsetWidth;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor     = 'col-resize';
+
+      const onMove = e => {
+        const w = Math.max(40, startW + (e.clientX - startX));
+        th.style.width    = w + 'px';
+        th.style.minWidth = w + 'px';
+      };
+      const onUp = () => {
+        widths[colId] = th.offsetWidth;
+        saveColWidths(key, widths);
+        document.body.style.userSelect = '';
+        document.body.style.cursor     = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup',   onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup',   onUp);
+    });
+  });
+}

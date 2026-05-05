@@ -14,7 +14,7 @@
 import { sb, buildCode, nextIndex } from '../config.js';
 import { navigate } from '../router.js';
 import { toast } from '../toast.js';
-import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr } from '../components/col-mgr.js';
+import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr, wirePanelResize, wireColResize } from '../components/col-mgr.js';
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 import { showVersionHistory } from '../components/version-history.js';
 import { copyElementLink } from '../deep-link.js';
@@ -263,6 +263,8 @@ export async function renderArchSpec(container, { project, item, system, parentT
   document.querySelectorAll('#spec-props-panel .swu-panel-tab').forEach(btn => {
     btn.onclick = e => { e.stopPropagation(); switchPanelTab(btn.dataset.tab); };
   });
+
+  wirePanelResize(document.getElementById('spec-props-panel'), `spec_${_ctx.parentId}`);
 
   await loadSpec();
   applyGotoTarget();
@@ -653,6 +655,7 @@ function renderTable(body) {
       _cols = updatedCols;
       renderTable(body);
     });
+    wireColResize(theadRow, `spec_${_ctx.parentId}`);
   }
 }
 
