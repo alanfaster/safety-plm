@@ -360,12 +360,11 @@ const MIN_COL_W = 8; // minimum column width in px — just enough to show it ex
 export function wireColResize(theadRow, key) {
   const tableEl = theadRow.closest('table');
   const widths  = loadColWidths(key);
-  const hasStored = Object.keys(widths).length > 0;
   const colSetters = {}; // colId → setW fn, for snapshot
 
   if (tableEl) {
     tableEl.style.width = '100%';
-    tableEl.style.tableLayout = 'fixed';
+    tableEl.style.tableLayout = 'auto'; // start auto so browser fills 100%
   }
 
   theadRow.querySelectorAll('th[data-col]').forEach(th => {
@@ -383,7 +382,11 @@ export function wireColResize(theadRow, key) {
     };
 
     colSetters[colId] = setW;
-    if (widths[colId]) setW(widths[colId]);
+    // Apply stored width as min-width hint so auto-layout respects user preference
+    if (widths[colId]) {
+      th.style.minWidth = widths[colId] + 'px';
+      th.style.width    = widths[colId] + 'px';
+    }
 
     const handle = document.createElement('div');
     handle.className = 'col-resize-handle';
@@ -414,10 +417,9 @@ export function wireColResize(theadRow, key) {
     });
   });
 
-  // First load: no stored widths → let browser render once with auto layout,
-  // then snapshot the natural widths so fixed layout fills 100% from the start.
-  if (!hasStored && tableEl) {
-    tableEl.style.tableLayout = 'auto';
+  // Always: let browser render one frame with auto layout (which fills 100%),
+  // then snapshot rendered widths and switch to fixed so resize works freely.
+  if (tableEl) {
     requestAnimationFrame(() => {
       tableEl.style.tableLayout = 'fixed';
       theadRow.querySelectorAll('th[data-col]').forEach(t => {
