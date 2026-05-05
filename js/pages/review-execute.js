@@ -1247,6 +1247,11 @@ export async function renderReviewExecute(container, ctx) {
     function renderDiffContent() {
       const body = document.getElementById('rve-diff-body');
       if (!body) return;
+      try { _renderDiffContent(body); } catch(e) {
+        body.innerHTML = `<pre style="color:red;padding:12px;font-size:11px">Error: ${e.message}\n${e.stack}</pre>`;
+      }
+    }
+    function _renderDiffContent(body) {
 
       const rows  = _diffMode === 'full' || prevCode == null ? buildRows(currentCode) : buildDiffRows(prevCode, currentCode);
       const fIdx  = buildFindingsIndex();
@@ -1307,7 +1312,7 @@ export async function renderReviewExecute(container, ctx) {
         </div>`;
 
       wireThreadActions(body);
-    }
+    } // end _renderDiffContent
 
     // ── Selection → floating "+" button ────────────────────────────────────────
 
