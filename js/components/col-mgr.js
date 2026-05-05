@@ -355,21 +355,42 @@ export function saveColWidths(key, widths) {
  * @param {HTMLTableRowElement} theadRow
  * @param {string}              key      — same key used for col config
  */
+const MIN_COL_W = 8; // minimum column width in px — just enough to show it exists
+
 export function wireColResize(theadRow, key) {
-  const widths = loadColWidths(key);
+  const tableEl = theadRow.closest('table');
+  const widths   = loadColWidths(key);
+
+  // Switch to fixed layout so column widths are respected regardless of content
+  if (tableEl) {
+    tableEl.style.tableLayout = 'fixed';
+    tableEl.style.width       = '100%';
+  }
 
   theadRow.querySelectorAll('th[data-col]').forEach(th => {
     const colId = th.dataset.col;
     if (colId === 'drag' || colId === 'select' || colId === 'actions') return;
 
-    // Apply stored width
-    if (widths[colId]) {
-      th.style.width    = widths[colId] + 'px';
-      th.style.minWidth = widths[colId] + 'px';
-    }
+    const setW = w => {
+      th.style.width    = w + 'px';
+      th.style.minWidth = '0';
+      th.style.maxWidth = w + 'px';
+      th.style.overflow = 'hidden';
+      // Apply same width to all body cells in this column
+      tableEl?.querySelectorAll(`td[data-col="${colId}"]`).forEach(td => {
+        td.style.width    = w + 'px';
+        td.style.maxWidth = w + 'px';
+        td.style.overflow = 'hidden';
+      });
+    };
 
-    // Ensure th is positioned for the absolute handle
-    if (!th.style.position) th.style.position = 'relative';
+    // Apply stored width, else measure current rendered width once
+    if (widths[colId]) {
+      setW(widths[colId]);
+    } else {
+      const measured = th.offsetWidth;
+      if (measured > 0) setW(measured);
+    }
 
     const handle = document.createElement('div');
     handle.className = 'col-resize-handle';
@@ -384,9 +405,8 @@ export function wireColResize(theadRow, key) {
       document.body.style.cursor     = 'col-resize';
 
       const onMove = e => {
-        const w = Math.max(0, startW + (e.clientX - startX));
-        th.style.width    = w + 'px';
-        th.style.minWidth = w + 'px';
+        const w = Math.max(MIN_COL_W, startW + (e.clientX - startX));
+        setW(w);
       };
       const onUp = () => {
         widths[colId] = th.offsetWidth;
