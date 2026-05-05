@@ -1192,6 +1192,8 @@ export async function renderReviewExecute(container, ctx) {
         <div class="rve-diff-body" id="rve-diff-body" style="position:relative"></div>
       </div>`;
 
+    const LINE_H = 22; // px — must match .rve-diff-line height in CSS
+
     let _diffMode = prevCode != null ? 'diff' : 'full';
     updateActiveModeBtn();
     renderDiffContent();
@@ -1241,8 +1243,6 @@ export async function renderReviewExecute(container, ctx) {
     }
 
     // ── Render ──────────────────────────────────────────────────────────────────
-
-    const LINE_H = 22; // px — must match .rve-diff-line height in CSS
 
     function renderDiffContent() {
       const body = document.getElementById('rve-diff-body');
