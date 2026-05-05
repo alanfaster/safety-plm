@@ -1426,22 +1426,32 @@ export async function renderReviewExecute(container, ctx) {
     // ── Inline thread rendering ─────────────────────────────────────────────────
 
     function renderThread(findings) {
-      const lineFrom = findings[0].line_number;
-      const lineTo   = findings[0].line_to || lineFrom;
+      const lineFrom   = findings[0].line_number;
+      const lineTo     = findings[0].line_to || lineFrom;
       const rangeLabel = lineFrom === lineTo ? `Line ${lineFrom}` : `Lines ${lineFrom}–${lineTo}`;
 
-      const items = findings.map(f => `
+      const items = findings.map(f => {
+        const isOpen    = f.status === 'open';
+        const isMine    = f.created_by === currentUserId;
+        return `
         <div class="rve-inline-finding" data-fid="${f.id}" data-status="${f.status}">
           <div class="rve-inline-finding-hdr">
             <span class="rve-inline-finding-code mono">${escHtml(f.finding_code)}</span>
             <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}" style="font-size:10px">${SEVERITY_LABELS[f.severity] || f.severity}</span>
             <span class="rve-inline-finding-title">${escHtml(f.title)}</span>
-            ${f.status !== 'open'
-              ? `<span class="badge badge-approved" style="font-size:10px;margin-left:auto">✓ Resolved</span>`
-              : `<button class="btn btn-ghost btn-xs rve-inline-resolve" data-fid="${f.id}" style="margin-left:auto">✓ Resolve</button>`}
+            <span class="rve-inline-finding-actions">
+              ${isOpen
+                ? `<button class="btn btn-ghost btn-xs rve-if-action" data-action="resolve" data-fid="${f.id}" title="Mark resolved">✓ Resolve</button>`
+                : `<button class="btn btn-ghost btn-xs rve-if-action" data-action="reopen"  data-fid="${f.id}" title="Reopen">↺ Reopen</button>`}
+              ${isMine ? `<button class="btn btn-ghost btn-xs rve-if-action" data-action="edit"   data-fid="${f.id}" title="Edit">✏</button>` : ''}
+              ${isMine ? `<button class="btn btn-ghost btn-xs rve-if-action" data-action="delete" data-fid="${f.id}" title="Delete" style="color:var(--color-danger)">✕</button>` : ''}
+            </span>
           </div>
-          ${f.description ? `<div class="rve-inline-finding-desc">${escHtml(f.description)}</div>` : ''}
-        </div>`).join('');
+          <div class="rve-inline-finding-body" id="rve-fbody-${f.id}">
+            ${f.description ? `<div class="rve-inline-finding-desc">${escHtml(f.description)}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('');
 
       return `<div class="rve-inline-thread" data-linefrom="${lineFrom}" data-lineto="${lineTo}">
         <div class="rve-inline-thread-range">${rangeLabel}</div>
@@ -1452,15 +1462,68 @@ export async function renderReviewExecute(container, ctx) {
     // ── Thread actions ──────────────────────────────────────────────────────────
 
     function wireThreadActions(body) {
-      body.querySelectorAll('.rve-inline-resolve').forEach(btn => {
+      body.querySelectorAll('.rve-if-action').forEach(btn => {
         btn.onclick = async () => {
-          const { error } = await sb.from('review_findings').update({ status: 'closed' }).eq('id', btn.dataset.fid);
-          if (error) { toast('Error: ' + error.message, 'error'); return; }
-          const f = _findings.find(x => x.id === btn.dataset.fid);
-          if (f) f.status = 'closed';
-          toast('Finding resolved.', 'success');
-          afterFindingMutation();
-          renderDiffContent();
+          const { action, fid } = btn.dataset;
+          const f = _findings.find(x => x.id === fid);
+          if (!f) return;
+
+          if (action === 'resolve' || action === 'reopen') {
+            const newStatus = action === 'resolve' ? 'closed' : 'open';
+            const { error } = await sb.from('review_findings').update({ status: newStatus }).eq('id', fid);
+            if (error) { toast('Error: ' + error.message, 'error'); return; }
+            f.status = newStatus;
+            toast(action === 'resolve' ? `${f.finding_code} resolved.` : `${f.finding_code} reopened.`, 'success');
+            afterFindingMutation();
+            renderDiffContent();
+
+          } else if (action === 'edit') {
+            const bodyEl = document.getElementById(`rve-fbody-${fid}`);
+            if (!bodyEl) return;
+            // Toggle edit form
+            if (bodyEl.querySelector('.rve-if-edit-form')) { renderDiffContent(); return; }
+            bodyEl.innerHTML = `
+              <div class="rve-if-edit-form">
+                <input  class="form-input rve-ife-title"    value="${escHtml(f.title)}" style="margin-bottom:6px"/>
+                <div style="display:flex;gap:6px;margin-bottom:6px">
+                  <select class="form-input form-select rve-ife-severity" style="flex:0 0 130px">
+                    ${Object.entries(SEVERITY_LABELS).map(([v,l]) => `<option value="${v}"${f.severity===v?' selected':''}>${l}</option>`).join('')}
+                  </select>
+                  <textarea class="form-input rve-ife-desc" rows="2" style="flex:1;resize:vertical">${escHtml(f.description||'')}</textarea>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button class="btn btn-primary btn-sm rve-ife-save">Save</button>
+                  <button class="btn btn-ghost btn-sm rve-ife-cancel">Cancel</button>
+                </div>
+              </div>`;
+            bodyEl.querySelector('.rve-ife-cancel').onclick = () => renderDiffContent();
+            bodyEl.querySelector('.rve-ife-save').onclick   = async () => {
+              const title = bodyEl.querySelector('.rve-ife-title').value.trim();
+              if (!title) return;
+              const { error } = await sb.from('review_findings').update({
+                title,
+                severity:    bodyEl.querySelector('.rve-ife-severity').value,
+                description: bodyEl.querySelector('.rve-ife-desc').value.trim(),
+              }).eq('id', fid);
+              if (error) { toast('Error: ' + error.message, 'error'); return; }
+              f.title       = title;
+              f.severity    = bodyEl.querySelector('.rve-ife-severity').value;
+              f.description = bodyEl.querySelector('.rve-ife-desc').value.trim();
+              toast('Finding updated.', 'success');
+              afterFindingMutation();
+              renderDiffContent();
+            };
+
+          } else if (action === 'delete') {
+            if (!confirm(`Delete ${f.finding_code}? This cannot be undone.`)) return;
+            const { error } = await sb.from('review_findings').delete().eq('id', fid);
+            if (error) { toast('Error: ' + error.message, 'error'); return; }
+            const i = _findings.findIndex(x => x.id === fid);
+            if (i >= 0) _findings.splice(i, 1);
+            toast(`${f.finding_code} deleted.`, 'success');
+            afterFindingMutation();
+            renderDiffContent();
+          }
         };
       });
     }

@@ -6927,10 +6927,14 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
   text-transform:uppercase; letter-spacing:.04em; }
 .rve-inline-finding      { padding:8px 12px; border-bottom:1px solid rgba(0,0,0,.06); }
 .rve-inline-finding[data-status="closed"] { opacity:.55; }
-.rve-inline-finding-hdr  { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.rve-inline-finding-code { font-size:11px; color:var(--color-text-muted); }
-.rve-inline-finding-title{ font-size:12px; font-weight:500; }
-.rve-inline-finding-desc { font-size:12px; color:var(--color-text-muted); margin-top:4px; white-space:pre-wrap; }
+.rve-inline-finding-hdr     { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.rve-inline-finding-code    { font-size:11px; color:var(--color-text-muted); }
+.rve-inline-finding-title   { font-size:12px; font-weight:500; flex:1; }
+.rve-inline-finding-actions { display:flex; gap:2px; margin-left:auto; opacity:0; transition:opacity .15s; }
+.rve-inline-finding:hover .rve-inline-finding-actions { opacity:1; }
+.rve-inline-finding[data-status="closed"] .rve-inline-finding-actions { opacity:.6; }
+.rve-inline-finding-desc    { font-size:12px; color:var(--color-text-muted); margin-top:4px; white-space:pre-wrap; }
+.rve-if-edit-form           { padding-top:8px; }
 
 /* Inline comment form */
 .rve-inline-form         { border-left:3px solid var(--color-primary); background:#f0f4ff; padding:10px 12px; }
