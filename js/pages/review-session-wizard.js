@@ -75,11 +75,22 @@ export async function renderReviewSessionWizard(container, ctx) {
     design:'Design', implementation:'Units', unit_testing:'Unit Testing',
     integration_testing:'Integration Testing', system_testing:'System Testing', validation:'Validation',
   };
+  const _initArtifactType = _initQuery.get('artifact_type');
+  const ARTIFACT_TYPE_TITLE = {
+    sw_units:             'SW Units Review',
+    requirements:         'Requirements Review',
+    arch_spec_items:      'Architecture Review',
+    test_specs:           'Test Specs Review',
+    safety_analysis_rows: 'Safety Analysis Review',
+  };
+  const today = new Date().toISOString().slice(0, 10);
   const _initTitle = _initPageName
     ? `${_initPageName} Review`
     : _initPhase
       ? `${PHASE_TITLE_LABELS[_initPhase] || _initPhase}${_initDomain && _initDomain !== 'default' ? ' (' + _initDomain.toUpperCase() + ')' : ''} Review`
-      : '';
+      : _initArtifactType && ARTIFACT_TYPE_TITLE[_initArtifactType]
+        ? `${ARTIFACT_TYPE_TITLE[_initArtifactType]} — ${today}`
+        : '';
 
   // Wizard state — review_mode set to safe default, updated after project config loads
   const state = {
