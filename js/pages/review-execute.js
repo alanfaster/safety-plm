@@ -1196,6 +1196,10 @@ export async function renderReviewExecute(container, ctx) {
     updateActiveModeBtn();
     renderDiffContent();
 
+    // Wire selection listener once — survives re-renders since body element persists
+    const _diffBody = col.querySelector('#rve-diff-body');
+    if (_diffBody) wireSelectionButton(_diffBody, snap);
+
     col.querySelectorAll('.rve-diff-toggle-btn').forEach(btn => {
       btn.onclick = () => { _diffMode = btn.dataset.mode; updateActiveModeBtn(); renderDiffContent(); };
     });
@@ -1281,7 +1285,6 @@ export async function renderReviewExecute(container, ctx) {
       html += '</div>';
       body.innerHTML = html;
 
-      wireSelectionButton(body, snap);
       wireThreadActions(body);
     }
 
