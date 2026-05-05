@@ -1399,27 +1399,33 @@ export async function renderReviewExecute(container, ctx) {
 
       wireThreadActions(body);
 
-      // Wire mouseenter directly on each line (not delegation) — most reliable during drag
+      // Re-wire mouseenter on every fresh line element after each render.
+      // mouseenter does NOT bubble, so we must attach directly — no delegation possible.
       if (body._sel) {
-        const { S, applyHighlight } = body._sel;
+        const { S, highlight } = body._sel;
         body.querySelectorAll('.rve-diff-line[data-linenum]').forEach(lineEl => {
           lineEl.addEventListener('mouseenter', e => {
-            if (S.from == null || e.buttons !== 1) return;
+            if (S.dragFrom == null || e.buttons !== 1) return;
             const n = parseInt(lineEl.dataset.linenum, 10);
-            if (n !== S.cur) { S.cur = n; applyHighlight(S.from, n); }
+            if (n !== S.dragCur) { S.dragCur = n; highlight(S.dragFrom, n); }
           });
         });
       }
     } // end _renderDiffContent
 
-    // ── Selection → floating "+" button ────────────────────────────────────────
+    // ── Line range selection ────────────────────────────────────────────────────
 
-    // Shared drag state stored on the persistent body element
-    // so renderDiffContent (which re-wires mouseenter per render) can access it
     function wireSelectionButton(body, snap) {
-      const S = { from: null, cur: null, btn: null }; // drag state
+      // Drag state (S) is shared with per-line mouseenter handlers wired in _renderDiffContent
+      const S = {
+        dragFrom: null, // line where current drag started (null = not dragging)
+        dragCur:  null, // line currently under cursor during drag
+        selFrom:  null, // committed selection start (shown after mouseup)
+        selTo:    null, // committed selection end
+        btn:      null, // the floating "+ Add comment" button
+      };
 
-      function applyHighlight(from, to) {
+      function highlight(from, to) {
         const lo = Math.min(from, to), hi = Math.max(from, to);
         body.querySelectorAll('.rve-diff-line[data-linenum]').forEach(el => {
           const n = parseInt(el.dataset.linenum, 10);
@@ -1427,8 +1433,8 @@ export async function renderReviewExecute(container, ctx) {
         });
       }
 
-      function clearAll() {
-        S.from = null; S.cur = null;
+      function clearSelection() {
+        S.selFrom = null; S.selTo = null;
         S.btn?.remove(); S.btn = null;
         body.querySelectorAll('.rve-diff-line--selected')
           .forEach(el => el.classList.remove('rve-diff-line--selected'));
@@ -1436,52 +1442,68 @@ export async function renderReviewExecute(container, ctx) {
 
       function showAddBtn(lineFrom, lineTo) {
         S.btn?.remove(); S.btn = null;
-        const lastLine = body.querySelector(`.rve-diff-line[data-linenum="${lineTo}"]`)
-                      || body.querySelector(`.rve-diff-line[data-linenum="${lineFrom}"]`);
-        if (!lastLine) return;
+        const wrap = body.querySelector('.rve-diff-wrap');
+        const lastLineEl = body.querySelector(`.rve-diff-line[data-linenum="${lineTo}"]`)
+                        || body.querySelector(`.rve-diff-line[data-linenum="${lineFrom}"]`);
+        if (!wrap || !lastLineEl) return;
+
         const btn = document.createElement('div');
         btn.className   = 'rve-sel-add-btn';
         btn.textContent = '+ Add comment';
         btn.title = lineFrom === lineTo ? `Comment on line ${lineFrom}` : `Comment on lines ${lineFrom}–${lineTo}`;
-        lastLine.appendChild(btn);
+        // Float below last selected line, right-aligned before the comment column
+        btn.style.cssText = `position:absolute;top:${lastLineEl.offsetTop + lastLineEl.offsetHeight}px;right:280px;z-index:5`;
+        wrap.appendChild(btn);
         S.btn = btn;
+
         btn.addEventListener('mousedown', e => {
           e.stopPropagation();
-          const lf = lineFrom, lt = lineTo;
-          clearAll();
-          openInlineForm(body, snap, lf, lt, filePath);
+          clearSelection();
+          openInlineForm(body, snap, lineFrom, lineTo, filePath);
         });
       }
 
-      // Expose so _renderDiffContent can wire mouseenter on freshly created line elements
-      body._sel = { S, applyHighlight, clearAll };
+      // Expose drag state + highlight fn for per-line mouseenter handlers
+      body._sel = { S, highlight };
 
-      // mousedown on the body — start drag if on a code line
+      // ── mousedown: start drag, or shift+click to extend ──────────────────────
       body.addEventListener('mousedown', e => {
         if (e.button !== 0) return;
         if (e.target.closest('.rve-inline-thread, .rve-inline-form, .rve-sel-add-btn')) return;
         const lineEl = e.target.closest('.rve-diff-line[data-linenum]');
-        if (!lineEl) { clearAll(); return; }
-        clearAll();
-        const n = parseInt(lineEl.dataset.linenum, 10);
-        S.from = n; S.cur = n;
-        applyHighlight(n, n);
+
+        if (e.shiftKey && S.selFrom != null && lineEl) {
+          // Extend committed selection
+          S.selTo = parseInt(lineEl.dataset.linenum, 10);
+          const lf = Math.min(S.selFrom, S.selTo), lt = Math.max(S.selFrom, S.selTo);
+          highlight(lf, lt);
+          showAddBtn(lf, lt);
+          return;
+        }
+
+        // Fresh drag: clear previous state, start new drag
+        clearSelection();
+        if (!lineEl) return;
+        S.dragFrom = parseInt(lineEl.dataset.linenum, 10);
+        S.dragCur  = S.dragFrom;
+        highlight(S.dragFrom, S.dragFrom);
       });
 
-      // mouseup on document — finish drag, show button
+      // ── mouseup (on document): commit drag → show button ─────────────────────
       document.addEventListener('mouseup', e => {
-        if (e.button !== 0 || S.from == null) return;
-        const lineFrom = Math.min(S.from, S.cur);
-        const lineTo   = Math.max(S.from, S.cur);
-        applyHighlight(lineFrom, lineTo);
-        S.from = null; S.cur = null;
+        if (e.button !== 0 || S.dragFrom == null) return;
+        const lineFrom = Math.min(S.dragFrom, S.dragCur);
+        const lineTo   = Math.max(S.dragFrom, S.dragCur);
+        S.selFrom = lineFrom; S.selTo = lineTo;
+        S.dragFrom = null;  S.dragCur = null;
+        highlight(lineFrom, lineTo);
         showAddBtn(lineFrom, lineTo);
       });
 
-      // click outside diff body — clear
+      // ── click outside diff body: clear ───────────────────────────────────────
       document.addEventListener('mousedown', e => {
-        if (e.button !== 0 || S.from != null) return; // mid-drag: ignore
-        if (!e.target.closest('#rve-diff-body')) clearAll();
+        if (e.button !== 0 || S.dragFrom != null) return; // mid-drag: ignore
+        if (!e.target.closest('#rve-diff-body')) clearSelection();
       });
     }
 
