@@ -1242,48 +1242,80 @@ export async function renderReviewExecute(container, ctx) {
 
     // ── Render ──────────────────────────────────────────────────────────────────
 
+    const LINE_H = 22; // px — must match .rve-diff-line height in CSS
+
     function renderDiffContent() {
       const body = document.getElementById('rve-diff-body');
       if (!body) return;
 
-      const rows     = _diffMode === 'full' || prevCode == null ? buildRows(currentCode) : buildDiffRows(prevCode, currentCode);
-      const fIdx     = buildFindingsIndex();
+      const rows  = _diffMode === 'full' || prevCode == null ? buildRows(currentCode) : buildDiffRows(prevCode, currentCode);
+      const fIdx  = buildFindingsIndex();
 
-      // Build annotated line set: lineNum → { isFirst, isLast, severities[] }
+      // Build annotated line set for left-border highlight
       const annotated = {};
       _findings.filter(f => f.snapshot_id === snap.id && f.line_number != null).forEach(f => {
         const from = f.line_number, to = f.line_to || f.line_number;
         for (let n = from; n <= to; n++) {
-          if (!annotated[n]) annotated[n] = { isFirst: false, isLast: false, severities: [] };
-          if (n === from) annotated[n].isFirst = true;
-          if (n === to)   annotated[n].isLast  = true;
-          annotated[n].severities.push(f.severity);
+          if (!annotated[n]) annotated[n] = { isFirst: n === from, isLast: n === to };
         }
       });
 
-      let html = '<div class="rve-diff-code">';
-
+      // ── Left: code lines ────────────────────────────────────────────────────
+      let codeHtml = '';
       rows.forEach(({ lineNum, type, line }) => {
-        const cls    = type === 'add' ? 'rve-diff-line--add' : type === 'del' ? 'rve-diff-line--del' : 'rve-diff-line--ctx';
-        const prefix = type === 'add' ? '+' : type === 'del' ? '-' : ' ';
+        const cls       = type === 'add' ? 'rve-diff-line--add' : type === 'del' ? 'rve-diff-line--del' : 'rve-diff-line--ctx';
+        const prefix    = type === 'add' ? '+' : type === 'del' ? '-' : ' ';
         const canSelect = type !== 'del';
+        const ann       = canSelect && annotated[lineNum];
+        const annClass  = ann ? ` rve-diff-line--ann${ann.isFirst ? ' rve-diff-line--ann-first' : ''}` : '';
 
-        const ann = canSelect && annotated[lineNum];
-        const annClass = ann ? ` rve-diff-line--ann${ann.isFirst ? ' rve-diff-line--ann-first' : ''}${ann.isLast ? ' rve-diff-line--ann-last' : ''}` : '';
-
-        html += `<div class="rve-diff-line ${cls}${annClass}" ${canSelect ? `data-linenum="${lineNum}"` : ''}>`;
-        if (_diffMode !== 'full' && prevCode != null) html += `<span class="rve-diff-prefix">${prefix}</span>`;
-        html += `<span class="rve-diff-linenum rve-diff-linenum--num ${type === 'del' ? 'rve-diff-linenum--old' : ''}">${lineNum}</span>`;
-        html += `<span class="rve-diff-linecontent">${escHtml(line)}</span>`;
-        html += `</div>`;
-
-        // Render thread once after the last line of each finding's range
-        const findings = fIdx[lineNum];
-        if (findings?.length) html += renderThread(findings);
+        codeHtml += `<div class="rve-diff-line ${cls}${annClass}" ${canSelect ? `data-linenum="${lineNum}"` : ''}>`;
+        if (_diffMode !== 'full' && prevCode != null) codeHtml += `<span class="rve-diff-prefix">${prefix}</span>`;
+        codeHtml += `<span class="rve-diff-linenum rve-diff-linenum--num ${type === 'del' ? 'rve-diff-linenum--old' : ''}">${lineNum}</span>`;
+        codeHtml += `<span class="rve-diff-linecontent">${escHtml(line)}</span>`;
+        codeHtml += `</div>`;
       });
 
-      html += '</div>';
-      body.innerHTML = html;
+      // ── Right: comment threads positioned next to their last line ────────────
+      // Build a row-index map so we know the pixel offset of each line
+      const lineToRowIdx = {};
+      rows.forEach(({ lineNum, type }, idx) => { if (type !== 'del') lineToRowIdx[lineNum] = idx; });
+
+      // Stack threads: if two threads would overlap, push the lower one down
+      const sortedFindings = Object.values(fIdx).flat()
+        .sort((a, b) => (a.line_to || a.line_number) - (b.line_to || b.line_number));
+
+      let commentHtml = '';
+      let nextAvailableTop = 0; // tracks bottom edge of last placed thread (px)
+
+      sortedFindings.forEach(f => {
+        const anchorLine = f.line_to || f.line_number;
+        const rowIdx     = lineToRowIdx[anchorLine] ?? (anchorLine - 1);
+        const naturalTop = rowIdx * LINE_H;
+        const top        = Math.max(naturalTop, nextAvailableTop);
+
+        // Estimate thread height: header + finding rows (approx 52px per finding)
+        const threadH = 26 + 52;
+        nextAvailableTop = top + threadH + 4;
+
+        // Connector line from anchor row to thread if pushed down
+        const connectorH = top - naturalTop;
+
+        commentHtml += `<div class="rve-diff-thread-wrap" style="top:${top}px">`;
+        if (connectorH > 0) {
+          commentHtml += `<div class="rve-diff-thread-connector" style="height:${connectorH}px;top:${-connectorH}px"></div>`;
+        }
+        commentHtml += renderThread([f]);
+        commentHtml += `</div>`;
+      });
+
+      const totalH = Math.max(rows.length * LINE_H, nextAvailableTop);
+
+      body.innerHTML = `
+        <div class="rve-diff-layout">
+          <div class="rve-diff-code">${codeHtml}</div>
+          <div class="rve-diff-comment-col" style="height:${totalH}px">${commentHtml}</div>
+        </div>`;
 
       wireThreadActions(body);
     }
@@ -1363,35 +1395,36 @@ export async function renderReviewExecute(container, ctx) {
       body.querySelector('.rve-inline-form')?.remove();
 
       const rangeLabel = lineFrom === lineTo ? `line ${lineFrom}` : `lines ${lineFrom}–${lineTo}`;
-      const anchor = body.querySelector(`.rve-diff-line[data-linenum="${lineTo}"]`)
-                  || body.querySelector(`.rve-diff-line[data-linenum="${lineFrom}"]`);
-      if (!anchor) return;
+
+      // Place form in the comment column, aligned with lineTo
+      const commentCol = body.querySelector('.rve-diff-comment-col');
+      if (!commentCol) return;
 
       const form = document.createElement('div');
-      form.className = 'rve-inline-form';
+      form.className = 'rve-inline-form rve-diff-thread-wrap';
       form.dataset.lineFrom = lineFrom;
       form.dataset.lineTo   = lineTo;
+      // Position at same row as anchor line
+      const rows = _diffMode === 'full' || prevCode == null ? buildRows(currentCode) : buildDiffRows(prevCode, currentCode);
+      const rowIdx = rows.findIndex(r => r.lineNum === lineTo && r.type !== 'del');
+      const top = Math.max(0, rowIdx) * LINE_H;
+      form.style.top = `${top}px`;
+
       form.innerHTML = `
         <div class="rve-inline-form-inner">
-          <div class="rve-if-label">
-            ⚑ Comment on <strong>${rangeLabel}</strong>
-            <span class="mono text-muted" style="font-size:10px;margin-left:6px">${escHtml(filePath)}</span>
-          </div>
-          <input  class="form-input rve-if-title" placeholder="Title *"/>
-          <div style="display:flex;gap:6px;margin-top:6px">
-            <select class="form-input form-select rve-if-severity" style="flex:0 0 130px">
-              ${Object.entries(SEVERITY_LABELS).map(([v,l]) => `<option value="${v}"${v==='major'?' selected':''}>${l}</option>`).join('')}
-            </select>
-            <textarea class="form-input rve-if-desc" rows="2" placeholder="Description (optional)" style="flex:1;resize:vertical"></textarea>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="btn btn-primary btn-sm rve-if-save">⚑ Add Finding</button>
+          <div class="rve-if-label">⚑ <strong>${rangeLabel}</strong></div>
+          <input class="form-input rve-if-title" placeholder="Title *" style="margin-bottom:6px"/>
+          <select class="form-input form-select rve-if-severity" style="margin-bottom:6px">
+            ${Object.entries(SEVERITY_LABELS).map(([v,l]) => `<option value="${v}"${v==='major'?' selected':''}>${l}</option>`).join('')}
+          </select>
+          <textarea class="form-input rve-if-desc" rows="2" placeholder="Description (optional)" style="resize:vertical;margin-bottom:6px"></textarea>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-primary btn-sm rve-if-save">⚑ Add</button>
             <button class="btn btn-ghost btn-sm rve-if-cancel">Cancel</button>
           </div>
         </div>`;
 
-      const thread = body.querySelector(`.rve-inline-thread[data-linefrom="${lineFrom}"]`);
-      (thread || anchor).after(form);
+      commentCol.appendChild(form);
       form.querySelector('.rve-if-title').focus();
 
       form.querySelector('.rve-if-cancel').onclick = () => {

@@ -6887,12 +6887,21 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
   color:var(--text-muted); user-select:none; }
 .rve-diff-line--add .rve-diff-prefix { color:#1e8e3e; font-weight:700; }
 .rve-diff-line--del .rve-diff-prefix { color:#d93025; font-weight:700; }
+/* Two-column layout: code | comments */
+.rve-diff-layout         { display:flex; flex-direction:row; align-items:flex-start; }
+.rve-diff-code           { flex:1; min-width:0; }
+.rve-diff-comment-col    { width:260px; flex-shrink:0; position:relative; margin-left:8px; }
+.rve-diff-thread-wrap    { position:absolute; left:0; right:0; }
+.rve-diff-thread-connector { position:absolute; left:10px; width:2px;
+  background:rgba(245,158,11,.35); }
+
+.rve-diff-line           { height:22px; } /* matches LINE_H constant */
 .rve-diff-linenum--num   { width:44px; flex-shrink:0; text-align:right; padding-right:10px;
-  color:#999; font-size:11px; user-select:none; }
+  color:#999; font-size:11px; user-select:none; line-height:22px; }
 .rve-diff-linenum        { width:44px; flex-shrink:0; text-align:right; padding-right:10px;
   color:#999; font-size:11px; user-select:none; }
 .rve-diff-linenum--old   { color:#bbb; }
-.rve-diff-linecontent    { flex:1; padding:0 8px; white-space:pre; overflow-x:auto; }
+.rve-diff-linecontent    { flex:1; padding:0 8px; white-space:pre; overflow-x:auto; line-height:22px; }
 .rve-diff-toggle-btn.active { background:var(--color-primary); color:#fff; border-color:var(--color-primary); }
 
 /* GitHub-style selected line highlight */
@@ -6920,10 +6929,12 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rve-diff-line--ann.rve-diff-line--selected { background:rgba(59,130,246,.14) !important;
   border-left-color:var(--color-primary); }
 
-/* Inline finding threads */
-.rve-inline-thread       { border-left:3px solid #f59e0b; background:#fffbeb; }
+/* Inline finding threads (right column) */
+.rve-inline-thread       { border:1px solid #f59e0b; border-radius:6px;
+  background:#fffbeb; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); }
 .rve-inline-thread-range { font-size:10px; font-weight:700; color:#92400e;
-  padding:4px 10px; border-bottom:1px solid rgba(245,158,11,.2);
+  padding:3px 8px; background:rgba(245,158,11,.15);
+  border-bottom:1px solid rgba(245,158,11,.2);
   text-transform:uppercase; letter-spacing:.04em; }
 .rve-inline-finding      { padding:8px 12px; border-bottom:1px solid rgba(0,0,0,.06); }
 .rve-inline-finding[data-status="closed"] { opacity:.55; }
@@ -6936,10 +6947,11 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .rve-inline-finding-desc    { font-size:12px; color:var(--color-text-muted); margin-top:4px; white-space:pre-wrap; }
 .rve-if-edit-form           { padding-top:8px; }
 
-/* Inline comment form */
-.rve-inline-form         { border-left:3px solid var(--color-primary); background:#f0f4ff; padding:10px 12px; }
-.rve-inline-form-inner   { max-width:680px; }
-.rve-if-label            { font-size:12px; margin-bottom:8px; }
+/* Inline comment form (in right column) */
+.rve-inline-form         { border:1px solid var(--color-primary); border-radius:6px;
+  background:#f0f4ff; padding:10px; box-shadow:0 2px 8px rgba(0,0,0,.1); }
+.rve-inline-form-inner   { }
+.rve-if-label            { font-size:11px; margin-bottom:6px; color:var(--color-text-muted); }
 
 /* ── Project Settings sidenav layout ───────────────────────────── */
 .ps-layout            { display:flex; gap:0; min-height:600px; align-items:stretch; }
