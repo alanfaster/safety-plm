@@ -255,36 +255,45 @@ function escPanel(str) {
   return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ── Panel resize (drag handle on left edge) ───────────────────────────────────
+// ── Panel resize ──────────────────────────────────────────────────────────────
 
 const LS_PANEL_W = 'alm_panel_w_';
 
 /**
- * Makes a right-side panel user-resizable by dragging its left edge.
- * @param {HTMLElement} panelEl  — the panel element
+ * Makes a panel user-resizable by dragging its inner edge.
+ * @param {HTMLElement} panelEl
  * @param {string}      key      — localStorage key suffix
- * @param {object}      opts     — { minWidth=280, maxWidth=700, defaultWidth=420 }
+ * @param {object}      opts     — { side='left'|'right', minWidth, maxWidth, defaultWidth, openClass }
+ *   side='left'  → handle on left edge (right-side panel, drag left=wider)
+ *   side='right' → handle on right edge (left-side panel, drag right=wider)
  */
-export function wirePanelResize(panelEl, key, { minWidth = 280, maxWidth = 700, defaultWidth = 420 } = {}) {
+export function wirePanelResize(panelEl, key, {
+  side = 'left', minWidth = 160, maxWidth = 700, defaultWidth = 420,
+  openClass = 'open', alwaysApply = false,
+} = {}) {
   const stored = parseInt(localStorage.getItem(LS_PANEL_W + key));
-  const savedW = (stored >= minWidth && stored <= maxWidth) ? stored : defaultWidth;
+  let currentW = (stored >= minWidth && stored <= maxWidth) ? stored : defaultWidth;
 
-  // Apply saved width whenever panel opens
   const applyWidth = w => {
+    currentW = w;
     panelEl.style.width    = w + 'px';
     panelEl.style.minWidth = w + 'px';
   };
 
-  // Observe open state changes to apply stored width
-  const mo = new MutationObserver(() => {
-    if (panelEl.classList.contains('open')) applyWidth(savedW);
-  });
-  mo.observe(panelEl, { attributes: true, attributeFilter: ['class'] });
-  if (panelEl.classList.contains('open')) applyWidth(savedW);
+  if (alwaysApply) {
+    applyWidth(currentW);
+  } else {
+    // Re-apply saved width whenever panel opens
+    const mo = new MutationObserver(() => {
+      if (panelEl.classList.contains(openClass)) applyWidth(currentW);
+    });
+    mo.observe(panelEl, { attributes: true, attributeFilter: ['class'] });
+    if (panelEl.classList.contains(openClass)) applyWidth(currentW);
+  }
 
   const handle = document.createElement('div');
-  handle.className = 'panel-resize-handle';
-  panelEl.prepend(handle);
+  handle.className = `panel-resize-handle panel-resize-handle--${side}`;
+  panelEl.appendChild(handle);
 
   handle.addEventListener('mousedown', e => {
     e.preventDefault();
@@ -294,11 +303,14 @@ export function wirePanelResize(panelEl, key, { minWidth = 280, maxWidth = 700, 
     document.body.style.cursor     = 'col-resize';
 
     const onMove = e => {
-      const w = Math.max(minWidth, Math.min(maxWidth, startW - (e.clientX - startX)));
+      const delta = e.clientX - startX;
+      // left panel: drag right = wider (+delta); right panel: drag left = wider (-delta)
+      const w = Math.max(minWidth, Math.min(maxWidth,
+        side === 'right' ? startW + delta : startW - delta));
       applyWidth(w);
     };
     const onUp = () => {
-      localStorage.setItem(LS_PANEL_W + key, panelEl.offsetWidth);
+      localStorage.setItem(LS_PANEL_W + key, currentW);
       document.body.style.userSelect = '';
       document.body.style.cursor     = '';
       document.removeEventListener('mousemove', onMove);
@@ -356,7 +368,7 @@ export function wireColResize(theadRow, key) {
       document.body.style.cursor     = 'col-resize';
 
       const onMove = e => {
-        const w = Math.max(40, startW + (e.clientX - startX));
+        const w = Math.max(0, startW + (e.clientX - startX));
         th.style.width    = w + 'px';
         th.style.minWidth = w + 'px';
       };
