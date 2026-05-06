@@ -338,9 +338,11 @@ export function wirePanelResize(panelEl, key, {
 }
 
 // ── Column resize (drag handle on right edge of each <th>) ───────────────────
+// Widths stored as % so columns scale with container (panel open/close).
+// Applied as px via ResizeObserver so resize is smooth and push works.
 
-const LS_COL_W  = 'alm_col_px3_'; // px-based widths; suffix distinguishes from old formats
-const MIN_COL_W = 8;               // minimum column width in px
+const LS_COL_W  = 'alm_col_pct2_';
+const MIN_COL_W = 8; // px — minimum column width when shrinking
 
 export function loadColWidths(key) {
   try { return JSON.parse(localStorage.getItem(LS_COL_W + key) || '{}'); } catch { return {}; }
@@ -350,33 +352,43 @@ export function saveColWidths(key, widths) {
   localStorage.setItem(LS_COL_W + key, JSON.stringify(widths));
 }
 
-/**
- * Adds drag-to-resize handles to all <th data-col> elements.
- * Expanding a column pushes neighbours right (table can grow beyond 100%).
- * Container must have overflow-x:auto for horizontal scroll when needed.
- */
 export function wireColResize(theadRow, key) {
-  const tableEl = theadRow.closest('table');
-  const widths  = loadColWidths(key); // px values per colId
+  const tableEl   = theadRow.closest('table');
+  const container = tableEl?.parentElement;
+  const widths    = loadColWidths(key); // stored as % (0–100)
 
   if (tableEl) {
     tableEl.style.tableLayout = 'fixed';
     tableEl.style.minWidth    = '100%';
-    tableEl.style.width       = 'max-content'; // shrink-wrap to column sum
+    tableEl.style.width       = 'auto';
   }
 
-  const setW = (th, w) => {
-    th.style.width    = w + 'px';
-    th.style.minWidth = '0';
+  // Convert stored % to px for a given container width
+  const applyAll = cW => {
+    if (!cW || cW <= 0) return;
+    theadRow.querySelectorAll('th[data-col]').forEach(th => {
+      const pct = widths[th.dataset.col];
+      if (pct != null) {
+        th.style.width    = Math.max(MIN_COL_W, Math.round(pct / 100 * cW)) + 'px';
+        th.style.minWidth = '0';
+      }
+    });
   };
 
-  // Apply stored widths or snapshot on first load
-  const hasStored = Object.keys(widths).length > 0;
+  // Re-apply px whenever the container resizes (panel open/close, window resize)
+  if (container) {
+    const ro = new ResizeObserver(entries => {
+      applyAll(entries[0]?.contentRect?.width);
+    });
+    ro.observe(container);
+  }
 
+  // Apply stored widths immediately
+  if (Object.keys(widths).length) applyAll(container?.offsetWidth || 0);
+
+  // Add drag handles
   theadRow.querySelectorAll('th[data-col]').forEach(th => {
     const colId = th.dataset.col;
-    if (widths[colId]) setW(th, widths[colId]);
-
     if (colId === 'drag' || colId === 'select' || colId === 'actions') return;
 
     const handle = document.createElement('div');
@@ -386,20 +398,25 @@ export function wireColResize(theadRow, key) {
     handle.addEventListener('mousedown', e => {
       e.preventDefault();
       e.stopPropagation();
+      const cW     = container?.offsetWidth || 800;
       const startX = e.clientX;
-      const startW = widths[colId] ?? th.offsetWidth;
+      // Start from px equivalent of stored %, avoids jump
+      const startW = widths[colId] != null
+        ? Math.max(MIN_COL_W, Math.round(widths[colId] / 100 * cW))
+        : th.offsetWidth;
       document.body.style.userSelect = 'none';
       document.body.style.cursor     = 'col-resize';
 
       const onMove = e => {
+        // Only resize this column — others keep their px (push behavior)
         const w = Math.max(MIN_COL_W, startW + (e.clientX - startX));
-        setW(th, w);
-        widths[colId] = w; // keep in-memory up to date for consistent startW on next drag
+        th.style.width = w + 'px';
       };
       const onUp = () => {
-        // Snapshot all column px widths
+        // Snapshot all columns as % of current container width
+        const snapCW = container?.offsetWidth || cW;
         theadRow.querySelectorAll('th[data-col]').forEach(t => {
-          widths[t.dataset.col] = t.offsetWidth;
+          widths[t.dataset.col] = t.offsetWidth / snapCW * 100;
         });
         saveColWidths(key, widths);
         document.body.style.userSelect = '';
@@ -412,23 +429,22 @@ export function wireColResize(theadRow, key) {
     });
   });
 
-  // First load: let auto layout render once, snapshot px widths, switch to fixed
-  if (!hasStored && tableEl) {
+  // First load (no stored widths): auto-layout snapshot fills 100%
+  if (!Object.keys(widths).length && tableEl) {
     tableEl.style.tableLayout = 'auto';
     tableEl.style.width       = '100%';
     requestAnimationFrame(() => {
+      const cW = container?.offsetWidth || tableEl.offsetWidth;
       tableEl.style.tableLayout = 'fixed';
-      tableEl.style.width       = 'max-content';
-      const totalPx = Array.from(theadRow.querySelectorAll('th[data-col]'))
-        .reduce((s, t) => s + t.offsetWidth, 0);
-      // If auto gave us a table smaller than container, stretch columns proportionally
-      const containerW = tableEl.parentElement?.offsetWidth || totalPx;
-      const scale = totalPx > 0 ? Math.max(1, containerW / totalPx) : 1;
-      theadRow.querySelectorAll('th[data-col]').forEach(t => {
-        const w = Math.round(t.offsetWidth * scale);
-        setW(t, w);
-        widths[t.dataset.col] = w;
-      });
+      tableEl.style.width       = 'auto';
+      if (cW > 0) {
+        theadRow.querySelectorAll('th[data-col]').forEach(t => {
+          const pct = t.offsetWidth / cW * 100;
+          widths[t.dataset.col] = pct;
+          t.style.width    = t.offsetWidth + 'px';
+          t.style.minWidth = '0';
+        });
+      }
     });
   }
 }
