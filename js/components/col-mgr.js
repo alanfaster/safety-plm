@@ -358,21 +358,19 @@ export function wireColResize(theadRow) {
   tableEl.style.minWidth    = '';
 
   requestAnimationFrame(() => {
-    // Step 2: snapshot px widths, switch to fixed with exact table width
-    const colWidths = [];
+    // Step 2: read widths WHILE STILL in auto layout (before switching to fixed)
     const ths = Array.from(theadRow.querySelectorAll('th[data-col]'));
-    ths.forEach(th => {
-      const w = th.offsetWidth;
-      colWidths.push(w);
-      th.style.width    = w + 'px';
-      th.style.minWidth = '0';
-    });
-
-    // Set table width = sum of columns exactly — no redistribution possible
+    const colWidths = ths.map(th => th.offsetWidth);
     const totalW = colWidths.reduce((s, w) => s + w, 0);
+
+    // Step 3: switch to fixed and apply snapshotted px widths
     tableEl.style.tableLayout = 'fixed';
     tableEl.style.width       = totalW + 'px';
     tableEl.style.minWidth    = '';
+    ths.forEach((th, i) => {
+      th.style.width    = colWidths[i] + 'px';
+      th.style.minWidth = '0';
+    });
 
     // Step 3: wire resize handles
     ths.forEach((th, i) => {
