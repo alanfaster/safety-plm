@@ -657,7 +657,7 @@ function renderTable(body) {
       _cols = updatedCols;
       renderTable(body);
     });
-    wireColResize(theadRow, `spec_${_ctx.parentId}`);
+    wireColResize(theadRow);
   }
 }
 
