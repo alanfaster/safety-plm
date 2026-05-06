@@ -349,29 +349,33 @@ export function loadColWidths()  { return {}; } // no persistence by design
 export function saveColWidths()  {}             // no-op
 
 export function wireColResize(theadRow) {
-  const tableEl   = theadRow.closest('table');
-  const container = tableEl?.parentElement;
+  const tableEl = theadRow.closest('table');
   if (!tableEl) return;
 
-  // Table fills container but can grow wider (scroll)
-  tableEl.style.tableLayout = 'fixed';
-  tableEl.style.minWidth    = '100%';
-  tableEl.style.width       = 'auto';
-
-  // Auto-fit: one rAF with auto layout to measure natural widths, then lock to px
+  // Step 1: measure natural column widths with auto layout filling 100%
   tableEl.style.tableLayout = 'auto';
   tableEl.style.width       = '100%';
+  tableEl.style.minWidth    = '';
+
   requestAnimationFrame(() => {
-    tableEl.style.tableLayout = 'fixed';
-    tableEl.style.width       = 'auto';
-    tableEl.style.minWidth    = '100%';
-    theadRow.querySelectorAll('th[data-col]').forEach(th => {
-      th.style.width    = th.offsetWidth + 'px';
+    // Step 2: snapshot px widths, switch to fixed with exact table width
+    const colWidths = [];
+    const ths = Array.from(theadRow.querySelectorAll('th[data-col]'));
+    ths.forEach(th => {
+      const w = th.offsetWidth;
+      colWidths.push(w);
+      th.style.width    = w + 'px';
       th.style.minWidth = '0';
     });
 
-    // Wire handles after widths are locked
-    theadRow.querySelectorAll('th[data-col]').forEach(th => {
+    // Set table width = sum of columns exactly — no redistribution possible
+    const totalW = colWidths.reduce((s, w) => s + w, 0);
+    tableEl.style.tableLayout = 'fixed';
+    tableEl.style.width       = totalW + 'px';
+    tableEl.style.minWidth    = '';
+
+    // Step 3: wire resize handles
+    ths.forEach((th, i) => {
       const colId = th.dataset.col;
       if (colId === 'drag' || colId === 'select' || colId === 'actions') return;
 
@@ -388,7 +392,11 @@ export function wireColResize(theadRow) {
         document.body.style.cursor     = 'col-resize';
 
         const onMove = e => {
-          th.style.width = Math.max(MIN_COL_W, startW + (e.clientX - startX)) + 'px';
+          const newW = Math.max(MIN_COL_W, startW + (e.clientX - startX));
+          const delta = newW - startW;
+          th.style.width = newW + 'px';
+          // Grow/shrink table by same delta — other columns untouched
+          tableEl.style.width = (parseInt(tableEl.style.width) + delta) + 'px';
         };
         const onUp = () => {
           document.body.style.userSelect = '';
