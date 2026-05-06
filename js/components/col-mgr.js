@@ -369,7 +369,7 @@ export function wireColResize(theadRow, key) {
 
   theadRow.querySelectorAll('th[data-col]').forEach(th => {
     const colId = th.dataset.col;
-    if (colId === 'drag' || colId === 'select') return;
+    const isFixed = colId === 'drag' || colId === 'select';
 
     // Use % widths so columns fill proportionally at any container size
     const setW = pct => {
@@ -382,7 +382,7 @@ export function wireColResize(theadRow, key) {
     // Apply stored % on load
     if (widths[colId]) setW(widths[colId]);
 
-    if (colId === 'actions') return; // no drag handle on actions
+    if (isFixed || colId === 'actions') return; // no drag handle on fixed or actions cols
 
     const handle = document.createElement('div');
     handle.className = 'col-resize-handle';
@@ -421,12 +421,10 @@ export function wireColResize(theadRow, key) {
         }
       };
       const onUp = () => {
-        // Save ALL column widths so next load has a fully consistent layout
+        // Save ALL column widths (including drag/select) for consistent reload
         const tw = tableEl.offsetWidth;
         theadRow.querySelectorAll('th[data-col]').forEach(t => {
-          const id = t.dataset.col;
-          if (id === 'drag' || id === 'select') return;
-          widths[id] = t.offsetWidth / tw * 100;
+          widths[t.dataset.col] = t.offsetWidth / tw * 100;
         });
         saveColWidths(key, widths);
         document.body.style.userSelect = '';
@@ -447,9 +445,7 @@ export function wireColResize(theadRow, key) {
       tableEl.style.tableLayout = 'fixed';
       if (tableW > 0) {
         theadRow.querySelectorAll('th[data-col]').forEach(t => {
-          const id = t.dataset.col;
-          if (id === 'drag' || id === 'select') return;
-          colSetters[id]?.(t.offsetWidth / tableW * 100);
+          colSetters[t.dataset.col]?.(t.offsetWidth / tableW * 100);
         });
       }
     });
