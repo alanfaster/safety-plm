@@ -387,17 +387,18 @@ export function wireColResize(theadRow, { onResize } = {}) {
       handle.addEventListener('mousedown', e => {
         e.preventDefault();
         e.stopPropagation();
-        const startX = e.clientX;
-        const startW = th.offsetWidth;
+        const startX      = e.clientX;
+        const startW      = th.offsetWidth;
+        const startTableW = parseInt(tableEl.style.width) || tableEl.offsetWidth;
         document.body.style.userSelect = 'none';
         document.body.style.cursor     = 'col-resize';
 
         const onMove = e => {
-          const newW = Math.max(MIN_COL_W, startW + (e.clientX - startX));
+          const newW  = Math.max(MIN_COL_W, startW + (e.clientX - startX));
           const delta = newW - startW;
-          th.style.width = newW + 'px';
-          tableEl.style.width = (parseInt(tableEl.style.width) + delta) + 'px';
-          onResize?.(container?.offsetWidth ?? parseInt(tableEl.style.width));
+          th.style.width      = newW + 'px';
+          tableEl.style.width = (startTableW + delta) + 'px';
+          onResize?.(container?.offsetWidth ?? (startTableW + delta));
         };
         const onUp = () => {
           document.body.style.userSelect = '';
