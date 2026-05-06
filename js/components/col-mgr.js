@@ -391,19 +391,35 @@ export function wireColResize(theadRow, key) {
     handle.addEventListener('mousedown', e => {
       e.preventDefault();
       e.stopPropagation();
-      const tableW  = tableEl.offsetWidth;
-      const startX  = e.clientX;
-      const startPct = th.offsetWidth / tableW * 100;
+
+      const tableW    = tableEl.offsetWidth;
+      const startX    = e.clientX;
+      const startPct  = th.offsetWidth / tableW * 100;
+
+      // Find next resizable column — it absorbs the opposite delta
+      const allThs   = Array.from(theadRow.querySelectorAll('th[data-col]'))
+        .filter(t => !['drag','select'].includes(t.dataset.col));
+      const myIdx    = allThs.indexOf(th);
+      const nextTh   = allThs[myIdx + 1];
+      const nextId   = nextTh?.dataset.col;
+      const nextStart = nextTh ? nextTh.offsetWidth / tableW * 100 : 0;
+
       document.body.style.userSelect = 'none';
       document.body.style.cursor     = 'col-resize';
 
       const onMove = e => {
-        const deltaPct = (e.clientX - startX) / tableW * 100;
-        const pct = Math.max(MIN_COL_PCT, startPct + deltaPct);
-        setW(pct);
+        const deltaPct   = (e.clientX - startX) / tableW * 100;
+        const newPct     = Math.max(MIN_COL_PCT, startPct + deltaPct);
+        const actualDelta = newPct - startPct;
+        setW(newPct);
+        // Shrink/grow adjacent column to keep total = 100%
+        if (nextTh && nextId && colSetters[nextId]) {
+          colSetters[nextId](Math.max(MIN_COL_PCT, nextStart - actualDelta));
+        }
       };
       const onUp = () => {
         widths[colId] = th.offsetWidth / tableEl.offsetWidth * 100;
+        if (nextId) widths[nextId] = (nextTh.offsetWidth / tableEl.offsetWidth * 100);
         saveColWidths(key, widths);
         document.body.style.userSelect = '';
         document.body.style.cursor     = '';
