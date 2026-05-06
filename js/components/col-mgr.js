@@ -384,6 +384,29 @@ export function wireColResize(theadRow, { onResize } = {}) {
 
     onResize?.(container?.offsetWidth ?? totalW);
 
+    // "Fit columns" button — resets all columns to auto-fit proportions
+    const fitBtn = document.createElement('button');
+    fitBtn.className = 'col-fit-btn';
+    fitBtn.title     = 'Reset column widths to fit';
+    fitBtn.textContent = '⊡ Fit';
+    fitBtn.addEventListener('click', () => resetFit());
+    if (container) container.appendChild(fitBtn);
+
+    function resetFit() {
+      tableEl.style.tableLayout = 'auto';
+      tableEl.style.width       = '100%';
+      requestAnimationFrame(() => {
+        const newThs  = Array.from(theadRow.querySelectorAll('th[data-col]'));
+        const newW    = newThs.map(t => t.offsetWidth);
+        const newTotalW = newW.reduce((s, w) => s + w, 0);
+        tableEl.style.tableLayout = 'fixed';
+        tableEl.style.width       = newTotalW + 'px';
+        newThs.forEach((t, i) => { t.style.width = newW[i] + 'px'; t.style.minWidth = '0'; });
+        _lastContainerW = container?.offsetWidth ?? newTotalW;
+        onResize?.(_lastContainerW);
+      });
+    }
+
     // ResizeObserver: when container changes width (panel toggle, window resize),
     // scale all columns proportionally. Disabled during active drag.
     let _dragging = false;
