@@ -339,7 +339,7 @@ export function wirePanelResize(panelEl, key, {
 
 // ── Column resize (drag handle on right edge of each <th>) ───────────────────
 
-const LS_COL_W = 'alm_col_w_';
+const LS_COL_W = 'alm_col_pct_'; // 'pct' suffix distinguishes from old px-based format
 
 export function loadColWidths(key) {
   try { return JSON.parse(localStorage.getItem(LS_COL_W + key) || '{}'); } catch { return {}; }
