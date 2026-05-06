@@ -369,24 +369,21 @@ export function wireColResize(theadRow, key) {
 
   theadRow.querySelectorAll('th[data-col]').forEach(th => {
     const colId = th.dataset.col;
-    if (colId === 'drag' || colId === 'select' || colId === 'actions') return;
+    if (colId === 'drag' || colId === 'select') return;
 
+    // setW only touches the <th> — with table-layout:fixed the browser
+    // distributes that width to all TDs in the column automatically.
     const setW = w => {
       th.style.width    = w + 'px';
       th.style.minWidth = '0';
-      th.style.maxWidth = w + 'px';
-      tableEl?.querySelectorAll(`td[data-col="${colId}"]`).forEach(td => {
-        td.style.width    = w + 'px';
-        td.style.maxWidth = w + 'px';
-      });
     };
 
     colSetters[colId] = setW;
-    // Apply stored width as min-width hint so auto-layout respects user preference
-    if (widths[colId]) {
-      th.style.minWidth = widths[colId] + 'px';
-      th.style.width    = widths[colId] + 'px';
-    }
+
+    // Apply stored width as hint for auto-layout pass
+    if (widths[colId]) th.style.minWidth = widths[colId] + 'px';
+
+    if (colId === 'actions') return; // no drag handle on actions column
 
     const handle = document.createElement('div');
     handle.className = 'col-resize-handle';
@@ -417,14 +414,14 @@ export function wireColResize(theadRow, key) {
     });
   });
 
-  // Always: let browser render one frame with auto layout (which fills 100%),
-  // then snapshot rendered widths and switch to fixed so resize works freely.
+  // Let browser render one frame with auto layout (fills 100%),
+  // snapshot ALL column widths, then switch to fixed for free resizing.
   if (tableEl) {
     requestAnimationFrame(() => {
       tableEl.style.tableLayout = 'fixed';
       theadRow.querySelectorAll('th[data-col]').forEach(t => {
         const id = t.dataset.col;
-        if (id === 'drag' || id === 'select' || id === 'actions') return;
+        if (id === 'drag' || id === 'select') return;
         colSetters[id]?.(t.offsetWidth);
       });
     });
