@@ -659,8 +659,8 @@ function renderTable(body) {
     });
     wireColResize(theadRow, {
       onResize: containerW => {
-        document.querySelectorAll('.spec-section-cell').forEach(td => {
-          td.style.width = containerW + 'px';
+        document.querySelectorAll('.spec-section-inner').forEach(el => {
+          el.style.width = containerW + 'px';
         });
       },
     });
