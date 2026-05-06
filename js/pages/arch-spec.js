@@ -35,7 +35,6 @@ const SPEC_BUILTIN_COLS = [
   { id: 'status',           name: 'Status',           visible: true },
   { id: 'system_component', name: 'System Component', visible: true, parentTypes: ['item'] },
   { id: 'target_domain',    name: 'Target Domain',    visible: true, parentTypes: ['system'] },
-  { id: 'actions',          name: '',                 fixed: true,  visible: true },
 ];
 
 // Module-level state
@@ -73,8 +72,7 @@ export async function renderArchSpec(container, { project, item, system, parentT
   _cols = [
     ..._cols.filter(c => c.id === 'drag'),
     ..._cols.filter(c => c.id === 'select'),
-    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select' && c.id !== 'actions'),
-    ..._cols.filter(c => c.id === 'actions'),
+    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select'),
   ];
   _collapsed  = new Set();
   _colFilters = {};
@@ -402,23 +400,18 @@ async function loadSpec() {
     _systems = [];
   }
 
-  // Rebuild builtins with custom cols appended (before the fixed 'actions' column)
-  const actionCol = SPEC_BUILTIN_COLS.find(c => c.id === 'actions');
   _builtins = [
     ...SPEC_BUILTIN_COLS.filter(c => {
-      if (c.id === 'actions') return false;
       if (c.parentTypes && !c.parentTypes.includes(_ctx.parentType)) return false;
       return true;
     }),
     ...archSpecCustomCols,
-    ...(actionCol ? [actionCol] : []),
   ];
   _cols = loadColConfig(`spec_${_ctx.parentId}`, _builtins);
   _cols = [
     ..._cols.filter(c => c.id === 'drag'),
     ..._cols.filter(c => c.id === 'select'),
-    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select' && c.id !== 'actions'),
-    ..._cols.filter(c => c.id === 'actions'),
+    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select'),
   ];
 
   let specQ = sb.from('arch_spec_items')
@@ -549,7 +542,7 @@ function renderTable(body) {
     return `<th data-col="${esc(c.id)}"${style}${managed}>${c.custom ? esc(c.name) : meta.label}</th>`;
   }).join('');
 
-  const SKIP_FILTER  = new Set(['select', 'drag', 'actions']);
+  const SKIP_FILTER  = new Set(['select', 'drag']);
   const COL_OPTIONS  = {
     type:   SPEC_TYPES,
     status: SPEC_STATUSES,
@@ -737,7 +730,14 @@ function rowHTML(it) {
   return visibleCols.map(c => {
     switch (c.id) {
       case 'select':
-        return `<td data-col="select" style="width:28px;padding:10px 6px 0;text-align:center;vertical-align:top"><input type="checkbox" class="spec-row-chk" data-id="${it.id}" title="Select"/></td>`;
+        return `<td data-col="select" style="width:36px;padding:6px 4px;text-align:center;vertical-align:top">
+          <input type="checkbox" class="spec-row-chk" data-id="${it.id}" title="Select" style="display:block;margin:0 auto 4px"/>
+          <div class="spec-row-acts">
+            <button class="btn btn-ghost btn-xs btn-copy-link spec-link-btn" data-id="${it.id}" title="Copy link" style="padding:1px 3px">🔗</button>
+            <button class="btn btn-ghost btn-xs spec-history-btn" data-id="${it.id}" title="Version history" style="padding:1px 3px">🕐</button>
+            <button class="btn btn-ghost btn-xs spec-del-btn" data-id="${it.id}" title="Delete" style="padding:1px 3px;color:var(--color-danger)">✕</button>
+          </div>
+        </td>`;
       case 'drag':
         return `<td data-col="drag" style="width:24px;padding:4px 4px 0;text-align:center;vertical-align:top;cursor:grab"><span class="spec-drag-handle" title="Drag to reorder">⠿</span></td>`;
       case 'id':
@@ -790,12 +790,6 @@ function rowHTML(it) {
         ).join('');
         return `<td data-col="target_domain"><div class="req-mtog-wrap">${btns}</div></td>`;
       }
-      case 'actions':
-        return `<td data-col="actions" class="spec-row-actions">
-          <button class="btn btn-ghost btn-xs btn-copy-link spec-link-btn" data-id="${it.id}" title="Copy link">🔗</button>
-          <button class="btn btn-ghost btn-xs spec-history-btn" data-id="${it.id}" title="Version history">🕐</button>
-          <button class="btn btn-ghost btn-xs spec-del-btn"   data-id="${it.id}" title="Delete row" style="color:var(--color-danger)">✕</button>
-        </td>`;
       default:
         if (c.custom) {
           return `<td data-col="${esc(c.id)}" class="spec-custom-cell" data-item-id="${it.id}" data-custom-col="${esc(c.id)}"

@@ -2899,9 +2899,8 @@ tr.req-title-row td { cursor: default; }
 .spec-uml-resize-handle:hover{background:#dceeff}
 
 /* Row action buttons */
-.spec-row-actions{white-space:nowrap;padding-top:8px!important;vertical-align:top}
-.spec-row-actions .btn{font-size:13px;padding:2px 5px;line-height:1.2;opacity:0.55;transition:opacity 0.1s}
-.spec-row:hover .spec-row-actions .btn{opacity:1}
+.spec-row-acts{display:flex;flex-direction:column;align-items:center;gap:1px;margin-top:2px;opacity:0;transition:opacity .1s}
+tr:hover .spec-row-acts{opacity:1}
 
 /* Spec page layout (nav + content) */
 .spec-page-body{display:flex;flex-direction:row;padding:0!important;min-height:0;gap:0}
@@ -3037,8 +3036,6 @@ td.req-drag-cell .req-drag-handle { cursor: grab; color: var(--color-text-muted)
 .spec-section-cell{padding:0!important}
 .spec-section-inner{display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--color-bg-subtle,#F1F3F4);border-top:2px solid var(--color-border);border-bottom:1px solid var(--color-border);user-select:none;
   position:sticky;left:0;overflow:hidden}
-/* Actions column always visible at right edge */
-th[data-col="actions"],td[data-col="actions"]{position:sticky;right:0;z-index:1;background:var(--color-surface,#fff)}
 .spec-section-toggle{background:none;border:none;cursor:pointer;font-size:11px;color:var(--color-text-muted);padding:0 3px;transition:transform 0.15s;flex-shrink:0}
 .spec-section-toggle.collapsed{transform:rotate(-90deg)}
 

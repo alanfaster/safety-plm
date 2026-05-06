@@ -378,7 +378,7 @@ export function wireColResize(theadRow, { onResize } = {}) {
     // Step 3: wire resize handles
     ths.forEach((th, i) => {
       const colId = th.dataset.col;
-      if (colId === 'drag' || colId === 'select' || colId === 'actions') return;
+      if (colId === 'drag' || colId === 'select') return;
 
       const handle = document.createElement('div');
       handle.className = 'col-resize-handle';
