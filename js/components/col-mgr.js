@@ -355,35 +355,34 @@ export function saveColWidths(key, widths) {
  * @param {HTMLTableRowElement} theadRow
  * @param {string}              key      — same key used for col config
  */
-const MIN_COL_W = 8; // minimum column width in px — just enough to show it exists
+const MIN_COL_PCT = 0.5; // minimum column width as % of table width
 
 export function wireColResize(theadRow, key) {
   const tableEl = theadRow.closest('table');
-  const widths  = loadColWidths(key);
-  const colSetters = {}; // colId → setW fn, for snapshot
+  const widths  = loadColWidths(key); // stored as percentages (0–100)
+  const colSetters = {};
 
   if (tableEl) {
-    tableEl.style.width = '100%';
-    tableEl.style.tableLayout = 'auto'; // start auto so browser fills 100%
+    tableEl.style.width       = '100%';
+    tableEl.style.tableLayout = 'fixed';
   }
 
   theadRow.querySelectorAll('th[data-col]').forEach(th => {
     const colId = th.dataset.col;
     if (colId === 'drag' || colId === 'select') return;
 
-    // setW only touches the <th> — with table-layout:fixed the browser
-    // distributes that width to all TDs in the column automatically.
-    const setW = w => {
-      th.style.width    = w + 'px';
+    // Use % widths so columns fill proportionally at any container size
+    const setW = pct => {
+      th.style.width    = pct + '%';
       th.style.minWidth = '0';
     };
 
     colSetters[colId] = setW;
 
-    // Apply stored width as hint for auto-layout pass
-    if (widths[colId]) th.style.minWidth = widths[colId] + 'px';
+    // Apply stored % on load
+    if (widths[colId]) setW(widths[colId]);
 
-    if (colId === 'actions') return; // no drag handle on actions column
+    if (colId === 'actions') return; // no drag handle on actions
 
     const handle = document.createElement('div');
     handle.className = 'col-resize-handle';
@@ -392,17 +391,19 @@ export function wireColResize(theadRow, key) {
     handle.addEventListener('mousedown', e => {
       e.preventDefault();
       e.stopPropagation();
-      const startX = e.clientX;
-      const startW = th.offsetWidth;
+      const tableW  = tableEl.offsetWidth;
+      const startX  = e.clientX;
+      const startPct = th.offsetWidth / tableW * 100;
       document.body.style.userSelect = 'none';
       document.body.style.cursor     = 'col-resize';
 
       const onMove = e => {
-        const w = Math.max(MIN_COL_W, startW + (e.clientX - startX));
-        setW(w);
+        const deltaPct = (e.clientX - startX) / tableW * 100;
+        const pct = Math.max(MIN_COL_PCT, startPct + deltaPct);
+        setW(pct);
       };
       const onUp = () => {
-        widths[colId] = th.offsetWidth;
+        widths[colId] = th.offsetWidth / tableEl.offsetWidth * 100;
         saveColWidths(key, widths);
         document.body.style.userSelect = '';
         document.body.style.cursor     = '';
@@ -414,16 +415,19 @@ export function wireColResize(theadRow, key) {
     });
   });
 
-  // Let browser render one frame with auto layout (fills 100%),
-  // snapshot ALL column widths, then switch to fixed for free resizing.
-  if (tableEl) {
+  // First load (no stored widths): snapshot natural % after one auto-layout frame
+  if (!Object.keys(widths).length && tableEl) {
+    tableEl.style.tableLayout = 'auto';
     requestAnimationFrame(() => {
+      const tableW = tableEl.offsetWidth;
       tableEl.style.tableLayout = 'fixed';
-      theadRow.querySelectorAll('th[data-col]').forEach(t => {
-        const id = t.dataset.col;
-        if (id === 'drag' || id === 'select') return;
-        colSetters[id]?.(t.offsetWidth);
-      });
+      if (tableW > 0) {
+        theadRow.querySelectorAll('th[data-col]').forEach(t => {
+          const id = t.dataset.col;
+          if (id === 'drag' || id === 'select') return;
+          colSetters[id]?.(t.offsetWidth / tableW * 100);
+        });
+      }
     });
   }
 }
