@@ -29,7 +29,7 @@ const SPEC_BUILTIN_COLS = [
   { id: 'drag',             name: '',                 fixed: true,  visible: true },
   { id: 'select',           name: '',                 fixed: true,  visible: true },
   { id: 'id',               name: 'ID',               fixed: true,  visible: true },
-  { id: 'description',      name: 'Description',      fixed: true,  visible: true },
+  { id: 'description',      name: 'Description',                    visible: true },
   { id: 'system',           name: 'System',           visible: true },
   { id: 'type',             name: 'Type',             visible: true },
   { id: 'status',           name: 'Status',           visible: true },
