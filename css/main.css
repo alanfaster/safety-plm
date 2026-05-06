@@ -3035,7 +3035,8 @@ td.req-drag-cell .req-drag-handle { cursor: grab; color: var(--color-text-muted)
 /* Section rows */
 .spec-section-row td{padding:0!important;border-bottom:none!important}
 .spec-section-cell{padding:0!important}
-.spec-section-inner{display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--color-bg-subtle,#F1F3F4);border-top:2px solid var(--color-border);border-bottom:1px solid var(--color-border);user-select:none}
+.spec-section-inner{display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--color-bg-subtle,#F1F3F4);border-top:2px solid var(--color-border);border-bottom:1px solid var(--color-border);user-select:none;
+  position:sticky;left:0;/* stays in viewport when table scrolls horizontally */}
 .spec-section-toggle{background:none;border:none;cursor:pointer;font-size:11px;color:var(--color-text-muted);padding:0 3px;transition:transform 0.15s;flex-shrink:0}
 .spec-section-toggle.collapsed{transform:rotate(-90deg)}
 
