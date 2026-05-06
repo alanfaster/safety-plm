@@ -224,14 +224,23 @@ function openColPanel(anchor, key, cols, afterColId, tableEl, theadRow, onUpdate
   document.body.appendChild(panel);
   positionPanel(panel, anchor);
 
-  // Restore hidden
+  // Restore hidden — insert to the right of the column where + was clicked
   panel.querySelectorAll('.col-panel-restore').forEach(btn => {
     btn.addEventListener('click', () => {
       const col = cols.find(c => c.id === btn.dataset.colId);
       if (col) {
         col.visible = true;
+        // Move the restored column to just after afterColId
+        const afterIdx = cols.findIndex(c => c.id === afterColId);
+        if (afterIdx >= 0) {
+          const colIdx = cols.findIndex(c => c.id === col.id);
+          if (colIdx >= 0) {
+            const [removed] = cols.splice(colIdx, 1);
+            const insertAt  = cols.findIndex(c => c.id === afterColId) + 1;
+            cols.splice(insertAt, 0, removed);
+          }
+        }
         saveColConfig(key, cols);
-        applyColVisibility(tableEl, cols);
         onUpdate(cols);
       }
       panel.remove();
