@@ -2953,7 +2953,7 @@ tr:hover .spec-row-acts{opacity:1}
 
 
 /* Content area — normal flow scroll (parent #content scrolls) */
-.spec-content{flex:1;min-width:0;padding:16px 24px;overflow-x:auto}
+.spec-content{flex:1;min-width:0;padding:16px 24px;overflow-x:auto;overflow-y:auto;height:calc(100vh - var(--topbar-height))}
 .spec-content--narrow{flex:0 0 55%;min-width:0}
 
 /* Hover insert pill (between rows) */
