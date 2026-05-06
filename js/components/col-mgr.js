@@ -375,9 +375,12 @@ export function wireColResize(theadRow, key) {
     });
   };
 
-  // Re-apply px whenever the container resizes (panel open/close, window resize)
+  // Re-apply px whenever the container resizes (panel open/close, window resize).
+  // Ignored during active drag so expanding one column doesn't reset others.
+  let _dragging = false;
   if (container) {
     const ro = new ResizeObserver(entries => {
+      if (_dragging) return;
       applyAll(entries[0]?.contentRect?.width);
     });
     ro.observe(container);
@@ -404,6 +407,7 @@ export function wireColResize(theadRow, key) {
       const startW = widths[colId] != null
         ? Math.max(MIN_COL_W, Math.round(widths[colId] / 100 * cW))
         : th.offsetWidth;
+      _dragging = true;
       document.body.style.userSelect = 'none';
       document.body.style.cursor     = 'col-resize';
 
@@ -413,6 +417,7 @@ export function wireColResize(theadRow, key) {
         th.style.width = w + 'px';
       };
       const onUp = () => {
+        _dragging = false;
         // Snapshot all columns as % of current container width
         const snapCW = container?.offsetWidth || cW;
         theadRow.querySelectorAll('th[data-col]').forEach(t => {
