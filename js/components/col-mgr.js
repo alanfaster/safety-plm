@@ -348,7 +348,7 @@ const MIN_COL_W = 8;
 export function loadColWidths()  { return {}; } // no persistence by design
 export function saveColWidths()  {}             // no-op
 
-export function wireColResize(theadRow) {
+export function wireColResize(theadRow, { onResize } = {}) {
   const tableEl = theadRow.closest('table');
   if (!tableEl) return;
 
@@ -372,6 +372,8 @@ export function wireColResize(theadRow) {
       th.style.minWidth = '0';
     });
 
+    onResize?.(container?.offsetWidth ?? totalW);
+
     // Step 3: wire resize handles
     ths.forEach((th, i) => {
       const colId = th.dataset.col;
@@ -393,8 +395,8 @@ export function wireColResize(theadRow) {
           const newW = Math.max(MIN_COL_W, startW + (e.clientX - startX));
           const delta = newW - startW;
           th.style.width = newW + 'px';
-          // Grow/shrink table by same delta — other columns untouched
           tableEl.style.width = (parseInt(tableEl.style.width) + delta) + 'px';
+          onResize?.(container?.offsetWidth ?? parseInt(tableEl.style.width));
         };
         const onUp = () => {
           document.body.style.userSelect = '';

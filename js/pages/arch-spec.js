@@ -657,7 +657,13 @@ function renderTable(body) {
       _cols = updatedCols;
       renderTable(body);
     });
-    wireColResize(theadRow);
+    wireColResize(theadRow, {
+      onResize: containerW => {
+        document.querySelectorAll('.spec-section-cell').forEach(td => {
+          td.style.width = containerW + 'px';
+        });
+      },
+    });
   }
 }
 
