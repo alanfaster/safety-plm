@@ -339,7 +339,8 @@ export function wirePanelResize(panelEl, key, {
 
 // ── Column resize (drag handle on right edge of each <th>) ───────────────────
 
-const LS_COL_W = 'alm_col_pct_'; // 'pct' suffix distinguishes from old px-based format
+const LS_COL_W  = 'alm_col_px3_'; // px-based widths; suffix distinguishes from old formats
+const MIN_COL_W = 8;               // minimum column width in px
 
 export function loadColWidths(key) {
   try { return JSON.parse(localStorage.getItem(LS_COL_W + key) || '{}'); } catch { return {}; }
@@ -350,39 +351,33 @@ export function saveColWidths(key, widths) {
 }
 
 /**
- * Adds drag-to-resize handles to all <th data-col> elements in theadRow.
- * Persists widths to localStorage under key.
- * @param {HTMLTableRowElement} theadRow
- * @param {string}              key      — same key used for col config
+ * Adds drag-to-resize handles to all <th data-col> elements.
+ * Expanding a column pushes neighbours right (table can grow beyond 100%).
+ * Container must have overflow-x:auto for horizontal scroll when needed.
  */
-const MIN_COL_PCT = 0.5; // minimum column width as % of table width
-
 export function wireColResize(theadRow, key) {
   const tableEl = theadRow.closest('table');
-  const widths  = loadColWidths(key); // stored as percentages (0–100)
-  const colSetters = {};
+  const widths  = loadColWidths(key); // px values per colId
 
   if (tableEl) {
-    tableEl.style.width       = '100%';
     tableEl.style.tableLayout = 'fixed';
+    tableEl.style.minWidth    = '100%';
+    tableEl.style.width       = 'max-content'; // shrink-wrap to column sum
   }
+
+  const setW = (th, w) => {
+    th.style.width    = w + 'px';
+    th.style.minWidth = '0';
+  };
+
+  // Apply stored widths or snapshot on first load
+  const hasStored = Object.keys(widths).length > 0;
 
   theadRow.querySelectorAll('th[data-col]').forEach(th => {
     const colId = th.dataset.col;
-    const isFixed = colId === 'drag' || colId === 'select';
+    if (widths[colId]) setW(th, widths[colId]);
 
-    // Use % widths so columns fill proportionally at any container size
-    const setW = pct => {
-      th.style.width    = pct + '%';
-      th.style.minWidth = '0';
-    };
-
-    colSetters[colId] = setW;
-
-    // Apply stored % on load
-    if (widths[colId]) setW(widths[colId]);
-
-    if (isFixed || colId === 'actions') return; // no drag handle on fixed or actions cols
+    if (colId === 'drag' || colId === 'select' || colId === 'actions') return;
 
     const handle = document.createElement('div');
     handle.className = 'col-resize-handle';
@@ -391,40 +386,20 @@ export function wireColResize(theadRow, key) {
     handle.addEventListener('mousedown', e => {
       e.preventDefault();
       e.stopPropagation();
-
-      const tableW    = tableEl.offsetWidth;
-      const startX    = e.clientX;
-      // Use stored % if available — avoids jump from rendered-px vs stored-% mismatch
-      const startPct  = widths[colId] ?? (th.offsetWidth / tableW * 100);
-
-      // Find next resizable column — it absorbs the opposite delta
-      const allThs   = Array.from(theadRow.querySelectorAll('th[data-col]'))
-        .filter(t => !['drag','select'].includes(t.dataset.col));
-      const myIdx    = allThs.indexOf(th);
-      const nextTh   = allThs[myIdx + 1];
-      const nextId   = nextTh?.dataset.col;
-      const nextStart = nextId && widths[nextId] != null
-        ? widths[nextId]
-        : (nextTh ? nextTh.offsetWidth / tableW * 100 : 0);
-
+      const startX = e.clientX;
+      const startW = widths[colId] ?? th.offsetWidth;
       document.body.style.userSelect = 'none';
       document.body.style.cursor     = 'col-resize';
 
       const onMove = e => {
-        const deltaPct   = (e.clientX - startX) / tableW * 100;
-        const newPct     = Math.max(MIN_COL_PCT, startPct + deltaPct);
-        const actualDelta = newPct - startPct;
-        setW(newPct);
-        // Shrink/grow adjacent column to keep total = 100%
-        if (nextTh && nextId && colSetters[nextId]) {
-          colSetters[nextId](Math.max(MIN_COL_PCT, nextStart - actualDelta));
-        }
+        const w = Math.max(MIN_COL_W, startW + (e.clientX - startX));
+        setW(th, w);
+        widths[colId] = w; // keep in-memory up to date for consistent startW on next drag
       };
       const onUp = () => {
-        // Save ALL column widths (including drag/select) for consistent reload
-        const tw = tableEl.offsetWidth;
+        // Snapshot all column px widths
         theadRow.querySelectorAll('th[data-col]').forEach(t => {
-          widths[t.dataset.col] = t.offsetWidth / tw * 100;
+          widths[t.dataset.col] = t.offsetWidth;
         });
         saveColWidths(key, widths);
         document.body.style.userSelect = '';
@@ -437,17 +412,23 @@ export function wireColResize(theadRow, key) {
     });
   });
 
-  // First load (no stored widths): snapshot natural % after one auto-layout frame
-  if (!Object.keys(widths).length && tableEl) {
+  // First load: let auto layout render once, snapshot px widths, switch to fixed
+  if (!hasStored && tableEl) {
     tableEl.style.tableLayout = 'auto';
+    tableEl.style.width       = '100%';
     requestAnimationFrame(() => {
-      const tableW = tableEl.offsetWidth;
       tableEl.style.tableLayout = 'fixed';
-      if (tableW > 0) {
-        theadRow.querySelectorAll('th[data-col]').forEach(t => {
-          colSetters[t.dataset.col]?.(t.offsetWidth / tableW * 100);
-        });
-      }
+      tableEl.style.width       = 'max-content';
+      const totalPx = Array.from(theadRow.querySelectorAll('th[data-col]'))
+        .reduce((s, t) => s + t.offsetWidth, 0);
+      // If auto gave us a table smaller than container, stretch columns proportionally
+      const containerW = tableEl.parentElement?.offsetWidth || totalPx;
+      const scale = totalPx > 0 ? Math.max(1, containerW / totalPx) : 1;
+      theadRow.querySelectorAll('th[data-col]').forEach(t => {
+        const w = Math.round(t.offsetWidth * scale);
+        setW(t, w);
+        widths[t.dataset.col] = w;
+      });
     });
   }
 }
