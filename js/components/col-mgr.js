@@ -349,7 +349,8 @@ export function loadColWidths()  { return {}; } // no persistence by design
 export function saveColWidths()  {}             // no-op
 
 export function wireColResize(theadRow, { onResize } = {}) {
-  const tableEl = theadRow.closest('table');
+  const tableEl  = theadRow.closest('table');
+  const container = tableEl?.parentElement;
   if (!tableEl) return;
 
   // Step 1: measure natural column widths with auto layout filling 100%
