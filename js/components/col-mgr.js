@@ -394,7 +394,8 @@ export function wireColResize(theadRow, key) {
 
       const tableW    = tableEl.offsetWidth;
       const startX    = e.clientX;
-      const startPct  = th.offsetWidth / tableW * 100;
+      // Use stored % if available — avoids jump from rendered-px vs stored-% mismatch
+      const startPct  = widths[colId] ?? (th.offsetWidth / tableW * 100);
 
       // Find next resizable column — it absorbs the opposite delta
       const allThs   = Array.from(theadRow.querySelectorAll('th[data-col]'))
@@ -402,7 +403,9 @@ export function wireColResize(theadRow, key) {
       const myIdx    = allThs.indexOf(th);
       const nextTh   = allThs[myIdx + 1];
       const nextId   = nextTh?.dataset.col;
-      const nextStart = nextTh ? nextTh.offsetWidth / tableW * 100 : 0;
+      const nextStart = nextId && widths[nextId] != null
+        ? widths[nextId]
+        : (nextTh ? nextTh.offsetWidth / tableW * 100 : 0);
 
       document.body.style.userSelect = 'none';
       document.body.style.cursor     = 'col-resize';
@@ -418,8 +421,13 @@ export function wireColResize(theadRow, key) {
         }
       };
       const onUp = () => {
-        widths[colId] = th.offsetWidth / tableEl.offsetWidth * 100;
-        if (nextId) widths[nextId] = (nextTh.offsetWidth / tableEl.offsetWidth * 100);
+        // Save ALL column widths so next load has a fully consistent layout
+        const tw = tableEl.offsetWidth;
+        theadRow.querySelectorAll('th[data-col]').forEach(t => {
+          const id = t.dataset.col;
+          if (id === 'drag' || id === 'select') return;
+          widths[id] = t.offsetWidth / tw * 100;
+        });
         saveColWidths(key, widths);
         document.body.style.userSelect = '';
         document.body.style.cursor     = '';
