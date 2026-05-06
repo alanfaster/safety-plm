@@ -677,7 +677,6 @@ input, select, textarea { font-family: var(--font); }
   color: var(--color-text-muted); background: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
   white-space: nowrap;
-  position: sticky; top: 0; z-index: 3;
 }
 .data-table td {
   padding: 10px 12px; border-bottom: 1px solid var(--color-border);
@@ -2953,7 +2952,7 @@ tr:hover .spec-row-acts{opacity:1}
 
 
 /* Content area — normal flow scroll (parent #content scrolls) */
-.spec-content{flex:1;min-width:0;padding:16px 24px;overflow-x:auto;overflow-y:auto;height:calc(100vh - var(--topbar-height))}
+.spec-content{flex:1;min-width:0;padding:16px 24px;overflow-x:auto}
 .spec-content--narrow{flex:0 0 55%;min-width:0}
 
 /* Hover insert pill (between rows) */
