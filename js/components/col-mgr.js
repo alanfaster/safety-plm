@@ -384,7 +384,32 @@ export function wireColResize(theadRow, { onResize } = {}) {
 
     onResize?.(container?.offsetWidth ?? totalW);
 
-    // Step 3: wire resize handles
+    // ResizeObserver: when container changes width (panel toggle, window resize),
+    // scale all columns proportionally. Disabled during active drag.
+    let _dragging = false;
+    let _lastContainerW = container?.offsetWidth ?? totalW;
+
+    if (container) {
+      const ro = new ResizeObserver(entries => {
+        if (_dragging) return;
+        const newContainerW = entries[0]?.contentRect?.width;
+        if (!newContainerW || newContainerW === _lastContainerW) return;
+        const scale = newContainerW / _lastContainerW;
+        _lastContainerW = newContainerW;
+        // Scale all columns proportionally
+        const curTableW = parseInt(tableEl.style.width) || tableEl.offsetWidth;
+        const newTableW = Math.round(curTableW * scale);
+        ths.forEach(th => {
+          const w = Math.max(MIN_COL_W, Math.round(th.offsetWidth * scale));
+          th.style.width = w + 'px';
+        });
+        tableEl.style.width = newTableW + 'px';
+        onResize?.(newContainerW);
+      });
+      ro.observe(container);
+    }
+
+    // Wire resize handles
     ths.forEach((th, i) => {
       const colId = th.dataset.col;
       if (colId === 'drag' || colId === 'select') return;
@@ -396,6 +421,7 @@ export function wireColResize(theadRow, { onResize } = {}) {
       handle.addEventListener('mousedown', e => {
         e.preventDefault();
         e.stopPropagation();
+        _dragging = true;
         const startX      = e.clientX;
         const startW      = th.offsetWidth;
         const startTableW = parseInt(tableEl.style.width) || tableEl.offsetWidth;
@@ -410,6 +436,8 @@ export function wireColResize(theadRow, { onResize } = {}) {
           onResize?.(container?.offsetWidth ?? (startTableW + delta));
         };
         const onUp = () => {
+          _dragging = false;
+          _lastContainerW = container?.offsetWidth ?? _lastContainerW;
           document.body.style.userSelect = '';
           document.body.style.cursor     = '';
           document.removeEventListener('mousemove', onMove);
