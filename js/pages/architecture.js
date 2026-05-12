@@ -533,9 +533,9 @@ function renderConnections() {
     p.comp_type === 'Port' && p.data?.parent_block_id && !connectedPortIds.has(p.id));
 
   const standaloneSVG = standalonePorts.map(p => {
-    const parent = compById(p.data.parent_block_id); if (!parent) return '';
+    if (!compById(p.data.parent_block_id)) return '';
     const portStr = p.data?.attached_side || 'right:0.5';
-    const [px, py] = portAbs(parent, portStr);
+    const [px, py] = [p.x + PORT_SIZE/2, p.y + PORT_SIZE/2];
     const side = portStr.split(':')[0];
     const dir  = p.data?.port_dir || 'inout';
     const ARROW_MAP = { in: { top:'↓', bottom:'↑', left:'→', right:'←' },
