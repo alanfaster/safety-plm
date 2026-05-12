@@ -887,10 +887,9 @@ function connSVG(cn) {
 
 // port string: "side" (legacy) or "side:fraction" (0.0–1.0 along that edge)
 function portAbs(comp, portStr) {
-  // For attached ports, resolve position from parent block + attached_side
+  // For attached SVG ports, use stored x/y as truth — immune to parent resize/move
   if (comp.comp_type === 'Port' && comp.data?.parent_block_id) {
-    const parent = compById(comp.data.parent_block_id);
-    if (parent) return portAbs(parent, comp.data.attached_side || 'right:0.5');
+    return [comp.x + PORT_SIZE/2, comp.y + PORT_SIZE/2];
   }
   const w = comp.width || PORT_SIZE, h = comp.height || PORT_SIZE;
   const [side, fracStr] = portStr?.includes(':') ? portStr.split(':') : [portStr, '0.5'];
