@@ -569,7 +569,7 @@ function renderConnections() {
       </g>`;
   }).join('');
 
-  g.innerHTML = _s.connections.map(cn => connSVG(cn)).join('') + standaloneSVG;
+  g.innerHTML = _s.connections.map(cn => connSVG(cn)).join('') + standaloneSVG + buildBridgesSVG();
 
   _s.connections.forEach(cn => {
     document.getElementById(`conn-${cn.id}`)
@@ -869,6 +869,94 @@ function bezier(x1,y1,p1,x2,y2,p2) {
 }
 
 function snap(v) { return Math.round(v/GRID)*GRID; }
+
+// ── Crossing detection helpers ────────────────────────────────────────────────
+
+function getBezierCtrlPts(cn) {
+  const src = compById(cn.source_id), tgt = compById(cn.target_id);
+  if (!src || !tgt) return null;
+  const [x1,y1] = portAbs(src, cn.source_port);
+  const [x2,y2] = portAbs(tgt, cn.target_port);
+  const s1 = portSide(cn.source_port), s2 = portSide(cn.target_port);
+  const len = Math.max(50, Math.hypot(x2-x1,y2-y1)*0.4);
+  const off = {top:[0,-len],right:[len,0],bottom:[0,len],left:[-len,0]};
+  const nat = {top:[0,-1],right:[1,0],bottom:[0,1],left:[-1,0]};
+  const dx = x2-x1, dy = y2-y1;
+  const flipSrc = (dx*(nat[s1]?.[0]??1)+dy*(nat[s1]?.[1]??0)) < 0;
+  const flipTgt = ((-dx)*(nat[s2]?.[0]??1)+(-dy)*(nat[s2]?.[1]??0)) < 0;
+  const o1 = off[s1]??[len,0], o2 = off[s2]??[-len,0];
+  return {
+    x1,y1, x2,y2,
+    cx1: x1+(flipSrc?-o1[0]:o1[0]), cy1: y1+(flipSrc?-o1[1]:o1[1]),
+    cx2: x2+(flipTgt?-o2[0]:o2[0]), cy2: y2+(flipTgt?-o2[1]:o2[1]),
+  };
+}
+
+function sampleBezierCtrl(bd, n=60) {
+  if (!bd) return [];
+  const {x1,y1,cx1,cy1,cx2,cy2,x2,y2} = bd;
+  const pts = [];
+  for (let i=0; i<=n; i++) {
+    const t=i/n, mt=1-t;
+    pts.push([
+      mt*mt*mt*x1+3*mt*mt*t*cx1+3*mt*t*t*cx2+t*t*t*x2,
+      mt*mt*mt*y1+3*mt*mt*t*cy1+3*mt*t*t*cy2+t*t*t*y2,
+    ]);
+  }
+  return pts;
+}
+
+function segIntersect(p1,p2,p3,p4) {
+  const d1x=p2[0]-p1[0], d1y=p2[1]-p1[1];
+  const d2x=p4[0]-p3[0], d2y=p4[1]-p3[1];
+  const cross = d1x*d2y - d1y*d2x;
+  if (Math.abs(cross) < 1e-8) return null;
+  const dx=p3[0]-p1[0], dy=p3[1]-p1[1];
+  const t=(dx*d2y-dy*d2x)/cross, u=(dx*d1y-dy*d1x)/cross;
+  if (t<0.01||t>0.99||u<0.01||u>0.99) return null;
+  return [p1[0]+t*d1x, p1[1]+t*d1y];
+}
+
+function findCrossingsBetween(ptsA, ptsB) {
+  const hits = [];
+  for (let a=0; a<ptsA.length-1; a++) {
+    for (let b=0; b<ptsB.length-1; b++) {
+      const pt = segIntersect(ptsA[a],ptsA[a+1],ptsB[b],ptsB[b+1]);
+      if (!pt) continue;
+      // tangent of ptsB at crossing (for bridge orientation)
+      const tx=ptsB[b+1][0]-ptsB[b][0], ty=ptsB[b+1][1]-ptsB[b][1];
+      const tl=Math.hypot(tx,ty)||1;
+      hits.push({ px:pt[0], py:pt[1], tx:tx/tl, ty:ty/tl });
+    }
+  }
+  // Deduplicate crossings that are very close together
+  return hits.filter((h,i) => !hits.slice(0,i).some(prev =>
+    Math.hypot(h.px-prev.px, h.py-prev.py) < 10));
+}
+
+function buildBridgesSVG() {
+  const cns = _s.connections.filter(cn => compById(cn.source_id) && compById(cn.target_id));
+  if (cns.length < 2) return '';
+  const samples = cns.map(cn => ({ cn, pts: sampleBezierCtrl(getBezierCtrlPts(cn)) }));
+  const R = 6;
+  let svg = '';
+  for (let i=0; i<samples.length; i++) {
+    for (let j=i+1; j<samples.length; j++) {
+      const crossings = findCrossingsBetween(samples[i].pts, samples[j].pts);
+      crossings.forEach(({px,py,tx,ty}) => {
+        const ax=px-tx*R, ay=py-ty*R, bx=px+tx*R, by=py+ty*R;
+        // White filled ellipse masks the lower line at the crossing
+        svg += `<ellipse cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" rx="${R+1}" ry="${R-1}"
+          transform="rotate(${(Math.atan2(ty,tx)*180/Math.PI).toFixed(1)} ${px.toFixed(1)} ${py.toFixed(1)})"
+          fill="var(--color-bg, #fff)" stroke="none"/>`;
+        // Arc bump on the upper connection (j, drawn on top)
+        svg += `<path d="M${ax.toFixed(1)} ${ay.toFixed(1)} A${(R*1.3).toFixed(1)} ${(R*1.3).toFixed(1)} 0 0 1 ${bx.toFixed(1)} ${by.toFixed(1)}"
+          fill="none" stroke="#666" stroke-width="2" stroke-linecap="round"/>`;
+      });
+    }
+  }
+  return svg;
+}
 
 // Returns "side:fraction" for the perimeter point closest to (cx,cy) in canvas coords
 function nearestPerimeterPoint(comp, cx, cy) {
