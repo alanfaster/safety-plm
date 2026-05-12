@@ -1572,11 +1572,13 @@ function reqTd(c, r) {
         <span class="req-drag-handle" title="Drag to reorder">⠿</span>
       </td>`;
     case 'code': {
-      const ftaLinked  = r.source?.startsWith('FTA-AND:');
+      const ftaLinked   = r.source?.startsWith('FTA-AND:');
+      const isAutoIface = r.type === 'interface_internal' || r.type === 'interface_external';
       const reviewInfo  = _reviewMap.get(r.id);
       const findingInfo = _findingMap.get(r.id);
       return `<td data-col="code" class="code-cell" style="white-space:nowrap">
-        ${esc(r.req_code)}
+        <div>${esc(r.req_code)}</div>
+        ${isAutoIface ? `<span class="req-auto-badge" title="Auto-generated from Architecture Concept">AUTO</span>` : ''}
         ${ftaLinked ? '<span title="Linked to FTA AND gate" style="margin-left:4px;font-size:10px;color:#1A73E8">⚡</span>' : ''}
         ${r.version > 1 ? `<span class="artifact-version-badge">v${r.version}</span>` : ''}
         ${reviewInfo ? `<span class="req-review-badge" data-badge-type="review" data-session-id="${reviewInfo.sessionId}" data-rid="${r.id}" title="Under review: ${esc(reviewInfo.title)}">🔍</span>` : ''}

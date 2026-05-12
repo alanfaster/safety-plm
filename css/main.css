@@ -6616,6 +6616,19 @@ details[open] .diff-unchanged-summary::before { content: '▼ '; }
 .req-finding-badge:hover { background: #fbd7d4; }
 
 /* ── Artifact version badge (global) ───────────────────────────────── */
+.req-auto-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #1E8E3E;
+  background: #E6F4EA;
+  border: 1px solid #A8D5B5;
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 14px;
+  margin-top: 2px;
+}
 .artifact-version-badge {
   display: inline-block;
   font-size: 10px;
