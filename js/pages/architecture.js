@@ -2103,7 +2103,7 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
     sidebarNeedsRefresh = true;
   }
 
-  const { data: newReq } = await sb.from('requirements').insert({
+  const { data: newReq, error: reqErr } = await sb.from('requirements').insert({
     req_code: reqCode,
     parent_type: _s.parentType,
     parent_id: _s.parentId,
@@ -2113,6 +2113,13 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
     status: 'draft',
     priority: 'medium',
   }).select().single();
+
+  if (reqErr) {
+    console.error('[arch] requirement insert failed:', reqErr);
+    toast(`⚠ Interface created but requirement failed: ${reqErr.message}`, 'error');
+  } else {
+    console.log('[arch] requirement created:', reqCode, 'type:', reqType, 'parent_id:', _s.parentId);
+  }
 
   await sb.from('arch_connections').update({ requirement: reqCode }).eq('id', data.id);
   data.requirement = reqCode;
