@@ -604,6 +604,7 @@ function renderConnections() {
   // Wire endpoint drag handles
   g.querySelectorAll('.arch-conn-ep').forEach(ep => {
     ep.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return; // right-click falls through to outer for port drag
       e.stopPropagation(); e.preventDefault();
       const cn = _s.connections.find(c => c.id === ep.dataset.connId); if (!cn) return;
       const compId = ep.dataset.endpoint === 'source' ? cn.source_id : cn.target_id;
