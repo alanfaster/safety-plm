@@ -1,14 +1,12 @@
 ﻿/**
- * Architecture Specification — arch-spec.js (v2)
+ * Architecture Specification — arch-spec.js
  *
- * UX:
- *  • Table: ID | Description | Type | Status | Actions
- *  • Inline editing: Type/Status select → autosave on change
- *  • Description text: double-click to edit, blur = autosave
- *  • UML diagram: shown inline as scalable SVG preview, click to expand,
- *    double-click to open the UML editor (replaces preview in-place)
- *  • New Item: appends an empty row directly — no modal
- *  • Row actions: ↑ move up, ↓ move down, + add below, 🗑 delete
+ * Table columns: Drag | Select (+ row actions) | ID | Description | System | Type | Status | custom…
+ * Inline editing: Type/Status via select; Description via double-click; custom cols via click
+ * UML diagram: preview inline, double-click to open editor in place
+ * Sticky headers + filter row — scroll container is #spec-body, not the outer #content
+ * Props panel (right): Properties tab (title/type/status/desc) + Traceability tab (V-model)
+ * Nav panel (left): section tree, click to scroll to section
  */
 
 import { sb, buildCode, nextIndex } from '../config.js';
@@ -38,7 +36,7 @@ const SPEC_BUILTIN_COLS = [
 ];
 
 // Module-level state
-let _ctx        = null;   // { project, parentType, parentId }
+let _ctx        = null;   // { project, parentType, parentId, item, system, domain }
 let _items      = [];     // ordered array of spec items (in-memory cache)
 let _umlOpenId  = null;   // id of item whose UML editor is currently open
 let _cols       = [];     // active column config
@@ -51,6 +49,7 @@ let _activeItem = null;      // currently selected item in props panel
 let _activeTab  = 'props';   // 'props' | 'trace'
 let _tp         = null;      // trace panel instance
 let _saveTimer  = null;      // autosave debounce
+let _umlEditor  = null;      // active UMLEditor instance (so we can destroy it on row delete)
 
 function syncBulkBar() {
   const bar   = document.getElementById('spec-bulk-bar');
@@ -64,16 +63,12 @@ function syncBulkBar() {
 
 export async function renderArchSpec(container, { project, item, system, parentType, parentId, domain = null }) {
   const domainKey = parentType === 'system' ? (domain || 'system') : 'item';
-  _ctx       = { project, parentType, parentId, domain: domainKey };
+  _ctx       = { project, parentType, parentId, domain: domainKey, item, system };
   _items     = [];
   _umlOpenId = null;
-  _builtins  = SPEC_BUILTIN_COLS; // will be updated in loadSpec after project_config fetch
-  _cols      = loadColConfig(`spec_${parentId}`, _builtins);
-  _cols = [
-    ..._cols.filter(c => c.id === 'drag'),
-    ..._cols.filter(c => c.id === 'select'),
-    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select'),
-  ];
+  // _builtins and _cols are properly built in loadSpec (needs project_config for custom cols)
+  _builtins  = SPEC_BUILTIN_COLS;
+  _cols      = [];
   _collapsed  = new Set();
   _colFilters = {};
 
@@ -90,6 +85,13 @@ export async function renderArchSpec(container, { project, item, system, parentT
           <p class="text-muted">${esc(parentName)}</p>
         </div>
         <div></div>
+      </div>
+      <div class="page-tabs-bar">
+        <div class="page-tabs">
+          <button class="page-tab active" data-tab="list">All Items</button>
+          <button class="page-tab" data-tab="reviews">Reviews</button>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-start-review-spec">✓ Start Review</button>
       </div>
     </div>
     <div class="page-body spec-page-body" id="spec-outer">
@@ -132,8 +134,8 @@ export async function renderArchSpec(container, { project, item, system, parentT
       </aside>
     </div>
     <div class="spec-fab" id="spec-fab">
-      <button class="btn btn-primary"   id="btn-new-spec">＋ New Item</button>
-      <button class="btn btn-secondary" id="btn-new-spec-section">＋ Section</button>
+      <button class="btn btn-primary"   id="btn-new-spec">＋<span class="fab-label">New Item</span></button>
+      <button class="btn btn-secondary" id="btn-new-spec-section">＋<span class="fab-label">Section</span></button>
     </div>
     <div class="req-bulk-bar" id="spec-bulk-bar">
       <span class="req-bulk-count" id="spec-bulk-count">0 selected</span>
@@ -146,10 +148,50 @@ export async function renderArchSpec(container, { project, item, system, parentT
     </div>
   `;
 
+  // Make #content a flex column so spec-page-body can fill remaining height
+  // and spec-content can scroll independently — enabling position:sticky on th
+  const _contentEl = document.getElementById('content');
+  if (_contentEl) {
+    _contentEl.style.display = 'flex';
+    _contentEl.style.flexDirection = 'column';
+    _contentEl.style.overflow = 'hidden';
+    _contentEl.style.height = '100%';
+    window.addEventListener('hashchange', () => {
+      _contentEl.style.display = '';
+      _contentEl.style.flexDirection = '';
+      _contentEl.style.overflow = '';
+      _contentEl.style.height = '';
+    }, { once: true });
+  }
+
   document.getElementById('btn-new-spec').onclick         = () => addRow(null);
   document.getElementById('btn-new-spec-section').onclick  = () => addSection(null);
   document.getElementById('spec-nav-close').onclick        = () => toggleNav(false);
   document.getElementById('spec-nav-expand').onclick       = () => toggleNav(true);
+
+  container.querySelectorAll('.page-tab').forEach(tab => {
+    tab.onclick = () => {
+      container.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const isReviews = tab.dataset.tab === 'reviews';
+      document.getElementById('spec-nav')?.classList.toggle('spec-nav--hidden', isReviews);
+      document.getElementById('spec-props-panel')?.classList.toggle('req-trace-panel--hidden', isReviews);
+      const fab = document.getElementById('spec-fab');
+      if (fab) fab.style.display = isReviews ? 'none' : '';
+      if (isReviews) renderSpecPageReviews();
+      else loadSpec();
+    };
+  });
+
+  document.getElementById('btn-start-review-spec').onclick = () => {
+    const allIds = _items.filter(it => it.type !== 'section').map(it => it.id);
+    allIds.forEach(id => _selection.add(id));
+    syncBulkBar();
+    document.querySelectorAll('.spec-row-chk').forEach(cb => {
+      cb.checked = _selection.has(cb.dataset.id);
+      cb.closest('tr')?.classList.toggle('req-row-selected', cb.checked);
+    });
+  };
 
   document.getElementById('spec-bulk-cancel').onclick = () => {
     _selection.clear(); syncBulkBar();
@@ -531,7 +573,6 @@ function renderTable(body) {
     system:      { style: 'width:120px',           label: 'System',  managed: true },
     type:        { style: 'width:130px',           label: 'Type',    managed: true },
     status:      { style: 'width:120px',           label: 'Status',  managed: true },
-    actions:     { style: 'width:120px',           label: '' },
   };
   const visibleCols = _cols.filter(c => c.visible);
   const theadHtml = visibleCols.map(c => {
@@ -550,16 +591,14 @@ function renderTable(body) {
   const filterRowHTML = buildFilterRowHTML(visibleCols, SKIP_FILTER, COL_OPTIONS);
 
   body.innerHTML = `
-    <div class="card">
-      <div class="table-wrap">
-        <table class="data-table spec-table" id="spec-table">
-          <thead>
-            <tr id="spec-thead-row">${theadHtml}</tr>
-            ${filterRowHTML}
-          </thead>
-          <tbody id="spec-tbody"></tbody>
-        </table>
-      </div>
+    <div class="table-wrap">
+      <table class="data-table spec-table" id="spec-table">
+        <thead>
+          <tr id="spec-thead-row">${theadHtml}</tr>
+          ${filterRowHTML}
+        </thead>
+        <tbody id="spec-tbody"></tbody>
+      </table>
     </div>
   `;
 
@@ -657,6 +696,20 @@ function renderTable(body) {
         });
       },
     });
+    // Move fit button into page header top-right so it's always visible
+    // Also set --spec-thead-h so the filter row sticks below the header row
+    requestAnimationFrame(() => {
+      const fitBtn = body.querySelector('.col-fit-btn');
+      const headerRight = document.querySelector('.page-header-top > div:last-child');
+      if (fitBtn && headerRight) {
+        // Remove stale fit buttons from previous renderTable calls before appending the new one
+        headerRight.querySelectorAll('.col-fit-btn').forEach(b => b.remove());
+        headerRight.appendChild(fitBtn);
+      }
+
+      const theadH = theadRow?.offsetHeight ?? 37;
+      tableEl?.style.setProperty('--spec-thead-h', theadH + 'px');
+    });
   }
 }
 
@@ -735,16 +788,20 @@ function rowHTML(it) {
           <div class="spec-row-acts">
             <button class="btn btn-ghost btn-xs btn-copy-link spec-link-btn" data-id="${it.id}" title="Copy link" style="padding:1px 3px">🔗</button>
             <button class="btn btn-ghost btn-xs spec-history-btn" data-id="${it.id}" title="Version history" style="padding:1px 3px">🕐</button>
-            <button class="btn btn-ghost btn-xs spec-del-btn" data-id="${it.id}" title="Delete" style="padding:1px 3px;color:var(--color-danger)">✕</button>
           </div>
         </td>`;
       case 'drag':
-        return `<td data-col="drag" style="width:24px;padding:4px 4px 0;text-align:center;vertical-align:top;cursor:grab"><span class="spec-drag-handle" title="Drag to reorder">⠿</span></td>`;
+        return `<td data-col="drag" style="width:24px;padding:4px 2px;text-align:center;vertical-align:middle;cursor:grab;position:relative">
+          <button class="btn btn-ghost btn-xs drag-col-del spec-del-btn" data-id="${it.id}" title="Delete" style="position:absolute;top:4px;left:50%;transform:translateX(-50%)">✕</button>
+          <span class="spec-drag-handle" title="Drag to reorder">⠿</span>
+        </td>`;
       case 'id':
-        return `<td data-col="id" class="spec-id-cell code-cell">${esc(it.spec_code)}${it.version > 1 ? ` <span class="artifact-version-badge">v${it.version}</span>` : ''}</td>`;
+        return `<td data-col="id" class="spec-id-cell code-cell">
+          <div>${esc(it.spec_code)}${it.version > 1 ? ` <span class="artifact-version-badge">v${it.version}</span>` : ''}</div>
+          ${it.component_ref_id ? '<span class="req-auto-badge" title="Auto-generated from Architecture Concept">AUTO</span>' : ''}
+        </td>`;
       case 'description':
         return `<td data-col="description" class="spec-desc-cell">
-          ${it.component_ref_id ? '<span class="spec-auto-badge" title="Name synced from Architecture Concept (read-only)">AUTO</span>' : ''}
           <div class="spec-text-view" title="${it.component_ref_id ? 'Name synced from Architecture Concept — read only' : 'Double-click to edit'}"
             >${esc(it.title || '')}<span class="spec-placeholder ${it.title ? 'hidden' : ''}">Double-click to add description…</span></div>
           <div class="spec-uml-area" id="uml-area-${it.id}">${umlAreaPreviewHTML(it)}</div>
@@ -1035,7 +1092,7 @@ function openPropsPanel(it) {
     Object.assign(it, patch);
     // Refresh the table row in-place
     const tr = document.querySelector(`tr[data-id="${it.id}"]`);
-    if (tr) { tr.innerHTML = rowHTML(it, _cols); wireRow(tr, it); }
+    if (tr) { tr.innerHTML = rowHTML(it); wireRow(tr, it); }
     if (ind) { ind.textContent = 'Saved'; setTimeout(() => { if (ind) ind.textContent = ''; }, 1500); }
   }
 
@@ -1306,12 +1363,13 @@ function openUmlEditor(it) {
     </div>
   `;
 
-  const editor = new UMLEditor(
+  _umlEditor = new UMLEditor(
     document.getElementById(`ue-canvas-${it.id}`),
     it.uml_type || 'component',
     it.uml_data || null,
     `ue-zlbl-${it.id}`
   );
+  const editor = _umlEditor;
 
   document.getElementById(`ue-type-${it.id}`).onchange   = e => editor.setType(e.target.value);
   document.getElementById(`ue-clear-${it.id}`).onclick   = () => editor.clear();
@@ -1341,7 +1399,7 @@ function openUmlEditor(it) {
 
   document.getElementById(`ue-cancel-${it.id}`).onclick  = () => {
     editor.destroy();
-    _umlOpenId = null;
+    _umlOpenId = null; _umlEditor = null;
     restoreUmlPreview(it);
   };
 
@@ -1365,7 +1423,7 @@ function openUmlEditor(it) {
     it.uml_data = hasUml ? umlData : null;
     toast('Diagram saved.', 'success');
     editor.destroy();
-    _umlOpenId = null;
+    _umlOpenId = null; _umlEditor = null;
     restoreUmlPreview(it);
   };
 }
@@ -1453,38 +1511,13 @@ async function addRow(afterId) {
   }
 }
 
-async function moveRow(id, dir) {
-  const idx = _items.findIndex(it => it.id === id);
-  if (idx < 0) return;
-  const swapIdx = idx + dir;
-  if (swapIdx < 0 || swapIdx >= _items.length) return;
-
-  // Swap in memory
-  [_items[idx], _items[swapIdx]] = [_items[swapIdx], _items[idx]];
-
-  // Update sort_orders in DB
-  await Promise.all([
-    sb.from('arch_spec_items').update({ sort_order: idx    }).eq('id', _items[idx].id),
-    sb.from('arch_spec_items').update({ sort_order: swapIdx}).eq('id', _items[swapIdx].id),
-  ]);
-
-  // Re-order in DOM
-  const tbody = document.getElementById('spec-tbody');
-  if (!tbody) return;
-
-  // Rebuild tbody content from _items order
-  tbody.innerHTML = '';
-  _items.forEach(it => appendRowToTbody(tbody, it));
-  applyCollapsed();
-  buildNavTree();
-}
 
 async function deleteRow(it) {
   const label = it.type === 'section' ? `section "${it.title || 'Untitled'}"` : `item "${it.spec_code}"`;
   if (!confirm(`Delete ${label}?`)) return;
 
-  // Close UML editor if open
-  if (_umlOpenId === it.id) closeUmlEditor(it.id);
+  // Destroy active UML editor so its AbortController is cleaned up before DOM removal
+  if (_umlOpenId === it.id) { _umlEditor?.destroy(); _umlOpenId = null; _umlEditor = null; }
 
   const { error } = await sb.from('arch_spec_items').delete().eq('id', it.id);
   if (error) { toast('Error deleting.', 'error'); return; }
@@ -1767,11 +1800,8 @@ function umlPreviewSVG(umlData) {
       default:
         shape = `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="3" fill="${n.fill}" stroke="${n.stroke}" stroke-width="1.2"/>`;
     }
-    const lblY = n.type === 'actor'    ? n.y + n.h + 12
-               : n.type === 'diamond'  ? n.y + n.h + 12
-               : n.type === 'circle'   ? n.y + n.h + 12
-               : n.type === 'ring'     ? n.y + n.h + 12
-               : cy + 4;
+    // Labels below shape for external-label types; centered for contained-label types
+    const lblY = ['actor','diamond','circle','ring'].includes(n.type) ? n.y + n.h + 12 : cy + 4;
     return `${shape}<text x="${cx}" y="${lblY}" text-anchor="middle" font-size="10" fill="#333">${esc(n.label)}</text>`;
   }).join('');
 
@@ -2201,6 +2231,67 @@ class UMLEditor {
   _showHint(show) {
     const h = document.getElementById(`ue-hint-${this._id}`);
     if (h) h.style.display = show ? '' : 'none';
+  }
+}
+
+// ── Reviews tab ───────────────────────────────────────────────────────────────
+
+async function renderSpecPageReviews() {
+  const body = document.getElementById('spec-body');
+  if (!body) return;
+  body.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
+
+  try {
+  const { project, item, parentId } = _ctx;
+  const itemId = item?.id ?? parentId;
+  const base = `/project/${project.id}/item/${itemId}`;
+  const itemIds = _items.filter(it => it.type !== 'section').map(it => it.id);
+
+  let sessions = [];
+  if (itemIds.length) {
+    const { data: snaps } = await sb.from('review_artifact_snapshots')
+      .select('session_id').eq('artifact_type', 'arch_spec_items').in('artifact_id', itemIds);
+    const sessionIds = [...new Set((snaps || []).map(s => s.session_id))];
+    if (sessionIds.length) {
+      const { data } = await sb.from('review_sessions')
+        .select('*, review_protocol_templates(name)').in('id', sessionIds)
+        .order('created_at', { ascending: false });
+      sessions = data || [];
+    }
+  }
+
+  const STATUS_BADGE = { planned:'badge-draft', in_progress:'badge-review', completed:'badge-approved', cancelled:'badge-deprecated' };
+
+  if (!sessions.length) {
+    body.innerHTML = `<div class="card"><div class="card-body">
+      <div class="diagram-area">
+        <div class="diagram-area-icon">📋</div>
+        <p>No reviews yet for this specification.</p>
+        <p class="text-muted" style="font-size:12px">Click <strong>✓ Start Review</strong> to create one.</p>
+      </div></div></div>`;
+    return;
+  }
+
+  body.innerHTML = `<div class="card"><div class="card-body" style="padding:0">
+    <table class="data-table"><thead><tr>
+      <th>Title</th><th>Type</th><th>Template</th><th>Status</th><th>Date</th><th></th>
+    </tr></thead><tbody>
+      ${sessions.map(s => `<tr>
+        <td>${esc(s.title)}</td>
+        <td><span class="badge" style="text-transform:capitalize">${esc(s.review_type || '')}</span></td>
+        <td>${esc(s.review_protocol_templates?.name || '—')}</td>
+        <td><span class="badge ${STATUS_BADGE[s.status] || ''}">${esc(s.status || '')}</span></td>
+        <td>${s.planned_date || '—'}</td>
+        <td><button class="btn btn-ghost btn-xs rv-open-btn" data-id="${s.id}">Open</button></td>
+      </tr>`).join('')}
+    </tbody></table></div></div>`;
+
+  body.querySelectorAll('.rv-open-btn').forEach(btn => {
+    btn.onclick = () => navigate(`${base}/reviews/${btn.dataset.id}/execute`);
+  });
+  } catch (err) {
+    console.error('renderSpecPageReviews error:', err);
+    body.innerHTML = `<div style="padding:24px;color:var(--color-danger)">Error loading reviews: ${err.message}</div>`;
   }
 }
 
