@@ -893,14 +893,16 @@ function portAbs(comp, portStr) {
     if (parent) return portAbs(parent, comp.data.attached_side || 'right:0.5');
   }
   const w = comp.width || PORT_SIZE, h = comp.height || PORT_SIZE;
-  const [side, fracStr] = portStr?.includes(':') ? portStr.split(':') : [portStr, '0.5'];
-  const f = Math.max(0, Math.min(1, parseFloat(fracStr ?? 0.5) || 0.5));
+  const [side, valStr] = portStr?.includes(':') ? portStr.split(':') : [portStr, '0.5'];
+  const val = parseFloat(valStr ?? 0.5) || 0;
+  // val > 1 → absolute pixels from start of side; val ≤ 1 → fraction (legacy)
+  const toCoord = (pixels, dim) => val > 1 ? Math.min(pixels, dim) : dim * val;
   switch (side) {
-    case 'top':    return [comp.x + w * f, comp.y];
-    case 'bottom': return [comp.x + w * f, comp.y + h];
-    case 'left':   return [comp.x,          comp.y + h * f];
-    case 'right':  return [comp.x + w,      comp.y + h * f];
-    default:       return [comp.x + w,      comp.y + h * 0.5];
+    case 'top':    return [comp.x + toCoord(val, w), comp.y];
+    case 'bottom': return [comp.x + toCoord(val, w), comp.y + h];
+    case 'left':   return [comp.x,                   comp.y + toCoord(val, h)];
+    case 'right':  return [comp.x + w,               comp.y + toCoord(val, h)];
+    default:       return [comp.x + w,               comp.y + h * 0.5];
   }
 }
 
@@ -1102,14 +1104,15 @@ function nearestPerimeterPoint(comp, cx, cy) {
   const w = comp.width || PORT_SIZE;
   const h = comp.height || PORT_SIZE;
   const rx = cx - comp.x, ry = cy - comp.y;
-  const c01 = v => Math.max(0.001, Math.min(0.999, v));
+  const clampH = v => Math.max(2, Math.min(w - 2, Math.round(v)));
+  const clampV = v => Math.max(2, Math.min(h - 2, Math.round(v)));
   const dTop = Math.abs(ry), dBottom = Math.abs(ry - h);
   const dLeft = Math.abs(rx), dRight = Math.abs(rx - w);
   const mn = Math.min(dTop, dBottom, dLeft, dRight);
-  if (mn === dTop)    return `top:${c01(rx/w).toFixed(3)}`;
-  if (mn === dBottom) return `bottom:${c01(rx/w).toFixed(3)}`;
-  if (mn === dLeft)   return `left:${c01(ry/h).toFixed(3)}`;
-  return `right:${c01(ry/h).toFixed(3)}`;
+  if (mn === dTop)    return `top:${clampH(rx)}`;
+  if (mn === dBottom) return `bottom:${clampH(rx)}`;
+  if (mn === dLeft)   return `left:${clampV(ry)}`;
+  return `right:${clampV(ry)}`;
 }
 
 function canvasPos(e) {
@@ -1897,28 +1900,14 @@ function handleDragMove(e) {
       if (cel) { cel.style.left=cc.x+'px'; cel.style.top=cc.y+'px'; }
     });
   }
-  // Reposition ports: keep absolute canvas position by adjusting fraction within the SAME side
+  // Ports follow block — portStr unchanged, just recalculate absolute position
   if (!isGroup) {
     _s.components
       .filter(p => p.comp_type==='Port' && p.data?.parent_block_id===id)
       .forEach(p => {
-        const portStr = p.data?.attached_side || 'right:0.5';
-        const side = portSide(portStr);
-        const absCx = p.x + PORT_SIZE/2; // old canvas center
-        const absCy = p.y + PORT_SIZE/2;
-        let newFrac;
-        if (side === 'left' || side === 'right') {
-          // Horizontal movement doesn't affect fraction; vertical does
-          newFrac = c.height > 0 ? (absCy - c.y) / c.height : 0.5;
-        } else {
-          newFrac = c.width > 0 ? (absCx - c.x) / c.width : 0.5;
-        }
-        newFrac = Math.max(0, Math.min(1, newFrac));
-        const newPortStr = `${side}:${newFrac.toFixed(4)}`;
-        const [px, py] = portAbs(c, newPortStr);
+        const [px, py] = portAbs(c, p.data?.attached_side || 'right:0.5');
         p.x = Math.round(px - PORT_SIZE/2);
         p.y = Math.round(py - PORT_SIZE/2);
-        p.data = { ...p.data, attached_side: newPortStr };
       });
   }
 
