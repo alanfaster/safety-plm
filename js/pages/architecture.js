@@ -1294,7 +1294,19 @@ function updateTempPath(e) {
   _s.connecting.curX = pos.x; _s.connecting.curY = pos.y;
   const [sx,sy] = portAbs(src, _s.connecting.sourcePort);
   const tp = document.getElementById('arch-temp');
-  if (tp) tp.setAttribute('d', bezier(sx,sy,_s.connecting.sourcePort,pos.x,pos.y,'left'));
+  // For group source: if cursor is inside the group the curve goes inward — flip source control
+  let srcPortForBezier = _s.connecting.sourcePort;
+  if (src.comp_type === 'Group') {
+    const insideGroup = pos.x > src.x && pos.x < src.x + src.width &&
+                        pos.y > src.y && pos.y < src.y + src.height;
+    if (insideGroup) {
+      const side = portSide(_s.connecting.sourcePort);
+      const flipped = { top:'bottom', bottom:'top', left:'right', right:'left' };
+      const frac = _s.connecting.sourcePort.includes(':') ? _s.connecting.sourcePort.split(':')[1] : '0.5';
+      srcPortForBezier = `${flipped[side] || side}:${frac}`;
+    }
+  }
+  if (tp) tp.setAttribute('d', bezier(sx,sy,srcPortForBezier,pos.x,pos.y,'left'));
 
   // Clear previous highlights
   document.querySelectorAll('.arch-group--conn-target,.arch-block--conn-target').forEach(el =>
@@ -1863,19 +1875,21 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
   if (src.comp_type === 'Port' && src.data?.attached_side) finalSrcPort = src.data.attached_side;
   if (tgt.comp_type === 'Port' && tgt.data?.attached_side) finalTgtPort = tgt.data.attached_side;
 
-  // Determine port directions:
-  // Component→Group (src inside tgt): both ports carry the same flow direction outward
-  // Group→Component (tgt inside src): both ports carry the same flow direction inward
-  // Component→Component: src=out, tgt=in (normal peer connection)
+  // Determine port directions based on topology:
+  // Component inside Group → Group border: both out (flow exits component and system)
+  // Group border → Component inside Group: both in (flow enters system and component)
+  // Group → external target: out on group, in on target (normal exit)
+  // External source → Group: out on source, in on group (normal entry)
+  // Component → Component: out → in (normal peer)
   const srcInsideTgt = tgt.comp_type === 'Group' && src.data?.group_id === tgt.id;
   const tgtInsideSrc = src.comp_type === 'Group' && tgt.data?.group_id === src.id;
   let srcDir, tgtDir;
   if (srcInsideTgt) {
-    srcDir = 'out'; tgtDir = 'out'; // flow exits component AND system
+    srcDir = 'out'; tgtDir = 'out';
   } else if (tgtInsideSrc) {
-    srcDir = 'in';  tgtDir = 'in';  // flow enters system AND component
+    srcDir = 'in';  tgtDir = 'in';
   } else {
-    srcDir = 'out'; tgtDir = 'in';  // normal peer-to-peer
+    srcDir = 'out'; tgtDir = 'in';
   }
 
   const srcNeedsPort = src.comp_type !== 'Port';
