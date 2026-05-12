@@ -1964,9 +1964,11 @@ function handleDragEnd() {
   const dataChanged = (c.data?.group_id||null)!==gid;
   if (dataChanged) {
     c.data = {...(c.data||{}), group_id:gid};
-    sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id);
+    sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id)
+      .then(({error})=>{ if(error) console.error('arch save error',error,id); });
   } else {
-    sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id);
+    sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id)
+      .then(({error})=>{ if(error) console.error('arch save error',error,id); });
   }
   // Save attached ports that moved with this block
   _s.components
