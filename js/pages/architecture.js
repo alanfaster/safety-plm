@@ -1846,9 +1846,7 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
   // Internal = both ends in the same group; External = crosses group boundary or group involved
   const reqType = isExt ? 'interface_external' : 'interface_internal';
 
-  let autoDir = 'bidirectional';
-  if (tgt.comp_type==='Group' && src.data?.group_id===tgt.id) autoDir = 'A_to_B';
-  else if (src.comp_type==='Group' && tgt.data?.group_id===src.id) autoDir = 'B_to_A';
+  const autoDir = 'bidirectional';
 
   captureUndo();
 
@@ -1859,15 +1857,29 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
   if (src.comp_type === 'Port' && src.data?.attached_side) finalSrcPort = src.data.attached_side;
   if (tgt.comp_type === 'Port' && tgt.data?.attached_side) finalTgtPort = tgt.data.attached_side;
 
-  // Auto-create attached ports when connecting blocks or groups (all non-Port endpoints)
+  // Determine port directions:
+  // Component→Group (src inside tgt): both ports carry the same flow direction outward
+  // Group→Component (tgt inside src): both ports carry the same flow direction inward
+  // Component→Component: src=out, tgt=in (normal peer connection)
+  const srcInsideTgt = tgt.comp_type === 'Group' && src.data?.group_id === tgt.id;
+  const tgtInsideSrc = src.comp_type === 'Group' && tgt.data?.group_id === src.id;
+  let srcDir, tgtDir;
+  if (srcInsideTgt) {
+    srcDir = 'out'; tgtDir = 'out'; // flow exits component AND system
+  } else if (tgtInsideSrc) {
+    srcDir = 'in';  tgtDir = 'in';  // flow enters system AND component
+  } else {
+    srcDir = 'out'; tgtDir = 'in';  // normal peer-to-peer
+  }
+
   const srcNeedsPort = src.comp_type !== 'Port';
   const tgtNeedsPort = tgt.comp_type !== 'Port';
   if (srcNeedsPort) {
-    const p = await createAttachedPort(srcId, srcPort, autoDir === 'B_to_A' ? 'in' : 'out');
+    const p = await createAttachedPort(srcId, srcPort, srcDir);
     if (p) { finalSrcId = p.id; finalSrcPort = p.data.attached_side || 'right:0.5'; }
   }
   if (tgtNeedsPort) {
-    const p = await createAttachedPort(tgtId, tgtPort, autoDir === 'A_to_B' ? 'in' : 'out');
+    const p = await createAttachedPort(tgtId, tgtPort, tgtDir);
     if (p) { finalTgtId = p.id; finalTgtPort = p.data.attached_side || 'left:0.5'; }
   }
 
