@@ -25,19 +25,19 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 // ── Visual constants ──────────────────────────────────────────────────────────
 
 const STYLES = {
-  HW:         { bg:'#F8F9FA', border:'#4A90D9', hdr:'transparent', stereotype:'block'  },
-  SW:         { bg:'#F8F9FA', border:'#4CAF7D', hdr:'transparent', stereotype:'block'  },
-  Mechanical: { bg:'#F8F9FA', border:'#E8932A', hdr:'transparent', stereotype:'block'  },
-  Group:      { bg:'#FFFFFF', border:'#C8CDD2', hdr:'transparent', stereotype:'system' },
-  Port:       { bg:'#3C4043', border:'#3C4043', hdr:'#3C4043',    stereotype:'port'   },
+  HW:         { bg:'#E8F0FE', border:'#1A73E8', hdr:'#1A73E8', stereotype:'block'  },
+  SW:         { bg:'#E6F4EA', border:'#1E8E3E', hdr:'#1E8E3E', stereotype:'block'  },
+  Mechanical: { bg:'#FEF3E2', border:'#E37400', hdr:'#E37400', stereotype:'block'  },
+  Group:      { bg:'#F8F9FA', border:'#9AA0A6', hdr:'transparent', stereotype:'system' },
+  Port:       { bg:'#212121', border:'#212121', hdr:'#212121', stereotype:'port'   },
 };
 
 const IFACE = {
-  Data:       { stroke:'#4A90D9', dash:'',    icon:'⇄', weight:1.5 },
-  Electrical: { stroke:'#E8932A', dash:'',    icon:'⚡', weight:1.5 },
-  Mechanical: { stroke:'#7D6B5E', dash:'6,3', icon:'⚙', weight:2   },
-  Thermal:    { stroke:'#D05C5C', dash:'4,3', icon:'🌡', weight:1.5 },
-  Power:      { stroke:'#9B6BBF', dash:'',    icon:'⏻', weight:2   },
+  Data:       { stroke:'#1A73E8', dash:'',    icon:'⇄', weight:2   },
+  Electrical: { stroke:'#E37400', dash:'',    icon:'⚡', weight:2   },
+  Mechanical: { stroke:'#5D4037', dash:'6,3', icon:'⚙', weight:2.5 },
+  Thermal:    { stroke:'#C5221F', dash:'4,3', icon:'🌡', weight:2   },
+  Power:      { stroke:'#7B1FA2', dash:'',    icon:'⏻', weight:2.5 },
 };
 
 const PORTS = {
@@ -571,8 +571,7 @@ function renderConnections() {
 
   let bridgesSVG = '';
   try { bridgesSVG = buildBridgesSVG(); } catch(_e) { /* non-critical */ }
-  const connsSVG = _s.connections.map(cn => { try { return connSVG(cn); } catch(_e) { return ''; } }).join('');
-  g.innerHTML = connsSVG + standaloneSVG + bridgesSVG;
+  g.innerHTML = _s.connections.map(cn => connSVG(cn)).join('') + standaloneSVG + bridgesSVG;
 
   _s.connections.forEach(cn => {
     document.getElementById(`conn-${cn.id}`)
@@ -716,15 +715,15 @@ function blockHTML(c) {
     <div class="arch-block ${sel ? 'arch-block--sel' : ''} ${safe ? 'arch-block--safe' : ''}"
          id="comp-${c.id}" data-id="${c.id}" data-type="${c.comp_type}"
          style="left:${c.x}px;top:${c.y}px;width:${c.width}px;height:${c.height}px;
-                border-color:${safe ? '#C5221F' : st.border};border-left:3px solid ${safe ? '#C5221F' : st.border}">
-      <div class="arch-block-hdr" data-drag-id="${c.id}" style="background:${safe ? '#C5221F' : st.border}">
+                border-color:${safe ? '#C5221F' : st.border}">
+      <div class="arch-block-hdr" data-drag-id="${c.id}" style="background:${st.hdr}">
         <span class="arch-block-stereo">«${st.stereotype}»</span>
         <span class="arch-block-name" id="cname-${c.id}">${escH(c.name)}</span>
         ${safe ? '<span class="arch-block-safe-ico">⚠</span>' : ''}
       </div>
       <button class="arch-del-badge" data-del-id="${c.id}" title="Delete (Del)">✕</button>
       <div class="arch-block-type-row" style="background:${st.bg}">
-        <span class="arch-block-type-badge" style="color:${safe ? '#C5221F' : st.border}">${c.comp_type}</span>
+        <span class="arch-block-type-badge" style="color:${st.border}">${c.comp_type}</span>
       </div>
       <div class="arch-block-funs" id="funlist-${c.id}">${funItems}</div>
       <div class="arch-port arch-port--top"    data-comp-id="${c.id}" data-port="top"></div>
@@ -745,23 +744,17 @@ function connSVG(cn) {
   if (!src || !tgt) return '';
   const [sx,sy] = portAbs(src, cn.source_port);
   const [tx,ty] = portAbs(tgt, cn.target_port);
-  const d = ORTHO_ROUTING
-    ? orthoPath(sx,sy,cn.source_port,tx,ty,cn.target_port)
-    : bezier(sx,sy,cn.source_port,tx,ty,cn.target_port);
+  const d = bezier(sx,sy,cn.source_port,tx,ty,cn.target_port);
   const iv = IFACE[cn.interface_type] || IFACE.Data;
-  // Midpoint: for ortho use center of bounding box; for bezier use t=0.5
+  // True midpoint on the bezier curve (t=0.5) — always on the line
+  const bd = getBezierCtrlPts(cn);
   let mx, my;
-  if (ORTHO_ROUTING) {
-    mx = (sx+tx)/2; my = (sy+ty)/2;
+  if (bd) {
+    const t = 0.5, mt = 0.5;
+    mx = mt*mt*mt*bd.x1 + 3*mt*mt*t*bd.cx1 + 3*mt*t*t*bd.cx2 + t*t*t*bd.x2;
+    my = mt*mt*mt*bd.y1 + 3*mt*mt*t*bd.cy1 + 3*mt*t*t*bd.cy2 + t*t*t*bd.y2;
   } else {
-    const bd = getBezierCtrlPts(cn);
-    if (bd) {
-      const t = 0.5, mt = 0.5;
-      mx = mt*mt*mt*bd.x1 + 3*mt*mt*t*bd.cx1 + 3*mt*t*t*bd.cx2 + t*t*t*bd.x2;
-      my = mt*mt*mt*bd.y1 + 3*mt*mt*t*bd.cy1 + 3*mt*t*t*bd.cy2 + t*t*t*bd.y2;
-    } else {
-      mx = (sx+tx)/2; my = (sy+ty)/2;
-    }
+    mx = (sx+tx)/2; my = (sy+ty)/2;
   }
 
   // EXT label: placed along the bezier ~15% from the system-border port, inside the line
@@ -894,89 +887,6 @@ function bezier(x1,y1,p1,x2,y2,p2) {
 }
 
 function snap(v) { return Math.round(v/GRID)*GRID; }
-
-// ── Orthogonal routing ────────────────────────────────────────────────────────
-// Replaces bezier curves with clean right-angle paths (Enterprise Architect style).
-// Set ORTHO_ROUTING = false to revert to bezier curves.
-const ORTHO_ROUTING = true;
-
-function orthoPath(x1, y1, p1, x2, y2, p2) {
-  const s1 = portSide(p1), s2 = portSide(p2);
-  const PAD = 28; // clearance from component edge before turning
-
-  // Exit vectors from each endpoint
-  const exit = { top:[0,-1], right:[1,0], bottom:[0,1], left:[-1,0] };
-  const [e1x, e1y] = exit[s1] || [1, 0];
-  const [e2x, e2y] = exit[s2] || [-1, 0];
-
-  // First exit point (mandatory segment out of the source port)
-  const ax = x1 + e1x * PAD, ay = y1 + e1y * PAD;
-  // Last entry point (mandatory segment into the target port)
-  const bx = x2 + e2x * PAD, by = y2 + e2y * PAD;
-
-  // Build L-shaped or Z-shaped orthogonal path between ax,ay and bx,by
-  const pts = [[x1, y1], [ax, ay]];
-
-  if (Math.abs(ax - bx) < 2 && Math.abs(ay - by) < 2) {
-    // Already aligned — straight line
-  } else if (s1 === s2) {
-    // Same side exit: U-shape — go out further, route around
-    const ext = Math.max(Math.abs(ax - bx), Math.abs(ay - by)) / 2 + PAD;
-    if (s1 === 'right' || s1 === 'left') {
-      const midX = s1 === 'right' ? Math.max(ax, bx) + ext : Math.min(ax, bx) - ext;
-      pts.push([midX, ay], [midX, by]);
-    } else {
-      const midY = s1 === 'bottom' ? Math.max(ay, by) + ext : Math.min(ay, by) - ext;
-      pts.push([ax, midY], [bx, midY]);
-    }
-  } else if ((s1 === 'right' || s1 === 'left') && (s2 === 'right' || s2 === 'left')) {
-    // Both horizontal exits: route via midpoint Y
-    const midX = (ax + bx) / 2;
-    pts.push([midX, ay], [midX, by]);
-  } else if ((s1 === 'top' || s1 === 'bottom') && (s2 === 'top' || s2 === 'bottom')) {
-    // Both vertical exits: route via midpoint X
-    const midY = (ay + by) / 2;
-    pts.push([ax, midY], [bx, midY]);
-  } else if (s1 === 'right' || s1 === 'left') {
-    // Horizontal exit, vertical entry: L-shape
-    pts.push([bx, ay]);
-  } else {
-    // Vertical exit, horizontal entry: L-shape
-    pts.push([ax, by]);
-  }
-
-  pts.push([bx, by], [x2, y2]);
-
-  // Convert to SVG polyline path with small rounded corners (radius 6)
-  return ptsToRoundedPath(pts, 6);
-}
-
-function ptsToRoundedPath(pts, r) {
-  if (pts.length < 2) return `M0 0`;
-  // Deduplicate consecutive identical points to avoid NaN from zero-length segments
-  const clean = [pts[0]];
-  for (let i = 1; i < pts.length; i++) {
-    if (Math.hypot(pts[i][0] - clean[clean.length-1][0], pts[i][1] - clean[clean.length-1][1]) > 0.5)
-      clean.push(pts[i]);
-  }
-  if (clean.length < 2) return `M${clean[0][0].toFixed(1)} ${clean[0][1].toFixed(1)}`;
-  let d = `M${clean[0][0].toFixed(1)} ${clean[0][1].toFixed(1)}`;
-  for (let i = 1; i < clean.length - 1; i++) {
-    const [px, py] = clean[i - 1];
-    const [cx, cy] = clean[i];
-    const [nx, ny] = clean[i + 1];
-    const d1 = Math.hypot(cx - px, cy - py);
-    const d2 = Math.hypot(nx - cx, ny - cy);
-    if (d1 < 0.5 || d2 < 0.5) { d += ` L${cx.toFixed(1)} ${cy.toFixed(1)}`; continue; }
-    const rc = Math.min(r, d1 / 2, d2 / 2);
-    const t1x = cx - (cx - px) / d1 * rc, t1y = cy - (cy - py) / d1 * rc;
-    const t2x = cx + (nx - cx) / d2 * rc, t2y = cy + (ny - cy) / d2 * rc;
-    d += ` L${t1x.toFixed(1)} ${t1y.toFixed(1)} Q${cx.toFixed(1)} ${cy.toFixed(1)} ${t2x.toFixed(1)} ${t2y.toFixed(1)}`;
-  }
-  const last = clean[clean.length - 1];
-  d += ` L${last[0].toFixed(1)} ${last[1].toFixed(1)}`;
-  return d;
-}
 
 // ── Crossing detection helpers ────────────────────────────────────────────────
 
@@ -1556,9 +1466,7 @@ function updateTempPath(e) {
       srcPortForBezier = `${flipped[side] || side}:${frac}`;
     }
   }
-  if (tp) tp.setAttribute('d', ORTHO_ROUTING
-    ? orthoPath(sx,sy,srcPortForBezier,pos.x,pos.y,'left')
-    : bezier(sx,sy,srcPortForBezier,pos.x,pos.y,'left'));
+  if (tp) tp.setAttribute('d', bezier(sx,sy,srcPortForBezier,pos.x,pos.y,'left'));
 
   // Clear previous highlights
   document.querySelectorAll('.arch-group--conn-target,.arch-block--conn-target').forEach(el =>
