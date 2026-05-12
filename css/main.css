@@ -2611,7 +2611,7 @@ tr.req-title-row td { cursor: default; }
 }
 
 /* Canvas outer */
-.arch-canvas-outer{flex:1;position:relative;overflow:hidden;background-color:#ECEFF1;background-image:radial-gradient(circle,#B0BEC5 1px,transparent 1px);background-size:20px 20px;cursor:default}
+.arch-canvas-outer{flex:1;position:relative;overflow:hidden;background-color:#F3F4F6;background-image:radial-gradient(circle,#D1D5DB 1px,transparent 1px);background-size:20px 20px;cursor:default}
 
 /* Viewport */
 .arch-viewport{position:absolute;top:0;left:0;width:4000px;height:3000px;transform-origin:0 0}
@@ -2642,15 +2642,15 @@ tr.req-title-row td { cursor: default; }
 
 /* Header compartment */
 .arch-block-hdr{display:flex;align-items:center;gap:5px;padding:5px 8px;border-radius:2px 2px 0 0;cursor:move;flex-shrink:0;background:#fff;border-bottom:1px solid rgba(0,0,0,0.08)}
-.arch-block-stereo{font-size:9px;font-style:italic;letter-spacing:0.04em;flex-shrink:0}
-.arch-block-name{flex:1;font-size:var(--text-sm);font-weight:700;color:#1F2937;cursor:text;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:0.01em}
+.arch-block-stereo{font-size:9px;font-style:italic;color:#9CA3AF;letter-spacing:0.04em;flex-shrink:0}
+.arch-block-name{flex:1;font-size:var(--text-sm);font-weight:600;color:#1F2937;cursor:text;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:0.01em}
 .arch-block-safe-ico{font-size:13px;flex-shrink:0;color:#C5221F}
 .arch-block-info-btn{background:rgba(0,0,0,0.05);border:none;border-radius:3px;color:#4B5563;font-size:13px;cursor:pointer;padding:1px 5px;line-height:1.3;flex-shrink:0}
 .arch-block-info-btn:hover{background:rgba(0,0,0,0.10)}
 
 /* Type row */
 .arch-block-type-row{padding:2px 8px;flex-shrink:0}
-.arch-block-type-badge{font-size:9px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;opacity:0.9}
+.arch-block-type-badge{font-size:9px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#9CA3AF}
 
 /* Functions compartment */
 .arch-block-funs-hdr{padding:3px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#9AA0A6;border-top:1px solid rgba(0,0,0,0.08);border-bottom:1px solid rgba(0,0,0,0.06);flex-shrink:0;background:#FAFAFA}
