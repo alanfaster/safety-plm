@@ -1807,7 +1807,25 @@ function handleDragMove(e) {
   if (isPortSVG && c.comp_type === 'Port' && c.data?.parent_block_id) {
     const parent = compById(c.data.parent_block_id);
     if (parent) {
-      const portStr = nearestPerimeterPoint(parent, pos.x, pos.y);
+      let targetPos = { x: pos.x, y: pos.y };
+      // Shift: align with the other end of any connection on this port
+      if (e.shiftKey) {
+        const conn = _s.connections.find(cn => cn.source_id === id || cn.target_id === id);
+        if (conn) {
+          const otherId = conn.source_id === id ? conn.target_id : conn.source_id;
+          const other = compById(otherId);
+          if (other) {
+            const otherPort = conn.source_id === id ? conn.target_port : conn.source_port;
+            const [ox, oy] = portAbs(other, otherPort || 'left:0.5');
+            // Snap to whichever axis keeps it closer to cursor
+            const dh = Math.abs(pos.y - oy); // distance to go horizontal
+            const dv = Math.abs(pos.x - ox); // distance to go vertical
+            if (dh <= dv) targetPos = { x: pos.x, y: oy }; // horizontal line
+            else          targetPos = { x: ox,    y: pos.y }; // vertical line
+          }
+        }
+      }
+      const portStr = nearestPerimeterPoint(parent, targetPos.x, targetPos.y);
       const [px, py] = portAbs(parent, portStr);
       c.x = Math.round(px - PORT_SIZE/2);
       c.y = Math.round(py - PORT_SIZE/2);
