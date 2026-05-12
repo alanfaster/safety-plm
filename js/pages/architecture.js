@@ -2028,7 +2028,7 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
     srcDir = 'out'; tgtDir = 'in';
   }
 
-  const autoDir = srcInsideTgt ? 'A_to_B' : tgtInsideSrc ? 'B_to_A' : 'A_to_B';
+  const autoDir = 'A_to_B'; // source always sends to target regardless of topology
 
   const srcNeedsPort = src.comp_type !== 'Port';
   const tgtNeedsPort = tgt.comp_type !== 'Port';
