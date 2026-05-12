@@ -1080,6 +1080,49 @@ function wireCanvas() {
   });
   outer.addEventListener('pointerup', () => { panStart=null; outer.style.cursor=''; });
 
+  // Right-click drag: move any element under cursor regardless of hit zone
+  outer.addEventListener('contextmenu', e => e.preventDefault());
+  outer.addEventListener('pointerdown', e => {
+    if (e.button !== 2) return;
+    e.preventDefault(); e.stopPropagation();
+    cancelConnect();
+    const pos = canvasPos(e);
+
+    // Priority: standalone SVG port → block → group
+    const under = document.elementsFromPoint(e.clientX, e.clientY);
+
+    const svgPortEl = under.find(el =>
+      el.classList?.contains('arch-standalone-port') || el.closest?.('.arch-standalone-port'))
+      ?.closest?.('.arch-standalone-port') ||
+      under.find(el => el.classList?.contains('arch-standalone-port'));
+    if (svgPortEl) {
+      const portId = svgPortEl.dataset.portId;
+      const p = compById(portId); if (!p) return;
+      captureUndo(); selectStandalonePort(portId);
+      _s.dragging = { id: portId, startX: pos.x, startY: pos.y, origX: p.x, origY: p.y, isPortSVG: true };
+      return;
+    }
+
+    const blockEl = under.find(el => el.classList?.contains('arch-block') && el.dataset.id);
+    if (blockEl) {
+      const id = blockEl.dataset.id;
+      const c = compById(id); if (!c) return;
+      captureUndo(); selectComp(id);
+      _s.dragging = { id, startX: pos.x, startY: pos.y, origX: c.x, origY: c.y };
+      return;
+    }
+
+    const groupEl = under.find(el => el.classList?.contains('arch-group') && el.dataset.id);
+    if (groupEl) {
+      const id = groupEl.dataset.id;
+      const g = compById(id); if (!g) return;
+      captureUndo(); selectComp(id);
+      const childrenForDrag = _s.components.filter(c => c.comp_type !== 'Group' && c.data?.group_id === id);
+      _s.dragging = { id, startX: pos.x, startY: pos.y, origX: g.x, origY: g.y, isGroup: true,
+        childOffsets: childrenForDrag.map(c => ({ id: c.id, dx: c.x - g.x, dy: c.y - g.y })) };
+    }
+  });
+
   outer.addEventListener('pointermove', e => { if (_s.connecting && !panStart) updateTempPath(e); });
 
   // Port placement mode: ghost preview + click to place
