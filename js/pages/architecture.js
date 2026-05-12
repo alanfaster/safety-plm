@@ -1088,18 +1088,18 @@ function wireCanvas() {
     cancelConnect();
     const pos = canvasPos(e);
 
-    // Priority: standalone SVG port → block → group
+    // Priority: any port (connected or standalone) by canvas proximity → block → group
     const under = document.elementsFromPoint(e.clientX, e.clientY);
-
-    const svgPortEl = under.find(el =>
-      el.classList?.contains('arch-standalone-port') || el.closest?.('.arch-standalone-port'))
-      ?.closest?.('.arch-standalone-port') ||
-      under.find(el => el.classList?.contains('arch-standalone-port'));
-    if (svgPortEl) {
-      const portId = svgPortEl.dataset.portId;
-      const p = compById(portId); if (!p) return;
-      captureUndo(); selectStandalonePort(portId);
-      _s.dragging = { id: portId, startX: pos.x, startY: pos.y, origX: p.x, origY: p.y, isPortSVG: true };
+    const HIT = CONN_EP_SIZE + 4;
+    const nearPort = _s.components.find(p => {
+      if (p.comp_type !== 'Port' || !p.data?.parent_block_id) return false;
+      const parent = compById(p.data.parent_block_id); if (!parent) return false;
+      const [px, py] = portAbs(parent, p.data.attached_side || 'right:0.5');
+      return Math.abs(pos.x - px) <= HIT && Math.abs(pos.y - py) <= HIT;
+    });
+    if (nearPort) {
+      captureUndo(); selectStandalonePort(nearPort.id);
+      _s.dragging = { id: nearPort.id, startX: pos.x, startY: pos.y, origX: nearPort.x, origY: nearPort.y, isPortSVG: true };
       return;
     }
 
