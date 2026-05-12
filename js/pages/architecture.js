@@ -745,15 +745,22 @@ function connSVG(cn) {
   if (!src || !tgt) return '';
   const [sx,sy] = portAbs(src, cn.source_port);
   const [tx,ty] = portAbs(tgt, cn.target_port);
-  const d = ORTHO_ROUTING
-    ? orthoPath(sx,sy,cn.source_port,tx,ty,cn.target_port)
-    : bezier(sx,sy,cn.source_port,tx,ty,cn.target_port);
+  let d, _opts = null;
+  if (ORTHO_ROUTING) {
+    _opts = orthoPoints(sx,sy,cn.source_port,tx,ty,cn.target_port);
+    d = _orthoD(_opts, 5);
+  } else {
+    d = bezier(sx,sy,cn.source_port,tx,ty,cn.target_port);
+  }
   const iv = IFACE[cn.interface_type] || IFACE.Data;
-  // Midpoint for label/icon — bezier uses t=0.5, ortho uses arithmetic center
-  let mx = (sx+tx)/2, my = (sy+ty)/2;
-  if (!ORTHO_ROUTING) {
-    const bd = getBezierCtrlPts(cn);
-    if (bd) { const t=0.5,mt=0.5; mx=mt*mt*mt*bd.x1+3*mt*mt*t*bd.cx1+3*mt*t*t*bd.cx2+t*t*t*bd.x2; my=mt*mt*mt*bd.y1+3*mt*mt*t*bd.cy1+3*mt*t*t*bd.cy2+t*t*t*bd.y2; }
+  // Midpoint for label — on the actual path
+  let mx, my;
+  if (ORTHO_ROUTING && _opts) {
+    [mx,my] = orthoPointAt(_opts, 0.5);
+  } else {
+    const bd2 = getBezierCtrlPts(cn);
+    if (bd2) { const t=0.5,mt=0.5; mx=mt*mt*mt*bd2.x1+3*mt*mt*t*bd2.cx1+3*mt*t*t*bd2.cx2+t*t*t*bd2.x2; my=mt*mt*mt*bd2.y1+3*mt*mt*t*bd2.cy1+3*mt*t*t*bd2.cy2+t*t*t*bd2.y2; }
+    else { mx=(sx+tx)/2; my=(sy+ty)/2; }
   }
   const bd = getBezierCtrlPts(cn);
 
@@ -762,11 +769,14 @@ function connSVG(cn) {
   if (cn.is_external && bd) {
     const srcParent = src.comp_type === 'Port' ? compById(src.data?.parent_block_id) : src;
     const tgtParent = tgt.comp_type === 'Port' ? compById(tgt.data?.parent_block_id) : tgt;
-    const sysIsSrc  = srcParent?.comp_type === 'Group';
-    const t = sysIsSrc ? 0.18 : 0.82;
-    const mt = 1 - t;
-    const ex = mt*mt*mt*bd.x1 + 3*mt*mt*t*bd.cx1 + 3*mt*t*t*bd.cx2 + t*t*t*bd.x2;
-    const ey = mt*mt*mt*bd.y1 + 3*mt*mt*t*bd.cy1 + 3*mt*t*t*bd.cy2 + t*t*t*bd.y2;
+    const sysIsSrc = srcParent?.comp_type === 'Group';
+    const tExt = sysIsSrc ? 0.15 : 0.85;
+    let ex, ey;
+    if (ORTHO_ROUTING && _opts) {
+      [ex,ey] = orthoPointAt(_opts, tExt);
+    } else if (bd) {
+      const mt=1-tExt; ex=mt*mt*mt*bd.x1+3*mt*mt*tExt*bd.cx1+3*mt*tExt*tExt*bd.cx2+tExt*tExt*tExt*bd.x2; ey=mt*mt*mt*bd.y1+3*mt*mt*tExt*bd.cy1+3*mt*tExt*tExt*bd.cy2+tExt*tExt*tExt*bd.y2;
+    } else { ex=sysIsSrc?sx:tx; ey=sysIsSrc?sy:ty; }
     ext = `<text x="${ex.toFixed(1)}" y="${(ey - 6).toFixed(1)}" text-anchor="middle" class="arch-conn-ext">EXT</text>`;
   }
 
@@ -889,39 +899,53 @@ function bezier(x1,y1,p1,x2,y2,p2) {
 // ── Orthogonal routing (set false to revert to bezier) ────────────────────────
 const ORTHO_ROUTING = true;
 
-function orthoPath(x1, y1, p1, x2, y2, p2) {
+function orthoPoints(x1, y1, p1, x2, y2, p2) {
   const s1 = portSide(p1) || 'right', s2 = portSide(p2) || 'left';
   const PAD = 24;
-  const ex = { top:[0,-1], right:[1,0], bottom:[0,1], left:[-1,0] };
-  const nat = { top:[0,-1], right:[1,0], bottom:[0,1], left:[-1,0] };
+  const ex  = { top:[0,-1], right:[1,0], bottom:[0,1], left:[-1,0] };
   const dx = x2-x1, dy = y2-y1;
-  // Flip exit direction if target is behind the natural exit (same logic as bezier)
-  const flipSrc = (dx*(nat[s1]?.[0]??1) + dy*(nat[s1]?.[1]??0)) < 0;
-  const flipTgt = ((-dx)*(nat[s2]?.[0]??1) + (-dy)*(nat[s2]?.[1]??0)) < 0;
-  const raw1 = ex[s1] || [1,0];
-  const raw2 = ex[s2] || [-1,0];
+  const flipSrc = (dx*(ex[s1]?.[0]??1) + dy*(ex[s1]?.[1]??0)) < 0;
+  const flipTgt = ((-dx)*(ex[s2]?.[0]??1) + (-dy)*(ex[s2]?.[1]??0)) < 0;
+  const raw1 = ex[s1]||[1,0], raw2 = ex[s2]||[-1,0];
   const [e1x,e1y] = flipSrc ? [-raw1[0],-raw1[1]] : raw1;
   const [e2x,e2y] = flipTgt ? [-raw2[0],-raw2[1]] : raw2;
-  const ax = x1 + e1x*PAD, ay = y1 + e1y*PAD;
-  const bx = x2 + e2x*PAD, by = y2 + e2y*PAD;
-  const pts = [[x1,y1],[ax,ay]];
-  // Use effective exit sides (after flip) to choose L/Z shape
+  const ax = x1+e1x*PAD, ay = y1+e1y*PAD;
+  const bx = x2+e2x*PAD, by = y2+e2y*PAD;
   const opp = { top:'bottom', bottom:'top', left:'right', right:'left' };
   const eff1 = flipSrc ? (opp[s1]||s1) : s1;
   const eff2 = flipTgt ? (opp[s2]||s2) : s2;
-  const horiz1 = eff1==='right'||eff1==='left', horiz2 = eff2==='right'||eff2==='left';
+  const h1 = eff1==='right'||eff1==='left', h2 = eff2==='right'||eff2==='left';
+  const pts = [[x1,y1],[ax,ay]];
   if (Math.abs(ax-bx)<1 && Math.abs(ay-by)<1) {
-    // already aligned
+    // aligned
   } else if (eff1===eff2) {
     const pad2 = Math.max(Math.abs(ax-bx),Math.abs(ay-by))/2+PAD;
-    if (horiz1) { const mx=eff1==='right'?Math.max(ax,bx)+pad2:Math.min(ax,bx)-pad2; pts.push([mx,ay],[mx,by]); }
-    else        { const my=eff1==='bottom'?Math.max(ay,by)+pad2:Math.min(ay,by)-pad2; pts.push([ax,my],[bx,my]); }
-  } else if (horiz1 && horiz2) { const mx=(ax+bx)/2; pts.push([mx,ay],[mx,by]); }
-  else if (!horiz1 && !horiz2) { const my=(ay+by)/2; pts.push([ax,my],[bx,my]); }
-  else if (horiz1)  { pts.push([bx,ay]); }
-  else              { pts.push([ax,by]); }
+    if (h1) { const mx=eff1==='right'?Math.max(ax,bx)+pad2:Math.min(ax,bx)-pad2; pts.push([mx,ay],[mx,by]); }
+    else    { const my=eff1==='bottom'?Math.max(ay,by)+pad2:Math.min(ay,by)-pad2; pts.push([ax,my],[bx,my]); }
+  } else if (h1&&h2) { const mx=(ax+bx)/2; pts.push([mx,ay],[mx,by]); }
+  else if (!h1&&!h2) { const my=(ay+by)/2; pts.push([ax,my],[bx,my]); }
+  else if (h1) { pts.push([bx,ay]); }
+  else         { pts.push([ax,by]); }
   pts.push([bx,by],[x2,y2]);
-  return _orthoD(pts, 5);
+  return pts;
+}
+
+function orthoPath(x1, y1, p1, x2, y2, p2) {
+  return _orthoD(orthoPoints(x1,y1,p1,x2,y2,p2), 5);
+}
+
+// Point at fractional length t (0–1) along an ortho polyline
+function orthoPointAt(pts, t) {
+  const segs = [];
+  let total = 0;
+  for (let i=1;i<pts.length;i++) { const l=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]); segs.push(l); total+=l; }
+  if (total===0) return pts[0];
+  let rem = t * total;
+  for (let i=0;i<segs.length;i++) {
+    if (rem<=segs[i]) { const f=rem/segs[i]; return [pts[i][0]+(pts[i+1][0]-pts[i][0])*f, pts[i][1]+(pts[i+1][1]-pts[i][1])*f]; }
+    rem -= segs[i];
+  }
+  return pts[pts.length-1];
 }
 
 function _orthoD(pts, r) {
@@ -1012,10 +1036,16 @@ function findCrossingsBetween(ptsA, ptsB) {
     Math.hypot(h.px-prev.px, h.py-prev.py) < 10));
 }
 
+function sampleOrthoPath(cn) {
+  const src = compById(cn.source_id), tgt = compById(cn.target_id); if (!src||!tgt) return [];
+  const [sx,sy] = portAbs(src, cn.source_port), [tx,ty] = portAbs(tgt, cn.target_port);
+  return orthoPoints(sx,sy,cn.source_port,tx,ty,cn.target_port);
+}
+
 function buildBridgesSVG() {
   const cns = _s.connections.filter(cn => compById(cn.source_id) && compById(cn.target_id));
   if (cns.length < 2) return '';
-  const samples = cns.map(cn => ({ cn, pts: sampleBezierCtrl(getBezierCtrlPts(cn)) }));
+  const samples = cns.map(cn => ({ cn, pts: ORTHO_ROUTING ? sampleOrthoPath(cn) : sampleBezierCtrl(getBezierCtrlPts(cn)) }));
   const R = 6;
   let svg = '';
   for (let i=0; i<samples.length; i++) {
