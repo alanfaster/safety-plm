@@ -25,19 +25,19 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 // ── Visual constants ──────────────────────────────────────────────────────────
 
 const STYLES = {
-  HW:         { bg:'#ffffff', border:'#4A6FA5', hdr:'transparent', stereotype:'block'  },
-  SW:         { bg:'#ffffff', border:'#3A7D5C', hdr:'transparent', stereotype:'block'  },
-  Mechanical: { bg:'#ffffff', border:'#7A5C2E', hdr:'transparent', stereotype:'block'  },
-  Group:      { bg:'rgba(249,250,251,0.4)', border:'#9CA3AF', hdr:'transparent', stereotype:'system' },
-  Port:       { bg:'#4B5563', border:'#4B5563', hdr:'#4B5563', stereotype:'port'       },
+  HW:         { bg:'#ffffff', border:'#2563EB', hdr:'transparent', stereotype:'block'      },
+  SW:         { bg:'#ffffff', border:'#16A34A', hdr:'transparent', stereotype:'block'      },
+  Mechanical: { bg:'#ffffff', border:'#D97706', hdr:'transparent', stereotype:'block'      },
+  Group:      { bg:'rgba(248,249,250,0.5)', border:'#6B7280', hdr:'transparent', stereotype:'system' },
+  Port:       { bg:'#374151', border:'#374151', hdr:'#374151', stereotype:'port'           },
 };
 
 const IFACE = {
-  Data:       { stroke:'#4A6FA5', dash:'',    icon:'⇄', weight:1.8 },
-  Electrical: { stroke:'#7A5C2E', dash:'',    icon:'⚡', weight:1.8 },
-  Mechanical: { stroke:'#6B7280', dash:'6,3', icon:'⚙', weight:2   },
-  Thermal:    { stroke:'#9B4444', dash:'4,3', icon:'🌡', weight:1.8 },
-  Power:      { stroke:'#6B5B8C', dash:'',    icon:'⏻', weight:2   },
+  Data:       { stroke:'#1F2937', dash:'',    icon:'⇄', weight:1.5 },
+  Electrical: { stroke:'#B45309', dash:'',    icon:'⚡', weight:1.5 },
+  Mechanical: { stroke:'#6B7280', dash:'6,3', icon:'⚙', weight:1.5 },
+  Thermal:    { stroke:'#9B1C1C', dash:'4,3', icon:'🌡', weight:1.5 },
+  Power:      { stroke:'#6D28D9', dash:'',    icon:'⏻', weight:1.5 },
 };
 
 const PORTS = {
@@ -742,14 +742,14 @@ function blockHTML(c) {
          id="comp-${c.id}" data-id="${c.id}" data-type="${c.comp_type}"
          style="left:${c.x}px;top:${c.y}px;width:${c.width}px;height:${c.height}px;
                 border-color:${safe ? '#C5221F' : st.border}">
-      <div class="arch-block-hdr" data-drag-id="${c.id}" style="border-top:3px solid ${safe ? '#B91C1C' : st.border}">
-        <span class="arch-block-stereo">«${st.stereotype}»</span>
+      <div class="arch-block-hdr" data-drag-id="${c.id}" style="border-top:3px solid ${safe ? '#C5221F' : st.border}">
+        <span class="arch-block-stereo" style="color:${safe ? '#C5221F' : st.border}">«${st.stereotype}»</span>
         <span class="arch-block-name" id="cname-${c.id}">${escH(c.name)}</span>
         ${safe ? '<span class="arch-block-safe-ico">⚠</span>' : ''}
       </div>
       <button class="arch-del-badge" data-del-id="${c.id}" title="Delete (Del)">✕</button>
       <div class="arch-block-type-row">
-        <span class="arch-block-type-badge">${c.comp_type}</span>
+        <span class="arch-block-type-badge" style="color:${safe ? '#C5221F' : st.border}">${c.comp_type}</span>
       </div>
       <div class="arch-block-funs" id="funlist-${c.id}">${funItems}</div>
       <div class="arch-port arch-port--top"    data-comp-id="${c.id}" data-port="top"></div>
