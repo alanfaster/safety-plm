@@ -533,9 +533,9 @@ function renderConnections() {
     p.comp_type === 'Port' && p.data?.parent_block_id && !connectedPortIds.has(p.id));
 
   const standaloneSVG = standalonePorts.map(p => {
-    if (!compById(p.data.parent_block_id)) return '';
+    const parent = compById(p.data.parent_block_id); if (!parent) return '';
     const portStr = p.data?.attached_side || 'right:0.5';
-    const [px, py] = [p.x + PORT_SIZE/2, p.y + PORT_SIZE/2];
+    const [px, py] = portAbs(parent, portStr);
     const side = portStr.split(':')[0];
     const dir  = p.data?.port_dir || 'inout';
     const ARROW_MAP = { in: { top:'↓', bottom:'↑', left:'→', right:'←' },
@@ -887,9 +887,10 @@ function connSVG(cn) {
 
 // port string: "side" (legacy) or "side:fraction" (0.0–1.0 along that edge)
 function portAbs(comp, portStr) {
-  // For attached SVG ports, use stored x/y as truth — immune to parent resize/move
+  // For attached ports, resolve position from parent block + attached_side
   if (comp.comp_type === 'Port' && comp.data?.parent_block_id) {
-    return [comp.x + PORT_SIZE/2, comp.y + PORT_SIZE/2];
+    const parent = compById(comp.data.parent_block_id);
+    if (parent) return portAbs(parent, comp.data.attached_side || 'right:0.5');
   }
   const w = comp.width || PORT_SIZE, h = comp.height || PORT_SIZE;
   const [side, fracStr] = portStr?.includes(':') ? portStr.split(':') : [portStr, '0.5'];
@@ -1914,14 +1915,25 @@ function handleDragMove(e) {
   if (grpId && !isGroup) {
     const grp = compById(grpId);
     if (grp) {
+      // Capture absolute canvas positions of group's ports BEFORE resizing
+      const grpPorts = _s.components.filter(p => p.comp_type==='Port' && p.data?.parent_block_id===grpId);
+      const portSnap = grpPorts.map(p => ({ p, ax: portAbs(grp, p.data?.attached_side||'right:0.5') }));
+
       let changed = false;
-      if (c.x < grp.x + PAD)               { grp.width += grp.x + PAD - c.x; grp.x = c.x - PAD; changed = true; }
-      if (c.y < grp.y + PAD)               { grp.height += grp.y + PAD - c.y; grp.y = c.y - PAD; changed = true; }
-      if (c.x + c.width > grp.x + grp.width - PAD)  { grp.width = c.x + c.width - grp.x + PAD; changed = true; }
+      if (c.x < grp.x + PAD)                          { grp.width += grp.x + PAD - c.x; grp.x = c.x - PAD; changed = true; }
+      if (c.y < grp.y + PAD)                          { grp.height += grp.y + PAD - c.y; grp.y = c.y - PAD; changed = true; }
+      if (c.x + c.width  > grp.x + grp.width  - PAD) { grp.width  = c.x + c.width  - grp.x + PAD; changed = true; }
       if (c.y + c.height > grp.y + grp.height - PAD) { grp.height = c.y + c.height - grp.y + PAD; changed = true; }
+
       if (changed) {
+        // Restore each port to same canvas position by recalculating attached_side for new dimensions
+        portSnap.forEach(({ p, ax: [absx, absy] }) => {
+          const newStr = nearestPerimeterPoint(grp, absx, absy);
+          p.data = { ...p.data, attached_side: newStr };
+        });
         const gel = document.getElementById(`comp-${grpId}`);
         if (gel) { gel.style.left=grp.x+'px'; gel.style.top=grp.y+'px'; gel.style.width=grp.width+'px'; gel.style.height=grp.height+'px'; }
+        _s.dragging._expandedGrpId = grpId; // flag to save ports on drag end
       }
     }
   }
@@ -1993,10 +2005,14 @@ function handleDragEnd() {
       sb.from('arch_components').update({ x:p.x, y:p.y, updated_at:now }).eq('id', p.id).then();
     });
 
-  // Save parent group if it was auto-expanded during drag
-  const expandedGrp = compById(c.data?.group_id);
+  // Save parent group and its ports if it was auto-expanded during drag
+  const expandedGrpId = isConnDrag ? null : _s.dragging?._expandedGrpId || c.data?.group_id;
+  const expandedGrp = expandedGrpId ? compById(expandedGrpId) : null;
   if (expandedGrp) {
     sb.from('arch_components').update({ x:expandedGrp.x, y:expandedGrp.y, width:expandedGrp.width, height:expandedGrp.height, updated_at:now }).eq('id', expandedGrp.id).then();
+    // Save group ports with updated attached_side so reload shows correct positions
+    _s.components.filter(p => p.comp_type==='Port' && p.data?.parent_block_id===expandedGrpId)
+      .forEach(p => { sb.from('arch_components').update({ data:p.data, updated_at:now }).eq('id', p.id).then(); });
   }
 
   // If this IS a port being dragged along its parent edge, save updated attached_side
