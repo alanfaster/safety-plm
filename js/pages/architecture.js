@@ -820,25 +820,131 @@ function showPropsEmpty() {
 
 // ── Auto port creation ────────────────────────────────────────────────────────
 
-async function createAttachedPort(blockId, portSide, dir) {
+async function createAttachedPort(blockId, portStr, dir, customName) {
   const blk = compById(blockId); if (!blk) return null;
-  const [px, py] = portAbs(blk, portSide);
+  // portStr can be 'side' or 'side:fraction' — normalize to side:fraction
+  const normStr = portStr?.includes(':') ? portStr : `${portStr}:0.5`;
+  const side = normStr.split(':')[0];
+  const [px, py] = portAbs(blk, normStr);
+  const portCount = _s.components.filter(p => p.comp_type === 'Port' && p.data?.parent_block_id === blockId).length;
+  const autoName = customName || `P-${blk.name.substring(0,4).toUpperCase()}-${String(portCount + 1).padStart(2,'0')}`;
   const { data, error } = await sb.from('arch_components').insert({
     parent_type: _s.parentType, parent_id: _s.parentId, project_id: _s.project.id,
-    name: `${blk.name.substring(0,4)}.${portSide[0].toUpperCase()}`,
+    name: autoName,
     comp_type: 'Port',
     x: Math.round(px - PORT_SIZE / 2),
     y: Math.round(py - PORT_SIZE / 2),
     width: PORT_SIZE, height: PORT_SIZE,
     sort_order: _s.components.length,
-    data: { parent_block_id: blockId, attached_side: portSide, port_dir: dir },
+    data: { parent_block_id: blockId, attached_side: normStr, port_dir: dir },
   }).select().single();
-  if (error || !data) return null;
+  if (error || !data) { toast('Error creating port: ' + error?.message, 'error'); return null; }
   data.functions = [];
   _s.components.push(data);
   const layer = document.getElementById('arch-comp-layer');
   if (layer) { layer.insertAdjacentHTML('beforeend', portHTML(data)); wireBlock(data.id); }
   return data;
+}
+
+// Open a small modal to add a port manually to a block
+async function showAddPortModal(blockId, portStr) {
+  const blk = compById(blockId); if (!blk) return;
+  const normStr = portStr?.includes(':') ? portStr : `${portStr}:0.5`;
+  const sideLabels = { top:'Top', right:'Right', bottom:'Bottom', left:'Left' };
+  const curSide = normStr.split(':')[0];
+
+  showModal({
+    title: `⬡ Add Port — ${escH(blk.name)}`,
+    body: `
+      <div class="form-grid cols-1">
+        <div class="form-group">
+          <label class="form-label">Port Name</label>
+          <input class="form-input" id="ap-name" placeholder="e.g. P-SYS-01"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Direction</label>
+          <select class="form-input" id="ap-dir">
+            <option value="inout">inout ◆ (bidirectional)</option>
+            <option value="in">in ▶ (input)</option>
+            <option value="out">out ◀ (output)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Side</label>
+          <select class="form-input" id="ap-side">
+            ${Object.entries(sideLabels).map(([v,l]) =>
+              `<option value="${v}" ${v === curSide ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+        </div>
+      </div>`,
+    footer: `<button class="btn btn-secondary" id="ap-cancel">Cancel</button>
+             <button class="btn btn-primary" id="ap-ok">Add Port</button>`,
+  });
+
+  const nameInput = document.getElementById('ap-name');
+  const portCount = _s.components.filter(p => p.comp_type === 'Port' && p.data?.parent_block_id === blockId).length;
+  nameInput.value = `P-${blk.name.substring(0,4).toUpperCase()}-${String(portCount + 1).padStart(2,'0')}`;
+  nameInput.focus(); nameInput.select();
+
+  document.getElementById('ap-cancel').onclick = hideModal;
+  document.getElementById('ap-ok').onclick = async () => {
+    const name = document.getElementById('ap-name').value.trim();
+    const dir  = document.getElementById('ap-dir').value;
+    const side = document.getElementById('ap-side').value;
+    if (!name) { document.getElementById('ap-name').focus(); return; }
+    hideModal();
+    const port = await createAttachedPort(blockId, `${side}:0.5`, dir, name);
+    if (!port) return;
+    // Standalone port → create external interface requirement
+    await createExternalIfaceReq(port, blk);
+    selectComp(port.id);
+    openProps(port.id);
+    toast(`Port "${name}" added.`, 'success');
+  };
+}
+
+async function createExternalIfaceReq(port, parentBlk) {
+  const reqIdx = await nextIndex('requirements', { parent_id: _s.parentId });
+  const reqCode = buildCode('REQ', {
+    domain: _s.parentType === 'item' ? 'ITEM' : 'SYS',
+    projectName: _s.project.name,
+    systemName: _s.parentType === 'system' ? (_s.item?.name || '') : undefined,
+    index: reqIdx,
+  });
+  const domain = _s.parentType === 'item' ? 'item' : 'system';
+  const { data: existingPage } = await sb.from('nav_pages')
+    .select('id').eq('parent_type', _s.parentType).eq('parent_id', _s.parentId)
+    .eq('domain', domain).eq('phase', 'requirements').eq('name', 'Interface Requirements')
+    .maybeSingle();
+  if (!existingPage) {
+    const { count } = await sb.from('nav_pages')
+      .select('id', { count: 'exact', head: true })
+      .eq('parent_type', _s.parentType).eq('parent_id', _s.parentId)
+      .eq('domain', domain).eq('phase', 'requirements');
+    await sb.from('nav_pages').insert({
+      parent_type: _s.parentType, parent_id: _s.parentId,
+      domain, phase: 'requirements', name: 'Interface Requirements', sort_order: count || 0,
+    });
+    window.dispatchEvent(new Event('hashchange'));
+  }
+  const { data: req } = await sb.from('requirements').insert({
+    req_code: reqCode,
+    parent_type: _s.parentType,
+    parent_id: _s.parentId,
+    project_id: _s.project.id,
+    title: `External Interface: ${parentBlk.name} — ${port.name}`,
+    type: 'interface_external',
+    status: 'draft',
+    priority: 'medium',
+  }).select().single();
+  if (req) {
+    // Link req code back to port so we can find it later
+    port.data = { ...(port.data || {}), requirement: reqCode };
+    await sb.from('arch_components').update({ data: port.data }).eq('id', port.id);
+    _ifreqs.push(req);
+    renderIfaceReqs();
+  }
+  return reqCode;
 }
 
 function applyViewport() {
@@ -876,6 +982,38 @@ function wireCanvas() {
   outer.addEventListener('pointerup', () => { panStart=null; outer.style.cursor=''; });
 
   outer.addEventListener('pointermove', e => { if (_s.connecting && !panStart) updateTempPath(e); });
+
+  // Port placement mode: ghost preview + click to place
+  outer.addEventListener('pointermove', e => {
+    if (!_s?.portPlacing) return;
+    document.querySelectorAll('.arch-port-ghost').forEach(el => el.remove());
+    const pos = canvasPos(e);
+    const hovComp = _s.components.find(c =>
+      c.comp_type !== 'Port' &&
+      pos.x >= c.x && pos.x <= c.x + (c.comp_type === 'Port' ? PORT_SIZE : c.width) &&
+      pos.y >= c.y && pos.y <= c.y + (c.comp_type === 'Port' ? PORT_SIZE : c.height));
+    if (!hovComp) return;
+    const portStr = nearestPerimeterPoint(hovComp, pos.x, pos.y);
+    const [gx, gy] = portAbs(hovComp, portStr);
+    const layer = document.getElementById('arch-comp-layer');
+    if (!layer) return;
+    const ghost = document.createElement('div');
+    ghost.className = 'arch-port-ghost';
+    ghost.style.cssText = `left:${Math.round(gx - PORT_SIZE/2)}px;top:${Math.round(gy - PORT_SIZE/2)}px;width:${PORT_SIZE}px;height:${PORT_SIZE}px;`;
+    ghost.dataset.blockId = hovComp.id;
+    ghost.dataset.portStr = portStr;
+    layer.appendChild(ghost);
+  });
+
+  outer.addEventListener('click', async e => {
+    if (!_s?.portPlacing) return;
+    const ghost = document.querySelector('.arch-port-ghost');
+    if (!ghost) return;
+    const blockId = ghost.dataset.blockId;
+    const portStr = ghost.dataset.portStr;
+    deactivatePortPlacementMode();
+    await showAddPortModal(blockId, portStr);
+  });
 
   outer.addEventListener('wheel', e => {
     e.preventDefault();
@@ -1120,7 +1258,7 @@ function wireGlobal() {
       if (_selectedConnId) deleteConn(_selectedConnId);
       else if (_s.selected) deleteComp(_s.selected);
     }
-    if (e.key==='Escape') { cancelConnect(); selectComp(null); showPropsEmpty(); }
+    if (e.key==='Escape') { cancelConnect(); if (_s.portPlacing) deactivatePortPlacementMode(); selectComp(null); showPropsEmpty(); }
     if ((e.ctrlKey||e.metaKey) && (e.key==='z'||e.key==='Z')) { e.preventDefault(); undoLast(); }
   };
   document.addEventListener('pointermove', onMove);
@@ -1275,18 +1413,32 @@ function handleDragMove(e) {
       if (cel) { cel.style.left=cc.x+'px'; cel.style.top=cc.y+'px'; }
     });
   }
-  // Move any ports attached to this block
+  // Move any ports attached to this block (preserves their fractional side position)
   if (!isGroup) {
     _s.components
       .filter(p => p.comp_type==='Port' && p.data?.parent_block_id===id)
       .forEach(p => {
-        const side = p.data?.attached_side || 'right';
-        const [px, py] = portAbs(c, side);
+        const portStr = p.data?.attached_side || 'right:0.5';
+        const [px, py] = portAbs(c, portStr);
         p.x = Math.round(px - PORT_SIZE/2);
         p.y = Math.round(py - PORT_SIZE/2);
         const pel = document.getElementById(`comp-${p.id}`);
         if (pel) { pel.style.left=p.x+'px'; pel.style.top=p.y+'px'; }
       });
+  }
+
+  // Port being dragged: snap to its parent block's perimeter
+  if (c.comp_type === 'Port' && c.data?.parent_block_id) {
+    const parent = compById(c.data.parent_block_id);
+    if (parent) {
+      const portStr = nearestPerimeterPoint(parent, pos.x + PORT_SIZE/2, pos.y + PORT_SIZE/2);
+      const [px2, py2] = portAbs(parent, portStr);
+      c.x = Math.round(px2 - PORT_SIZE/2);
+      c.y = Math.round(py2 - PORT_SIZE/2);
+      c.data = { ...c.data, attached_side: portStr };
+      const el2 = document.getElementById(`comp-${id}`);
+      if (el2) { el2.style.left=c.x+'px'; el2.style.top=c.y+'px'; }
+    }
   }
   renderConnections();
 }
@@ -1339,12 +1491,18 @@ function handleDragEnd() {
   } else {
     sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id);
   }
-  // Also save any attached ports that moved with this block
+  // Save attached ports that moved with this block
   _s.components
     .filter(p => p.comp_type==='Port' && p.data?.parent_block_id===id)
     .forEach(p => {
       sb.from('arch_components').update({ x:p.x, y:p.y, updated_at:now }).eq('id', p.id);
     });
+
+  // If this IS a port being dragged along its parent edge, save updated attached_side
+  if (c.comp_type === 'Port' && c.data?.parent_block_id) {
+    sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id);
+    renderConnections();
+  }
 }
 
 // ── Connection endpoint drag ──────────────────────────────────────────────────
@@ -1511,10 +1669,7 @@ function handleConnectEnd(e) {
   if (dup) { selectConn(dup.id); return; }
 
   // Auto-create attached ports when connecting two regular blocks
-  const needSrcPort = src && src.comp_type !== 'Port' && src.comp_type !== 'Group';
-  const needTgtPort = tgt && tgt.comp_type !== 'Port' && tgt.comp_type !== 'Group';
-
-  showConnPanel(sourceId, sourcePort||'right:0.5', targetId, targetPort||'left:0.5', needSrcPort, needTgtPort);
+  showConnPanel(sourceId, sourcePort||'right:0.5', targetId, targetPort||'left:0.5');
 }
 
 function cancelConnect() {
@@ -1578,13 +1733,15 @@ function selectConn(connId) {
   }
 }
 
-async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTgtPort) {
+async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
   const src=compById(srcId), tgt=compById(tgtId);
   if (!src||!tgt) return;
   const srcGrp = src.data?.group_id||''; const tgtGrp = tgt.data?.group_id||'';
   const isExt  = !!(srcGrp && tgtGrp && srcGrp!==tgtGrp) ||
-                  src.comp_type==='Port' || tgt.comp_type==='Port' ||
                   src.comp_type==='Group' || tgt.comp_type==='Group';
+  // Internal = both ends in the same group; External = crosses group boundary or group involved
+  const reqType = isExt ? 'interface_external' : 'interface_internal';
+
   let autoDir = 'bidirectional';
   if (tgt.comp_type==='Group' && src.data?.group_id===tgt.id) autoDir = 'A_to_B';
   else if (src.comp_type==='Group' && tgt.data?.group_id===src.id) autoDir = 'B_to_A';
@@ -1594,14 +1751,16 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTg
   let finalSrcId = srcId, finalSrcPort = srcPort;
   let finalTgtId = tgtId, finalTgtPort = tgtPort;
 
-  // Auto-create attached ports when connecting two regular blocks
-  if (needSrcPort) {
+  // Auto-create attached ports when connecting blocks or groups (all non-Port endpoints)
+  const srcNeedsPort = src.comp_type !== 'Port';
+  const tgtNeedsPort = tgt.comp_type !== 'Port';
+  if (srcNeedsPort) {
     const p = await createAttachedPort(srcId, srcPort, autoDir === 'B_to_A' ? 'in' : 'out');
-    if (p) { finalSrcId = p.id; finalSrcPort = 'right'; }
+    if (p) { finalSrcId = p.id; finalSrcPort = 'right:0.5'; }
   }
-  if (needTgtPort) {
+  if (tgtNeedsPort) {
     const p = await createAttachedPort(tgtId, tgtPort, autoDir === 'A_to_B' ? 'in' : 'out');
-    if (p) { finalTgtId = p.id; finalTgtPort = 'left'; }
+    if (p) { finalTgtId = p.id; finalTgtPort = 'left:0.5'; }
   }
 
   const { data, error } = await sb.from('arch_connections').insert({
@@ -1626,12 +1785,12 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTg
     systemName: _s.parentType === 'system' ? (_s.item?.name || '') : undefined,
     index: reqIdx,
   });
-  const srcName = (src.comp_type==='Port'&&src.data?.parent_block_id)
-    ? (compById(src.data.parent_block_id)?.name ?? src.name) : src.name;
-  const tgtName = (tgt.comp_type==='Port'&&tgt.data?.parent_block_id)
-    ? (compById(tgt.data.parent_block_id)?.name ?? tgt.name) : tgt.name;
+  const finalSrc = compById(finalSrcId), finalTgt = compById(finalTgtId);
+  const srcName = (finalSrc?.comp_type==='Port'&&finalSrc.data?.parent_block_id)
+    ? (compById(finalSrc.data.parent_block_id)?.name ?? finalSrc.name) : (finalSrc?.name ?? src.name);
+  const tgtName = (finalTgt?.comp_type==='Port'&&finalTgt.data?.parent_block_id)
+    ? (compById(finalTgt.data.parent_block_id)?.name ?? finalTgt.name) : (finalTgt?.name ?? tgt.name);
 
-  // Ensure the "Interface Requirements" nav sub-page exists under the requirements phase
   const domain = _s.parentType === 'item' ? 'item' : 'system';
   const { data: existingPage } = await sb.from('nav_pages')
     .select('id').eq('parent_type', _s.parentType).eq('parent_id', _s.parentId)
@@ -1650,20 +1809,20 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort, needSrcPort, needTg
     sidebarNeedsRefresh = true;
   }
 
-  await sb.from('requirements').insert({
+  const { data: newReq } = await sb.from('requirements').insert({
     req_code: reqCode,
     parent_type: _s.parentType,
     parent_id: _s.parentId,
     project_id: _s.project.id,
-    title: `Interface: ${srcName} ↔ ${tgtName}`,
-    type: 'interface',
+    title: `${isExt ? 'External' : 'Internal'} Interface: ${srcName} ↔ ${tgtName}`,
+    type: reqType,
     status: 'draft',
     priority: 'medium',
-  });
+  }).select().single();
 
-  // Link the requirement code back to the connection
   await sb.from('arch_connections').update({ requirement: reqCode }).eq('id', data.id);
   data.requirement = reqCode;
+  if (newReq) _ifreqs.push(newReq);
 
   _s.connections.push(data);
   renderConnections(); selectConn(data.id); toast('Interface created + requirement ' + reqCode + '.', 'success');
@@ -1831,6 +1990,37 @@ async function createGroup(name, systemId) {
 
 // ── Properties panel ──────────────────────────────────────────────────────────
 
+function propsPortSection(blockId) {
+  const ports = _s.components.filter(p => p.comp_type === 'Port' && p.data?.parent_block_id === blockId);
+  const dirIcon = { in:'▶', out:'◀', inout:'◆' };
+  const portRows = ports.map(p => `
+    <div class="arch-props-port-row" data-port-id="${p.id}">
+      <span class="arch-props-port-icon">${dirIcon[p.data?.port_dir||'inout']||'◆'}</span>
+      <span class="arch-props-port-name">${escH(p.name)}</span>
+      <span class="arch-props-port-side" style="font-size:10px;color:var(--color-text-muted)">${(p.data?.attached_side||'').split(':')[0]}</span>
+      <button class="btn-icon arch-pp-select" data-port-id="${p.id}" title="Select">↗</button>
+      <button class="btn-icon arch-pp-del" data-port-id="${p.id}" title="Delete" style="color:var(--color-danger)">✕</button>
+    </div>`).join('');
+  return `
+    <div class="arch-props-sep"></div>
+    <div class="arch-props-fun-hdr">
+      <span>⬡ Ports (${ports.length})</span>
+      <button class="arch-tb-btn" id="props-add-port" data-block-id="${blockId}" title="Add port to this block">＋</button>
+    </div>
+    <div id="props-port-list">${portRows || '<div class="arch-props-note" style="font-size:11px">No ports yet.</div>'}</div>`;
+}
+
+function wirePropsPortSection(blockId) {
+  const body = document.getElementById('arch-props-body'); if (!body) return;
+  body.querySelector('#props-add-port')?.addEventListener('click', () => showAddPortModal(blockId, 'right:0.5'));
+  body.querySelectorAll('.arch-pp-select').forEach(btn => {
+    btn.addEventListener('click', () => { selectComp(btn.dataset.portId); openProps(btn.dataset.portId); });
+  });
+  body.querySelectorAll('.arch-pp-del').forEach(btn => {
+    btn.addEventListener('click', () => deleteComp(btn.dataset.portId));
+  });
+}
+
 function propseFunSection(c) {
   return `
     <div style="margin-top:10px">
@@ -1906,6 +2096,7 @@ function openProps(id) {
         ${sysOpts}
       </select>
       ${linkedSys ? `<div class="arch-props-note" style="margin-top:6px">🔗 ${escH(linkedSys.system_code)} · ${escH(linkedSys.name)}</div>` : ''}
+      ${propsPortSection(id)}
       ${propseFunSection(c)}`);
     document.getElementById('props-name').addEventListener('input', debName);
     document.getElementById('props-sys-link').addEventListener('change', async () => {
@@ -1916,6 +2107,7 @@ function openProps(id) {
       refreshComp(id);
     });
     document.getElementById('props-add-fun').onclick = () => openIdefPanel();
+    wirePropsPortSection(id);
     wirePropsF(c, id);
     return;
   }
@@ -1968,6 +2160,7 @@ function openProps(id) {
       <span style="font-size:10px;color:var(--color-text-muted);margin-left:6px">Edit in Architecture Specification</span>
     </div>
 
+    ${propsPortSection(id)}
     ${propseFunSection(c)}`);
 
   document.getElementById('props-name').addEventListener('input', debName);
@@ -1979,6 +2172,7 @@ function openProps(id) {
     const safe = document.getElementById('props-safe').checked;
     await saveComp({is_safety_critical:safe}); refreshComp(id);
   });
+  wirePropsPortSection(id);
 
   // Spec fields — autosave on change/blur
   const saveSpec = debounce(async () => {
@@ -2031,22 +2225,19 @@ function wirePropsF(c, id) {
 
 async function addComp(type) {
   if (type === 'Group') { await showGroupCreationPopover(); return; }
+  if (type === 'Port')  { activatePortPlacementMode(); return; }
 
-  const isPort = type === 'Port';
   const count  = _s.components.length;
-  const w = isPort ? PORT_SIZE : 180;
-  const h = isPort ? PORT_SIZE : 130;
-  const x = snap(60+(count%5)*210);
-  const y = snap(60+Math.floor(count/5)*180);
 
   captureUndo();
   const { data, error } = await sb.from('arch_components').insert({
     parent_type:_s.parentType, parent_id:_s.parentId, project_id:_s.project.id,
-    name: isPort ? `P-${String(_s.components.filter(x=>x.comp_type==='Port').length+1).padStart(3,'0')}`
-                 : `${type==='Mechanical'?'MECH':type}-${String(_s.components.filter(x=>x.comp_type===type).length+1).padStart(3,'0')}`,
-    comp_type:type, x, y, width:w, height:h,
-    sort_order:count,
-    data: isPort ? { port_dir:'inout' } : {},
+    name: `${type==='Mechanical'?'MECH':type}-${String(_s.components.filter(x=>x.comp_type===type).length+1).padStart(3,'0')}`,
+    comp_type:type,
+    x: snap(60+(count%5)*210), y: snap(60+Math.floor(count/5)*180),
+    width: 180, height: 130,
+    sort_order: count,
+    data: {},
   }).select().single();
   if (error) {
     const msg = error.message?.includes('does not exist')
@@ -2057,12 +2248,23 @@ async function addComp(type) {
   data.functions=[];
   _s.components.push(data);
   const layer=document.getElementById('arch-comp-layer');
-  if (layer) {
-    layer.insertAdjacentHTML('beforeend', isPort ? portHTML(data) : blockHTML(data));
-    wireBlock(data.id);
-  }
+  if (layer) { layer.insertAdjacentHTML('beforeend', blockHTML(data)); wireBlock(data.id); }
   selectComp(data.id);
-  if (!isPort) setTimeout(()=>startRename(data.id),60);
+  setTimeout(()=>startRename(data.id),60);
+}
+
+function activatePortPlacementMode() {
+  _s.portPlacing = true;
+  const outer = document.getElementById('arch-outer');
+  if (outer) outer.classList.add('arch-port-placing');
+  toast('Click on a block or system edge to place a port. Press Esc to cancel.', 'info');
+}
+
+function deactivatePortPlacementMode() {
+  _s.portPlacing = false;
+  const outer = document.getElementById('arch-outer');
+  if (outer) outer.classList.remove('arch-port-placing');
+  document.querySelectorAll('.arch-port-ghost').forEach(el => el.remove());
 }
 
 async function deleteComp(id) {
@@ -2822,7 +3024,7 @@ async function loadIfaceReqs() {
     .select('*')
     .eq('parent_type', _s.parentType)
     .eq('parent_id', _s.parentId)
-    .eq('type', 'interface')
+    .in('type', ['interface', 'interface_internal', 'interface_external'])
     .order('created_at', { ascending: true });
   _ifreqs = data || [];
   renderIfaceReqs();
@@ -2856,20 +3058,23 @@ function renderIfaceReqs() {
           <tr>
             <th>Code</th>
             <th>Title</th>
+            <th>Type</th>
             <th>System</th>
             <th>Status</th>
-            <th>Priority</th>
           </tr>
         </thead>
         <tbody>
-          ${_ifreqs.map(r => `
+          ${_ifreqs.map(r => {
+            const ifaceType = r.type === 'interface_external' ? 'External' : r.type === 'interface_internal' ? 'Internal' : '—';
+            const ifaceClass = r.type === 'interface_external' ? 'arch-ifreqs-badge--ext' : 'arch-ifreqs-badge--int';
+            return `
             <tr class="arch-ifreqs-row" data-req-code="${escH(r.req_code)}" id="ifreq-row-${escH(r.req_code)}">
               <td class="arch-ifreqs-code">${escH(r.req_code)}</td>
               <td class="arch-ifreqs-title">${escH(r.title)}</td>
+              <td><span class="arch-ifreqs-badge ${ifaceClass}">${ifaceType}</span></td>
               <td style="font-size:11px;color:var(--color-text-muted);white-space:nowrap">${escH(_ifreqSystemName(r))}</td>
               <td><span class="arch-ifreqs-badge arch-ifreqs-badge--${r.status}">${r.status}</span></td>
-              <td><span class="arch-ifreqs-badge arch-ifreqs-badge--${r.priority}">${r.priority}</span></td>
-            </tr>`).join('')}
+            </tr>`; }).join('')}
         </tbody>
       </table>
     </div>`;
