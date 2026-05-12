@@ -584,12 +584,19 @@ function renderConnections() {
     el.addEventListener('pointerdown', e => {
       e.stopPropagation(); e.preventDefault();
       const p = compById(portId); if (!p) return;
+      const alreadySelected = _s.selected === portId;
       selectStandalonePort(portId);
-      // Dragging from a standalone port starts a connection (not a move)
       const pos = canvasPos(e);
-      _s.connecting = { sourceId: portId, sourcePort: 'right:0.5', curX: pos.x, curY: pos.y };
-      const tp = document.getElementById('arch-temp');
-      if (tp) tp.style.display = '';
+      if (alreadySelected) {
+        // Already selected → drag moves port along parent edge
+        captureUndo();
+        _s.dragging = { id: portId, startX: pos.x, startY: pos.y, origX: p.x, origY: p.y, isPortSVG: true };
+      } else {
+        // First click selects; if user drags it starts a connection
+        _s.connecting = { sourceId: portId, sourcePort: p.data?.attached_side || 'right:0.5', curX: pos.x, curY: pos.y };
+        const tp = document.getElementById('arch-temp');
+        if (tp) tp.style.display = '';
+      }
     });
     el.addEventListener('click', e => { e.stopPropagation(); });
   });
