@@ -2510,9 +2510,20 @@ async function deleteComp(id) {
 
 async function deleteConn(connId) {
   const cn = _s.connections.find(c => c.id === connId);
+  if (!cn) return;
   const reqCode = cn?.requirement;
 
-  const doDelete = async (alsoReq) => {
+  // Ports attached to each endpoint (only those whose sole connection is this one)
+  const endpointIds = [cn.source_id, cn.target_id];
+  const attachedPorts = _s.components.filter(p => {
+    if (p.comp_type !== 'Port' || !endpointIds.includes(p.id)) return false;
+    // Keep port if it has other connections besides this one
+    const otherConns = _s.connections.filter(c =>
+      c.id !== connId && (c.source_id === p.id || c.target_id === p.id));
+    return otherConns.length === 0;
+  });
+
+  const doDelete = async (alsoReq, alsoPorts) => {
     captureUndo();
     const { error } = await sb.from('arch_connections').delete().eq('id', connId);
     if (error) { toast('Error: '+error.message,'error'); return; }
@@ -2522,31 +2533,46 @@ async function deleteConn(connId) {
       _ifreqs = _ifreqs.filter(r => r.req_code !== reqCode);
       renderIfaceReqs();
     }
+    if (alsoPorts && attachedPorts.length) {
+      const portIds = attachedPorts.map(p => p.id);
+      await sb.from('arch_components').delete().in('id', portIds);
+      _s.components = _s.components.filter(p => !portIds.includes(p.id));
+    }
     _s.connections = _s.connections.filter(c => c.id !== connId);
     _selectedConnId = null;
     renderConnections(); showPropsEmpty();
-    toast(alsoReq ? 'Connection and requirement deleted.' : 'Connection deleted.', 'success');
+    toast('Connection deleted.', 'success');
   };
 
-  if (!reqCode) { await doDelete(false); return; }
+  const portNames = attachedPorts.map(p => escH(p.name)).join(', ');
+  const portsRow = attachedPorts.length ? `
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer">
+      <input type="checkbox" id="dc-del-ports" checked/>
+      <span style="font-size:13px">Also delete associated port${attachedPorts.length > 1 ? 's' : ''}: <strong>${portNames}</strong></span>
+    </label>` : '';
+  const reqRow = reqCode ? `
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer">
+      <input type="checkbox" id="dc-del-req" checked/>
+      <span style="font-size:13px">Also delete interface requirement: <strong>${escH(reqCode)}</strong></span>
+    </label>` : '';
 
   showModal({
     title: 'Delete Connection',
     body: `
-      <p style="margin-bottom:8px">This connection is linked to requirement <strong>${escH(reqCode)}</strong>.</p>
-      <p style="margin-bottom:12px">What would you like to do?</p>
-      <div class="modal-warn-box">
-        ⚠ Deleting the connection without removing the requirement may create inconsistencies between the Architecture and other documents (Requirements, Traceability).
-      </div>`,
+      <p style="margin-bottom:12px">Are you sure you want to delete this connection?</p>
+      ${portsRow}${reqRow}
+      ${(portsRow || reqRow) ? `<div class="modal-warn-box" style="margin-top:12px">⚠ Deleted items cannot be recovered.</div>` : ''}`,
     footer: `
       <button class="btn btn-secondary" id="dc-cancel">Cancel</button>
-      <button class="btn btn-secondary" id="dc-conn-only">Delete connection only</button>
-      <button class="btn btn-danger"    id="dc-both">Delete connection + requirement</button>
-    `,
+      <button class="btn btn-danger" id="dc-confirm">Delete</button>`,
   });
-  document.getElementById('dc-cancel').onclick    = () => hideModal();
-  document.getElementById('dc-conn-only').onclick = () => { hideModal(); doDelete(false); };
-  document.getElementById('dc-both').onclick      = () => { hideModal(); doDelete(true); };
+  document.getElementById('dc-cancel').onclick  = () => hideModal();
+  document.getElementById('dc-confirm').onclick = () => {
+    const alsoPorts = document.getElementById('dc-del-ports')?.checked ?? true;
+    const alsoReq   = document.getElementById('dc-del-req')?.checked   ?? true;
+    hideModal();
+    doDelete(alsoReq, alsoPorts);
+  };
 }
 
 async function deleteFun(funId, compId) {
