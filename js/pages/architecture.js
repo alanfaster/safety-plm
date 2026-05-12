@@ -2007,15 +2007,6 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
   // Internal = both ends in the same group; External = crosses group boundary or group involved
   const reqType = isExt ? 'interface_external' : 'interface_internal';
 
-  // Derive connection direction from port directions
-  // srcDir='out' + tgtDir='in'  → A_to_B
-  // srcDir='in'  + tgtDir='out' → B_to_A
-  // both same (in/in or out/out, e.g. component→system boundary) → A_to_B (src sends)
-  let autoDir = 'bidirectional';
-  if (srcInsideTgt)       autoDir = 'A_to_B'; // component exits through system border
-  else if (tgtInsideSrc)  autoDir = 'B_to_A'; // flow enters system then reaches component
-  else                    autoDir = 'A_to_B'; // normal peer: src sends to tgt
-
   captureUndo();
 
   let finalSrcId = srcId, finalSrcPort = srcPort;
@@ -2025,12 +2016,7 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
   if (src.comp_type === 'Port' && src.data?.attached_side) finalSrcPort = src.data.attached_side;
   if (tgt.comp_type === 'Port' && tgt.data?.attached_side) finalTgtPort = tgt.data.attached_side;
 
-  // Determine port directions based on topology:
-  // Component inside Group → Group border: both out (flow exits component and system)
-  // Group border → Component inside Group: both in (flow enters system and component)
-  // Group → external target: out on group, in on target (normal exit)
-  // External source → Group: out on source, in on group (normal entry)
-  // Component → Component: out → in (normal peer)
+  // Topology-based direction: must be defined before autoDir
   const srcInsideTgt = tgt.comp_type === 'Group' && src.data?.group_id === tgt.id;
   const tgtInsideSrc = src.comp_type === 'Group' && tgt.data?.group_id === src.id;
   let srcDir, tgtDir;
@@ -2041,6 +2027,8 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
   } else {
     srcDir = 'out'; tgtDir = 'in';
   }
+
+  const autoDir = srcInsideTgt ? 'A_to_B' : tgtInsideSrc ? 'B_to_A' : 'A_to_B';
 
   const srcNeedsPort = src.comp_type !== 'Port';
   const tgtNeedsPort = tgt.comp_type !== 'Port';
