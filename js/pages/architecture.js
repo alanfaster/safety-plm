@@ -1908,6 +1908,25 @@ function handleDragMove(e) {
         p.y = Math.round(py - PORT_SIZE/2);
       });
   }
+
+  // Auto-expand parent group if component is dragged outside its bounds
+  const PAD = 16;
+  const grpId = c.data?.group_id;
+  if (grpId && !isGroup) {
+    const grp = compById(grpId);
+    if (grp) {
+      let changed = false;
+      if (c.x < grp.x + PAD)               { grp.width += grp.x + PAD - c.x; grp.x = c.x - PAD; changed = true; }
+      if (c.y < grp.y + PAD)               { grp.height += grp.y + PAD - c.y; grp.y = c.y - PAD; changed = true; }
+      if (c.x + c.width > grp.x + grp.width - PAD)  { grp.width = c.x + c.width - grp.x + PAD; changed = true; }
+      if (c.y + c.height > grp.y + grp.height - PAD) { grp.height = c.y + c.height - grp.y + PAD; changed = true; }
+      if (changed) {
+        const gel = document.getElementById(`comp-${grpId}`);
+        if (gel) { gel.style.left=grp.x+'px'; gel.style.top=grp.y+'px'; gel.style.width=grp.width+'px'; gel.style.height=grp.height+'px'; }
+      }
+    }
+  }
+
   renderConnections();
 }
 
@@ -1964,9 +1983,9 @@ function handleDragEnd() {
   const dataChanged = (c.data?.group_id||null)!==gid;
   if (dataChanged) {
     c.data = {...(c.data||{}), group_id:gid};
-    sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id).then().then();
+    sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id).then();
   } else {
-    sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id).then().then();
+    sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id).then();
   }
   // Save attached ports that moved with this block
   _s.components
@@ -1974,6 +1993,12 @@ function handleDragEnd() {
     .forEach(p => {
       sb.from('arch_components').update({ x:p.x, y:p.y, updated_at:now }).eq('id', p.id).then();
     });
+
+  // Save parent group if it was auto-expanded during drag
+  const expandedGrp = compById(c.data?.group_id);
+  if (expandedGrp) {
+    sb.from('arch_components').update({ x:expandedGrp.x, y:expandedGrp.y, width:expandedGrp.width, height:expandedGrp.height, updated_at:now }).eq('id', expandedGrp.id).then();
+  }
 
   // If this IS a port being dragged along its parent edge, save updated attached_side
   if (c.comp_type === 'Port' && c.data?.parent_block_id) {
