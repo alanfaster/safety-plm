@@ -1897,12 +1897,24 @@ function handleDragMove(e) {
       if (cel) { cel.style.left=cc.x+'px'; cel.style.top=cc.y+'px'; }
     });
   }
-  // Reposition ports attached to this block: keep absolute canvas position, snap to nearest perimeter point
+  // Reposition ports: keep absolute canvas position by adjusting fraction within the SAME side
   if (!isGroup) {
     _s.components
       .filter(p => p.comp_type==='Port' && p.data?.parent_block_id===id)
       .forEach(p => {
-        const newPortStr = nearestPerimeterPoint(c, p.x + PORT_SIZE/2, p.y + PORT_SIZE/2);
+        const portStr = p.data?.attached_side || 'right:0.5';
+        const side = portSide(portStr);
+        const absCx = p.x + PORT_SIZE/2; // old canvas center
+        const absCy = p.y + PORT_SIZE/2;
+        let newFrac;
+        if (side === 'left' || side === 'right') {
+          // Horizontal movement doesn't affect fraction; vertical does
+          newFrac = c.height > 0 ? (absCy - c.y) / c.height : 0.5;
+        } else {
+          newFrac = c.width > 0 ? (absCx - c.x) / c.width : 0.5;
+        }
+        newFrac = Math.max(0, Math.min(1, newFrac));
+        const newPortStr = `${side}:${newFrac.toFixed(4)}`;
         const [px, py] = portAbs(c, newPortStr);
         p.x = Math.round(px - PORT_SIZE/2);
         p.y = Math.round(py - PORT_SIZE/2);
