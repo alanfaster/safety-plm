@@ -711,20 +711,19 @@ function blockHTML(c) {
         </div>`).join('')}
     <button class="arch-addfun-btn" data-comp-id="${c.id}">+ Add function</button>`;
 
-  const accentColor = safe ? '#C5221F' : st.border;
   return `
     <div class="arch-block ${sel ? 'arch-block--sel' : ''} ${safe ? 'arch-block--safe' : ''}"
          id="comp-${c.id}" data-id="${c.id}" data-type="${c.comp_type}"
          style="left:${c.x}px;top:${c.y}px;width:${c.width}px;height:${c.height}px;
-                background:${st.bg};border-color:${accentColor};border-left:3px solid ${accentColor}">
-      <div class="arch-block-hdr" data-drag-id="${c.id}">
-        <span class="arch-block-stereo" style="color:${accentColor}">«${st.stereotype}»</span>
+                border-color:${safe ? '#C5221F' : st.border};border-left:3px solid ${safe ? '#C5221F' : st.border}">
+      <div class="arch-block-hdr" data-drag-id="${c.id}" style="background:${safe ? '#C5221F' : st.border}">
+        <span class="arch-block-stereo">«${st.stereotype}»</span>
         <span class="arch-block-name" id="cname-${c.id}">${escH(c.name)}</span>
         ${safe ? '<span class="arch-block-safe-ico">⚠</span>' : ''}
       </div>
       <button class="arch-del-badge" data-del-id="${c.id}" title="Delete (Del)">✕</button>
-      <div class="arch-block-type-row">
-        <span class="arch-block-type-badge" style="color:${accentColor}">${c.comp_type}</span>
+      <div class="arch-block-type-row" style="background:${st.bg}">
+        <span class="arch-block-type-badge" style="color:${safe ? '#C5221F' : st.border}">${c.comp_type}</span>
       </div>
       <div class="arch-block-funs" id="funlist-${c.id}">${funItems}</div>
       <div class="arch-port arch-port--top"    data-comp-id="${c.id}" data-port="top"></div>

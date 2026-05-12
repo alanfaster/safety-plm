@@ -2624,28 +2624,28 @@ tr.req-title-row td { cursor: default; }
 .arch-block{pointer-events:all}
 
 /* ── System Group box ── */
-.arch-group{position:absolute;border:1.5px solid #C8CDD2;border-radius:6px;background:rgba(255,255,255,0.92);min-width:240px;min-height:160px;user-select:none;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
-.arch-group--sel{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,0.3)}
-.arch-group--conn-target{border-color:#4A90D9!important;border-style:solid!important;box-shadow:0 0 0 3px rgba(74,144,217,0.35),inset 0 0 16px rgba(74,144,217,0.07)!important;background:rgba(245,249,255,0.95)!important}
-.arch-group-hdr{display:flex;align-items:center;gap:6px;padding:7px 10px 5px;cursor:move;border-radius:5px 5px 0 0;border-bottom:1px solid rgba(0,0,0,0.07)}
+.arch-group{position:absolute;border:2px dashed #C8CDD2;border-radius:10px;background:rgba(255,255,255,0.85);backdrop-filter:blur(2px);min-width:240px;min-height:160px;user-select:none}
+.arch-group--sel{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,0.35)}
+.arch-group--conn-target{border-color:#4A90D9!important;border-style:solid!important;box-shadow:0 0 0 4px rgba(74,144,217,0.35),inset 0 0 20px rgba(74,144,217,0.08)!important;background:rgba(245,249,255,0.85)!important}
+.arch-group-hdr{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:move;border-radius:8px 8px 0 0}
 .arch-group-stereo{font-size:10px;font-style:italic;color:#9AA0A6;letter-spacing:0.02em}
-.arch-group-name{flex:1;font-size:var(--text-sm);font-weight:700;color:#2D3436;cursor:text}
+.arch-group-name{flex:1;font-size:var(--text-sm);font-weight:700;color:#3C4043;cursor:text}
 .arch-group-info-btn{background:rgba(0,0,0,0.06);border:none;border-radius:3px;color:#5F6368;font-size:13px;cursor:pointer;padding:1px 5px;line-height:1.3}
 .arch-group-info-btn:hover{background:rgba(0,0,0,0.12)}
 
 /* ── SysML Block ── */
-.arch-block{position:absolute;border:1px solid #C8CDD2;border-left-width:3px;border-radius:4px;display:flex;flex-direction:column;box-shadow:0 1px 3px rgba(0,0,0,0.07);min-width:140px;min-height:90px;user-select:none;background:#F8F9FA;transition:box-shadow 0.15s}
-.arch-block:hover{box-shadow:0 2px 8px rgba(0,0,0,0.12)}
-.arch-block--sel{box-shadow:0 0 0 3px rgba(74,144,217,0.45),0 2px 10px rgba(0,0,0,0.15)!important}
-.arch-block--conn-target{box-shadow:0 0 0 3px rgba(74,144,217,0.55),0 2px 12px rgba(74,144,217,0.25)!important}
-.arch-block--safe{border-style:dashed dashed dashed solid!important}
+.arch-block{position:absolute;border:1.5px solid #C8CDD2;border-radius:6px;display:flex;flex-direction:column;box-shadow:0 1px 4px rgba(0,0,0,0.08),0 0 0 0 transparent;min-width:140px;min-height:90px;user-select:none;background:#F8F9FA;transition:box-shadow 0.15s}
+.arch-block:hover{box-shadow:0 4px 14px rgba(0,0,0,0.13)}
+.arch-block--sel{box-shadow:0 0 0 3px rgba(74,144,217,0.45),0 4px 18px rgba(0,0,0,0.18)!important}
+.arch-block--conn-target{box-shadow:0 0 0 3px rgba(74,144,217,0.55),0 4px 20px rgba(74,144,217,0.25)!important;border-color:#4A90D9!important}
+.arch-block--safe{border-style:dashed!important}
 
 /* Header compartment */
-.arch-block-hdr{display:flex;align-items:center;gap:5px;padding:6px 8px 4px;border-radius:3px 3px 0 0;cursor:move;flex-shrink:0;border-bottom:1px solid rgba(0,0,0,0.06)}
-.arch-block-stereo{font-size:9px;font-style:italic;color:#999;letter-spacing:0.04em;flex-shrink:0}
+.arch-block-hdr{display:flex;align-items:center;gap:5px;padding:5px 8px;border-radius:4px 4px 0 0;cursor:move;flex-shrink:0}
+.arch-block-stereo{font-size:9px;font-style:italic;color:#888;letter-spacing:0.04em;flex-shrink:0}
 .arch-block-name{flex:1;font-size:var(--text-sm);font-weight:700;color:#2D3436;cursor:text;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:0.01em}
 .arch-block-safe-ico{font-size:13px;flex-shrink:0}
-.arch-block-info-btn{background:rgba(0,0,0,0.05);border:none;border-radius:3px;color:#555;font-size:13px;cursor:pointer;padding:1px 5px;line-height:1.3;flex-shrink:0}
+.arch-block-info-btn{background:rgba(255,255,255,0.18);border:none;border-radius:3px;color:#fff;font-size:13px;cursor:pointer;padding:1px 5px;line-height:1.3;flex-shrink:0}
 .arch-block-info-btn:hover{background:rgba(255,255,255,0.32)}
 
 /* Type row */
