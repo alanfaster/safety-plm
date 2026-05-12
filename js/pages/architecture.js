@@ -1915,25 +1915,14 @@ function handleDragMove(e) {
   if (grpId && !isGroup) {
     const grp = compById(grpId);
     if (grp) {
-      // Capture absolute canvas positions of group's ports BEFORE resizing
-      const grpPorts = _s.components.filter(p => p.comp_type==='Port' && p.data?.parent_block_id===grpId);
-      const portSnap = grpPorts.map(p => ({ p, ax: portAbs(grp, p.data?.attached_side||'right:0.5') }));
-
       let changed = false;
-      if (c.x < grp.x + PAD)                          { grp.width += grp.x + PAD - c.x; grp.x = c.x - PAD; changed = true; }
-      if (c.y < grp.y + PAD)                          { grp.height += grp.y + PAD - c.y; grp.y = c.y - PAD; changed = true; }
-      if (c.x + c.width  > grp.x + grp.width  - PAD) { grp.width  = c.x + c.width  - grp.x + PAD; changed = true; }
+      if (c.x < grp.x + PAD)               { grp.width += grp.x + PAD - c.x; grp.x = c.x - PAD; changed = true; }
+      if (c.y < grp.y + PAD)               { grp.height += grp.y + PAD - c.y; grp.y = c.y - PAD; changed = true; }
+      if (c.x + c.width > grp.x + grp.width - PAD)  { grp.width = c.x + c.width - grp.x + PAD; changed = true; }
       if (c.y + c.height > grp.y + grp.height - PAD) { grp.height = c.y + c.height - grp.y + PAD; changed = true; }
-
       if (changed) {
-        // Restore each port to same canvas position by recalculating attached_side for new dimensions
-        portSnap.forEach(({ p, ax: [absx, absy] }) => {
-          const newStr = nearestPerimeterPoint(grp, absx, absy);
-          p.data = { ...p.data, attached_side: newStr };
-        });
         const gel = document.getElementById(`comp-${grpId}`);
         if (gel) { gel.style.left=grp.x+'px'; gel.style.top=grp.y+'px'; gel.style.width=grp.width+'px'; gel.style.height=grp.height+'px'; }
-        _s.dragging._expandedGrpId = grpId; // flag to save ports on drag end
       }
     }
   }
@@ -2005,14 +1994,10 @@ function handleDragEnd() {
       sb.from('arch_components').update({ x:p.x, y:p.y, updated_at:now }).eq('id', p.id).then();
     });
 
-  // Save parent group and its ports if it was auto-expanded during drag
-  const expandedGrpId = isConnDrag ? null : _s.dragging?._expandedGrpId || c.data?.group_id;
-  const expandedGrp = expandedGrpId ? compById(expandedGrpId) : null;
+  // Save parent group if it was auto-expanded during drag
+  const expandedGrp = compById(c.data?.group_id);
   if (expandedGrp) {
     sb.from('arch_components').update({ x:expandedGrp.x, y:expandedGrp.y, width:expandedGrp.width, height:expandedGrp.height, updated_at:now }).eq('id', expandedGrp.id).then();
-    // Save group ports with updated attached_side so reload shows correct positions
-    _s.components.filter(p => p.comp_type==='Port' && p.data?.parent_block_id===expandedGrpId)
-      .forEach(p => { sb.from('arch_components').update({ data:p.data, updated_at:now }).eq('id', p.id).then(); });
   }
 
   // If this IS a port being dragged along its parent edge, save updated attached_side
