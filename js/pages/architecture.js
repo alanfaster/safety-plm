@@ -2005,7 +2005,14 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
   // Internal = both ends in the same group; External = crosses group boundary or group involved
   const reqType = isExt ? 'interface_external' : 'interface_internal';
 
-  const autoDir = 'bidirectional';
+  // Derive connection direction from port directions
+  // srcDir='out' + tgtDir='in'  → A_to_B
+  // srcDir='in'  + tgtDir='out' → B_to_A
+  // both same (in/in or out/out, e.g. component→system boundary) → A_to_B (src sends)
+  let autoDir = 'bidirectional';
+  if (srcInsideTgt)       autoDir = 'A_to_B'; // component exits through system border
+  else if (tgtInsideSrc)  autoDir = 'B_to_A'; // flow enters system then reaches component
+  else                    autoDir = 'A_to_B'; // normal peer: src sends to tgt
 
   captureUndo();
 
