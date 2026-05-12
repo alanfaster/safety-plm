@@ -231,7 +231,7 @@ export async function renderArchitecture(container, { project, item, system, dom
       // Persist updated names back to DB in one go (fire-and-forget)
       for (const f of funs) {
         if (f.function_ref_id && nameMap[f.function_ref_id] !== undefined) {
-          sb.from('arch_functions').update({ name: nameMap[f.function_ref_id] }).eq('id', f.id);
+          sb.from('arch_functions').update({ name: nameMap[f.function_ref_id] }).eq('id', f.id).then();
         }
       }
     }
@@ -260,7 +260,7 @@ export async function renderArchitecture(container, { project, item, system, dom
       if (correctGid !== storedGid) {
         c.data = { ...(c.data || {}), group_id: correctGid };
         // Fire-and-forget — update DB silently
-        sb.from('arch_components').update({ data: c.data, updated_at: now }).eq('id', c.id);
+        sb.from('arch_components').update({ data: c.data, updated_at: now }).eq('id', c.id).then();
       }
     }
   }
@@ -298,7 +298,7 @@ export async function renderArchitecture(container, { project, item, system, dom
           if (existing.system_name !== systemName) patch.system_name = systemName;
           if (existing.title       !== c.name)     patch.title       = c.name;
           if (Object.keys(patch).length) {
-            await sb.from('arch_spec_items').update(patch).eq('id', existing.id);
+            await sb.from('arch_spec_items').update(patch).eq('id', existing.id).then();
             Object.assign(existing, patch);
           }
         }
@@ -636,7 +636,7 @@ function renderConnections() {
         document.removeEventListener('pointermove', onMove);
         document.removeEventListener('pointerup', onUp);
         cn.data = { ...(cn.data||{}), label_dx: cn.label_dx, label_dy: cn.label_dy };
-        sb.from('arch_connections').update({ data: cn.data, updated_at: new Date().toISOString() }).eq('id', cn.id);
+        sb.from('arch_connections').update({ data: cn.data, updated_at: new Date().toISOString() }).eq('id', cn.id).then();
       };
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
@@ -1262,7 +1262,7 @@ async function createExternalIfaceReq(port, parentBlk) {
   if (req) {
     // Link req code back to port so we can find it later
     port.data = { ...(port.data || {}), requirement: reqCode };
-    await sb.from('arch_components').update({ data: port.data }).eq('id', port.id);
+    await sb.from('arch_components').update({ data: port.data }).eq('id', port.id).then();
     _ifreqs.push(req);
     renderIfaceReqs();
   }
@@ -1680,11 +1680,11 @@ function wireGlobal() {
       _s.resizing = null;
       const c = compById(id);
       const now = new Date().toISOString();
-      if (c) sb.from('arch_components').update({ x:c.x, y:c.y, width:c.width, height:c.height, updated_at:now }).eq('id', id);
+      if (c) sb.from('arch_components').update({ x:c.x, y:c.y, width:c.width, height:c.height, updated_at:now }).eq('id', id).then();
       // Also save group if it was auto-expanded
       if (c && !c.comp_type?.includes('Group') && c.data?.group_id) {
         const grp = compById(c.data.group_id);
-        if (grp) sb.from('arch_components').update({ x:grp.x, y:grp.y, width:grp.width, height:grp.height, updated_at:now }).eq('id', grp.id);
+        if (grp) sb.from('arch_components').update({ x:grp.x, y:grp.y, width:grp.width, height:grp.height, updated_at:now }).eq('id', grp.id).then();
       }
       document.querySelectorAll('.arch-group--expand-hint').forEach(el => el.classList.remove('arch-group--expand-hint'));
     }
@@ -1919,7 +1919,7 @@ function handleDragEnd() {
     const now = new Date().toISOString();
     connEndpoints.forEach(ep => {
       const p = compById(ep.id); if (!p) return;
-      sb.from('arch_components').update({ x:p.x, y:p.y, data:p.data, updated_at:now }).eq('id', p.id);
+      sb.from('arch_components').update({ x:p.x, y:p.y, data:p.data, updated_at:now }).eq('id', p.id).then();
     });
     return;
   }
@@ -1928,7 +1928,7 @@ function handleDragEnd() {
 
   if (c.comp_type === 'Group') {
     // Save group position
-    sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id);
+    sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id).then();
     // Save all child positions and ensure group_id is assigned in data
     if (childOffsets) {
       childOffsets.forEach(({ id:cid }) => {
@@ -1936,9 +1936,9 @@ function handleDragEnd() {
         const dataChanged = (cc.data?.group_id || null) !== id;
         if (dataChanged) {
           cc.data = { ...(cc.data || {}), group_id: id };
-          sb.from('arch_components').update({ x:cc.x, y:cc.y, data:cc.data, updated_at:now }).eq('id', cid);
+          sb.from('arch_components').update({ x:cc.x, y:cc.y, data:cc.data, updated_at:now }).eq('id', cid).then();
         } else {
-          sb.from('arch_components').update({ x:cc.x, y:cc.y, updated_at:now }).eq('id', cid);
+          sb.from('arch_components').update({ x:cc.x, y:cc.y, updated_at:now }).eq('id', cid).then();
         }
       });
     }
@@ -1950,7 +1950,7 @@ function handleDragEnd() {
         cc.y + cc.height/2 > c.y && cc.y + cc.height/2 < c.y + c.height)
     ).forEach(cc => {
       cc.data = { ...(cc.data || {}), group_id: null };
-      sb.from('arch_components').update({ data: cc.data, updated_at: now }).eq('id', cc.id);
+      sb.from('arch_components').update({ data: cc.data, updated_at: now }).eq('id', cc.id).then();
     });
     return;
   }
@@ -1964,22 +1964,20 @@ function handleDragEnd() {
   const dataChanged = (c.data?.group_id||null)!==gid;
   if (dataChanged) {
     c.data = {...(c.data||{}), group_id:gid};
-    sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id)
-      .then(({error})=>{ if(error) console.error('arch save error',error,id); });
+    sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id).then().then();
   } else {
-    sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id)
-      .then(({error})=>{ if(error) console.error('arch save error',error,id); });
+    sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id).then().then();
   }
   // Save attached ports that moved with this block
   _s.components
     .filter(p => p.comp_type==='Port' && p.data?.parent_block_id===id)
     .forEach(p => {
-      sb.from('arch_components').update({ x:p.x, y:p.y, updated_at:now }).eq('id', p.id);
+      sb.from('arch_components').update({ x:p.x, y:p.y, updated_at:now }).eq('id', p.id).then();
     });
 
   // If this IS a port being dragged along its parent edge, save updated attached_side
   if (c.comp_type === 'Port' && c.data?.parent_block_id) {
-    sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id);
+    sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id).then();
     renderConnections();
   }
 }
@@ -2332,7 +2330,7 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
     console.log('[arch] requirement created:', reqCode, 'type:', reqType, 'parent_id:', _s.parentId);
   }
 
-  await sb.from('arch_connections').update({ requirement: reqCode }).eq('id', data.id);
+  await sb.from('arch_connections').update({ requirement: reqCode }).eq('id', data.id).then();
   data.requirement = reqCode;
   if (newReq) _ifreqs.push(newReq);
 
@@ -2383,7 +2381,7 @@ function wireConnProps(cn) {
     const ext   = body.querySelector('#pop-ext')?.checked ?? false;
     if (itype === undefined) return;
     const patch = { interface_type:itype, direction:dir, name, requirement:req, is_external:ext, updated_at:new Date().toISOString() };
-    const { error } = await sb.from('arch_connections').update(patch).eq('id', cn.id);
+    const { error } = await sb.from('arch_connections').update(patch).eq('id', cn.id).then();
     if (error) { toast('Error: '+error.message,'error'); return; }
     Object.assign(cn, patch); renderConnections();
   }, 600);
@@ -2568,7 +2566,7 @@ function openProps(id) {
 
   const saveComp = async (patch) => {
     Object.assign(c, patch);
-    await sb.from('arch_components').update({...patch, updated_at:new Date().toISOString()}).eq('id',id);
+    await sb.from('arch_components').update({...patch, updated_at:new Date().toISOString()}).eq('id',id).then();
   };
   const debName = debounce(async () => {
     const v = document.getElementById('props-name')?.value.trim(); if (!v||v===c.name) return;
@@ -2593,7 +2591,7 @@ function openProps(id) {
     document.getElementById('props-port-dir').addEventListener('change', async () => {
       const dir = document.getElementById('props-port-dir').value;
       c.data = {...(c.data||{}), port_dir:dir};
-      await sb.from('arch_components').update({ data:c.data, updated_at:new Date().toISOString() }).eq('id',id);
+      await sb.from('arch_components').update({ data:c.data, updated_at:new Date().toISOString() }).eq('id',id).then();
       refreshComp(id); renderConnections();
     });
     return;
@@ -2621,7 +2619,7 @@ function openProps(id) {
       const sysId = document.getElementById('props-sys-link').value||null;
       c.data = {...(c.data||{}), system_id:sysId||undefined};
       if (!sysId) delete c.data.system_id;
-      await sb.from('arch_components').update({ data:c.data, updated_at:new Date().toISOString() }).eq('id',id);
+      await sb.from('arch_components').update({ data:c.data, updated_at:new Date().toISOString() }).eq('id',id).then();
       refreshComp(id);
     });
     document.getElementById('props-add-fun').onclick = () => openIdefPanel();
@@ -2698,7 +2696,7 @@ function openProps(id) {
     const desc = document.getElementById('props-spec-desc')?.value ?? specItem.title;
     if (desc !== specItem.title) {
       specItem.title = desc;
-      await sb.from('arch_spec_items').update({ title: desc, updated_at: new Date().toISOString() }).eq('id', specItem.id);
+      await sb.from('arch_spec_items').update({ title: desc, updated_at: new Date().toISOString() }).eq('id', specItem.id).then();
     }
   }, 600);
 
@@ -2714,11 +2712,11 @@ function wirePropsF(c, id) {
     chk.onchange = async () => {
       const f=c.functions.find(fn=>fn.id===chk.dataset.fid); if(!f) return;
       f.is_safety_related=chk.checked;
-      await sb.from('arch_functions').update({ is_safety_related:chk.checked }).eq('id',f.id);
+      await sb.from('arch_functions').update({ is_safety_related:chk.checked }).eq('id',f.id).then();
       const anySafe=c.functions.some(fn=>fn.is_safety_related);
       if (anySafe!==c.is_safety_critical) {
         c.is_safety_critical=anySafe;
-        await sb.from('arch_components').update({ is_safety_critical:anySafe }).eq('id',id);
+        await sb.from('arch_components').update({ is_safety_critical:anySafe }).eq('id',id).then();
       }
       refreshComp(id);
     };
@@ -2865,7 +2863,7 @@ async function deleteComp(id) {
     if (isGroup) {
       _s.components.filter(b => b.data?.group_id === id).forEach(b => {
         b.data = { ...(b.data || {}) }; delete b.data.group_id;
-        sb.from('arch_components').update({ data: b.data }).eq('id', b.id);
+        sb.from('arch_components').update({ data: b.data }).eq('id', b.id).then();
       });
     }
     await sb.from('arch_components').delete().eq('id', id);
@@ -3514,7 +3512,7 @@ function idefInlineEdit(type, id) {
     const name = inp.value.trim(); if (!name) return;
     const desc = row.querySelector('#idef-edit-desc').value.trim();
     const table = type==='feat'?'features':type==='uc'?'use_cases':'functions';
-    await sb.from(table).update({name, description:desc, updated_at:new Date().toISOString()}).eq('id',id);
+    await sb.from(table).update({name, description:desc, updated_at:new Date().toISOString()}).eq('id',id).then();
     item.name = name; item.description = desc;
     const col = type==='feat'?idefFeatColHTML():type==='uc'?idefUCColHTML():idefFunColHTML();
     const colId = type==='feat'?'idef-col-feat':type==='uc'?'idef-col-uc':'idef-col-fun';
