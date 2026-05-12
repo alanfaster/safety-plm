@@ -1095,7 +1095,11 @@ function wireCanvas() {
     const blockId = ghost.dataset.blockId;
     const portStr = ghost.dataset.portStr;
     deactivatePortPlacementMode();
-    await showAddPortModal(blockId, portStr);
+    const blk = compById(blockId); if (!blk) return;
+    const port = await createAttachedPort(blockId, portStr, 'inout');
+    if (!port) return;
+    await createExternalIfaceReq(port, blk);
+    selectStandalonePort(port.id);
   });
 
   outer.addEventListener('wheel', e => {
@@ -2116,7 +2120,13 @@ function propsPortSection(blockId) {
 
 function wirePropsPortSection(blockId) {
   const body = document.getElementById('arch-props-body'); if (!body) return;
-  body.querySelector('#props-add-port')?.addEventListener('click', () => showAddPortModal(blockId, 'right:0.5'));
+  body.querySelector('#props-add-port')?.addEventListener('click', async () => {
+    const blk = compById(blockId); if (!blk) return;
+    const port = await createAttachedPort(blockId, 'right:0.5', 'inout');
+    if (!port) return;
+    await createExternalIfaceReq(port, blk);
+    selectStandalonePort(port.id);
+  });
   body.querySelectorAll('.arch-pp-select').forEach(btn => {
     btn.addEventListener('click', () => { selectComp(btn.dataset.portId); openProps(btn.dataset.portId); });
   });
