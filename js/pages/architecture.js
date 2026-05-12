@@ -893,18 +893,29 @@ function orthoPath(x1, y1, p1, x2, y2, p2) {
   const s1 = portSide(p1) || 'right', s2 = portSide(p2) || 'left';
   const PAD = 24;
   const ex = { top:[0,-1], right:[1,0], bottom:[0,1], left:[-1,0] };
-  const [e1x,e1y] = ex[s1] || [1,0];
-  const [e2x,e2y] = ex[s2] || [-1,0];
+  const nat = { top:[0,-1], right:[1,0], bottom:[0,1], left:[-1,0] };
+  const dx = x2-x1, dy = y2-y1;
+  // Flip exit direction if target is behind the natural exit (same logic as bezier)
+  const flipSrc = (dx*(nat[s1]?.[0]??1) + dy*(nat[s1]?.[1]??0)) < 0;
+  const flipTgt = ((-dx)*(nat[s2]?.[0]??1) + (-dy)*(nat[s2]?.[1]??0)) < 0;
+  const raw1 = ex[s1] || [1,0];
+  const raw2 = ex[s2] || [-1,0];
+  const [e1x,e1y] = flipSrc ? [-raw1[0],-raw1[1]] : raw1;
+  const [e2x,e2y] = flipTgt ? [-raw2[0],-raw2[1]] : raw2;
   const ax = x1 + e1x*PAD, ay = y1 + e1y*PAD;
   const bx = x2 + e2x*PAD, by = y2 + e2y*PAD;
   const pts = [[x1,y1],[ax,ay]];
-  const horiz1 = s1==='right'||s1==='left', horiz2 = s2==='right'||s2==='left';
+  // Use effective exit sides (after flip) to choose L/Z shape
+  const opp = { top:'bottom', bottom:'top', left:'right', right:'left' };
+  const eff1 = flipSrc ? (opp[s1]||s1) : s1;
+  const eff2 = flipTgt ? (opp[s2]||s2) : s2;
+  const horiz1 = eff1==='right'||eff1==='left', horiz2 = eff2==='right'||eff2==='left';
   if (Math.abs(ax-bx)<1 && Math.abs(ay-by)<1) {
     // already aligned
-  } else if (s1===s2) {
+  } else if (eff1===eff2) {
     const pad2 = Math.max(Math.abs(ax-bx),Math.abs(ay-by))/2+PAD;
-    if (horiz1) { const mx=s1==='right'?Math.max(ax,bx)+pad2:Math.min(ax,bx)-pad2; pts.push([mx,ay],[mx,by]); }
-    else        { const my=s1==='bottom'?Math.max(ay,by)+pad2:Math.min(ay,by)-pad2; pts.push([ax,my],[bx,my]); }
+    if (horiz1) { const mx=eff1==='right'?Math.max(ax,bx)+pad2:Math.min(ax,bx)-pad2; pts.push([mx,ay],[mx,by]); }
+    else        { const my=eff1==='bottom'?Math.max(ay,by)+pad2:Math.min(ay,by)-pad2; pts.push([ax,my],[bx,my]); }
   } else if (horiz1 && horiz2) { const mx=(ax+bx)/2; pts.push([mx,ay],[mx,by]); }
   else if (!horiz1 && !horiz2) { const my=(ay+by)/2; pts.push([ax,my],[bx,my]); }
   else if (horiz1)  { pts.push([bx,ay]); }
