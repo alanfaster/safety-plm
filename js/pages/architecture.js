@@ -571,7 +571,8 @@ function renderConnections() {
 
   let bridgesSVG = '';
   try { bridgesSVG = buildBridgesSVG(); } catch(_e) { /* non-critical */ }
-  g.innerHTML = _s.connections.map(cn => connSVG(cn)).join('') + standaloneSVG + bridgesSVG;
+  const connsSVG = _s.connections.map(cn => { try { return connSVG(cn); } catch(_){ return ''; } }).join('');
+  g.innerHTML = connsSVG + standaloneSVG + bridgesSVG;
 
   _s.connections.forEach(cn => {
     document.getElementById(`conn-${cn.id}`)
@@ -744,18 +745,17 @@ function connSVG(cn) {
   if (!src || !tgt) return '';
   const [sx,sy] = portAbs(src, cn.source_port);
   const [tx,ty] = portAbs(tgt, cn.target_port);
-  const d = bezier(sx,sy,cn.source_port,tx,ty,cn.target_port);
+  const d = ORTHO_ROUTING
+    ? orthoPath(sx,sy,cn.source_port,tx,ty,cn.target_port)
+    : bezier(sx,sy,cn.source_port,tx,ty,cn.target_port);
   const iv = IFACE[cn.interface_type] || IFACE.Data;
-  // True midpoint on the bezier curve (t=0.5) — always on the line
-  const bd = getBezierCtrlPts(cn);
-  let mx, my;
-  if (bd) {
-    const t = 0.5, mt = 0.5;
-    mx = mt*mt*mt*bd.x1 + 3*mt*mt*t*bd.cx1 + 3*mt*t*t*bd.cx2 + t*t*t*bd.x2;
-    my = mt*mt*mt*bd.y1 + 3*mt*mt*t*bd.cy1 + 3*mt*t*t*bd.cy2 + t*t*t*bd.y2;
-  } else {
-    mx = (sx+tx)/2; my = (sy+ty)/2;
+  // Midpoint for label/icon — bezier uses t=0.5, ortho uses arithmetic center
+  let mx = (sx+tx)/2, my = (sy+ty)/2;
+  if (!ORTHO_ROUTING) {
+    const bd = getBezierCtrlPts(cn);
+    if (bd) { const t=0.5,mt=0.5; mx=mt*mt*mt*bd.x1+3*mt*mt*t*bd.cx1+3*mt*t*t*bd.cx2+t*t*t*bd.x2; my=mt*mt*mt*bd.y1+3*mt*mt*t*bd.cy1+3*mt*t*t*bd.cy2+t*t*t*bd.y2; }
   }
+  const bd = getBezierCtrlPts(cn);
 
   // EXT label: placed along the bezier ~15% from the system-border port, inside the line
   let ext = '';
@@ -885,6 +885,55 @@ function bezier(x1,y1,p1,x2,y2,p2) {
   const [cx2,cy2] = [x2 + (flipTgt ? -o2[0] : o2[0]), y2 + (flipTgt ? -o2[1] : o2[1])];
   return `M${x1} ${y1} C${cx1} ${cy1},${cx2} ${cy2},${x2} ${y2}`;
 }
+
+// ── Orthogonal routing (set false to revert to bezier) ────────────────────────
+const ORTHO_ROUTING = true;
+
+function orthoPath(x1, y1, p1, x2, y2, p2) {
+  const s1 = portSide(p1) || 'right', s2 = portSide(p2) || 'left';
+  const PAD = 24;
+  const ex = { top:[0,-1], right:[1,0], bottom:[0,1], left:[-1,0] };
+  const [e1x,e1y] = ex[s1] || [1,0];
+  const [e2x,e2y] = ex[s2] || [-1,0];
+  const ax = x1 + e1x*PAD, ay = y1 + e1y*PAD;
+  const bx = x2 + e2x*PAD, by = y2 + e2y*PAD;
+  const pts = [[x1,y1],[ax,ay]];
+  const horiz1 = s1==='right'||s1==='left', horiz2 = s2==='right'||s2==='left';
+  if (Math.abs(ax-bx)<1 && Math.abs(ay-by)<1) {
+    // already aligned
+  } else if (s1===s2) {
+    const pad2 = Math.max(Math.abs(ax-bx),Math.abs(ay-by))/2+PAD;
+    if (horiz1) { const mx=s1==='right'?Math.max(ax,bx)+pad2:Math.min(ax,bx)-pad2; pts.push([mx,ay],[mx,by]); }
+    else        { const my=s1==='bottom'?Math.max(ay,by)+pad2:Math.min(ay,by)-pad2; pts.push([ax,my],[bx,my]); }
+  } else if (horiz1 && horiz2) { const mx=(ax+bx)/2; pts.push([mx,ay],[mx,by]); }
+  else if (!horiz1 && !horiz2) { const my=(ay+by)/2; pts.push([ax,my],[bx,my]); }
+  else if (horiz1)  { pts.push([bx,ay]); }
+  else              { pts.push([ax,by]); }
+  pts.push([bx,by],[x2,y2]);
+  return _orthoD(pts, 5);
+}
+
+function _orthoD(pts, r) {
+  // Remove duplicate consecutive points
+  const p = [pts[0]];
+  for (let i=1;i<pts.length;i++) {
+    if (Math.hypot(pts[i][0]-p[p.length-1][0],pts[i][1]-p[p.length-1][1])>0.5) p.push(pts[i]);
+  }
+  if (p.length<2) return `M${p[0][0].toFixed(1)} ${p[0][1].toFixed(1)}`;
+  let d = `M${p[0][0].toFixed(1)} ${p[0][1].toFixed(1)}`;
+  for (let i=1;i<p.length-1;i++) {
+    const [px,py]=p[i-1],[cx,cy]=p[i],[nx,ny]=p[i+1];
+    const d1=Math.hypot(cx-px,cy-py), d2=Math.hypot(nx-cx,ny-cy);
+    if (d1<0.5||d2<0.5){d+=` L${cx.toFixed(1)} ${cy.toFixed(1)}`;continue;}
+    const rc=Math.min(r,d1/2,d2/2);
+    const t1x=cx-(cx-px)/d1*rc, t1y=cy-(cy-py)/d1*rc;
+    const t2x=cx+(nx-cx)/d2*rc, t2y=cy+(ny-cy)/d2*rc;
+    d+=` L${t1x.toFixed(1)} ${t1y.toFixed(1)} Q${cx.toFixed(1)} ${cy.toFixed(1)} ${t2x.toFixed(1)} ${t2y.toFixed(1)}`;
+  }
+  const lp=p[p.length-1];
+  return d+` L${lp[0].toFixed(1)} ${lp[1].toFixed(1)}`;
+}
+
 
 function snap(v) { return Math.round(v/GRID)*GRID; }
 
@@ -1466,7 +1515,9 @@ function updateTempPath(e) {
       srcPortForBezier = `${flipped[side] || side}:${frac}`;
     }
   }
-  if (tp) tp.setAttribute('d', bezier(sx,sy,srcPortForBezier,pos.x,pos.y,'left'));
+  if (tp) tp.setAttribute('d', ORTHO_ROUTING
+    ? orthoPath(sx,sy,srcPortForBezier,pos.x,pos.y,'left')
+    : bezier(sx,sy,srcPortForBezier,pos.x,pos.y,'left'));
 
   // Clear previous highlights
   document.querySelectorAll('.arch-group--conn-target,.arch-block--conn-target').forEach(el =>
