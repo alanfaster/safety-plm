@@ -943,15 +943,15 @@ function buildBridgesSVG() {
   for (let i=0; i<samples.length; i++) {
     for (let j=i+1; j<samples.length; j++) {
       const crossings = findCrossingsBetween(samples[i].pts, samples[j].pts);
+      const color = (IFACE[samples[j].cn.interface_type] || IFACE.Data).stroke;
+      const weight = (IFACE[samples[j].cn.interface_type] || IFACE.Data).weight;
       crossings.forEach(({px,py,tx,ty}) => {
         const ax=px-tx*R, ay=py-ty*R, bx=px+tx*R, by=py+ty*R;
-        // White filled ellipse masks the lower line at the crossing
         svg += `<ellipse cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" rx="${R+1}" ry="${R-1}"
           transform="rotate(${(Math.atan2(ty,tx)*180/Math.PI).toFixed(1)} ${px.toFixed(1)} ${py.toFixed(1)})"
           fill="var(--color-bg, #fff)" stroke="none"/>`;
-        // Arc bump on the upper connection (j, drawn on top)
         svg += `<path d="M${ax.toFixed(1)} ${ay.toFixed(1)} A${(R*1.3).toFixed(1)} ${(R*1.3).toFixed(1)} 0 0 1 ${bx.toFixed(1)} ${by.toFixed(1)}"
-          fill="none" stroke="#666" stroke-width="2" stroke-linecap="round"/>`;
+          fill="none" stroke="${color}" stroke-width="${weight}" stroke-linecap="round"/>`;
       });
     }
   }
