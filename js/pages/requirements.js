@@ -3,9 +3,10 @@ import { t } from '../i18n/index.js';
 import { showModal, hideModal } from '../components/modal.js';
 import { toast } from '../toast.js';
 import { navigate } from '../router.js';
-import { loadColConfig, saveColConfig, wireColMgr } from '../components/col-mgr.js';
+import { loadColConfig, saveColConfig, wireColMgr, wireColResize, wirePanelResize } from '../components/col-mgr.js';
 import { copyElementLink, scrollToAnchor } from '../deep-link.js';
 import { VMODEL_NODES, PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
+import { createTracePanel } from '../components/trace-panel.js';
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 import { showVersionHistory } from '../components/version-history.js';
 
@@ -28,7 +29,6 @@ const REQ_BUILTIN_COLS = [
   { id: 'verification',     name: 'Verification',     visible: true },
   { id: 'system_component', name: 'System Component', visible: true, parentTypes: ['item'] },
   { id: 'target_domain',    name: 'Target Domain',    visible: true, parentTypes: ['system'] },
-  { id: 'actions',          name: '',                 fixed: true,  visible: true },
 ];
 
 // ── Module-level state ────────────────────────────────────────────────────────
@@ -48,6 +48,9 @@ let _systems       = [];   // systems for the current item (used by system_compo
 let _selection     = new Set();  // selected requirement IDs (bulk actions)
 let _reviewMap     = new Map();  // reqId → { sessionId, title } — active review sessions
 let _findingMap    = new Map();  // reqId → open finding count
+let _activeTab     = 'props';   // 'props' | 'trace'
+let _activeReqId   = null;      // requirement currently shown in props panel
+let _saveTimer     = null;      // autosave debounce
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -59,7 +62,7 @@ export async function renderRequirements(container, { project, item, system, par
     const { data: pg } = await sb.from('nav_pages').select('name').eq('id', pageId).maybeSingle();
     if (pg) {
       subPageName = pg.name;
-      if (pg.name.toLowerCase().includes('interface')) typeFilter = ['interface'];
+      if (pg.name.toLowerCase().includes('interface')) typeFilter = ['interface', 'interface_internal', 'interface_external'];
       else if (pg.name.toLowerCase().includes('safety')) typeFilter = ['safety', 'safety-independency'];
     }
   }
@@ -126,20 +129,32 @@ export async function renderRequirements(container, { project, item, system, par
         <div class="content-loading"><div class="spinner"></div></div>
       </div>
       <aside class="req-trace-panel" id="req-trace-panel">
-        <div class="req-trace-panel-hdr">
-          <span class="req-trace-panel-title">Traceability</span>
-          <button class="btn-icon" id="req-trace-panel-close" title="Close">✕</button>
+        <div class="swu-rail-tabs">
+          <button class="swu-rail-btn swu-rail-btn--active" id="req-rail-props" title="Properties">Properties</button>
+          <button class="swu-rail-btn" id="req-rail-trace" title="Traceability">Trace</button>
         </div>
-        <div class="req-trace-panel-body" id="req-trace-panel-body">
+        <div class="req-trace-panel-hdr">
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-ghost btn-xs swu-panel-tab swu-panel-tab--active" data-tab="props">Properties</button>
+            <button class="btn btn-ghost btn-xs swu-panel-tab" data-tab="trace">⛓ Trace</button>
+          </div>
+          <button class="btn-icon" id="req-trace-panel-close" title="Collapse">✕</button>
+        </div>
+        <div class="req-trace-panel-body" id="req-props-body">
+          <p style="padding:8px 4px;font-size:13px;color:var(--color-text-muted)">
+            Click on a row to see its properties.
+          </p>
+        </div>
+        <div class="req-trace-panel-body" id="req-trace-panel-body" style="display:none">
           <p style="padding:16px;font-size:13px;color:var(--color-text-muted)">
-            Click 🔗 on any requirement to view its V-Model trace links.
+            Select an item to view its trace links.
           </p>
         </div>
       </aside>
     </div>
     <div class="spec-fab" id="req-fab">
-      <button class="btn btn-primary"   id="btn-new-req">＋ ${t('req.new')}</button>
-      <button class="btn btn-secondary" id="btn-new-section">＋ Section</button>
+      <button class="btn btn-primary"   id="btn-new-req">＋<span class="fab-label">${t('req.new')}</span></button>
+      <button class="btn btn-secondary" id="btn-new-section">＋<span class="fab-label">Section</span></button>
     </div>
     <div class="req-bulk-bar" id="req-bulk-bar">
       <span class="req-bulk-count" id="req-bulk-count">0 selected</span>
@@ -152,6 +167,13 @@ export async function renderRequirements(container, { project, item, system, par
     </div>
   `;
 
+  // Enable sticky column headers: spec-content must own the scroll, not outer #content
+  const _contentEl = document.getElementById('content');
+  if (_contentEl) {
+    _contentEl.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;height:100%';
+    window.addEventListener('hashchange', () => { _contentEl.style.cssText = ''; }, { once: true });
+  }
+
   document.getElementById('btn-new-req').onclick = () =>
     openReqModal({ project, parentType, parentId, projectType: project.type,
       defaultType: Array.isArray(typeFilter) ? typeFilter[0] : undefined });
@@ -160,12 +182,31 @@ export async function renderRequirements(container, { project, item, system, par
   document.getElementById('req-nav-expand').onclick     = () => toggleReqNav(true);
   document.getElementById('req-trace-panel-close').onclick = () => closeTracePanel();
 
+  wirePanelResize(document.getElementById('req-trace-panel'), `req_props_${parentId}`);
+  wirePanelResize(document.getElementById('req-nav'), `req_nav_${parentId}`,
+    { side: 'right', minWidth: 100, maxWidth: 400, defaultWidth: 220, collapseClass: 'spec-nav--hidden' });
+
+  document.querySelectorAll('#req-trace-panel .swu-panel-tab').forEach(btn => {
+    btn.onclick = e => { e.stopPropagation(); switchReqPanelTab(btn.dataset.tab); };
+  });
+  document.getElementById('req-rail-props').onclick = e => {
+    e.stopPropagation();
+    document.getElementById('req-trace-panel').classList.add('open');
+    switchReqPanelTab('props');
+  };
+  document.getElementById('req-rail-trace').onclick = e => {
+    e.stopPropagation();
+    document.getElementById('req-trace-panel').classList.add('open');
+    switchReqPanelTab('trace');
+  };
+
   container.querySelectorAll('.page-tab').forEach(tab => {
     tab.onclick = () => {
       container.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       const isReviews = tab.dataset.tab === 'reviews';
       document.getElementById('req-nav')?.classList.toggle('spec-nav--hidden', isReviews);
+      document.getElementById('req-trace-panel')?.classList.toggle('req-trace-panel--hidden', isReviews);
       const fab = document.getElementById('req-fab');
       if (fab) fab.style.display = isReviews ? 'none' : '';
       if (isReviews) renderPageReviews();
@@ -301,7 +342,7 @@ async function loadData() {
   let contentQ = base();
   if (Array.isArray(typeFilter) && typeFilter.length) contentQ = contentQ.in('type', typeFilter);
   else if (typeFilter)       contentQ = contentQ.eq('type', typeFilter);
-  else if (excludeInterface) contentQ = contentQ.not('type', 'in', '("interface","safety-independency","title","info")');
+  else if (excludeInterface) contentQ = contentQ.not('type', 'in', '("interface","interface_internal","interface_external","safety-independency","title","info")');
   else                       contentQ = contentQ.not('type', 'in', '("title","info")');
 
   let structQ = base().in('type', ['title', 'info']);
@@ -420,7 +461,7 @@ function renderTable(body) {
   const visCols = _cols.filter(c => c.visible);
   const { project, item, system, parentType, parentId, typeFilter } = _ctx;
 
-  const SKIP_FILTER  = new Set(['select', 'drag', 'actions']);
+  const SKIP_FILTER  = new Set(['select', 'drag']);
   const COL_OPTIONS  = {
     type:     REQ_TYPES,
     priority: REQ_PRIORITIES,
@@ -431,9 +472,8 @@ function renderTable(body) {
   const filterRowHTML = buildFilterRowHTML(visCols, SKIP_FILTER, COL_OPTIONS);
 
   body.innerHTML = `
-    <div class="card">
-      <div class="table-wrap">
-        <table class="data-table req-reorder-table" id="req-table">
+    <div class="table-wrap">
+      <table class="data-table req-reorder-table" id="req-table">
           <thead>
             <tr id="req-thead-row">
               ${visCols.map(c => reqTh(c)).join('')}
@@ -443,7 +483,6 @@ function renderTable(body) {
           <tbody id="req-tbody">
           </tbody>
         </table>
-      </div>
     </div>
   `;
 
@@ -501,6 +540,21 @@ function renderTable(body) {
     wireColMgr(theadRow, tableEl, _colKey, _cols, (updatedCols) => {
       _cols = updatedCols;
       renderTable(body);
+    });
+    wireColResize(theadRow, {
+      onResize: containerW => {
+        document.querySelectorAll('.spec-section-inner').forEach(el => { el.style.width = containerW + 'px'; });
+      },
+    });
+    requestAnimationFrame(() => {
+      const fitBtn = body.querySelector('.col-fit-btn');
+      const headerRight = document.querySelector('.page-header-top > div:last-child');
+      if (fitBtn && headerRight) {
+        headerRight.querySelectorAll('.col-fit-btn').forEach(b => b.remove());
+        headerRight.appendChild(fitBtn);
+      }
+      const theadH = theadRow?.offsetHeight ?? 37;
+      tableEl?.style.setProperty('--spec-thead-h', theadH + 'px');
     });
   }
 
@@ -702,18 +756,6 @@ function wireAllRows(tbody) {
     });
   });
 
-  // Traceability panel
-  tbody.querySelectorAll('.btn-trace-req').forEach(btn => {
-    btn.onclick = (e) => { e.stopPropagation(); openTracePanel(btn.dataset.id); };
-  });
-
-  // Detail/view modal
-  tbody.querySelectorAll('.btn-view-req').forEach(btn => {
-    btn.onclick = () => openReqModal({
-      project, parentType, parentId, projectType: project.type,
-      existing: _data.find(r => r.id === btn.dataset.id),
-    });
-  });
 
   // Copy link
   tbody.querySelectorAll('.btn-copy-link').forEach(btn => {
@@ -751,11 +793,9 @@ function wireAllRows(tbody) {
     const handle = tr.querySelector('.req-drag-handle');
     if (!chk) return;
 
-    tr.addEventListener('mouseenter', () => {
-      if (!_selection.has(rid)) { chk.style.display = ''; if (handle) handle.style.display = 'none'; }
-    });
-    tr.addEventListener('mouseleave', () => {
-      if (!_selection.has(rid)) { chk.style.display = 'none'; if (handle) handle.style.display = ''; }
+    tr.addEventListener('click', e => {
+      if (e.target.closest('button,input,select,textarea,a')) return;
+      openPropsPanel(r);
     });
 
     chk.addEventListener('change', e => {
@@ -763,14 +803,10 @@ function wireAllRows(tbody) {
       if (chk.checked) _selection.add(rid); else _selection.delete(rid);
       tr.classList.toggle('req-row-selected', _selection.has(rid));
       syncBulkBar();
-      // Keep checkbox visible if selected
-      if (!_selection.has(rid)) { chk.style.display = 'none'; if (handle) handle.style.display = ''; }
     });
 
-    // Apply initial state (e.g. after re-render)
     if (_selection.has(rid)) {
-      chk.checked = true; chk.style.display = '';
-      if (handle) handle.style.display = 'none';
+      chk.checked = true;
       tr.classList.add('req-row-selected');
     }
   });
@@ -1190,6 +1226,12 @@ function showInlineInsertForm(afterRid, tbody) {
 
 function wireNewRow(tr, req, tbody) {
   const { project, parentType, parentId, typeFilter } = _ctx;
+
+  tr.addEventListener('click', e => {
+    if (e.target.closest('button,input,select,textarea,a')) return;
+    openPropsPanel(req);
+  });
+
   tr.querySelectorAll('.req-inline-sel').forEach(sel => {
     sel.addEventListener('change', async () => {
       const r = _data.find(r => r.id === req.id);
@@ -1209,13 +1251,6 @@ function wireNewRow(tr, req, tbody) {
       const r = _data.find(d => d.id === req.id);
       if (r) await handleReqDelete(r);
     };
-  });
-  tr.querySelectorAll('.btn-trace-req').forEach(btn => {
-    btn.onclick = (e) => { e.stopPropagation(); openTracePanel(btn.dataset.id); };
-  });
-  tr.querySelectorAll('.btn-view-req').forEach(btn => {
-    btn.onclick = () => openReqModal({ project, parentType, parentId,
-      projectType: project.type, existing: req });
   });
   tr.querySelectorAll('.btn-history-req').forEach(btn => {
     btn.onclick = e => { e.stopPropagation(); showVersionHistory(sb, { artifactType: 'requirements', artifactId: req.id, artifactCode: req.req_code || req.id, currentData: req }); };
@@ -1301,7 +1336,7 @@ async function handleReqDelete(req) {
   const { project, item, system, parentType, parentId, typeFilter, pageId } = _ctx;
 
   let linkedConn = null;
-  if (req.type === 'interface' && req.req_code) {
+  if (['interface','interface_internal','interface_external'].includes(req.type) && req.req_code) {
     const { data: conns } = await sb.from('arch_connections')
       .select('id').eq('requirement', req.req_code).maybeSingle();
     linkedConn = conns;
@@ -1494,17 +1529,16 @@ function wireMultiselCells(container) {
 
 function reqTh(c) {
   if (c.id === 'select') {
-    return `<th data-col="select" style="width:28px;padding:0 6px;text-align:center"><input type="checkbox" id="req-chk-all" title="Select all"/></th>`;
+    return `<th data-col="select" style="width:36px;padding:0 6px;text-align:center"><input type="checkbox" id="req-chk-all" title="Select all"/></th>`;
   }
   const labels = {
     drag: '', code: 'Code', title: 'Title', type: 'Type',
     priority: 'Priority', status: 'Status', asil: 'ASIL', dal: 'DAL',
-    verification: 'Verification', actions: '',
+    verification: 'Verification',
   };
   const widths = {
     drag: 'style="width:18px;padding:0"',
     code: 'style="width:90px"',
-    actions: 'style="width:160px"',
   };
   if (c.id === 'asil' && !_showAsil) return '';
   if (c.id === 'dal'  && !_showDal)  return '';
@@ -1525,9 +1559,16 @@ function reqTd(c, r) {
     </select>`;
   switch (c.id) {
     case 'select':
-      return `<td data-col="select" style="width:28px;padding:10px 6px 0;text-align:center;vertical-align:top"><input type="checkbox" class="req-row-chk" data-rid="${r.id}" ${_selection.has(r.id) ? 'checked' : ''} title="Select"/></td>`;
+      return `<td data-col="select" style="width:36px;padding:6px 4px;text-align:center;vertical-align:top">
+        <input type="checkbox" class="req-row-chk" data-rid="${r.id}" ${_selection.has(r.id) ? 'checked' : ''} title="Select" style="display:block;margin:0 auto 4px"/>
+        <div class="spec-row-acts">
+          <button class="btn btn-ghost btn-xs btn-copy-link"   data-id="${r.id}" title="Copy link"       style="padding:1px 3px">🔗</button>
+          <button class="btn btn-ghost btn-xs btn-history-req" data-id="${r.id}" title="Version history" style="padding:1px 3px">🕐</button>
+        </div>
+      </td>`;
     case 'drag':
-      return `<td data-col="drag" class="req-drag-cell" style="vertical-align:top;padding-top:6px">
+      return `<td data-col="drag" class="req-drag-cell" style="vertical-align:middle;text-align:center;padding:4px 2px;position:relative">
+        <button class="btn btn-ghost btn-xs drag-col-del btn-del-req" data-id="${r.id}" data-title="${esc(r.title)}" title="Delete" style="position:absolute;top:4px;left:50%;transform:translateX(-50%)">✕</button>
         <span class="req-drag-handle" title="Drag to reorder">⠿</span>
       </td>`;
     case 'code': {
@@ -1584,16 +1625,6 @@ function reqTd(c, r) {
                 : '')
         }
       </td>`;
-    case 'actions':
-      return `<td data-col="actions" class="actions-cell">
-        <button class="btn btn-ghost btn-xs btn-move-up"   data-id="${r.id}" title="Move up">↑</button>
-        <button class="btn btn-ghost btn-xs btn-move-dn"   data-id="${r.id}" title="Move down">↓</button>
-        <button class="btn btn-ghost btn-xs btn-trace-req" data-id="${r.id}" title="Traceability" style="${_traceFields.length ? '' : 'opacity:0.35'}">⛓</button>
-        <button class="btn btn-ghost btn-xs btn-view-req"  data-id="${r.id}" title="View detail">👁</button>
-        <button class="btn btn-ghost btn-xs btn-copy-link" data-id="${r.id}" title="Copy link">🔗</button>
-        <button class="btn btn-ghost btn-xs btn-history-req" data-id="${r.id}" title="Version history">🕐</button>
-        <button class="btn btn-ghost btn-xs btn-del-req"   data-id="${r.id}" data-title="${esc(r.title)}" style="color:var(--color-danger)" title="Delete">✕</button>
-      </td>`;
     case 'system_component': {
       const selected = (r.custom_fields?.system_components) || [];
       const btns = _systems.map(s =>
@@ -1632,10 +1663,105 @@ function reqTd(c, r) {
 
 // ── Trace panel ───────────────────────────────────────────────────────────────
 
+function switchReqPanelTab(tab) {
+  _activeTab = tab;
+  document.getElementById('req-props-body').style.display       = tab === 'props' ? '' : 'none';
+  document.getElementById('req-trace-panel-body').style.display = tab === 'trace' ? '' : 'none';
+  document.querySelectorAll('#req-trace-panel .swu-panel-tab').forEach(b =>
+    b.classList.toggle('swu-panel-tab--active', b.dataset.tab === tab));
+  document.getElementById('req-rail-props')?.classList.toggle('swu-rail-btn--active', tab === 'props');
+  document.getElementById('req-rail-trace')?.classList.toggle('swu-rail-btn--active', tab === 'trace');
+  // Only fetch trace if switching to trace tab and not already loaded for this req
+  if (tab === 'trace' && _activeReqId && _tracePanelId !== _activeReqId) {
+    openTracePanel(_activeReqId, true);
+  }
+}
+
+function openPropsPanel(req) {
+  _activeReqId = req.id;
+  const panel = document.getElementById('req-trace-panel');
+  const body  = document.getElementById('req-props-body');
+  if (!panel || !body) return;
+
+  if (_activeTab === 'trace') {
+    openTracePanel(req.id, true);
+    panel.classList.add('open');
+    return;
+  }
+
+  document.querySelectorAll('.req-row-trace-active').forEach(r => r.classList.remove('req-row-trace-active'));
+  document.querySelector(`tr[data-rid="${req.id}"]`)?.classList.add('req-row-trace-active');
+
+  body.innerHTML = `
+    <div class="swup-props-form" style="padding:10px 12px">
+      <div class="swup-field-row" style="margin-bottom:10px">
+        <span class="mono" style="font-size:12px;font-weight:700;color:var(--color-text-muted)">${esc(req.req_code||'')}</span>
+        <span class="badge badge-${req.status||'draft'}">${esc(req.status||'draft')}</span>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label" style="font-size:11px">Title</label>
+        <input class="form-input" id="rprop-title" value="${esc(req.title||'')}" style="font-size:12px"/>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label" style="font-size:11px">Type</label>
+        <select class="form-input form-select" id="rprop-type" style="font-size:12px">
+          ${REQ_TYPES.map(v => `<option value="${v}"${req.type===v?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label" style="font-size:11px">Priority</label>
+        <select class="form-input form-select" id="rprop-priority" style="font-size:12px">
+          ${REQ_PRIORITIES.map(v => `<option value="${v}"${req.priority===v?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label" style="font-size:11px">Status</label>
+        <select class="form-input form-select" id="rprop-status" style="font-size:12px">
+          ${REQ_STATUSES.map(v => `<option value="${v}"${req.status===v?' selected':''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label" style="font-size:11px">Description</label>
+        <textarea class="form-input" id="rprop-desc" rows="4" style="font-size:12px;resize:vertical">${esc(req.description||'')}</textarea>
+      </div>
+      <div id="rprop-saving" style="font-size:10px;color:var(--color-text-muted);min-height:14px"></div>
+    </div>`;
+
+  panel.classList.add('open');
+
+  async function autosave() {
+    const patch = {
+      title:       document.getElementById('rprop-title')?.value.trim()   || req.title,
+      type:        document.getElementById('rprop-type')?.value            || req.type,
+      priority:    document.getElementById('rprop-priority')?.value        || req.priority,
+      status:      document.getElementById('rprop-status')?.value          || req.status,
+      description: document.getElementById('rprop-desc')?.value           ?? req.description,
+      updated_at:  new Date().toISOString(),
+    };
+    const ind = document.getElementById('rprop-saving');
+    if (ind) ind.textContent = 'Saving…';
+    const { error } = await sb.from('requirements').update(patch).eq('id', req.id);
+    if (error) { toast('Save error: ' + error.message, 'error'); return; }
+    Object.assign(req, patch);
+    const tr = document.querySelector(`tr[data-rid="${req.id}"]`);
+    if (tr) {
+      tr.innerHTML = _cols.filter(c => c.visible).map(c => reqTd(c, req)).join('');
+      wireNewRow(tr, req, tr.closest('tbody'));
+    }
+    if (ind) { ind.textContent = 'Saved'; setTimeout(() => { if (ind) ind.textContent = ''; }, 1500); }
+  }
+
+  body.querySelectorAll('select').forEach(el => el.addEventListener('change', autosave));
+  body.querySelectorAll('input,textarea').forEach(el => {
+    el.addEventListener('input', () => { clearTimeout(_saveTimer); _saveTimer = setTimeout(autosave, 800); });
+  });
+}
+
 function closeTracePanel() {
   const panel = document.getElementById('req-trace-panel');
   panel?.classList.remove('open');
   _tracePanelId = null;
+  _activeReqId  = null;
   document.querySelectorAll('.req-row-trace-active').forEach(r => r.classList.remove('req-row-trace-active'));
 }
 
@@ -1644,9 +1770,19 @@ async function openTracePanel(reqId, force = false) {
   const body     = document.getElementById('req-trace-panel-body');
   if (!panel || !body) return;
 
-  // Toggle off if same req (unless forced refresh)
-  if (!force && _tracePanelId === reqId) { closeTracePanel(); return; }
+  // Toggle off if same req and already on trace tab (unless forced refresh)
+  if (!force && _tracePanelId === reqId && _activeTab === 'trace') { closeTracePanel(); return; }
   _tracePanelId = reqId;
+  _activeReqId  = reqId;
+
+  // Switch tab UI directly (not via switchReqPanelTab to avoid recursion)
+  _activeTab = 'trace';
+  document.getElementById('req-props-body').style.display       = 'none';
+  document.getElementById('req-trace-panel-body').style.display = '';
+  document.querySelectorAll('#req-trace-panel .swu-panel-tab').forEach(b =>
+    b.classList.toggle('swu-panel-tab--active', b.dataset.tab === 'trace'));
+  document.getElementById('req-rail-props')?.classList.remove('swu-rail-btn--active');
+  document.getElementById('req-rail-trace')?.classList.add('swu-rail-btn--active');
 
   // Highlight row
   document.querySelectorAll('.req-row-trace-active').forEach(r => r.classList.remove('req-row-trace-active'));
@@ -2382,8 +2518,10 @@ async function renderPageReviews() {
   if (!body) return;
   body.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
 
+  try {
   const { project, item, system, parentType, parentId, pageId } = _ctx;
-  const base = `/project/${project.id}/item/${item.id}`;
+  const itemId = item?.id ?? parentId;
+  const base = `/project/${project.id}/item/${itemId}`;
 
   // Find sessions that contain snapshots for any requirement belonging to this page
   const reqIds = _data.filter(r => r.type !== 'title' && r.type !== 'info').map(r => r.id);
@@ -2450,6 +2588,10 @@ async function renderPageReviews() {
   body.querySelectorAll('.rv-open-btn').forEach(btn => {
     btn.onclick = () => navigate(`${base}/reviews/${btn.dataset.id}/execute`);
   });
+  } catch (err) {
+    console.error('renderPageReviews error:', err);
+    body.innerHTML = `<div style="padding:24px;color:var(--color-danger)">Error loading reviews: ${err.message}</div>`;
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
