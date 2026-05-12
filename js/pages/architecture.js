@@ -511,23 +511,85 @@ function renderGroups() {
 function renderComponents() {
   const layer = document.getElementById('arch-comp-layer');
   if (!layer) return;
+  // Ports are rendered as SVG squares in renderConnections — not as HTML elements
   layer.innerHTML = _s.components
-    .filter(c => c.comp_type !== 'Group')
-    .map(c => c.comp_type === 'Port' ? portHTML(c) : blockHTML(c))
+    .filter(c => c.comp_type !== 'Group' && c.comp_type !== 'Port')
+    .map(c => blockHTML(c))
     .join('');
-  _s.components.filter(c => c.comp_type !== 'Group').forEach(c => wireBlock(c.id));
+  _s.components
+    .filter(c => c.comp_type !== 'Group' && c.comp_type !== 'Port')
+    .forEach(c => wireBlock(c.id));
 }
 
 function renderConnections() {
   const g = document.getElementById('arch-conn-g');
   if (!g) return;
-  g.innerHTML = _s.connections.map(cn => connSVG(cn)).join('');
+
+  // Connected port IDs (already rendered as endpoint squares by connSVG)
+  const connectedPortIds = new Set(_s.connections.flatMap(cn => [cn.source_id, cn.target_id]));
+
+  // Standalone ports (attached to a block but no connection yet) — render as SVG square
+  const standalonePorts = _s.components.filter(p =>
+    p.comp_type === 'Port' && p.data?.parent_block_id && !connectedPortIds.has(p.id));
+
+  const standaloneSVG = standalonePorts.map(p => {
+    const parent = compById(p.data.parent_block_id); if (!parent) return '';
+    const portStr = p.data?.attached_side || 'right:0.5';
+    const [px, py] = portAbs(parent, portStr);
+    const side = portStr.split(':')[0];
+    const dir  = p.data?.port_dir || 'inout';
+    const ARROW_MAP = { in: { top:'↓', bottom:'↑', left:'→', right:'←' },
+                        out:{ top:'↑', bottom:'↓', left:'←', right:'→' },
+                        inout:{ top:'↕', bottom:'↕', left:'↔', right:'↔' } };
+    const arrow = ARROW_MAP[dir]?.[side] || '◆';
+    const ps = CONN_EP_SIZE, fs = 11;
+    const offMap = { top:[0,-ps/2], bottom:[0,ps/2], left:[-ps/2,0], right:[ps/2,0] };
+    const [ox, oy] = offMap[side] || [ps/2, 0];
+    const cx = px + ox, cy = py + oy;
+    const isSel = _s.selected === p.id;
+    const nameY = side === 'top' ? cy - ps/2 - 4 : cy + ps/2 + 11;
+    const nameAnchor = side === 'left' ? 'end' : side === 'right' ? 'start' : 'middle';
+    const nameX = side === 'left' ? cx - ps/2 - 4 : side === 'right' ? cx + ps/2 + 4 : cx;
+    return `
+      <g class="arch-standalone-port${isSel ? ' arch-standalone-port--sel' : ''}"
+         id="sport-${p.id}" data-port-id="${p.id}" style="cursor:pointer">
+        <rect x="${cx-ps/2}" y="${cy-ps/2}" width="${ps}" height="${ps}" rx="3"
+              fill="${isSel ? '#1A73E8' : '#212121'}" stroke="#fff" stroke-width="1.5"/>
+        <text x="${cx}" y="${cy + fs*0.38}" text-anchor="middle" font-size="${fs}"
+              fill="#fff" font-family="system-ui" font-weight="bold"
+              style="pointer-events:none">${arrow}</text>
+        <text x="${nameX}" y="${nameY}" text-anchor="${nameAnchor}" font-size="10"
+              fill="#444" font-family="system-ui"
+              style="pointer-events:none">${escH(p.name)}</text>
+        <rect class="arch-sport-drag" x="${cx-ps/2-4}" y="${cy-ps/2-4}"
+              width="${ps+8}" height="${ps+8}" rx="4"
+              fill="transparent" stroke="${isSel ? '#1A73E8' : 'transparent'}" stroke-width="1.5"
+              data-port-id="${p.id}"/>
+      </g>`;
+  }).join('');
+
+  g.innerHTML = _s.connections.map(cn => connSVG(cn)).join('') + standaloneSVG;
+
   _s.connections.forEach(cn => {
     document.getElementById(`conn-${cn.id}`)
       ?.addEventListener('click', e => { e.stopPropagation(); selectConn(cn.id); });
     document.getElementById(`conn-del-${cn.id}`)
       ?.addEventListener('click', async e => { e.stopPropagation(); await deleteConn(cn.id); });
   });
+
+  // Wire standalone port interactions
+  g.querySelectorAll('.arch-standalone-port').forEach(el => {
+    const portId = el.dataset.portId;
+    el.addEventListener('click', e => { e.stopPropagation(); selectStandalonePort(portId); });
+    el.querySelector('.arch-sport-drag')?.addEventListener('pointerdown', e => {
+      e.stopPropagation(); e.preventDefault();
+      const p = compById(portId); if (!p) return;
+      captureUndo();
+      selectStandalonePort(portId);
+      _s.dragging = { id: portId, startX: canvasPos(e).x, startY: canvasPos(e).y, origX: p.x, origY: p.y, isPortSVG: true };
+    });
+  });
+
   // Wire endpoint drag handles
   g.querySelectorAll('.arch-conn-ep').forEach(ep => {
     ep.addEventListener('pointerdown', e => {
@@ -538,10 +600,16 @@ function renderConnections() {
       _s.draggingEndpoint = { connId: cn.id, endpoint: ep.dataset.endpoint, compId };
     });
   });
-  // Re-apply selection highlight
   if (_selectedConnId) {
     document.getElementById(`conn-${_selectedConnId}`)?.classList.add('arch-conn-g--sel');
   }
+}
+
+function selectStandalonePort(portId) {
+  _s.selected = portId;
+  _selectedConnId = null;
+  renderConnections();
+  openProps(portId);
 }
 
 // ── Group HTML ────────────────────────────────────────────────────────────────
@@ -841,8 +909,8 @@ async function createAttachedPort(blockId, portStr, dir, customName) {
   if (error || !data) { toast('Error creating port: ' + error?.message, 'error'); return null; }
   data.functions = [];
   _s.components.push(data);
-  const layer = document.getElementById('arch-comp-layer');
-  if (layer) { layer.insertAdjacentHTML('beforeend', portHTML(data)); wireBlock(data.id); }
+  // Ports render as SVG squares via renderConnections — no HTML element needed
+  renderConnections();
   return data;
 }
 
@@ -1347,17 +1415,6 @@ function wireBlock(id) {
     _s.dragging = { id, startX:pos.x, startY:pos.y, origX:c.x, origY:c.y };
   });
 
-  // Port blocks: drag from anywhere in the block body (no header)
-  if (c?.comp_type === 'Port') {
-    el.addEventListener('pointerdown', e => {
-      if (e.target.closest('.arch-port,.arch-resize-handle')) return;
-      e.stopPropagation(); e.preventDefault();
-      selectComp(id);
-      const pos = canvasPos(e);
-      _s.dragging = { id, startX:pos.x, startY:pos.y, origX:c.x, origY:c.y };
-    });
-  }
-
   el.querySelector('.arch-block-name')?.addEventListener('dblclick', e => {
     e.stopPropagation(); startRename(id);
   });
@@ -1401,9 +1458,24 @@ function wireResizeHandle(el, id) {
 // ── Drag ──────────────────────────────────────────────────────────────────────
 
 function handleDragMove(e) {
-  const { id, startX, startY, origX, origY, isGroup, childOffsets } = _s.dragging;
+  const { id, startX, startY, origX, origY, isGroup, childOffsets, isPortSVG } = _s.dragging;
   const c = compById(id); if (!c) return;
   const pos = canvasPos(e);
+
+  // SVG-rendered port: snap along parent block perimeter, no HTML element to update
+  if (isPortSVG && c.comp_type === 'Port' && c.data?.parent_block_id) {
+    const parent = compById(c.data.parent_block_id);
+    if (parent) {
+      const portStr = nearestPerimeterPoint(parent, pos.x, pos.y);
+      const [px, py] = portAbs(parent, portStr);
+      c.x = Math.round(px - PORT_SIZE/2);
+      c.y = Math.round(py - PORT_SIZE/2);
+      c.data = { ...c.data, attached_side: portStr };
+    }
+    renderConnections();
+    return;
+  }
+
   c.x = snap(origX+pos.x-startX); c.y = snap(origY+pos.y-startY);
   const el = document.getElementById(`comp-${id}`);
   if (el) { el.style.left=c.x+'px'; el.style.top=c.y+'px'; }
@@ -1415,7 +1487,7 @@ function handleDragMove(e) {
       if (cel) { cel.style.left=cc.x+'px'; cel.style.top=cc.y+'px'; }
     });
   }
-  // Move any ports attached to this block (preserves their fractional side position)
+  // Reposition ports attached to this block
   if (!isGroup) {
     _s.components
       .filter(p => p.comp_type==='Port' && p.data?.parent_block_id===id)
@@ -1424,23 +1496,7 @@ function handleDragMove(e) {
         const [px, py] = portAbs(c, portStr);
         p.x = Math.round(px - PORT_SIZE/2);
         p.y = Math.round(py - PORT_SIZE/2);
-        const pel = document.getElementById(`comp-${p.id}`);
-        if (pel) { pel.style.left=p.x+'px'; pel.style.top=p.y+'px'; }
       });
-  }
-
-  // Port being dragged: snap to its parent block's perimeter
-  if (c.comp_type === 'Port' && c.data?.parent_block_id) {
-    const parent = compById(c.data.parent_block_id);
-    if (parent) {
-      const portStr = nearestPerimeterPoint(parent, pos.x + PORT_SIZE/2, pos.y + PORT_SIZE/2);
-      const [px2, py2] = portAbs(parent, portStr);
-      c.x = Math.round(px2 - PORT_SIZE/2);
-      c.y = Math.round(py2 - PORT_SIZE/2);
-      c.data = { ...c.data, attached_side: portStr };
-      const el2 = document.getElementById(`comp-${id}`);
-      if (el2) { el2.style.left=c.x+'px'; el2.style.top=c.y+'px'; }
-    }
   }
   renderConnections();
 }
@@ -2510,7 +2566,7 @@ function renderArchTree() {
   const TYPE_COLOR = { HW: '#1A73E8', SW: '#1E8E3E', Mechanical: '#E37400', Port: '#555', Group: '#777' };
 
   const groups    = _s.components.filter(c => c.comp_type === 'Group');
-  const blocks    = _s.components.filter(c => c.comp_type !== 'Group');
+  const blocks    = _s.components.filter(c => c.comp_type !== 'Group' && c.comp_type !== 'Port');
   const conns     = _s.connections || [];
 
   // collapsed state persists across re-renders
