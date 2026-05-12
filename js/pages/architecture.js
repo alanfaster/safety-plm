@@ -571,7 +571,8 @@ function renderConnections() {
 
   let bridgesSVG = '';
   try { bridgesSVG = buildBridgesSVG(); } catch(_e) { /* non-critical */ }
-  g.innerHTML = _s.connections.map(cn => connSVG(cn)).join('') + standaloneSVG + bridgesSVG;
+  const connsSVG = _s.connections.map(cn => { try { return connSVG(cn); } catch(_e) { return ''; } }).join('');
+  g.innerHTML = connsSVG + standaloneSVG + bridgesSVG;
 
   _s.connections.forEach(cn => {
     document.getElementById(`conn-${cn.id}`)
@@ -951,20 +952,28 @@ function orthoPath(x1, y1, p1, x2, y2, p2) {
 }
 
 function ptsToRoundedPath(pts, r) {
-  if (pts.length < 2) return '';
-  let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const [px, py] = pts[i - 1];
-    const [cx, cy] = pts[i];
-    const [nx, ny] = pts[i + 1];
+  if (pts.length < 2) return `M0 0`;
+  // Deduplicate consecutive identical points to avoid NaN from zero-length segments
+  const clean = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    if (Math.hypot(pts[i][0] - clean[clean.length-1][0], pts[i][1] - clean[clean.length-1][1]) > 0.5)
+      clean.push(pts[i]);
+  }
+  if (clean.length < 2) return `M${clean[0][0].toFixed(1)} ${clean[0][1].toFixed(1)}`;
+  let d = `M${clean[0][0].toFixed(1)} ${clean[0][1].toFixed(1)}`;
+  for (let i = 1; i < clean.length - 1; i++) {
+    const [px, py] = clean[i - 1];
+    const [cx, cy] = clean[i];
+    const [nx, ny] = clean[i + 1];
     const d1 = Math.hypot(cx - px, cy - py);
     const d2 = Math.hypot(nx - cx, ny - cy);
+    if (d1 < 0.5 || d2 < 0.5) { d += ` L${cx.toFixed(1)} ${cy.toFixed(1)}`; continue; }
     const rc = Math.min(r, d1 / 2, d2 / 2);
     const t1x = cx - (cx - px) / d1 * rc, t1y = cy - (cy - py) / d1 * rc;
     const t2x = cx + (nx - cx) / d2 * rc, t2y = cy + (ny - cy) / d2 * rc;
     d += ` L${t1x.toFixed(1)} ${t1y.toFixed(1)} Q${cx.toFixed(1)} ${cy.toFixed(1)} ${t2x.toFixed(1)} ${t2y.toFixed(1)}`;
   }
-  const last = pts[pts.length - 1];
+  const last = clean[clean.length - 1];
   d += ` L${last[0].toFixed(1)} ${last[1].toFixed(1)}`;
   return d;
 }
