@@ -746,19 +746,36 @@ function connSVG(cn) {
   const [tx,ty] = portAbs(tgt, cn.target_port);
   const d = bezier(sx,sy,cn.source_port,tx,ty,cn.target_port);
   const iv = IFACE[cn.interface_type] || IFACE.Data;
-  const [mx,my] = [(sx+tx)/2,(sy+ty)/2];
-  // No arrowheads on lines — direction is shown by the port squares
-  const ext = cn.is_external
-    ? `<text x="${mx}" y="${my-24}" text-anchor="middle" class="arch-conn-ext">EXT</text>` : '';
+  // True midpoint on the bezier curve (t=0.5) — always on the line
+  const bd = getBezierCtrlPts(cn);
+  let mx, my;
+  if (bd) {
+    const t = 0.5, mt = 0.5;
+    mx = mt*mt*mt*bd.x1 + 3*mt*mt*t*bd.cx1 + 3*mt*t*t*bd.cx2 + t*t*t*bd.x2;
+    my = mt*mt*mt*bd.y1 + 3*mt*mt*t*bd.cy1 + 3*mt*t*t*bd.cy2 + t*t*t*bd.y2;
+  } else {
+    mx = (sx+tx)/2; my = (sy+ty)/2;
+  }
 
-  // Label just above the midpoint badge, with background
+  // EXT label near the system-border port (whichever endpoint belongs to a Group)
+  let ext = '';
+  if (cn.is_external) {
+    const srcParent = src.comp_type === 'Port' ? compById(src.data?.parent_block_id) : src;
+    const tgtParent = tgt.comp_type === 'Port' ? compById(tgt.data?.parent_block_id) : tgt;
+    const extComp   = srcParent?.comp_type === 'Group' ? src : tgt;
+    const [ex, ey]  = portAbs(extComp, extComp.data?.attached_side || cn.source_port);
+    const [eox,eoy] = (() => { const side = portSide(extComp.data?.attached_side || cn.source_port);
+      return side==='top'?[0,-14]:side==='bottom'?[0,14]:side==='left'?[-20,0]:[20,0]; })();
+    ext = `<text x="${(ex+eox).toFixed(1)}" y="${(ey+eoy).toFixed(1)}" text-anchor="middle" class="arch-conn-ext">EXT</text>`;
+  }
+
+  // Label just above the true bezier midpoint
   const labelTxt = escH(cn.name || cn.interface_type);
   const labelW   = Math.max(44, labelTxt.length * 6 + 12);
-  const labelY   = my - 14;
   const label = `
-    <rect x="${mx - labelW/2}" y="${labelY - 11}" width="${labelW}" height="13" rx="3"
+    <rect x="${(mx - labelW/2).toFixed(1)}" y="${(my - 22).toFixed(1)}" width="${labelW}" height="13" rx="3"
           fill="rgba(255,255,255,0.92)" stroke="${iv.stroke}" stroke-width="0.8"/>
-    <text x="${mx}" y="${labelY}" text-anchor="middle" class="arch-conn-label"
+    <text x="${mx.toFixed(1)}" y="${(my - 11).toFixed(1)}" text-anchor="middle" class="arch-conn-label"
           style="fill:${iv.stroke}">${labelTxt}</text>`;
 
   // Port squares at BOTH endpoints, always visible
@@ -817,15 +834,13 @@ function connSVG(cn) {
       <path d="${d}" fill="none" stroke="transparent" stroke-width="14"/>
       <path d="${d}" fill="none" stroke="${iv.stroke}" stroke-width="${iv.weight}"
             stroke-dasharray="${iv.dash}"/>
-      <circle cx="${mx}" cy="${my}" r="9" fill="${iv.stroke}" opacity="0.18"/>
-      <text x="${mx}" y="${my+4}" text-anchor="middle" class="arch-conn-icon">${iv.icon}</text>
       ${label}
       ${ext}
       ${portIcon}
       ${epSrc}${epTgt}
       <g class="arch-conn-del-btn" id="conn-del-${cn.id}">
-        <circle cx="${mx+18}" cy="${my-18}" r="8" fill="#C5221F" stroke="#fff" stroke-width="1.5"/>
-        <text x="${mx+18}" y="${my-14}" text-anchor="middle" font-size="11" fill="#fff"
+        <circle cx="${(mx+14).toFixed(1)}" cy="${(my-14).toFixed(1)}" r="8" fill="#C5221F" stroke="#fff" stroke-width="1.5"/>
+        <text x="${(mx+14).toFixed(1)}" y="${(my-10).toFixed(1)}" text-anchor="middle" font-size="11" fill="#fff"
               font-weight="bold" style="pointer-events:none">×</text>
       </g>
     </g>`;
