@@ -1286,9 +1286,27 @@ function updateTempPath(e) {
   const tp = document.getElementById('arch-temp');
   if (tp) tp.setAttribute('d', bezier(sx,sy,_s.connecting.sourcePort,pos.x,pos.y,'left'));
 
-  // Highlight potential connection targets
+  // Clear previous highlights
   document.querySelectorAll('.arch-group--conn-target,.arch-block--conn-target').forEach(el =>
     el.classList.remove('arch-group--conn-target','arch-block--conn-target'));
+  document.querySelectorAll('.arch-standalone-port--conn-target').forEach(el =>
+    el.classList.remove('arch-standalone-port--conn-target'));
+
+  // Standalone port hover: check proximity to port center in canvas coords
+  const connectedPortIds = new Set(_s.connections.flatMap(cn => [cn.source_id, cn.target_id]));
+  const HIT = CONN_EP_SIZE;
+  const hovPort = _s.components.find(p => {
+    if (p.comp_type !== 'Port' || !p.data?.parent_block_id) return false;
+    if (connectedPortIds.has(p.id)) return false;
+    if (p.id === _s.connecting.sourceId) return false;
+    const parent = compById(p.data.parent_block_id); if (!parent) return false;
+    const [px, py] = portAbs(parent, p.data.attached_side || 'right:0.5');
+    return Math.abs(pos.x - px) <= HIT && Math.abs(pos.y - py) <= HIT;
+  });
+  if (hovPort) {
+    document.getElementById(`sport-${hovPort.id}`)?.classList.add('arch-standalone-port--conn-target');
+    return; // port takes priority — skip block/group highlight
+  }
 
   // Group hover: check canvas coords against group bounds
   const hovGroup = _s.components.find(g =>
@@ -1297,10 +1315,9 @@ function updateTempPath(e) {
   if (hovGroup) {
     document.getElementById(`comp-${hovGroup.id}`)?.classList.add('arch-group--conn-target');
   } else {
-    // Block hover via DOM hit test
     const under = document.elementsFromPoint(e.clientX, e.clientY);
     const hovBlock = under.find(el =>
-      (el.classList?.contains('arch-block')||el.classList?.contains('arch-port-block')) &&
+      el.classList?.contains('arch-block') &&
       el.dataset.id !== _s.connecting.sourceId);
     if (hovBlock) hovBlock.classList.add('arch-block--conn-target');
   }

@@ -2855,6 +2855,7 @@ tr.req-title-row td { cursor: default; }
 
 /* ── Port placement mode ──────────────────────────────────────────────────── */
 .arch-port-placing .arch-block,.arch-port-placing .arch-group{cursor:crosshair !important}
+.arch-standalone-port--conn-target rect:first-of-type{stroke:#1A73E8 !important;stroke-width:3 !important;filter:drop-shadow(0 0 4px #1A73E8)}
 .arch-port-ghost{position:absolute;width:20px;height:20px;background:#1A73E8;border:2px solid #fff;border-radius:3px;opacity:0.75;pointer-events:none;z-index:20;animation:port-ghost-pulse 0.8s ease-in-out infinite alternate}
 @keyframes port-ghost-pulse{from{opacity:0.5}to{opacity:0.9}}
 
