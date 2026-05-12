@@ -1897,15 +1897,16 @@ function handleDragMove(e) {
       if (cel) { cel.style.left=cc.x+'px'; cel.style.top=cc.y+'px'; }
     });
   }
-  // Reposition ports attached to this block
+  // Reposition ports attached to this block: keep absolute canvas position, snap to nearest perimeter point
   if (!isGroup) {
     _s.components
       .filter(p => p.comp_type==='Port' && p.data?.parent_block_id===id)
       .forEach(p => {
-        const portStr = p.data?.attached_side || 'right:0.5';
-        const [px, py] = portAbs(c, portStr);
+        const newPortStr = nearestPerimeterPoint(c, p.x + PORT_SIZE/2, p.y + PORT_SIZE/2);
+        const [px, py] = portAbs(c, newPortStr);
         p.x = Math.round(px - PORT_SIZE/2);
         p.y = Math.round(py - PORT_SIZE/2);
+        p.data = { ...p.data, attached_side: newPortStr };
       });
   }
 
@@ -1991,7 +1992,7 @@ function handleDragEnd() {
   _s.components
     .filter(p => p.comp_type==='Port' && p.data?.parent_block_id===id)
     .forEach(p => {
-      sb.from('arch_components').update({ x:p.x, y:p.y, updated_at:now }).eq('id', p.id).then();
+      sb.from('arch_components').update({ x:p.x, y:p.y, data:p.data, updated_at:now }).eq('id', p.id).then();
     });
 
   // Save parent group if it was auto-expanded during drag
