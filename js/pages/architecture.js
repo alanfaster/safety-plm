@@ -849,11 +849,14 @@ function bezier(x1,y1,p1,x2,y2,p2) {
   const s1 = portSide(p1), s2 = portSide(p2);
   const len = Math.max(50, Math.hypot(x2-x1,y2-y1)*0.4);
   const off = {top:[0,-len],right:[len,0],bottom:[0,len],left:[-len,0]};
-  const [cx1,cy1] = [x1+(off[s1]?.[0]??len), y1+(off[s1]?.[1]??0)];
-  // When both ports face the same side, the target control must go inward (opposite direction)
-  // to avoid the curve bulging outward past the system border
-  const flipTgt = s1 === s2;
-  const o2 = off[s2] ?? [-len, 0];
+  const nat = {top:[0,-1],right:[1,0],bottom:[0,1],left:[-1,0]};
+  const dx = x2-x1, dy = y2-y1;
+  // Flip control if target is behind the port's natural exit direction
+  const flipSrc = (dx*(nat[s1]?.[0]??1) + dy*(nat[s1]?.[1]??0)) < 0;
+  const flipTgt = ((-dx)*(nat[s2]?.[0]??1) + (-dy)*(nat[s2]?.[1]??0)) < 0;
+  const o1 = off[s1] ?? [len,0];
+  const o2 = off[s2] ?? [-len,0];
+  const [cx1,cy1] = [x1 + (flipSrc ? -o1[0] : o1[0]), y1 + (flipSrc ? -o1[1] : o1[1])];
   const [cx2,cy2] = [x2 + (flipTgt ? -o2[0] : o2[0]), y2 + (flipTgt ? -o2[1] : o2[1])];
   return `M${x1} ${y1} C${cx1} ${cy1},${cx2} ${cy2},${x2} ${y2}`;
 }
