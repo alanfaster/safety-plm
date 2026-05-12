@@ -617,6 +617,31 @@ function renderConnections() {
   if (_selectedConnId) {
     document.getElementById(`conn-${_selectedConnId}`)?.classList.add('arch-conn-g--sel');
   }
+
+  // Wire label drag
+  g.querySelectorAll('.arch-conn-label-drag').forEach(el => {
+    el.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.stopPropagation(); e.preventDefault();
+      const cn = _s.connections.find(c => c.id === el.dataset.connId); if (!cn) return;
+      const startPos = canvasPos(e);
+      const origDx = cn.label_dx || 0, origDy = cn.label_dy || 0;
+      const onMove = ev => {
+        const p = canvasPos(ev);
+        cn.label_dx = origDx + (p.x - startPos.x);
+        cn.label_dy = origDy + (p.y - startPos.y);
+        renderConnections();
+      };
+      const onUp = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        cn.data = { ...(cn.data||{}), label_dx: cn.label_dx, label_dy: cn.label_dy };
+        sb.from('arch_connections').update({ data: cn.data, updated_at: new Date().toISOString() }).eq('id', cn.id);
+      };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+    });
+  });
 }
 
 function selectStandalonePort(portId) {
@@ -780,14 +805,15 @@ function connSVG(cn) {
     ext = `<text x="${ex.toFixed(1)}" y="${(ey - 6).toFixed(1)}" text-anchor="middle" class="arch-conn-ext">EXT</text>`;
   }
 
-  // Label just above the true bezier midpoint
+  // Label — draggable offset (in-memory or persisted in cn.data)
+  if (cn.label_dx == null && cn.data?.label_dx != null) cn.label_dx = cn.data.label_dx;
+  if (cn.label_dy == null && cn.data?.label_dy != null) cn.label_dy = cn.data.label_dy;
+  const lx = mx + (cn.label_dx || 0);
+  const ly = my + (cn.label_dy || 0) - 6;
   const labelTxt = escH(cn.name || cn.interface_type);
-  const labelW   = Math.max(44, labelTxt.length * 6 + 12);
-  const label = `
-    <rect x="${(mx - labelW/2).toFixed(1)}" y="${(my - 22).toFixed(1)}" width="${labelW}" height="13" rx="3"
-          fill="rgba(255,255,255,0.92)" stroke="${iv.stroke}" stroke-width="0.8"/>
-    <text x="${mx.toFixed(1)}" y="${(my - 11).toFixed(1)}" text-anchor="middle" class="arch-conn-label"
-          style="fill:${iv.stroke}">${labelTxt}</text>`;
+  const label = `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle"
+    class="arch-conn-label arch-conn-label-drag" data-conn-id="${cn.id}"
+    style="fill:${iv.stroke};font-size:11px;font-family:system-ui,sans-serif;cursor:move">${labelTxt}</text>`;
 
   // Port squares at BOTH endpoints, always visible
   // Arrow direction depends on SIDE of the component and whether this endpoint sends or receives.
