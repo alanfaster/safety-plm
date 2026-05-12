@@ -1758,7 +1758,7 @@ function handleConnectEnd(e) {
     targetId = tComp.dataset.id;
     const tc = compById(targetId);
     targetPort = tc ? nearestPerimeterPoint(tc, curX, curY) : 'left:0.5';
-  } else if (tGroup) {
+  } else if (tGroup && tGroup.classList.contains('arch-group--conn-target')) {
     targetId = tGroup.dataset.id;
     const tc = compById(targetId);
     targetPort = tc ? nearestPerimeterPoint(tc, curX, curY) : 'right:0.5';
