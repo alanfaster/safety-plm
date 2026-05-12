@@ -1569,6 +1569,13 @@ function updateTempPath(e) {
   const pos = canvasPos(e);
   _s.connecting.curX = pos.x; _s.connecting.curY = pos.y;
   const [sx,sy] = portAbs(src, _s.connecting.sourcePort);
+  // Shift: snap cursor to axis perpendicular to exit port direction
+  if (e.shiftKey) {
+    const side = portSide(_s.connecting.sourcePort);
+    if (side === 'left' || side === 'right') pos.y = sy;
+    else pos.x = sx;
+    _s.connecting.curX = pos.x; _s.connecting.curY = pos.y;
+  }
   const tp = document.getElementById('arch-temp');
   // For group source: if cursor is inside the group the curve goes inward — flip source control
   let srcPortForBezier = _s.connecting.sourcePort;
@@ -1659,12 +1666,10 @@ function wireGlobal() {
       else if (_s.selected) deleteComp(_s.selected);
     }
     if (e.key==='Escape') { cancelConnect(); if (_s.portPlacing) deactivatePortPlacementMode(); selectComp(null); showPropsEmpty(); }
-    if (e.key==='Shift' && _s?.dragging) document.getElementById('arch-outer')?.classList.add('arch-shift-lock');
+
     if ((e.ctrlKey||e.metaKey) && (e.key==='z'||e.key==='Z')) { e.preventDefault(); undoLast(); }
   };
-  const onKeyUp = e => {
-    if (e.key==='Shift') document.getElementById('arch-outer')?.classList.remove('arch-shift-lock');
-  };
+  const onKeyUp = e => { void e; };
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup',   onUp);
   document.addEventListener('keydown',     onKey);
@@ -1812,13 +1817,7 @@ function handleDragMove(e) {
     return;
   }
 
-  // Shift held: constrain to dominant axis (horizontal or vertical)
-  let nx = origX+pos.x-startX, ny = origY+pos.y-startY;
-  if (e.shiftKey) {
-    if (Math.abs(nx - origX) >= Math.abs(ny - origY)) ny = origY;
-    else nx = origX;
-  }
-  c.x = snap(nx); c.y = snap(ny);
+  c.x = snap(origX+pos.x-startX); c.y = snap(origY+pos.y-startY);
   const el = document.getElementById(`comp-${id}`);
   if (el) { el.style.left=c.x+'px'; el.style.top=c.y+'px'; }
   if (isGroup && childOffsets) {
