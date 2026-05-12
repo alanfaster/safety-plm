@@ -584,9 +584,12 @@ function renderConnections() {
     el.addEventListener('pointerdown', e => {
       e.stopPropagation(); e.preventDefault();
       const p = compById(portId); if (!p) return;
-      captureUndo();
       selectStandalonePort(portId);
-      _s.dragging = { id: portId, startX: canvasPos(e).x, startY: canvasPos(e).y, origX: p.x, origY: p.y, isPortSVG: true };
+      // Dragging from a standalone port starts a connection (not a move)
+      const pos = canvasPos(e);
+      _s.connecting = { sourceId: portId, sourcePort: 'right:0.5', curX: pos.x, curY: pos.y };
+      const tp = document.getElementById('arch-temp');
+      if (tp) tp.style.display = '';
     });
     el.addEventListener('click', e => { e.stopPropagation(); });
   });
@@ -821,8 +824,12 @@ function connSVG(cn) {
 
 // port string: "side" (legacy) or "side:fraction" (0.0–1.0 along that edge)
 function portAbs(comp, portStr) {
-  const sz = comp.comp_type === 'Port' ? PORT_SIZE : null;
-  const w = sz || comp.width, h = sz || comp.height;
+  // For attached ports, resolve position from parent block + attached_side
+  if (comp.comp_type === 'Port' && comp.data?.parent_block_id) {
+    const parent = compById(comp.data.parent_block_id);
+    if (parent) return portAbs(parent, comp.data.attached_side || 'right:0.5');
+  }
+  const w = comp.width || PORT_SIZE, h = comp.height || PORT_SIZE;
   const [side, fracStr] = portStr?.includes(':') ? portStr.split(':') : [portStr, '0.5'];
   const f = Math.max(0, Math.min(1, parseFloat(fracStr ?? 0.5) || 0.5));
   switch (side) {
@@ -849,8 +856,13 @@ function snap(v) { return Math.round(v/GRID)*GRID; }
 
 // Returns "side:fraction" for the perimeter point closest to (cx,cy) in canvas coords
 function nearestPerimeterPoint(comp, cx, cy) {
-  const w = comp.comp_type==='Port' ? PORT_SIZE : comp.width;
-  const h = comp.comp_type==='Port' ? PORT_SIZE : comp.height;
+  // Attached ports: delegate to parent block
+  if (comp.comp_type === 'Port' && comp.data?.parent_block_id) {
+    const parent = compById(comp.data.parent_block_id);
+    if (parent) return comp.data.attached_side || 'right:0.5';
+  }
+  const w = comp.width || PORT_SIZE;
+  const h = comp.height || PORT_SIZE;
   const rx = cx - comp.x, ry = cy - comp.y;
   const c01 = v => Math.max(0.001, Math.min(0.999, v));
   const dTop = Math.abs(ry), dBottom = Math.abs(ry - h);
@@ -1810,16 +1822,20 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
   let finalSrcId = srcId, finalSrcPort = srcPort;
   let finalTgtId = tgtId, finalTgtPort = tgtPort;
 
+  // If endpoint is already an attached Port, use its attached_side as the port string
+  if (src.comp_type === 'Port' && src.data?.attached_side) finalSrcPort = src.data.attached_side;
+  if (tgt.comp_type === 'Port' && tgt.data?.attached_side) finalTgtPort = tgt.data.attached_side;
+
   // Auto-create attached ports when connecting blocks or groups (all non-Port endpoints)
   const srcNeedsPort = src.comp_type !== 'Port';
   const tgtNeedsPort = tgt.comp_type !== 'Port';
   if (srcNeedsPort) {
     const p = await createAttachedPort(srcId, srcPort, autoDir === 'B_to_A' ? 'in' : 'out');
-    if (p) { finalSrcId = p.id; finalSrcPort = 'right:0.5'; }
+    if (p) { finalSrcId = p.id; finalSrcPort = p.data.attached_side || 'right:0.5'; }
   }
   if (tgtNeedsPort) {
     const p = await createAttachedPort(tgtId, tgtPort, autoDir === 'A_to_B' ? 'in' : 'out');
-    if (p) { finalTgtId = p.id; finalTgtPort = 'left:0.5'; }
+    if (p) { finalTgtId = p.id; finalTgtPort = p.data.attached_side || 'left:0.5'; }
   }
 
   const { data, error } = await sb.from('arch_connections').insert({
