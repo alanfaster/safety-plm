@@ -757,16 +757,17 @@ function connSVG(cn) {
     mx = (sx+tx)/2; my = (sy+ty)/2;
   }
 
-  // EXT label near the system-border port (whichever endpoint belongs to a Group)
+  // EXT label: placed along the bezier ~15% from the system-border port, inside the line
   let ext = '';
-  if (cn.is_external) {
+  if (cn.is_external && bd) {
     const srcParent = src.comp_type === 'Port' ? compById(src.data?.parent_block_id) : src;
     const tgtParent = tgt.comp_type === 'Port' ? compById(tgt.data?.parent_block_id) : tgt;
-    const extComp   = srcParent?.comp_type === 'Group' ? src : tgt;
-    const [ex, ey]  = portAbs(extComp, extComp.data?.attached_side || cn.source_port);
-    const [eox,eoy] = (() => { const side = portSide(extComp.data?.attached_side || cn.source_port);
-      return side==='top'?[0,-14]:side==='bottom'?[0,14]:side==='left'?[-20,0]:[20,0]; })();
-    ext = `<text x="${(ex+eox).toFixed(1)}" y="${(ey+eoy).toFixed(1)}" text-anchor="middle" class="arch-conn-ext">EXT</text>`;
+    const sysIsSrc  = srcParent?.comp_type === 'Group';
+    const t = sysIsSrc ? 0.18 : 0.82;
+    const mt = 1 - t;
+    const ex = mt*mt*mt*bd.x1 + 3*mt*mt*t*bd.cx1 + 3*mt*t*t*bd.cx2 + t*t*t*bd.x2;
+    const ey = mt*mt*mt*bd.y1 + 3*mt*mt*t*bd.cy1 + 3*mt*t*t*bd.cy2 + t*t*t*bd.y2;
+    ext = `<text x="${ex.toFixed(1)}" y="${(ey - 6).toFixed(1)}" text-anchor="middle" class="arch-conn-ext">EXT</text>`;
   }
 
   // Label just above the true bezier midpoint
