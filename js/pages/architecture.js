@@ -764,10 +764,12 @@ function connSVG(cn) {
   const ARROW_BI  = { top:'↕', bottom:'↕', left:'↔', right:'↔' };
   function epArrow(isSrcSide, portStr) {
     const side = portSide(portStr) || 'right';
-    if (cn.direction === 'bidirectional') return ARROW_BI[side] || '↔';
-    const srcSends = cn.direction === 'A_to_B';
-    const thisSends = isSrcSide ? srcSends : !srcSends;
-    return (thisSends ? ARROW_OUT : ARROW_IN)[side] || (thisSends ? '→' : '←');
+    const compId = isSrcSide ? cn.source_id : cn.target_id;
+    const comp = compById(compId);
+    const dir = comp?.data?.port_dir || 'inout';
+    if (dir === 'inout') return ARROW_BI[side] || '↔';
+    if (dir === 'out')   return ARROW_OUT[side] || '→';
+    return ARROW_IN[side] || '←';
   }
   // Offset square outward from component edge so it sits ON the border, not inside
   function squareOffset(portStr) {
