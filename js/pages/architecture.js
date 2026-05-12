@@ -1915,25 +1915,12 @@ function handleDragMove(e) {
   if (grpId && !isGroup) {
     const grp = compById(grpId);
     if (grp) {
-      // Snapshot absolute canvas positions of all ports attached to this group BEFORE resizing
-      const grpPorts = _s.components.filter(p => p.comp_type==='Port' && p.data?.parent_block_id===grpId);
-      const portSnap = grpPorts.map(p => ({ p, abs: portAbs(grp, p.data?.attached_side||'right:0.5') }));
-
       let changed = false;
-      if (c.x < grp.x + PAD)                          { grp.width += grp.x + PAD - c.x; grp.x = c.x - PAD; changed = true; }
-      if (c.y < grp.y + PAD)                          { grp.height += grp.y + PAD - c.y; grp.y = c.y - PAD; changed = true; }
-      if (c.x + c.width  > grp.x + grp.width  - PAD) { grp.width  = c.x + c.width  - grp.x + PAD; changed = true; }
+      if (c.x < grp.x + PAD)               { grp.width += grp.x + PAD - c.x; grp.x = c.x - PAD; changed = true; }
+      if (c.y < grp.y + PAD)               { grp.height += grp.y + PAD - c.y; grp.y = c.y - PAD; changed = true; }
+      if (c.x + c.width > grp.x + grp.width - PAD)  { grp.width = c.x + c.width - grp.x + PAD; changed = true; }
       if (c.y + c.height > grp.y + grp.height - PAD) { grp.height = c.y + c.height - grp.y + PAD; changed = true; }
-
       if (changed) {
-        // Restore each port to its pre-expand canvas position by recalculating portStr
-        portSnap.forEach(({ p, abs: [ax, ay] }) => {
-          const newStr = nearestPerimeterPoint(grp, ax, ay);
-          p.data = { ...p.data, attached_side: newStr };
-          const [px, py] = portAbs(grp, newStr);
-          p.x = Math.round(px - PORT_SIZE/2);
-          p.y = Math.round(py - PORT_SIZE/2);
-        });
         const gel = document.getElementById(`comp-${grpId}`);
         if (gel) { gel.style.left=grp.x+'px'; gel.style.top=grp.y+'px'; gel.style.width=grp.width+'px'; gel.style.height=grp.height+'px'; }
       }
