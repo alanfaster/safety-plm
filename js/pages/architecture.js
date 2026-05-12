@@ -1659,15 +1659,21 @@ function wireGlobal() {
       else if (_s.selected) deleteComp(_s.selected);
     }
     if (e.key==='Escape') { cancelConnect(); if (_s.portPlacing) deactivatePortPlacementMode(); selectComp(null); showPropsEmpty(); }
+    if (e.key==='Shift' && _s?.dragging) document.getElementById('arch-outer')?.classList.add('arch-shift-lock');
     if ((e.ctrlKey||e.metaKey) && (e.key==='z'||e.key==='Z')) { e.preventDefault(); undoLast(); }
+  };
+  const onKeyUp = e => {
+    if (e.key==='Shift') document.getElementById('arch-outer')?.classList.remove('arch-shift-lock');
   };
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup',   onUp);
   document.addEventListener('keydown',     onKey);
+  document.addEventListener('keyup',       onKeyUp);
   window._archCleanup = () => {
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup',   onUp);
     document.removeEventListener('keydown',     onKey);
+    document.removeEventListener('keyup',       onKeyUp);
     window._archCleanup = null;
   };
 }
@@ -1806,7 +1812,13 @@ function handleDragMove(e) {
     return;
   }
 
-  c.x = snap(origX+pos.x-startX); c.y = snap(origY+pos.y-startY);
+  // Shift held: constrain to dominant axis (horizontal or vertical)
+  let nx = origX+pos.x-startX, ny = origY+pos.y-startY;
+  if (e.shiftKey) {
+    if (Math.abs(nx - origX) >= Math.abs(ny - origY)) ny = origY;
+    else nx = origX;
+  }
+  c.x = snap(nx); c.y = snap(ny);
   const el = document.getElementById(`comp-${id}`);
   if (el) { el.style.left=c.x+'px'; el.style.top=c.y+'px'; }
   if (isGroup && childOffsets) {
