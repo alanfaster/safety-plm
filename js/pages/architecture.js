@@ -1707,9 +1707,13 @@ function handleConnectEnd(e) {
     el.classList.remove('arch-group--conn-target','arch-block--conn-target'));
 
   const under = document.elementsFromPoint(e.clientX, e.clientY);
+  // Standalone SVG port (highest priority — explicit port-to-port connection)
+  const tSvgPort = under.find(el =>
+    (el.classList?.contains('arch-standalone-port') || el.closest?.('.arch-standalone-port')) &&
+    el.dataset.portId !== _s.connecting.sourceId);
   const tPort = under.find(el => el.classList?.contains('arch-port'));
   const tComp = under.find(el =>
-    (el.classList?.contains('arch-block')||el.classList?.contains('arch-port-block')) &&
+    el.classList?.contains('arch-block') &&
     el.dataset.id !== _s.connecting.sourceId);
   const tGroup = under.find(el =>
     el.classList?.contains('arch-group') && el.dataset.id !== _s.connecting.sourceId);
@@ -1718,20 +1722,28 @@ function handleConnectEnd(e) {
   _s.connecting = null;
 
   let targetId=null, targetPort=null;
-  if (tPort && tPort.dataset.compId!==sourceId) {
-    targetId=tPort.dataset.compId;
-    const tc=compById(targetId);
+  const svgPortEl = tSvgPort?.classList?.contains('arch-standalone-port')
+    ? tSvgPort : tSvgPort?.closest?.('.arch-standalone-port');
+  if (svgPortEl) {
+    // Drop on existing standalone port — use it directly
+    targetId = svgPortEl.dataset.portId;
+    const tc = compById(targetId);
+    targetPort = tc?.data?.attached_side || 'left:0.5';
+  } else if (tPort && tPort.dataset.compId !== sourceId) {
+    targetId = tPort.dataset.compId;
+    const tc = compById(targetId);
     targetPort = tc ? nearestPerimeterPoint(tc, curX, curY) : 'left:0.5';
   } else if (tComp) {
-    targetId=tComp.dataset.id;
-    const tc=compById(targetId);
+    targetId = tComp.dataset.id;
+    const tc = compById(targetId);
     targetPort = tc ? nearestPerimeterPoint(tc, curX, curY) : 'left:0.5';
   } else if (tGroup) {
-    targetId=tGroup.dataset.id;
-    const tc=compById(targetId);
+    targetId = tGroup.dataset.id;
+    const tc = compById(targetId);
     targetPort = tc ? nearestPerimeterPoint(tc, curX, curY) : 'right:0.5';
   }
 
+  // Dropped in empty space — cancel silently
   if (!targetId) return;
 
   const src = compById(sourceId), tgt = compById(targetId);
