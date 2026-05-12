@@ -552,9 +552,10 @@ function renderConnections() {
     const nameX = side === 'left' ? cx - ps/2 - 4 : side === 'right' ? cx + ps/2 + 4 : cx;
     return `
       <g class="arch-standalone-port${isSel ? ' arch-standalone-port--sel' : ''}"
-         id="sport-${p.id}" data-port-id="${p.id}" style="cursor:pointer">
+         id="sport-${p.id}" data-port-id="${p.id}" style="cursor:pointer;pointer-events:all">
         <rect x="${cx-ps/2}" y="${cy-ps/2}" width="${ps}" height="${ps}" rx="3"
-              fill="${isSel ? '#1A73E8' : '#212121'}" stroke="#fff" stroke-width="1.5"/>
+              fill="${isSel ? '#1A73E8' : '#212121'}" stroke="#fff" stroke-width="1.5"
+              style="pointer-events:all"/>
         <text x="${cx}" y="${cy + fs*0.38}" text-anchor="middle" font-size="${fs}"
               fill="#fff" font-family="system-ui" font-weight="bold"
               style="pointer-events:none">${arrow}</text>
@@ -580,14 +581,14 @@ function renderConnections() {
   // Wire standalone port interactions
   g.querySelectorAll('.arch-standalone-port').forEach(el => {
     const portId = el.dataset.portId;
-    el.addEventListener('click', e => { e.stopPropagation(); selectStandalonePort(portId); });
-    el.querySelector('.arch-sport-drag')?.addEventListener('pointerdown', e => {
+    el.addEventListener('pointerdown', e => {
       e.stopPropagation(); e.preventDefault();
       const p = compById(portId); if (!p) return;
       captureUndo();
       selectStandalonePort(portId);
       _s.dragging = { id: portId, startX: canvasPos(e).x, startY: canvasPos(e).y, origX: p.x, origY: p.y, isPortSVG: true };
     });
+    el.addEventListener('click', e => { e.stopPropagation(); });
   });
 
   // Wire endpoint drag handles
