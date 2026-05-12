@@ -25,11 +25,11 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 // ── Visual constants ──────────────────────────────────────────────────────────
 
 const STYLES = {
-  HW:         { bg:'#E8F0FE', border:'#1A73E8', hdr:'#1A73E8', stereotype:'block'  },
-  SW:         { bg:'#E6F4EA', border:'#1E8E3E', hdr:'#1E8E3E', stereotype:'block'  },
-  Mechanical: { bg:'#FEF3E2', border:'#E37400', hdr:'#E37400', stereotype:'block'  },
-  Group:      { bg:'#F8F9FA', border:'#9AA0A6', hdr:'transparent', stereotype:'system' },
-  Port:       { bg:'#212121', border:'#212121', hdr:'#212121', stereotype:'port'   },
+  HW:         { bg:'#ffffff', border:'#2563EB', hdr:'transparent', stereotype:'block'      },
+  SW:         { bg:'#ffffff', border:'#16A34A', hdr:'transparent', stereotype:'block'      },
+  Mechanical: { bg:'#ffffff', border:'#D97706', hdr:'transparent', stereotype:'block'      },
+  Group:      { bg:'rgba(248,249,250,0.5)', border:'#6B7280', hdr:'transparent', stereotype:'system' },
+  Port:       { bg:'#374151', border:'#374151', hdr:'#374151', stereotype:'port'           },
 };
 
 const IFACE = {
@@ -742,14 +742,14 @@ function blockHTML(c) {
          id="comp-${c.id}" data-id="${c.id}" data-type="${c.comp_type}"
          style="left:${c.x}px;top:${c.y}px;width:${c.width}px;height:${c.height}px;
                 border-color:${safe ? '#C5221F' : st.border}">
-      <div class="arch-block-hdr" data-drag-id="${c.id}" style="background:${st.hdr}">
-        <span class="arch-block-stereo">«${st.stereotype}»</span>
+      <div class="arch-block-hdr" data-drag-id="${c.id}" style="border-top:3px solid ${safe ? '#C5221F' : st.border}">
+        <span class="arch-block-stereo" style="color:${safe ? '#C5221F' : st.border}">«${st.stereotype}»</span>
         <span class="arch-block-name" id="cname-${c.id}">${escH(c.name)}</span>
         ${safe ? '<span class="arch-block-safe-ico">⚠</span>' : ''}
       </div>
       <button class="arch-del-badge" data-del-id="${c.id}" title="Delete (Del)">✕</button>
-      <div class="arch-block-type-row" style="background:${st.bg}">
-        <span class="arch-block-type-badge" style="color:${st.border}">${c.comp_type}</span>
+      <div class="arch-block-type-row">
+        <span class="arch-block-type-badge" style="color:${safe ? '#C5221F' : st.border}">${c.comp_type}</span>
       </div>
       <div class="arch-block-funs" id="funlist-${c.id}">${funItems}</div>
       <div class="arch-port arch-port--top"    data-comp-id="${c.id}" data-port="top"></div>
