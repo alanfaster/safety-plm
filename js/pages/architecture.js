@@ -893,7 +893,9 @@ async function showAddPortModal(blockId, portStr) {
     const side = document.getElementById('ap-side').value;
     if (!name) { document.getElementById('ap-name').focus(); return; }
     hideModal();
-    const port = await createAttachedPort(blockId, `${side}:0.5`, dir, name);
+    // Keep exact fraction from ghost click if side unchanged; otherwise center of chosen side
+    const finalPortStr = side === curSide ? normStr : `${side}:0.5`;
+    const port = await createAttachedPort(blockId, finalPortStr, dir, name);
     if (!port) return;
     // Standalone port → create external interface requirement
     await createExternalIfaceReq(port, blk);
