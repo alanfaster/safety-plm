@@ -569,7 +569,9 @@ function renderConnections() {
       </g>`;
   }).join('');
 
-  g.innerHTML = _s.connections.map(cn => connSVG(cn)).join('') + standaloneSVG + buildBridgesSVG();
+  let bridgesSVG = '';
+  try { bridgesSVG = buildBridgesSVG(); } catch(_e) { /* non-critical */ }
+  g.innerHTML = _s.connections.map(cn => connSVG(cn)).join('') + standaloneSVG + bridgesSVG;
 
   _s.connections.forEach(cn => {
     document.getElementById(`conn-${cn.id}`)
@@ -910,10 +912,10 @@ function segIntersect(p1,p2,p3,p4) {
   const d1x=p2[0]-p1[0], d1y=p2[1]-p1[1];
   const d2x=p4[0]-p3[0], d2y=p4[1]-p3[1];
   const cross = d1x*d2y - d1y*d2x;
-  if (Math.abs(cross) < 1e-8) return null;
+  if (!isFinite(cross) || Math.abs(cross) < 1e-8) return null;
   const dx=p3[0]-p1[0], dy=p3[1]-p1[1];
   const t=(dx*d2y-dy*d2x)/cross, u=(dx*d1y-dy*d1x)/cross;
-  if (t<0.01||t>0.99||u<0.01||u>0.99) return null;
+  if (!isFinite(t)||!isFinite(u)||t<0.01||t>0.99||u<0.01||u>0.99) return null;
   return [p1[0]+t*d1x, p1[1]+t*d1y];
 }
 
