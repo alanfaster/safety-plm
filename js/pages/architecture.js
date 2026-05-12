@@ -1326,6 +1326,41 @@ function wireCanvas() {
       return;
     }
 
+    // Connection line proximity check (before block so thin lines are reachable)
+    const CONN_HIT = 8; // px in canvas coords
+    const nearConn = _s.connections.find(cn => {
+      const src = compById(cn.source_id), tgt = compById(cn.target_id); if (!src||!tgt) return false;
+      const [sx,sy] = portAbs(src, cn.source_port||'right:0.5');
+      const [tx,ty] = portAbs(tgt, cn.target_port||'left:0.5');
+      const pts = orthoPoints(sx,sy,cn.source_port||'right:0.5',tx,ty,cn.target_port||'left:0.5');
+      for (let i=0;i<pts.length-1;i++) {
+        const [ax,ay]=pts[i],[bx,by]=pts[i+1];
+        const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy); if(len<0.1) continue;
+        const t=((pos.x-ax)*dx+(pos.y-ay)*dy)/(len*len);
+        const tc=Math.max(0,Math.min(1,t));
+        const nx=ax+tc*dx,ny=ay+tc*dy;
+        if (Math.hypot(pos.x-nx,pos.y-ny)<=CONN_HIT) return true;
+      }
+      return false;
+    });
+    if (nearConn) {
+      captureUndo(); selectConn(nearConn.id);
+      // Collect both Port endpoints (SVG ports) to drag together
+      const srcComp = compById(nearConn.source_id);
+      const tgtComp = compById(nearConn.target_id);
+      const endpoints = [];
+      if (srcComp?.comp_type==='Port' && srcComp.data?.parent_block_id)
+        endpoints.push({ id: srcComp.id, origX: srcComp.x, origY: srcComp.y });
+      if (tgtComp?.comp_type==='Port' && tgtComp.data?.parent_block_id)
+        endpoints.push({ id: tgtComp.id, origX: tgtComp.x, origY: tgtComp.y });
+      if (endpoints.length > 0) {
+        _s.dragging = { id: endpoints[0].id, startX: pos.x, startY: pos.y,
+          origX: endpoints[0].origX, origY: endpoints[0].origY,
+          isPortSVG: true, isConnDrag: true, connEndpoints: endpoints };
+      }
+      return;
+    }
+
     const blockEl = under.find(el => el.classList?.contains('arch-block') && el.dataset.id);
     if (blockEl) {
       const id = blockEl.dataset.id;
@@ -1799,9 +1834,25 @@ function wireResizeHandle(el, id) {
 // ── Drag ──────────────────────────────────────────────────────────────────────
 
 function handleDragMove(e) {
-  const { id, startX, startY, origX, origY, isGroup, childOffsets, isPortSVG } = _s.dragging;
+  const { id, startX, startY, origX, origY, isGroup, childOffsets, isPortSVG, isConnDrag, connEndpoints } = _s.dragging;
   const c = compById(id); if (!c) return;
   const pos = canvasPos(e);
+
+  // Connection drag: move all Port endpoints together maintaining relative positions
+  if (isConnDrag && connEndpoints) {
+    const dx = pos.x - startX, dy = pos.y - startY;
+    connEndpoints.forEach(ep => {
+      const p = compById(ep.id); if (!p?.data?.parent_block_id) return;
+      const parent = compById(p.data.parent_block_id); if (!parent) return;
+      const portStr = nearestPerimeterPoint(parent, ep.origX + PORT_SIZE/2 + dx, ep.origY + PORT_SIZE/2 + dy);
+      const [px,py] = portAbs(parent, portStr);
+      p.x = Math.round(px - PORT_SIZE/2);
+      p.y = Math.round(py - PORT_SIZE/2);
+      p.data = { ...p.data, attached_side: portStr };
+    });
+    renderConnections();
+    return;
+  }
 
   // SVG-rendered port: snap along parent block perimeter, no HTML element to update
   if (isPortSVG && c.comp_type === 'Port' && c.data?.parent_block_id) {
@@ -1861,8 +1912,17 @@ function handleDragMove(e) {
 }
 
 function handleDragEnd() {
-  const { id, isGroup, childOffsets } = _s.dragging;
+  const { id, isGroup, childOffsets, isConnDrag, connEndpoints } = _s.dragging;
   _s.dragging = null;
+  // Connection drag: save all moved Port endpoints
+  if (isConnDrag && connEndpoints) {
+    const now = new Date().toISOString();
+    connEndpoints.forEach(ep => {
+      const p = compById(ep.id); if (!p) return;
+      sb.from('arch_components').update({ x:p.x, y:p.y, data:p.data, updated_at:now }).eq('id', p.id);
+    });
+    return;
+  }
   const c = compById(id); if (!c) return;
   const now = new Date().toISOString();
 
