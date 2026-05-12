@@ -850,7 +850,11 @@ function bezier(x1,y1,p1,x2,y2,p2) {
   const len = Math.max(50, Math.hypot(x2-x1,y2-y1)*0.4);
   const off = {top:[0,-len],right:[len,0],bottom:[0,len],left:[-len,0]};
   const [cx1,cy1] = [x1+(off[s1]?.[0]??len), y1+(off[s1]?.[1]??0)];
-  const [cx2,cy2] = [x2+(off[s2]?.[0]??-len), y2+(off[s2]?.[1]??0)];
+  // When both ports face the same side, the target control must go inward (opposite direction)
+  // to avoid the curve bulging outward past the system border
+  const flipTgt = s1 === s2;
+  const o2 = off[s2] ?? [-len, 0];
+  const [cx2,cy2] = [x2 + (flipTgt ? -o2[0] : o2[0]), y2 + (flipTgt ? -o2[1] : o2[1])];
   return `M${x1} ${y1} C${cx1} ${cy1},${cx2} ${cy2},${x2} ${y2}`;
 }
 
