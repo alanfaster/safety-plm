@@ -437,6 +437,9 @@ function buildShell(container, title) {
                 <button class="arch-pal-item pal-item-group" data-type="Group">
                   <span class="arch-pal-icon arch-pal-icon-group">⬜</span>System Group
                 </button>
+                <button class="arch-pal-item pal-item-assembly" data-type="Assembly">
+                  <span class="arch-pal-icon arch-pal-icon-assembly">▭</span>Assembly
+                </button>
                 <button class="arch-pal-item pal-item-port" data-type="Port" title="UML port — external interface point">
                   <span class="arch-pal-icon arch-pal-icon-port">■</span>Port
                 </button>
@@ -672,15 +675,16 @@ function groupHTML(g) {
       <button class="arch-addfun-btn" data-comp-id="${g.id}">+ Add function</button>
     </div>`;
 
+  const isAssembly = g.data?.subtype === 'assembly';
   return `
-    <div class="arch-group ${_s.selected === g.id ? 'arch-group--sel' : ''}"
+    <div class="arch-group ${isAssembly ? 'arch-group--assembly' : ''} ${_s.selected === g.id ? 'arch-group--sel' : ''}"
          id="comp-${g.id}" data-id="${g.id}" data-type="Group"
          style="left:${g.x}px;top:${g.y}px;width:${g.width}px;height:${g.height}px">
       <div class="arch-group-hdr" data-drag-id="${g.id}">
-        <span class="arch-group-stereo">«system»</span>
+        <span class="arch-group-stereo">«${isAssembly ? 'assembly' : 'system'}»</span>
         <span class="arch-group-name" id="cname-${g.id}">${escH(g.name)}</span>
         ${sysLabel}
-        <button class="arch-group-info-btn" data-comp-id="${g.id}">≡</button>
+        ${!isAssembly ? `<button class="arch-group-info-btn" data-comp-id="${g.id}">≡</button>` : ''}
       </div>
       ${funStrip}
       <button class="arch-del-badge" data-del-id="${g.id}" title="Delete (Del)">✕</button>
@@ -2520,6 +2524,25 @@ async function createGroup(name, systemId) {
   setTimeout(()=>startRename(data.id),60);
 }
 
+async function createAssembly() {
+  const name = prompt('Assembly name:');
+  if (!name?.trim()) return;
+  captureUndo();
+  const count = _s.components.filter(c=>c.comp_type==='Group').length;
+  const { data, error } = await sb.from('arch_components').insert({
+    parent_type:_s.parentType, parent_id:_s.parentId, project_id:_s.project.id,
+    name: name.trim(), comp_type:'Group',
+    x:snap(40+(count%3)*340), y:snap(40+Math.floor(count/3)*280),
+    width:280, height:200, sort_order:_s.components.length,
+    data: { subtype:'assembly' },
+  }).select().single();
+  if (error) { toast('Error: '+error.message,'error'); return; }
+  data.functions=[];
+  _s.components.push(data);
+  renderGroups();
+  selectComp(data.id);
+}
+
 // ── Properties panel ──────────────────────────────────────────────────────────
 
 function propsPortSection(blockId) {
@@ -2762,8 +2785,9 @@ function wirePropsF(c, id) {
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 
 async function addComp(type) {
-  if (type === 'Group') { await showGroupCreationPopover(); return; }
-  if (type === 'Port')  { activatePortPlacementMode(); return; }
+  if (type === 'Group')    { await showGroupCreationPopover(); return; }
+  if (type === 'Assembly') { await createAssembly(); return; }
+  if (type === 'Port')     { activatePortPlacementMode(); return; }
 
   const count  = _s.components.length;
 

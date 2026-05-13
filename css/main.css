@@ -2625,6 +2625,9 @@ tr.req-title-row td { cursor: default; }
 
 /* ── System Group box ── */
 .arch-group{position:absolute;border:2px solid #9CA3AF;border-radius:6px;background:rgba(249,250,251,0.5);min-width:240px;min-height:160px;user-select:none}
+.arch-group--assembly{border-style:dashed!important;border-color:#6B7280!important;background:rgba(243,244,246,0.35)!important}
+.arch-group--assembly .arch-group-stereo{color:#6B7280}
+.arch-group--assembly .arch-group-name{font-weight:600;color:#4B5563}
 .arch-group--sel{border-color:var(--color-primary);box-shadow:0 0 0 3px rgba(26,115,232,0.35)}
 .arch-group--conn-target{border-color:var(--color-primary)!important;border-style:solid!important;box-shadow:0 0 0 4px rgba(26,115,232,0.35),inset 0 0 20px rgba(26,115,232,0.10)!important;background:rgba(232,240,254,0.7)!important}
 .arch-group-hdr{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:move;border-radius:8px 8px 0 0}
@@ -2781,6 +2784,8 @@ tr.req-title-row td { cursor: default; }
 .arch-pal-icon{width:26px;height:26px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;flex-shrink:0;letter-spacing:0.04em}
 .arch-pal-icon-group{background:transparent!important;border:2px dashed #9AA0A6;color:#9AA0A6!important;font-size:14px}
 .pal-item-group:hover .arch-pal-icon-group{border-color:#fff;color:#fff!important}
+.arch-pal-icon-assembly{background:transparent!important;border:2px dashed #6B7280;color:#6B7280!important;font-size:10px;letter-spacing:0.05em}
+.pal-item-assembly:hover .arch-pal-icon-assembly{border-color:#fff;color:#fff!important}
 
 /* Interface legend */
 .arch-palette-iface-legend{}
