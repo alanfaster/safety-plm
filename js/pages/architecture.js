@@ -1734,14 +1734,12 @@ function wireGroup(id) {
     captureUndo();
     selectComp(id);
     const pos = canvasPos(e);
-    // Collect all descendants recursively (assemblies + their children)
-    const collectDescendants = (groupId) => {
-      const direct = _s.components.filter(c => c.id !== id && c.data?.group_id === groupId);
-      const nested = direct.filter(c => c.comp_type === 'Group').flatMap(c => collectDescendants(c.id));
-      return [...direct, ...nested];
-    };
-    const childrenForDrag = collectDescendants(id)
-      .filter((c, i, arr) => arr.findIndex(x => x.id === c.id) === i); // dedupe
+    // Collect all components geometrically inside this group (no dependency on group_id state)
+    const childrenForDrag = _s.components.filter(cc =>
+      cc.id !== id &&
+      cc.x + cc.width/2  > g.x && cc.x + cc.width/2  < g.x + g.width &&
+      cc.y + cc.height/2 > g.y && cc.y + cc.height/2 < g.y + g.height
+    );
     _s.dragging = { id, startX:pos.x, startY:pos.y, origX:g.x, origY:g.y, isGroup:true,
       childOffsets: childrenForDrag.map(c => ({ id:c.id, dx:c.x-g.x, dy:c.y-g.y }))
     };
