@@ -1734,12 +1734,16 @@ function wireGroup(id) {
     captureUndo();
     selectComp(id);
     const pos = canvasPos(e);
-    // Collect all components geometrically inside this group (no dependency on group_id state)
-    const childrenForDrag = _s.components.filter(cc =>
-      cc.id !== id &&
-      cc.x + cc.width/2  > g.x && cc.x + cc.width/2  < g.x + g.width &&
-      cc.y + cc.height/2 > g.y && cc.y + cc.height/2 < g.y + g.height
-    );
+    // System groups: geometric containment (always correct regardless of group_id state)
+    // Assembly groups: group_id membership (explicit, set when components are dropped inside)
+    const isAssembly = g.data?.subtype === 'assembly';
+    const childrenForDrag = isAssembly
+      ? _s.components.filter(cc => cc.id !== id && cc.data?.group_id === id)
+      : _s.components.filter(cc =>
+          cc.id !== id &&
+          cc.x + cc.width/2  > g.x && cc.x + cc.width/2  < g.x + g.width &&
+          cc.y + cc.height/2 > g.y && cc.y + cc.height/2 < g.y + g.height
+        );
     _s.dragging = { id, startX:pos.x, startY:pos.y, origX:g.x, origY:g.y, isGroup:true,
       childOffsets: childrenForDrag.map(c => ({ id:c.id, dx:c.x-g.x, dy:c.y-g.y }))
     };
