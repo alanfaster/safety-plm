@@ -2458,12 +2458,19 @@ async function createAssembly() {
   captureUndo();
   const count = _s.components.filter(c=>c.comp_type==='Group').length;
   const name = `Assembly-${String(count+1).padStart(2,'0')}`;
+  const ax = snap(40+(count%3)*340), ay = snap(40+Math.floor(count/3)*280);
+  const aw = 280, ah = 200;
+  // Auto-detect parent system group
+  const parentSysGrp = _s.components.find(g =>
+    g.comp_type === 'Group' && !g.data?.subtype && g.data?.system_id &&
+    ax >= g.x && ax + aw <= g.x + g.width &&
+    ay >= g.y && ay + ah <= g.y + g.height);
+  const assemblyData = { subtype:'assembly', ...(parentSysGrp?.data?.system_id ? { system_id: parentSysGrp.data.system_id } : {}) };
   const { data, error } = await sb.from('arch_components').insert({
     parent_type:_s.parentType, parent_id:_s.parentId, project_id:_s.project.id,
-    name: name.trim(), comp_type:'Group',
-    x:snap(40+(count%3)*340), y:snap(40+Math.floor(count/3)*280),
-    width:280, height:200, sort_order:_s.components.length,
-    data: { subtype:'assembly' },
+    name, comp_type:'Group',
+    x:ax, y:ay, width:aw, height:ah, sort_order:_s.components.length,
+    data: assemblyData,
   }).select().single();
   if (error) { toast('Error: '+error.message,'error'); return; }
   data.functions=[];
@@ -2574,18 +2581,6 @@ function openProps(id) {
 
   // ── Group ─────────────────────────────────────────────────────────────────
   if (c.comp_type === 'Group') {
-    // Auto-link assembly to the system group it sits inside
-    if (c.data?.subtype === 'assembly' && !c.data?.system_id) {
-      const parentSysGrp = _s.components.find(g =>
-        g.comp_type === 'Group' && !g.data?.subtype &&
-        g.data?.system_id &&
-        c.x >= g.x && c.x + c.width  <= g.x + g.width &&
-        c.y >= g.y && c.y + c.height <= g.y + g.height);
-      if (parentSysGrp?.data?.system_id) {
-        c.data = { ...c.data, system_id: parentSysGrp.data.system_id };
-        sb.from('arch_components').update({ data:c.data, updated_at:new Date().toISOString() }).eq('id',id).then();
-      }
-    }
     const linkedSys = c.data?.system_id ? _s.projectSystems.find(s=>s.id===c.data.system_id) : null;
     const sysOpts = _s.projectSystems.map(s =>
       `<option value="${s.id}" ${c.data?.system_id===s.id?'selected':''}>${escH(s.system_code)} — ${escH(s.name)}</option>`).join('');
