@@ -1371,14 +1371,28 @@ function wireCanvas() {
       return;
     }
 
-    const groupEl = under.find(el => el.classList?.contains('arch-group') && el.dataset.id);
+    // Pick the smallest (most specific) group under cursor to avoid moving parents
+    const groupEls = under.filter(el => el.classList?.contains('arch-group') && el.dataset.id);
+    const groupEl = groupEls.map(el => compById(el.dataset.id)).filter(Boolean)
+      .sort((a,b) => (a.width*a.height)-(b.width*b.height))[0];
     if (groupEl) {
-      const id = groupEl.dataset.id;
-      const g = compById(id); if (!g) return;
+      const g = groupEl;
+      const id = g.id;
       captureUndo(); selectComp(id);
-      const childrenForDrag = _s.components.filter(c => c.comp_type !== 'Group' && c.data?.group_id === id);
+      const isAssembly = g.data?.subtype === 'assembly';
+      const collectGroupDescendants = (gid) => {
+        const direct = _s.components.filter(cc => cc.id !== id && cc.data?.group_id === gid);
+        const deeper = direct.filter(cc => cc.comp_type === 'Group').flatMap(cc => collectGroupDescendants(cc.id));
+        return [...direct, ...deeper];
+      };
+      const childrenForDrag = isAssembly
+        ? [...new Map(collectGroupDescendants(id).map(c=>[c.id,c])).values()]
+        : _s.components.filter(cc =>
+            cc.id !== id &&
+            cc.x+cc.width/2 > g.x && cc.x+cc.width/2 < g.x+g.width &&
+            cc.y+cc.height/2 > g.y && cc.y+cc.height/2 < g.y+g.height);
       _s.dragging = { id, startX: pos.x, startY: pos.y, origX: g.x, origY: g.y, isGroup: true,
-        childOffsets: childrenForDrag.map(c => ({ id: c.id, dx: c.x - g.x, dy: c.y - g.y })) };
+        childOffsets: childrenForDrag.map(c => ({ id: c.id, dx: c.x-g.x, dy: c.y-g.y })) };
     }
   });
 
