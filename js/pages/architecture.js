@@ -2418,93 +2418,23 @@ function wireConnProps(cn) {
   body.querySelector('#pop-ext')?.addEventListener('change', saveConn);
 }
 
-// ── System Group creation popover ─────────────────────────────────────────────
+// ── System Group creation (auto-creates linked system) ────────────────────────
 
 async function showGroupCreationPopover() {
-  const pop = document.getElementById('arch-sys-pop');
-  if (!pop) return;
+  const { count } = await sb.from('systems')
+    .select('id',{count:'exact',head:true}).eq('item_id', _s.item.id);
+  const idx = (count||0)+1;
+  const sysCode = `SYS-${String(idx).padStart(3,'0')}`;
+  const name = sysCode;
 
-  const sysOpts = _s.projectSystems.map(s =>
-    `<option value="${s.id}">${escH(s.system_code)} — ${escH(s.name)}</option>`).join('');
-
-  pop.style.display = '';
-  pop.innerHTML = `
-    <div class="arch-popover-hdr">
-      <strong>Add System Group</strong>
-      <button class="arch-popover-close" id="syspop-x">✕</button>
-    </div>
-    <div class="arch-popover-body">
-      <label class="arch-form-lbl">Link to existing system?</label>
-      <select class="form-input" id="syspop-existing">
-        <option value="">— New system (define below) —</option>
-        ${sysOpts}
-      </select>
-
-      <div id="syspop-new-section">
-        <label class="arch-form-lbl" style="margin-top:12px">System Name</label>
-        <input class="form-input" id="syspop-name" placeholder="e.g. Braking System"/>
-        <label class="arch-form-lbl">Description</label>
-        <textarea class="form-input form-textarea" id="syspop-desc" rows="2" placeholder="Optional…"></textarea>
-      </div>
-    </div>
-    <div class="arch-popover-footer">
-      <button class="btn btn-secondary btn-sm" id="syspop-cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="syspop-ok">Add Group</button>
-    </div>`;
-
-  const existingSel = pop.querySelector('#syspop-existing');
-  const newSection  = pop.querySelector('#syspop-new-section');
-  const nameInput   = pop.querySelector('#syspop-name');
-
-  existingSel.onchange = () => {
-    newSection.style.display = existingSel.value ? 'none' : '';
-  };
-
-  const close = () => { pop.style.display='none'; };
-  pop.querySelector('#syspop-x').onclick      = close;
-  pop.querySelector('#syspop-cancel').onclick = close;
-
-  pop.querySelector('#syspop-ok').onclick = async () => {
-    const btn = pop.querySelector('#syspop-ok');
-    btn.disabled = true;
-
-    let systemId = existingSel.value || null;
-    let groupName;
-
-    if (systemId) {
-      // Link to existing system
-      const sys = _s.projectSystems.find(s => s.id === systemId);
-      groupName = sys?.name || 'System';
-    } else {
-      // Create new system in DB
-      const sysName = nameInput.value.trim();
-      if (!sysName) { nameInput.focus(); btn.disabled=false; return; }
-      const sysDesc = pop.querySelector('#syspop-desc').value.trim();
-
-      // Get next system code
-      const { count } = await sb.from('systems')
-        .select('id',{count:'exact',head:true}).eq('item_id', _s.item.id);
-      const idx = (count||0)+1;
-      const sysCode = `SYS-${String(idx).padStart(3,'0')}`;
-
-      const { data:newSys, error:sysErr } = await sb.from('systems').insert({
-        item_id: _s.item.id,
-        system_code: sysCode,
-        name: sysName,
-        description: sysDesc||null,
-      }).select().single();
-
-      if (sysErr) { toast('Error creating system: '+sysErr.message,'error'); btn.disabled=false; return; }
-      systemId = newSys.id;
-      groupName = sysName;
-      _s.projectSystems.push(newSys);
-      toast(`System "${sysName}" created.`, 'success');
-    }
-
-    close();
-    await createGroup(groupName, systemId);
-    btn.disabled = false;
-  };
+  const { data:newSys, error:sysErr } = await sb.from('systems').insert({
+    item_id: _s.item.id,
+    system_code: sysCode,
+    name,
+  }).select().single();
+  if (sysErr) { toast('Error creating system: '+sysErr.message,'error'); return; }
+  _s.projectSystems.push(newSys);
+  await createGroup(name, newSys.id);
 }
 
 async function createGroup(name, systemId) {
