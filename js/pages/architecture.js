@@ -743,14 +743,11 @@ function blockHTML(c) {
          style="left:${c.x}px;top:${c.y}px;width:${c.width}px;height:${c.height}px;
                 border-color:${safe ? '#C5221F' : st.border}">
       <div class="arch-block-hdr" data-drag-id="${c.id}">
-        <span class="arch-block-stereo" style="color:${safe ? '#C5221F' : st.border}">«${st.stereotype}»</span>
+        <span class="arch-block-type-badge" style="color:${safe ? '#C5221F' : st.border}">${c.comp_type}</span>
         <span class="arch-block-name" id="cname-${c.id}">${escH(c.name)}</span>
         ${safe ? '<span class="arch-block-safe-ico">⚠</span>' : ''}
       </div>
       <button class="arch-del-badge" data-del-id="${c.id}" title="Delete (Del)">✕</button>
-      <div class="arch-block-type-row">
-        <span class="arch-block-type-badge" style="color:${safe ? '#C5221F' : st.border}">${c.comp_type}</span>
-      </div>
       <div class="arch-block-funs" id="funlist-${c.id}">${funItems}</div>
       <div class="arch-port arch-port--top"    data-comp-id="${c.id}" data-port="top"></div>
       <div class="arch-port arch-port--right"  data-comp-id="${c.id}" data-port="right"></div>
