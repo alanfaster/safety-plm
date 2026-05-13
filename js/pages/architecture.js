@@ -1965,12 +1965,14 @@ function handleDragEnd() {
     }
     // Save group position
     sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id).then();
-    // Save all child positions and ensure group_id is assigned in data
+    // Save all child/descendant positions — only assign group_id for direct children (not nested)
     if (childOffsets) {
       childOffsets.forEach(({ id:cid }) => {
         const cc = compById(cid); if (!cc) return;
-        const dataChanged = (cc.data?.group_id || null) !== id;
-        if (dataChanged) {
+        const currentGid = cc.data?.group_id || null;
+        // Only set group_id=id for direct children (not for nested descendants that belong to a sub-group)
+        const isDirectChild = currentGid === null || currentGid === id;
+        if (isDirectChild && currentGid !== id) {
           cc.data = { ...(cc.data || {}), group_id: id };
           sb.from('arch_components').update({ x:cc.x, y:cc.y, data:cc.data, updated_at:now }).eq('id', cid).then();
         } else {
