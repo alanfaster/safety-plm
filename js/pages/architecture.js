@@ -1947,8 +1947,21 @@ function handleDragEnd() {
   const now = new Date().toISOString();
 
   if (c.comp_type === 'Group') {
+    // Assembly: update system_id based on which system group contains it now
+    if (c.data?.subtype === 'assembly') {
+      const parentSys = _s.components.find(g =>
+        g.comp_type === 'Group' && !g.data?.subtype && g.data?.system_id && g.id !== id &&
+        c.x >= g.x && c.x + c.width <= g.x + g.width &&
+        c.y >= g.y && c.y + c.height <= g.y + g.height);
+      const newSysId = parentSys?.data?.system_id || null;
+      const oldSysId = c.data?.system_id || null;
+      if (newSysId !== oldSysId) {
+        c.data = { ...c.data, system_id: newSysId || undefined };
+        if (!newSysId) delete c.data.system_id;
+      }
+    }
     // Save group position
-    sb.from('arch_components').update({ x:c.x, y:c.y, updated_at:now }).eq('id', id).then();
+    sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id).then();
     // Save all child positions and ensure group_id is assigned in data
     if (childOffsets) {
       childOffsets.forEach(({ id:cid }) => {
