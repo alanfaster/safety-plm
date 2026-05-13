@@ -1974,15 +1974,22 @@ function handleDragEnd() {
         }
       });
     }
-    // Also clear group_id for any non-group component that is no longer inside this group
-    _s.components.filter(cc =>
-      cc.comp_type !== 'Group' &&
-      (cc.data?.group_id || null) === id &&
-      !(cc.x + cc.width/2  > c.x && cc.x + cc.width/2  < c.x + c.width &&
-        cc.y + cc.height/2 > c.y && cc.y + cc.height/2 < c.y + c.height)
-    ).forEach(cc => {
-      cc.data = { ...(cc.data || {}), group_id: null };
-      sb.from('arch_components').update({ data: cc.data, updated_at: now }).eq('id', cc.id).then();
+    // Resync group_id for ALL components based on current geometry
+    _s.components.filter(cc => cc.id !== id && cc.comp_type !== 'Group').forEach(cc => {
+      const ccx = cc.x + cc.width/2, ccy = cc.y + cc.height/2;
+      const containers = _s.components.filter(g =>
+        g.comp_type === 'Group' && g.id !== id &&
+        ccx > g.x && ccx < g.x+g.width && ccy > g.y && ccy < g.y+g.height);
+      // Also check this group
+      const insideThis = ccx > c.x && ccx < c.x+c.width && ccy > c.y && ccy < c.y+c.height;
+      if (insideThis) containers.push(c);
+      const best = containers.sort((a,b) => (a.width*a.height)-(b.width*b.height))[0] || null;
+      const newGid = best?.id || null;
+      if ((cc.data?.group_id||null) !== newGid) {
+        cc.data = { ...(cc.data||{}), group_id: newGid };
+        if (!newGid) delete cc.data.group_id;
+        sb.from('arch_components').update({ data:cc.data, updated_at:now }).eq('id', cc.id).then();
+      }
     });
     return;
   }
