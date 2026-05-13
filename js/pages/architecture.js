@@ -2574,6 +2574,18 @@ function openProps(id) {
 
   // ── Group ─────────────────────────────────────────────────────────────────
   if (c.comp_type === 'Group') {
+    // Auto-link assembly to the system group it sits inside
+    if (c.data?.subtype === 'assembly' && !c.data?.system_id) {
+      const parentSysGrp = _s.components.find(g =>
+        g.comp_type === 'Group' && !g.data?.subtype &&
+        g.data?.system_id &&
+        c.x >= g.x && c.x + c.width  <= g.x + g.width &&
+        c.y >= g.y && c.y + c.height <= g.y + g.height);
+      if (parentSysGrp?.data?.system_id) {
+        c.data = { ...c.data, system_id: parentSysGrp.data.system_id };
+        sb.from('arch_components').update({ data:c.data, updated_at:new Date().toISOString() }).eq('id',id).then();
+      }
+    }
     const linkedSys = c.data?.system_id ? _s.projectSystems.find(s=>s.id===c.data.system_id) : null;
     const sysOpts = _s.projectSystems.map(s =>
       `<option value="${s.id}" ${c.data?.system_id===s.id?'selected':''}>${escH(s.system_code)} — ${escH(s.name)}</option>`).join('');
