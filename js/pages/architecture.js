@@ -1734,10 +1734,9 @@ function wireGroup(id) {
     captureUndo();
     selectComp(id);
     const pos = canvasPos(e);
-    // Include all non-group components whose group_id points to this group.
-    // group_id is kept in sync with geometry at load time (single source of truth).
+    // Include all components (blocks and assemblies) whose group_id points to this group.
     const childrenForDrag = _s.components.filter(c =>
-      c.comp_type !== 'Group' && c.data?.group_id === id
+      c.id !== id && c.data?.group_id === id
     );
     _s.dragging = { id, startX:pos.x, startY:pos.y, origX:g.x, origY:g.y, isGroup:true,
       childOffsets: childrenForDrag.map(c => ({ id:c.id, dx:c.x-g.x, dy:c.y-g.y }))
@@ -1988,11 +1987,12 @@ function handleDragEnd() {
     return;
   }
 
-  // Auto-assign to group
-  const grp = _s.components.find(g =>
-    g.comp_type==='Group' &&
-    c.x+c.width/2>g.x && c.x+c.width/2<g.x+g.width &&
-    c.y+c.height/2>g.y && c.y+c.height/2<g.y+g.height);
+  // Auto-assign to most specific (smallest area) containing group
+  const cx2 = c.x+c.width/2, cy2 = c.y+c.height/2;
+  const containingGroups = _s.components.filter(g =>
+    g.comp_type==='Group' && g.id!==id &&
+    cx2>g.x && cx2<g.x+g.width && cy2>g.y && cy2<g.y+g.height);
+  const grp = containingGroups.sort((a,b)=>(a.width*a.height)-(b.width*b.height))[0] || null;
   const gid = grp?.id||null;
   const dataChanged = (c.data?.group_id||null)!==gid;
   if (dataChanged) {
