@@ -2598,7 +2598,6 @@ function openProps(id) {
         <option value="">— None —</option>
         ${sysOpts}
       </select>
-      ${linkedSys ? `<div class="arch-props-note" style="margin-top:6px">🔗 ${escH(linkedSys.system_code)} · ${escH(linkedSys.name)}</div>` : ''}
       ${propsPortSection(id)}
       ${propseFunSection(c)}`);
     document.getElementById('props-name').addEventListener('input', debName);
