@@ -425,20 +425,20 @@ function buildShell(container, title) {
             </button>
             <div class="arch-pal-sec-body" id="pal-body-add">
               <div class="arch-palette-items" style="padding:8px">
-                <button class="arch-pal-item" data-type="HW">
-                  <span class="arch-pal-icon" style="background:#1A73E8">HW</span>HW Block
-                </button>
-                <button class="arch-pal-item" data-type="SW">
-                  <span class="arch-pal-icon" style="background:#1E8E3E">SW</span>SW Block
-                </button>
-                <button class="arch-pal-item" data-type="Mechanical">
-                  <span class="arch-pal-icon" style="background:#E37400">ME</span>Mech Block
-                </button>
                 <button class="arch-pal-item pal-item-group" data-type="Group">
-                  <span class="arch-pal-icon arch-pal-icon-group">⬜</span>System Group
+                  <span class="arch-pal-icon arch-pal-icon-group">⬜</span>System
                 </button>
                 <button class="arch-pal-item pal-item-assembly" data-type="Assembly">
                   <span class="arch-pal-icon arch-pal-icon-assembly">▭</span>Assembly
+                </button>
+                <button class="arch-pal-item" data-type="HW">
+                  <span class="arch-pal-icon" style="background:#4A6FA5">HW</span>HW Block
+                </button>
+                <button class="arch-pal-item" data-type="SW">
+                  <span class="arch-pal-icon" style="background:#3A7D5C">SW</span>SW Block
+                </button>
+                <button class="arch-pal-item" data-type="Mechanical">
+                  <span class="arch-pal-icon" style="background:#7A5C2E">ME</span>Mech Block
                 </button>
                 <button class="arch-pal-item pal-item-port" data-type="Port" title="UML port — external interface point">
                   <span class="arch-pal-icon arch-pal-icon-port">■</span>Port
