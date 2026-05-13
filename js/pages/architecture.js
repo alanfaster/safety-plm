@@ -2525,10 +2525,9 @@ async function createGroup(name, systemId) {
 }
 
 async function createAssembly() {
-  const name = prompt('Assembly name:');
-  if (!name?.trim()) return;
   captureUndo();
   const count = _s.components.filter(c=>c.comp_type==='Group').length;
+  const name = `Assembly-${String(count+1).padStart(2,'0')}`;
   const { data, error } = await sb.from('arch_components').insert({
     parent_type:_s.parentType, parent_id:_s.parentId, project_id:_s.project.id,
     name: name.trim(), comp_type:'Group',
@@ -2541,6 +2540,7 @@ async function createAssembly() {
   _s.components.push(data);
   renderGroups();
   selectComp(data.id);
+  setTimeout(() => startRename(data.id), 60);
 }
 
 // ── Properties panel ──────────────────────────────────────────────────────────
