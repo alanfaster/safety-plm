@@ -1737,8 +1737,13 @@ function wireGroup(id) {
     // System groups: geometric containment (always correct regardless of group_id state)
     // Assembly groups: group_id membership (explicit, set when components are dropped inside)
     const isAssembly = g.data?.subtype === 'assembly';
+    const collectGroupDescendants = (gid) => {
+      const direct = _s.components.filter(cc => cc.id !== id && cc.data?.group_id === gid);
+      const deeper = direct.filter(cc => cc.comp_type === 'Group').flatMap(cc => collectGroupDescendants(cc.id));
+      return [...direct, ...deeper];
+    };
     const childrenForDrag = isAssembly
-      ? _s.components.filter(cc => cc.id !== id && cc.data?.group_id === id)
+      ? [...new Map(collectGroupDescendants(id).map(c => [c.id, c])).values()]
       : _s.components.filter(cc =>
           cc.id !== id &&
           cc.x + cc.width/2  > g.x && cc.x + cc.width/2  < g.x + g.width &&
