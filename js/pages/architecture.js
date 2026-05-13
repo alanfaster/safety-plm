@@ -1941,6 +1941,23 @@ function handleDragMove(e) {
   renderConnections();
 }
 
+function resyncGroupIds(now) {
+  const ts = now || new Date().toISOString();
+  _s.components.forEach(cc => {
+    const ccx = cc.x + cc.width/2, ccy = cc.y + cc.height/2;
+    const containers = _s.components.filter(g =>
+      g.comp_type === 'Group' && g.id !== cc.id &&
+      ccx > g.x && ccx < g.x+g.width && ccy > g.y && ccy < g.y+g.height);
+    const best = containers.sort((a,b) => (a.width*a.height)-(b.width*b.height))[0] || null;
+    const newGid = best?.id || null;
+    if ((cc.data?.group_id||null) !== newGid) {
+      cc.data = { ...(cc.data||{}), group_id: newGid };
+      if (!newGid) delete cc.data.group_id;
+      sb.from('arch_components').update({ data:cc.data, updated_at:ts }).eq('id', cc.id).then();
+    }
+  });
+}
+
 function handleDragEnd() {
   const { id, isGroup, childOffsets, isConnDrag, connEndpoints } = _s.dragging;
   _s.dragging = null;
@@ -1987,20 +2004,7 @@ function handleDragEnd() {
         }
       });
     }
-    // Resync group_id for ALL components (including nested assemblies) based on geometry
-    _s.components.filter(cc => cc.id !== id).forEach(cc => {
-      const ccx = cc.x + cc.width/2, ccy = cc.y + cc.height/2;
-      const containers = _s.components.filter(g =>
-        g.comp_type === 'Group' && g.id !== cc.id &&
-        ccx > g.x && ccx < g.x+g.width && ccy > g.y && ccy < g.y+g.height);
-      const best = containers.sort((a,b) => (a.width*a.height)-(b.width*b.height))[0] || null;
-      const newGid = best?.id || null;
-      if ((cc.data?.group_id||null) !== newGid) {
-        cc.data = { ...(cc.data||{}), group_id: newGid };
-        if (!newGid) delete cc.data.group_id;
-        sb.from('arch_components').update({ data:cc.data, updated_at:now }).eq('id', cc.id).then();
-      }
-    });
+    resyncGroupIds(new Date().toISOString());
     return;
   }
 
@@ -2505,6 +2509,7 @@ async function createAssembly() {
   if (error) { toast('Error: '+error.message,'error'); return; }
   data.functions=[];
   _s.components.push(data);
+  resyncGroupIds();
   renderGroups();
   selectComp(data.id);
   setTimeout(() => startRename(data.id), 60);
