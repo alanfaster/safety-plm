@@ -1987,15 +1987,12 @@ function handleDragEnd() {
         }
       });
     }
-    // Resync group_id for ALL components based on current geometry
-    _s.components.filter(cc => cc.id !== id && cc.comp_type !== 'Group').forEach(cc => {
+    // Resync group_id for ALL components (including nested assemblies) based on geometry
+    _s.components.filter(cc => cc.id !== id).forEach(cc => {
       const ccx = cc.x + cc.width/2, ccy = cc.y + cc.height/2;
       const containers = _s.components.filter(g =>
-        g.comp_type === 'Group' && g.id !== id &&
+        g.comp_type === 'Group' && g.id !== cc.id &&
         ccx > g.x && ccx < g.x+g.width && ccy > g.y && ccy < g.y+g.height);
-      // Also check this group
-      const insideThis = ccx > c.x && ccx < c.x+c.width && ccy > c.y && ccy < c.y+c.height;
-      if (insideThis) containers.push(c);
       const best = containers.sort((a,b) => (a.width*a.height)-(b.width*b.height))[0] || null;
       const newGid = best?.id || null;
       if ((cc.data?.group_id||null) !== newGid) {
