@@ -1957,7 +1957,8 @@ function handleDragMove(e) {
 
 function resyncGroupIds(now) {
   const ts = now || new Date().toISOString();
-  _s.components.forEach(cc => {
+  // System groups (non-assembly Groups) are always top-level — never assign group_id to them
+  _s.components.filter(cc => !(cc.comp_type === 'Group' && !cc.data?.subtype)).forEach(cc => {
     const ccx = cc.x + cc.width/2, ccy = cc.y + cc.height/2;
     const containers = _s.components.filter(g =>
       g.comp_type === 'Group' && g.id !== cc.id &&
