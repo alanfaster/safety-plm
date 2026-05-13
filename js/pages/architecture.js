@@ -2788,6 +2788,87 @@ function deactivatePortPlacementMode() {
 async function deleteComp(id) {
   const c = compById(id); if (!c) return;
 
+  // ── Assembly: offer delete-frame-only vs delete-all ──────────────────────────
+  if (c.comp_type === 'Group' && c.data?.subtype === 'assembly') {
+    const children = _s.components.filter(b => b.data?.group_id === id);
+    const ports    = _s.components.filter(b => b.comp_type === 'Port' &&
+      children.some(ch => ch.id === b.data?.parent_block_id));
+
+    const deleteFrameOnly = async () => {
+      captureUndo();
+      children.forEach(b => {
+        b.data = { ...(b.data||{}) }; delete b.data.group_id;
+        sb.from('arch_components').update({ data:b.data }).eq('id', b.id).then();
+      });
+      await sb.from('arch_components').delete().eq('id', id);
+      _s.components = _s.components.filter(x => x.id !== id);
+      selectComp(null); renderGroups(); renderConnections();
+      toast(`Assembly "${c.name}" removed.`, 'success');
+    };
+
+    const deleteAll = async () => {
+      const allIds = new Set([id, ...children.map(b=>b.id), ...ports.map(p=>p.id)]);
+      const affConns = _s.connections.filter(cn => allIds.has(cn.source_id)||allIds.has(cn.target_id));
+      captureUndo();
+      if (affConns.length) await sb.from('arch_connections').delete().in('id', affConns.map(cn=>cn.id));
+      await sb.from('arch_components').delete().in('id', [...allIds]);
+      _s.components  = _s.components.filter(x => !allIds.has(x.id));
+      _s.connections = _s.connections.filter(cn => !allIds.has(cn.source_id)&&!allIds.has(cn.target_id));
+      selectComp(null); renderGroups(); renderConnections();
+      toast(`Assembly "${c.name}" and contents deleted.`, 'success');
+    };
+
+    showModal({
+      title: `Delete Assembly "${escH(c.name)}"`,
+      body: `<p>How do you want to delete this assembly?</p>
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+            <input type="radio" name="del-asm" value="frame" checked style="margin-top:3px"/>
+            <span><strong>Delete assembly frame only</strong><br>
+              <span style="font-size:12px;color:var(--color-text-muted)">Components inside remain untouched, just lose their grouping.</span></span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+            <input type="radio" name="del-asm" value="all" style="margin-top:3px"/>
+            <span><strong>Delete assembly and all contents</strong><br>
+              <span style="font-size:12px;color:var(--color-text-muted)">${children.length} component(s), ${ports.length} port(s) and their connections will be removed.</span></span>
+          </label>
+        </div>`,
+      footer: `
+        <button class="btn btn-secondary" id="da-cancel">Cancel</button>
+        <button class="btn btn-danger"    id="da-confirm">Delete</button>`,
+    });
+    document.getElementById('da-cancel').onclick = () => hideModal();
+    document.getElementById('da-confirm').onclick = async () => {
+      const choice = document.querySelector('input[name="del-asm"]:checked')?.value;
+      if (choice === 'all') {
+        // Show summary before final confirm
+        const children2 = _s.components.filter(b => b.data?.group_id === id);
+        const ports2 = _s.components.filter(b => b.comp_type==='Port' &&
+          children2.some(ch => ch.id === b.data?.parent_block_id));
+        const allIds2 = new Set([id, ...children2.map(b=>b.id), ...ports2.map(p=>p.id)]);
+        const affConns2 = _s.connections.filter(cn => allIds2.has(cn.source_id)||allIds2.has(cn.target_id));
+        hideModal();
+        showModal({
+          title: '⚠ Confirm delete all contents',
+          body: `<p>The following will be <strong>permanently deleted</strong>:</p>
+            <ul style="margin-top:8px;font-size:13px;line-height:1.8">
+              ${children2.map(b=>`<li>Block: <strong>${escH(b.name)}</strong></li>`).join('')}
+              ${ports2.map(p=>`<li>Port: <strong>${escH(p.name)}</strong></li>`).join('')}
+              ${affConns2.map(cn=>{const s=compById(cn.source_id),t=compById(cn.target_id);return`<li>Connection: ${escH(s?.name||'?')} ↔ ${escH(t?.name||'?')}</li>`;}).join('')}
+            </ul>`,
+          footer: `
+            <button class="btn btn-secondary" id="da2-cancel">Cancel</button>
+            <button class="btn btn-danger"    id="da2-confirm">Yes, delete everything</button>`,
+        });
+        document.getElementById('da2-cancel').onclick  = () => hideModal();
+        document.getElementById('da2-confirm').onclick = () => { hideModal(); deleteAll(); };
+      } else {
+        hideModal(); deleteFrameOnly();
+      }
+    };
+    return;
+  }
+
   // Collect all component IDs affected (self + group children + attached ports)
   const affectedIds = new Set([id]);
   if (c.comp_type === 'Group') {
