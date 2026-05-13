@@ -742,7 +742,7 @@ function blockHTML(c) {
          id="comp-${c.id}" data-id="${c.id}" data-type="${c.comp_type}"
          style="left:${c.x}px;top:${c.y}px;width:${c.width}px;height:${c.height}px;
                 border-color:${safe ? '#C5221F' : st.border}">
-      <div class="arch-block-hdr" data-drag-id="${c.id}" style="border-top:3px solid ${safe ? '#C5221F' : st.border}">
+      <div class="arch-block-hdr" data-drag-id="${c.id}">
         <span class="arch-block-stereo" style="color:${safe ? '#C5221F' : st.border}">«${st.stereotype}»</span>
         <span class="arch-block-name" id="cname-${c.id}">${escH(c.name)}</span>
         ${safe ? '<span class="arch-block-safe-ico">⚠</span>' : ''}
