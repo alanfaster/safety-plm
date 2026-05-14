@@ -2425,6 +2425,12 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
     sidebarNeedsRefresh = true;
   }
 
+  // Collect system IDs involved in the connection
+  const resolveBlock = c => (c?.comp_type === 'Port' && c.data?.parent_block_id) ? compById(c.data.parent_block_id) : c;
+  const srcSys = parentSystem(resolveBlock(finalSrc));
+  const tgtSys = parentSystem(resolveBlock(finalTgt));
+  const sysIds = [...new Set([srcSys?.id, tgtSys?.id].filter(Boolean))];
+
   const { data: newReq, error: reqErr } = await sb.from('requirements').insert({
     req_code: reqCode,
     parent_type: _s.parentType,
@@ -2435,6 +2441,7 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
     type: reqType,
     status: 'draft',
     priority: 'medium',
+    custom_fields: sysIds.length ? { system_components: sysIds } : {},
   }).select().single();
 
   if (reqErr) {
@@ -3402,6 +3409,12 @@ function refreshArchTree() {
 
 function compById(id) { return _s.components.find(c=>c.id===id); }
 function escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function parentSystem(comp) {
+  if (!comp) return null;
+  if (comp.comp_type === 'Group' && !comp.data?.subtype) return comp;
+  if (comp.group_id) return parentSystem(compById(comp.group_id));
+  return null;
+}
 
 // Returns tooltip data for an arch_function record (looks up Feature/UC/Description from _idef)
 function funTooltipAttrs(f) {
