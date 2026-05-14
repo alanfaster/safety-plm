@@ -368,7 +368,7 @@ function buildShell(container, title) {
           <div class="arch-sep"></div>
         </div>
       </div>
-      <!-- Toolbar: add blocks + zoom controls -->
+      <!-- Toolbar: add blocks + zoom controls + legend -->
       <div class="arch-toolbar">
         <button class="arch-tb-item pal-item-group"    data-type="Group"      title="Add System"><span class="arch-pal-icon arch-pal-icon-group">⬜</span>System</button>
         <button class="arch-tb-item pal-item-assembly" data-type="Assembly"   title="Add Assembly"><span class="arch-pal-icon arch-pal-icon-assembly">▭</span>Assembly</button>
@@ -381,6 +381,16 @@ function buildShell(container, title) {
         <button class="arch-tb-zoom" id="btn-zoom-out" title="Zoom out">－</button>
         <button class="arch-tb-zoom" id="btn-zoom-fit" title="Fit all">⊡</button>
         <span class="arch-tb-zoom-lbl" id="arch-zoom-lbl">100%</span>
+        <div class="arch-tb-legend-wrap" id="arch-tb-legend-wrap">
+          <button class="arch-tb-zoom" id="arch-legend-btn" title="Connection legend">?</button>
+          <div class="arch-tb-legend-drop" id="arch-legend-drop" style="display:none">
+            <div class="arch-tb-legend-hdr">
+              <span>Legend</span>
+              <button class="btn-icon" id="arch-legend-close">✕</button>
+            </div>
+            <div class="arch-tb-legend-body">${ifaceLegendRows}</div>
+          </div>
+        </div>
       </div>
       <div class="arch-workspace">
         <!-- Left component tree — spec-nav pattern -->
@@ -415,14 +425,6 @@ function buildShell(container, title) {
             <div class="arch-comp-layer" id="arch-comp-layer"></div>
           </div>
 
-          <!-- Floating legend widget -->
-          <div class="arch-iface-widget" id="arch-iface-widget">
-            <div class="arch-iface-widget-hdr" id="arch-iface-drag-hdr" style="cursor:move">
-              <button class="arch-iface-widget-toggle" id="arch-iface-toggle" title="Toggle legend">?</button>
-              <span class="arch-iface-widget-title">Legend</span>
-            </div>
-            <div class="arch-iface-widget-body" id="arch-iface-body">${ifaceLegendRows}</div>
-          </div>
         </div>
 
         <!-- Right properties panel -->
@@ -1588,39 +1590,22 @@ function wireCanvas() {
     btn.addEventListener('click', () => addComp(btn.dataset.type));
   });
 
-  // Floating legend toggle
-  document.getElementById('arch-iface-toggle')?.addEventListener('click', () => {
-    const body = document.getElementById('arch-iface-body');
-    const widget = document.getElementById('arch-iface-widget');
-    if (!body) return;
-    const open = body.style.display !== 'none';
-    body.style.display = open ? 'none' : '';
-    widget?.classList.toggle('arch-iface-widget--collapsed', open);
+  // Toolbar legend dropdown
+  const legendDrop = document.getElementById('arch-legend-drop');
+  document.getElementById('arch-legend-btn')?.addEventListener('click', e => {
+    e.stopPropagation();
+    if (legendDrop) legendDrop.style.display = legendDrop.style.display === 'none' ? '' : 'none';
   });
-
-  // Legend widget drag
-  const legendWidget = document.getElementById('arch-iface-widget');
-  const legendHdr    = document.getElementById('arch-iface-drag-hdr');
-  if (legendWidget && legendHdr) {
-    let ldrag = null;
-    legendHdr.addEventListener('pointerdown', e => {
-      if (e.target.id === 'arch-iface-toggle') return;
-      e.preventDefault(); e.stopPropagation();
-      const r = legendWidget.getBoundingClientRect();
-      const outerR = document.getElementById('arch-outer').getBoundingClientRect();
-      ldrag = { startX: e.clientX, startY: e.clientY,
-                origLeft: r.left - outerR.left, origTop: r.top - outerR.top };
-      legendHdr.setPointerCapture(e.pointerId);
-    });
-    legendHdr.addEventListener('pointermove', e => {
-      if (!ldrag) return;
-      const dx = e.clientX - ldrag.startX, dy = e.clientY - ldrag.startY;
-      legendWidget.style.left   = Math.max(4, ldrag.origLeft + dx) + 'px';
-      legendWidget.style.top    = Math.max(4, ldrag.origTop  + dy) + 'px';
-      legendWidget.style.bottom = 'auto';
-    });
-    legendHdr.addEventListener('pointerup', () => { ldrag = null; });
-  }
+  document.getElementById('arch-legend-close')?.addEventListener('click', () => {
+    if (legendDrop) legendDrop.style.display = 'none';
+  });
+  document.addEventListener('click', e => {
+    if (legendDrop && legendDrop.style.display !== 'none') {
+      if (!document.getElementById('arch-tb-legend-wrap')?.contains(e.target)) {
+        legendDrop.style.display = 'none';
+      }
+    }
+  });
 }
 
 function updateTempPath(e) {
