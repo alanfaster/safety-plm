@@ -2679,18 +2679,43 @@ function showBulkStatusPicker() {
 
 async function bulkDelete() {
   const n = _selection.size;
-  if (!confirm(`Delete ${n} requirement${n > 1 ? 's' : ''}? This cannot be undone.`)) return;
-  const ids = [..._selection];
-  await Promise.all(ids.map(id => sb.from('requirements').delete().eq('id', id)));
-  ids.forEach(id => {
-    const idx = _data.findIndex(r => r.id === id);
-    if (idx !== -1) _data.splice(idx, 1);
-    document.querySelector(`tr[data-rid="${id}"]`)?.remove();
+  const reqs = [..._selection].map(id => _data.find(r => r.id === id)).filter(Boolean);
+
+  showModal({
+    title: 'Delete Requirements',
+    body: `<p>Delete <strong>${n}</strong> requirement${n > 1 ? 's' : ''}?</p>
+      <div class="modal-warn-box" style="margin-top:10px">⚠ Associated connections and ports will also be deleted. This cannot be undone.</div>`,
+    footer: `
+      <button class="btn btn-secondary" id="bulk-del-cancel">Cancel</button>
+      <button class="btn btn-danger" id="bulk-del-confirm">Delete</button>`,
   });
-  _selection.clear();
-  syncBulkBar();
-  buildReqNavTree();
-  toast(`${n} requirement${n > 1 ? 's' : ''} deleted.`, 'success');
+  document.getElementById('bulk-del-cancel').onclick = () => hideModal();
+  document.getElementById('bulk-del-confirm').onclick = async () => {
+    hideModal();
+    const ids = reqs.map(r => r.id);
+    // For each req, also delete linked connection + ports
+    for (const req of reqs) {
+      if (req.req_code) {
+        const { data: conn } = await sb.from('arch_connections')
+          .select('id,source_id,target_id').eq('requirement', req.req_code).maybeSingle();
+        if (conn) {
+          await sb.from('arch_connections').delete().eq('id', conn.id);
+          const portIds = [conn.source_id, conn.target_id].filter(Boolean);
+          if (portIds.length) await sb.from('arch_components').delete().in('id', portIds);
+        }
+      }
+    }
+    await Promise.all(ids.map(id => sb.from('requirements').delete().eq('id', id)));
+    ids.forEach(id => {
+      const idx = _data.findIndex(r => r.id === id);
+      if (idx !== -1) _data.splice(idx, 1);
+      document.querySelector(`tr[data-rid="${id}"]`)?.remove();
+    });
+    _selection.clear();
+    syncBulkBar();
+    buildReqNavTree();
+    toast(`${n} requirement${n > 1 ? 's' : ''} deleted.`, 'success');
+  };
 }
 
 function esc(str) {
