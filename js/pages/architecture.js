@@ -366,17 +366,19 @@ function buildShell(container, title) {
         <span class="arch-topbar-title">◈ ${escH(title)} — Architecture</span>
         <div class="arch-topbar-right">
           <div class="arch-sep"></div>
-          <button class="arch-tb-btn" id="btn-arch-tree" title="Toggle component tree">🌳 Tree</button>
         </div>
       </div>
       <div class="arch-workspace">
-        <!-- Left component tree -->
-        <div class="arch-tree-panel" id="arch-tree-panel">
-          <div class="arch-tree-hdr">
-            <span class="arch-tree-title">Components</span>
-            <button class="arch-tb-btn arch-tree-close-btn" id="arch-tree-close" title="Close tree">✕</button>
+        <!-- Left component tree with vertical tab -->
+        <div class="arch-tree-wrap" id="arch-tree-wrap">
+          <div class="arch-tree-tab" id="arch-tree-tab" title="Toggle component tree">Tree</div>
+          <div class="arch-tree-panel" id="arch-tree-panel">
+            <div class="arch-tree-hdr">
+              <span class="arch-tree-title">Components</span>
+              <button class="arch-tb-btn arch-tree-close-btn" id="arch-tree-close" title="Close tree">✕</button>
+            </div>
+            <div class="arch-tree-body" id="arch-tree-body"></div>
           </div>
-          <div class="arch-tree-body" id="arch-tree-body"></div>
         </div>
 
         <div class="arch-canvas-outer" id="arch-outer">
@@ -1447,19 +1449,12 @@ function wireCanvas() {
   document.getElementById('btn-zoom-in').onclick  = () => { _s.zoom=Math.min(2.5,_s.zoom*1.2); applyViewport(); };
   document.getElementById('btn-zoom-out').onclick = () => { _s.zoom=Math.max(0.2,_s.zoom*0.8); applyViewport(); };
   document.getElementById('btn-zoom-fit').onclick = fitView;
-  // Component tree toggle
-  document.getElementById('btn-arch-tree')?.addEventListener('click', () => {
-    const panel = document.getElementById('arch-tree-panel');
-    if (!panel) return;
-    const open = panel.classList.contains('arch-tree-open');
-    panel.classList.toggle('arch-tree-open', !open);
-    document.getElementById('btn-arch-tree')?.classList.toggle('arch-tb-active', !open);
-    if (!open) renderArchTree();
-  });
-  document.getElementById('arch-tree-close')?.addEventListener('click', () => {
-    document.getElementById('arch-tree-panel')?.classList.remove('arch-tree-open');
-    document.getElementById('btn-arch-tree')?.classList.remove('arch-tb-active');
-  });
+  // Component tree toggle via side tab
+  const openTree  = () => { document.getElementById('arch-tree-wrap')?.classList.add('arch-tree-open'); renderArchTree(); };
+  const closeTree = () => document.getElementById('arch-tree-wrap')?.classList.remove('arch-tree-open');
+  document.getElementById('arch-tree-tab')?.addEventListener('click', () =>
+    document.getElementById('arch-tree-wrap')?.classList.contains('arch-tree-open') ? closeTree() : openTree());
+  document.getElementById('arch-tree-close')?.addEventListener('click', closeTree);
 
 
   // Interface Requirements panel — bp-bar (lazy load on first expand)
@@ -3320,8 +3315,7 @@ function focusComp(cid) {
 
 /** Refresh tree if it is open (call after any structural change). */
 function refreshArchTree() {
-  const panel = document.getElementById('arch-tree-panel');
-  if (panel?.classList.contains('arch-tree-open')) renderArchTree();
+  if (document.getElementById('arch-tree-wrap')?.classList.contains('arch-tree-open')) renderArchTree();
 }
 
 
