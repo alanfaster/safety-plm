@@ -109,7 +109,7 @@ async function undoLast() {
 // ── Item Definition panel state ───────────────────────────────────────────────
 let _idef = { loaded: false, parentType: 'item', parentId: null,
               features: [], useCases: [], functions: [],
-              selFeatId: null, selUCId: null };
+              selFeatId: null, selUCId: null, selFunId: null };
 
 // ── Architecture Landing ──────────────────────────────────────────────────────
 
@@ -3416,6 +3416,19 @@ function parentSystem(comp) {
   return null;
 }
 
+function highlightFunctionComponents(fnRefId) {
+  document.querySelectorAll('.arch-comp--fn-hl, .arch-group--fn-hl').forEach(el => {
+    el.classList.remove('arch-comp--fn-hl', 'arch-group--fn-hl');
+  });
+  if (!fnRefId || !_s) return;
+  _s.components.forEach(c => {
+    const has = (c.functions || []).some(af => af.function_ref_id === fnRefId);
+    if (!has) return;
+    const el = document.getElementById(`comp-${c.id}`);
+    if (el) el.classList.add(c.comp_type === 'Group' ? 'arch-group--fn-hl' : 'arch-comp--fn-hl');
+  });
+}
+
 async function backfillReqSystemComponents() {
   const connsWithReqs = (_s?.connections || []).filter(cn => cn.requirement);
   if (!connsWithReqs.length) return;
@@ -3558,10 +3571,11 @@ function idefRow(type, item, idx, total) {
 
 function idefFunRow(fn, idx, total) {
   const assigned = _s?.components.some(c => (c.functions||[]).some(af => af.function_ref_id === fn.id));
-  return `<div class="fuf-row idef-fn-row ${assigned?'idef-fn--assigned':''}"
+  const sel = _idef.selFunId === fn.id;
+  return `<div class="fuf-row idef-fn-row ${assigned?'idef-fn--assigned':''} ${sel?'selected':''}"
       draggable="true" data-id="${fn.id}" data-idef-type="fun"
       data-fn-name="${escH(fn.name)}" data-uc-id="${fn.use_case_id}"
-      title="Drag onto a component to assign">
+      title="${sel ? 'Click to deselect' : 'Click to highlight on canvas · Drag to assign'}">
     <div class="fuf-row-main">
       <span class="fuf-icon fun-icon">${IDEF_ICONS.fun}</span>
       <div class="fuf-row-text">
@@ -3601,6 +3615,7 @@ function wireIdefCols() {
       if (_idef.selFeatId === id) return;
       _idef.selFeatId = id; _idef.selUCId = null;
       _idef.useCases = []; _idef.functions = [];
+      _idef.selFunId = null; highlightFunctionComponents(null);
       document.getElementById('idef-col-feat').outerHTML = idefFeatColHTML();
       document.getElementById('idef-col-uc').outerHTML   = idefUCColHTML();
       document.getElementById('idef-col-fun').outerHTML  = idefFunColHTML();
@@ -3608,9 +3623,17 @@ function wireIdefCols() {
         .eq('feature_id', id).order('sort_order').order('created_at');
       _idef.useCases = data || [];
       document.getElementById('idef-col-uc').outerHTML = idefUCColHTML();
+    } else if (idefType === 'fun') {
+      const toggling = _idef.selFunId === id;
+      _idef.selFunId = toggling ? null : id;
+      highlightFunctionComponents(_idef.selFunId);
+      document.getElementById('idef-col-fun').outerHTML = idefFunColHTML();
+      wireIdefDrag();
+      return;
     } else if (idefType === 'uc') {
       if (_idef.selUCId === id) return;
       _idef.selUCId = id; _idef.functions = [];
+      _idef.selFunId = null; highlightFunctionComponents(null);
       document.getElementById('idef-col-uc').outerHTML  = idefUCColHTML();
       document.getElementById('idef-col-fun').outerHTML = idefFunColHTML();
       const { data } = await sb.from('functions').select('*')

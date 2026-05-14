@@ -2635,6 +2635,8 @@ tr.req-title-row td { cursor: default; }
 .arch-group--assembly .arch-group-stereo{color:#6B7280}
 .arch-group--assembly .arch-group-name{font-weight:600;color:#4B5563}
 .arch-group--sel{border-color:var(--color-primary);box-shadow:0 0 0 3px rgba(26,115,232,0.35)}
+.arch-group--fn-hl{outline:2px solid #F59E0B;outline-offset:2px;box-shadow:0 0 0 4px rgba(245,158,11,0.25)}
+.arch-comp--fn-hl{outline:2px solid #F59E0B;outline-offset:2px;box-shadow:0 0 0 4px rgba(245,158,11,0.25)}
 .arch-group--conn-target{border-color:var(--color-primary)!important;border-style:solid!important;box-shadow:0 0 0 4px rgba(26,115,232,0.35),inset 0 0 20px rgba(26,115,232,0.10)!important;background:rgba(232,240,254,0.7)!important}
 .arch-group-hdr{display:flex;align-items:center;gap:6px;padding:6px 10px;cursor:move;border-radius:8px 8px 0 0}
 .arch-group-stereo{font-size:10px;font-style:italic;color:#9AA0A6;letter-spacing:0.02em}
