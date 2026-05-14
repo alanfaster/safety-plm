@@ -371,7 +371,7 @@ function buildShell(container, title) {
       <div class="arch-workspace">
         <!-- Left component tree with vertical tab -->
         <div class="arch-tree-wrap" id="arch-tree-wrap">
-          <div class="arch-tree-tab" id="arch-tree-tab" title="Toggle component tree">Tree</div>
+          <div class="arch-side-tab arch-tree-tab" id="arch-tree-tab" title="Toggle component tree">Tree</div>
           <div class="arch-tree-panel" id="arch-tree-panel">
             <div class="arch-tree-hdr">
               <span class="arch-tree-title">Components</span>
@@ -417,7 +417,7 @@ function buildShell(container, title) {
 
         <!-- Right palette with vertical tab -->
         <div class="arch-pal-wrap" id="arch-pal-wrap">
-          <div class="arch-pal-tab" id="arch-pal-tab" title="Toggle panel">Properties</div>
+          <div class="arch-side-tab arch-pal-tab" id="arch-pal-tab" title="Toggle panel">Properties</div>
           <div class="arch-palette" id="arch-palette">
           <div class="arch-palette-resize-handle" id="arch-pal-resize"></div>
 
@@ -428,7 +428,7 @@ function buildShell(container, title) {
               <span class="arch-pal-arrow" id="pal-arrow-add">▾</span>
             </button>
             <div class="arch-pal-sec-body" id="pal-body-add">
-              <div class="arch-palette-items" style="padding:8px">
+              <div class="arch-palette-items" style="padding:5px">
                 <button class="arch-pal-item pal-item-group" data-type="Group">
                   <span class="arch-pal-icon arch-pal-icon-group">⬜</span>System
                 </button>

@@ -2483,19 +2483,11 @@ tr.req-title-row td { cursor: default; }
 .arch-workspace{display:flex;flex:1;overflow:hidden}
 
 /* ── Component tree sidebar ── */
-/* Tree wrap: tab + panel side by side */
-.arch-tree-wrap {
-  display: flex;
-  flex-direction: row;
-  flex-shrink: 0;
-  position: relative;
-}
-.arch-tree-tab {
+/* Shared vertical side tab style */
+.arch-side-tab {
   writing-mode: vertical-rl;
   text-orientation: mixed;
-  transform: rotate(180deg);
   background: #F3F4F6;
-  border-right: 1px solid var(--color-border);
   color: #4B5563;
   font-size: 11px;
   font-weight: 600;
@@ -2506,8 +2498,21 @@ tr.req-title-row td { cursor: default; }
   user-select: none;
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
+  border: none;
 }
-.arch-tree-tab:hover { background: #E5E7EB; color: var(--color-primary); }
+.arch-side-tab:hover { background: #E5E7EB; color: var(--color-primary); }
+
+/* Tree wrap: tab + panel side by side */
+.arch-tree-wrap {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  position: relative;
+}
+.arch-tree-tab {
+  transform: rotate(180deg);
+  border-right: 1px solid var(--color-border);
+}
 .arch-tree-wrap.arch-tree-open .arch-tree-tab { background: #E5E7EB; color: var(--color-primary); }
 .arch-tree-panel {
   width: 0;
@@ -2774,8 +2779,7 @@ tr.req-title-row td { cursor: default; }
 /* ── Right palette ── */
 /* ── Palette shell ── */
 .arch-pal-wrap{display:flex;flex-direction:row-reverse;flex-shrink:0}
-.arch-pal-tab{writing-mode:vertical-rl;text-orientation:mixed;background:#F3F4F6;border-left:1px solid var(--color-border);color:#4B5563;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;padding:14px 6px;cursor:pointer;user-select:none;flex-shrink:0;transition:background 0.15s,color 0.15s}
-.arch-pal-tab:hover{background:#E5E7EB;color:var(--color-primary)}
+.arch-pal-tab{border-left:1px solid var(--color-border)}
 .arch-pal-wrap.arch-pal-open .arch-pal-tab{background:#E5E7EB;color:var(--color-primary)}
 .arch-palette{width:0;flex-shrink:0;border-left:1px solid var(--color-border);background:var(--color-surface);display:flex;flex-direction:column;overflow:hidden;gap:0;transition:width .2s ease}
 .arch-pal-wrap.arch-pal-open .arch-palette{width:240px;overflow:visible}
@@ -2808,11 +2812,11 @@ tr.req-title-row td { cursor: default; }
 /* legacy palette kept for item buttons */
 .arch-palette-section{padding:12px;border-bottom:1px solid var(--color-border)}
 .arch-palette-hdr{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--color-text-muted);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
-.arch-palette-items{display:flex;flex-direction:column;gap:5px}
-.arch-pal-item{display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-bg);cursor:pointer;font-size:var(--text-sm);font-weight:500;transition:all 0.12s;text-align:left;width:100%}
+.arch-palette-items{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+.arch-pal-item{display:flex;align-items:center;gap:4px;padding:3px 5px;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg);cursor:pointer;font-size:10px;font-weight:500;transition:all 0.12s;text-align:left;width:100%;white-space:nowrap;overflow:hidden}
 .arch-pal-item:hover{background:var(--color-primary);color:#fff;border-color:var(--color-primary)}
 .arch-pal-item:hover .arch-pal-icon{filter:brightness(2)}
-.arch-pal-icon{width:26px;height:26px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;flex-shrink:0;letter-spacing:0.04em}
+.arch-pal-icon{width:18px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:#fff;flex-shrink:0;letter-spacing:0.04em}
 .arch-pal-icon-group{background:transparent!important;border:2px dashed #9AA0A6;color:#9AA0A6!important;font-size:14px}
 .pal-item-group:hover .arch-pal-icon-group{border-color:#fff;color:#fff!important}
 .arch-pal-icon-assembly{background:transparent!important;border:2px dashed #6B7280;color:#6B7280!important;font-size:10px;letter-spacing:0.05em}
