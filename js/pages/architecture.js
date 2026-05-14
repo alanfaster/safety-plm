@@ -2428,12 +2428,9 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
 
   // Collect system IDs involved in the connection
   const resolveBlock = c => (c?.comp_type === 'Port' && c.data?.parent_block_id) ? compById(c.data.parent_block_id) : c;
-  const srcBlock = resolveBlock(finalSrc);
-  const tgtBlock = resolveBlock(finalTgt);
-  const srcSys = parentSystem(srcBlock);
-  const tgtSys = parentSystem(tgtBlock);
+  const srcSys = parentSystem(resolveBlock(finalSrc));
+  const tgtSys = parentSystem(resolveBlock(finalTgt));
   const sysIds = [...new Set([srcSys?.id, tgtSys?.id].filter(Boolean))];
-  console.log('[arch] system_components debug:', { finalSrc: finalSrc?.name, finalTgt: finalTgt?.name, srcBlock: srcBlock?.name, tgtBlock: tgtBlock?.name, srcSys: srcSys?.name, tgtSys: tgtSys?.name, sysIds });
 
   const { data: newReq, error: reqErr } = await sb.from('requirements').insert({
     req_code: reqCode,
