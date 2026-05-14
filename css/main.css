@@ -2773,7 +2773,12 @@ tr.req-title-row td { cursor: default; }
 
 /* ── Right palette ── */
 /* ── Palette shell ── */
-.arch-palette{width:240px;flex-shrink:0;border-left:1px solid var(--color-border);background:var(--color-surface);display:flex;flex-direction:column;overflow:hidden;gap:0}
+.arch-pal-wrap{display:flex;flex-direction:row-reverse;flex-shrink:0}
+.arch-pal-tab{writing-mode:vertical-rl;text-orientation:mixed;background:#F3F4F6;border-left:1px solid var(--color-border);color:#4B5563;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;padding:14px 6px;cursor:pointer;user-select:none;flex-shrink:0;transition:background 0.15s,color 0.15s}
+.arch-pal-tab:hover{background:#E5E7EB;color:var(--color-primary)}
+.arch-pal-wrap.arch-pal-open .arch-pal-tab{background:#E5E7EB;color:var(--color-primary)}
+.arch-palette{width:0;flex-shrink:0;border-left:1px solid var(--color-border);background:var(--color-surface);display:flex;flex-direction:column;overflow:hidden;gap:0;transition:width .2s ease}
+.arch-pal-wrap.arch-pal-open .arch-palette{width:240px;overflow:visible}
 
 /* ── Collapsible palette section ── */
 .arch-pal-sec{border-bottom:1px solid var(--color-border);display:flex;flex-direction:column;min-height:0}

@@ -415,9 +415,11 @@ function buildShell(container, title) {
           </div>
         </div>
 
-        <!-- Right palette -->
-        <div class="arch-palette" id="arch-palette">
-        <div class="arch-palette-resize-handle" id="arch-pal-resize"></div>
+        <!-- Right palette with vertical tab -->
+        <div class="arch-pal-wrap" id="arch-pal-wrap">
+          <div class="arch-pal-tab" id="arch-pal-tab" title="Toggle panel">Properties</div>
+          <div class="arch-palette" id="arch-palette">
+          <div class="arch-palette-resize-handle" id="arch-pal-resize"></div>
 
           <!-- ── Add Block section ── -->
           <div class="arch-pal-sec">
@@ -462,7 +464,8 @@ function buildShell(container, title) {
             </div>
           </div>
 
-        </div>
+          </div><!-- end arch-palette -->
+        </div><!-- end arch-pal-wrap -->
       </div>
 
       <div class="arch-conn-popover" id="arch-sys-pop" style="display:none"></div>
@@ -1455,6 +1458,13 @@ function wireCanvas() {
   document.getElementById('arch-tree-tab')?.addEventListener('click', () =>
     document.getElementById('arch-tree-wrap')?.classList.contains('arch-tree-open') ? closeTree() : openTree());
   document.getElementById('arch-tree-close')?.addEventListener('click', closeTree);
+
+  // Right palette toggle via side tab (initially open)
+  document.getElementById('arch-pal-wrap')?.classList.add('arch-pal-open');
+  document.getElementById('arch-pal-tab')?.addEventListener('click', () => {
+    const wrap = document.getElementById('arch-pal-wrap');
+    wrap?.classList.toggle('arch-pal-open');
+  });
 
 
   // Interface Requirements panel — bp-bar (lazy load on first expand)
