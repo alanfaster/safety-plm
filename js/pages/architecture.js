@@ -417,8 +417,7 @@ function buildShell(container, title) {
         </div>
 
         <!-- Right palette -->
-        <aside class="req-trace-panel arch-pal-wrap" id="arch-pal-wrap" style="border-right:none;position:relative">
-          <div class="arch-pal-resize-handle" id="arch-pal-resize"></div>
+        <aside class="req-trace-panel arch-pal-wrap" id="arch-pal-wrap" style="border-right:none">
           <div class="swu-rail-tabs">
             <button class="swu-rail-btn swu-rail-btn--active" id="arch-pal-tab">Properties</button>
           </div>
@@ -1590,23 +1589,31 @@ function wireCanvas() {
     }
   }
 
-  // Palette resize handle
-  const palHandle = document.getElementById('arch-pal-resize');
-  if (palHandle) {
-    let presize = null;
-    palHandle.addEventListener('pointerdown', e => {
+  // Right palette resize — detect drag on left edge of wrap
+  if (palWrap) {
+    let palResizing = null;
+    palWrap.addEventListener('pointerdown', e => {
+      const rect = palWrap.getBoundingClientRect();
+      if (e.clientX > rect.left + 8) return; // only trigger within 8px of left edge
       e.preventDefault(); e.stopPropagation();
-      presize = { startX: e.clientX, origW: document.getElementById('arch-pal-wrap').offsetWidth };
-      palHandle.setPointerCapture(e.pointerId);
+      palResizing = { startX: e.clientX, origW: palWrap.offsetWidth };
+      palWrap.setPointerCapture(e.pointerId);
+      palWrap.style.cursor = 'col-resize';
     });
-    palHandle.addEventListener('pointermove', e => {
-      if (!presize) return;
-      const pw = document.getElementById('arch-pal-wrap');
-      const w = Math.max(180, Math.min(420, presize.origW - (e.clientX - presize.startX)));
-      pw.style.width = w + 'px';
+    palWrap.addEventListener('pointermove', e => {
+      const rect = palWrap.getBoundingClientRect();
+      if (!palResizing) {
+        palWrap.style.cursor = e.clientX <= rect.left + 8 ? 'col-resize' : '';
+        return;
+      }
+      const w = Math.max(32, palResizing.origW - (e.clientX - palResizing.startX));
+      palWrap.style.width = w + 'px';
       palSavedWidth = w + 'px';
     });
-    palHandle.addEventListener('pointerup', () => { presize = null; });
+    palWrap.addEventListener('pointerup', () => {
+      palResizing = null;
+      palWrap.style.cursor = '';
+    });
   }
 
   document.querySelectorAll('.arch-pal-item').forEach(btn => {
