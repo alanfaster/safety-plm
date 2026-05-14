@@ -2483,38 +2483,48 @@ tr.req-title-row td { cursor: default; }
 .arch-workspace{display:flex;flex:1;overflow:hidden}
 
 /* ── Component tree sidebar ── */
-/* Shared vertical side tab style */
+/* Shared vertical side tab (collapsed rail) */
 .arch-side-tab {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  background: #F3F4F6;
-  color: #4B5563;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 14px 6px;
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+  background: none;
+  border: none;
   cursor: pointer;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 10px 4px;
+  color: var(--color-text-muted);
   user-select: none;
   flex-shrink: 0;
+  white-space: nowrap;
   transition: background 0.15s, color 0.15s;
-  border: none;
 }
-.arch-side-tab:hover { background: #E5E7EB; color: var(--color-primary); }
+.arch-side-tab:hover { background: var(--color-hover); color: var(--color-primary); }
 
 /* Tree wrap */
-.arch-tree-wrap { display:flex; flex-direction:row; flex-shrink:0; }
-.arch-tree-tab  { border-right:1px solid var(--color-border); }
-
-/* Tree open: tab becomes horizontal header at top */
-.arch-tree-wrap.arch-tree-open { flex-direction:column; width:220px; }
-.arch-tree-wrap.arch-tree-open .arch-tree-tab {
-  writing-mode:horizontal-tb; padding:5px 10px;
-  border-right:none; border-bottom:1px solid var(--color-border);
-  background:#E5E7EB; color:var(--color-primary);
+.arch-tree-wrap {
+  width: 32px; min-width: 32px;
+  overflow: hidden;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: width 0.2s ease, min-width 0.2s ease;
+  flex-shrink: 0;
 }
-.arch-tree-panel { width:0; overflow:hidden; flex-shrink:0; display:flex; flex-direction:column; background:#FAFBFC; border-right:1px solid var(--color-border); transition:width .2s ease; }
-.arch-tree-wrap.arch-tree-open .arch-tree-panel { width:100%; overflow:visible; border-right:none; flex:1; min-height:0; }
+.arch-tree-wrap.arch-tree-open { width: 220px; min-width: 220px; align-items: stretch; }
+.arch-tree-wrap:not(.arch-tree-open) .arch-tree-panel { display: none; }
+.arch-tree-wrap.arch-tree-open .arch-tree-tab {
+  writing-mode: horizontal-tb; transform: none;
+  font-size: 11px; padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text); background: var(--color-surface);
+  width: 100%; box-sizing: border-box;
+}
+.arch-tree-panel { flex:1; display:flex; flex-direction:column; overflow:hidden; background:var(--color-surface); }
 .arch-tree-hdr {
   display: flex;
   align-items: center;
@@ -2765,18 +2775,25 @@ tr.req-title-row td { cursor: default; }
 
 /* ── Right palette ── */
 /* ── Palette shell ── */
-.arch-pal-wrap{display:flex;flex-direction:row-reverse;flex-shrink:0}
-.arch-pal-tab{border-left:1px solid var(--color-border)}
-
-/* Palette open: tab becomes horizontal header at top */
-.arch-pal-wrap.arch-pal-open{flex-direction:column;width:240px}
-.arch-pal-wrap.arch-pal-open .arch-pal-tab{
-  writing-mode:horizontal-tb;padding:5px 10px;
-  border-left:none;border-bottom:1px solid var(--color-border);
-  background:#E5E7EB;color:var(--color-primary);
+.arch-pal-wrap{
+  width:32px; min-width:32px;
+  overflow:hidden;
+  border-left:1px solid var(--color-border);
+  background:var(--color-surface);
+  display:flex; flex-direction:column; align-items:center;
+  transition:width 0.2s ease, min-width 0.2s ease;
+  flex-shrink:0;
 }
-.arch-palette{width:0;flex-shrink:0;border-left:1px solid var(--color-border);background:var(--color-surface);display:flex;flex-direction:column;overflow:hidden;gap:0;transition:width .2s ease}
-.arch-pal-wrap.arch-pal-open .arch-palette{width:100%;overflow:visible;border-left:none;flex:1;min-height:0}
+.arch-pal-wrap.arch-pal-open{ width:240px; min-width:240px; align-items:stretch; }
+.arch-pal-wrap:not(.arch-pal-open) .arch-palette { display:none; }
+.arch-pal-wrap.arch-pal-open .arch-pal-tab{
+  writing-mode:horizontal-tb; transform:none;
+  font-size:11px; padding:8px 12px;
+  border-bottom:1px solid var(--color-border);
+  color:var(--color-text); background:var(--color-surface);
+  width:100%; box-sizing:border-box;
+}
+.arch-palette{flex:1;flex-shrink:0;background:var(--color-surface);display:flex;flex-direction:column;overflow:hidden;gap:0}
 
 /* ── Collapsible palette section ── */
 .arch-pal-sec{border-bottom:1px solid var(--color-border);display:flex;flex-direction:column;min-height:0}
