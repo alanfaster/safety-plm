@@ -3167,8 +3167,8 @@ function renderArchTree() {
   const TYPE_ICON = { HW: '🔧', SW: '💾', Mechanical: '⚙️', Port: '■', Group: '⬜' };
   const TYPE_COLOR = { HW: '#1A73E8', SW: '#1E8E3E', Mechanical: '#E37400', Port: '#555', Group: '#777' };
 
-  const groups    = _s.components.filter(c => c.comp_type === 'Group');
-  const blocks    = _s.components.filter(c => c.comp_type !== 'Group' && c.comp_type !== 'Port');
+  const groups = _s.components.filter(c => c.comp_type === 'Group');
+  const blocks = _s.components.filter(c => c.comp_type !== 'Group' && c.comp_type !== 'Port');
   const conns     = _s.connections || [];
 
   // collapsed state persists across re-renders
@@ -3266,7 +3266,6 @@ function renderArchTree() {
   const topGroups = groups.filter(g => !g.data?.group_id);
   // Ungrouped blocks (not inside any group)
   const ungrouped = blocks.filter(c => !c.data?.group_id);
-  const ports     = _s.components.filter(c => c.comp_type === 'Port');
 
   let html = '';
 
@@ -3277,10 +3276,6 @@ function renderArchTree() {
   if (freeBlocks.length) {
     if (html) html += `<div class="arch-tree-section-sep">Ungrouped</div>`;
     html += freeBlocks.map(c => blockNode(c, 0)).join('');
-  }
-  if (ports.length) {
-    html += `<div class="arch-tree-section-sep">Ports</div>`;
-    html += ports.map(c => blockNode(c, 0)).join('');
   }
   if (!html) {
     html = `<div class="arch-tree-empty">No components yet</div>`;
