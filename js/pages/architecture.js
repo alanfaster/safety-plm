@@ -348,6 +348,7 @@ export async function renderArchitecture(container, { project, item, system, dom
   wireCanvas();
   wireGlobal();
   requestAnimationFrame(fitView);
+  backfillReqSystemComponents();
 }
 
 // ── Shell ─────────────────────────────────────────────────────────────────────
@@ -3414,6 +3415,30 @@ function parentSystem(comp) {
   if (comp.comp_type === 'Group' && !comp.data?.subtype) return comp;
   if (comp.group_id) return parentSystem(compById(comp.group_id));
   return null;
+}
+
+async function backfillReqSystemComponents() {
+  const connsWithReqs = (_s?.connections || []).filter(cn => cn.requirement);
+  if (!connsWithReqs.length) return;
+  const reqCodes = connsWithReqs.map(cn => cn.requirement);
+  const { data: reqs } = await sb.from('requirements').select('id,req_code,custom_fields').in('req_code', reqCodes);
+  if (!reqs?.length) return;
+  const reqMap = Object.fromEntries(reqs.map(r => [r.req_code, r]));
+  const resolveBlock = c => (c?.comp_type === 'Port' && c.data?.parent_block_id) ? compById(c.data.parent_block_id) : c;
+  const updates = [];
+  for (const cn of connsWithReqs) {
+    const req = reqMap[cn.requirement]; if (!req) continue;
+    const existing = req.custom_fields?.system_components || [];
+    const srcSys = parentSystem(resolveBlock(compById(cn.source_id)));
+    const tgtSys = parentSystem(resolveBlock(compById(cn.target_id)));
+    const sysIds = [...new Set([srcSys?.id, tgtSys?.id].filter(Boolean))];
+    if (!sysIds.length) continue;
+    if (sysIds.length === existing.length && sysIds.every(id => existing.includes(id))) continue;
+    updates.push({ id: req.id, custom_fields: { ...(req.custom_fields || {}), system_components: sysIds } });
+  }
+  if (!updates.length) return;
+  await Promise.all(updates.map(u => sb.from('requirements').update({ custom_fields: u.custom_fields }).eq('id', u.id).then()));
+  toast(`Updated system components on ${updates.length} interface requirement(s).`, 'success');
 }
 
 // Returns tooltip data for an arch_function record (looks up Feature/UC/Description from _idef)
