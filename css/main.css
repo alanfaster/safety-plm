@@ -2473,6 +2473,17 @@ tr.req-title-row td { cursor: default; }
 .arch-topbar{display:flex;align-items:center;padding:6px 14px;background:var(--color-surface);border-bottom:1px solid var(--color-border);flex-shrink:0;gap:8px}
 .arch-topbar-title{font-weight:700;font-size:var(--text-sm);color:var(--color-text);flex:1}
 .arch-topbar-right{display:flex;align-items:center;gap:6px}
+.arch-toolbar{display:flex;align-items:center;gap:3px;padding:4px 10px;background:var(--color-surface);border-bottom:1px solid var(--color-border);flex-shrink:0}
+.arch-tb-item{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg);cursor:pointer;font-size:11px;font-weight:500;color:var(--color-text);transition:all 0.12s;white-space:nowrap}
+.arch-tb-item:hover{background:var(--color-primary);color:#fff;border-color:var(--color-primary)}
+.arch-tb-item:hover .arch-pal-icon{filter:brightness(2)}
+.arch-tb-item:hover .arch-pal-icon-group{border-color:#fff;color:#fff!important}
+.arch-tb-item:hover .arch-pal-icon-assembly{border-color:#fff;color:#fff!important}
+.arch-tb-sep{width:1px;height:20px;background:var(--color-border);margin:0 4px;flex-shrink:0}
+.arch-tb-zoom{width:26px;height:26px;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg);cursor:pointer;font-size:14px;font-weight:700;color:var(--color-text);display:flex;align-items:center;justify-content:center;transition:background 0.12s;padding:0}
+.arch-tb-zoom:hover{background:var(--color-primary);color:#fff;border-color:var(--color-primary)}
+.arch-tb-zoom-lbl{font-size:11px;color:var(--color-text-muted);min-width:38px;text-align:center}
+.arch-props-scroll{flex:1;overflow-y:auto;min-height:0}
 .arch-sep{width:1px;height:22px;background:var(--color-border);margin:0 2px}
 .arch-tb-btn{background:var(--color-bg);border:1px solid var(--color-border);border-radius:var(--radius-sm);padding:3px 9px;font-size:var(--text-xs);font-weight:600;cursor:pointer;color:var(--color-text);transition:background 0.15s;white-space:nowrap}
 .arch-tb-btn:hover:not(:disabled){background:var(--color-border)}
@@ -2740,7 +2751,7 @@ tr.req-title-row td { cursor: default; }
 /* ── Palette shell ── */
 /* Architecture right panel — req-trace-panel, no right border */
 #arch-pal-wrap { border-right: none; overflow: visible; }
-#arch-pal-wrap:not(.open) .arch-palette { display: none; }
+#arch-pal-wrap:not(.open) .arch-props-scroll { display: none; }
 .arch-palette{flex:1;background:var(--color-surface);display:flex;flex-direction:column;overflow:hidden;gap:0}
 .arch-pal-resize-handle{position:absolute;left:0;top:0;bottom:0;width:5px;cursor:col-resize;z-index:10;}
 .arch-pal-resize-handle:hover{background:rgba(26,115,232,0.2)}

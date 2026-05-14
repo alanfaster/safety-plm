@@ -368,6 +368,20 @@ function buildShell(container, title) {
           <div class="arch-sep"></div>
         </div>
       </div>
+      <!-- Toolbar: add blocks + zoom controls -->
+      <div class="arch-toolbar">
+        <button class="arch-tb-item pal-item-group"    data-type="Group"      title="Add System"><span class="arch-pal-icon arch-pal-icon-group">⬜</span>System</button>
+        <button class="arch-tb-item pal-item-assembly" data-type="Assembly"   title="Add Assembly"><span class="arch-pal-icon arch-pal-icon-assembly">▭</span>Assembly</button>
+        <button class="arch-tb-item" data-type="HW"        title="Add HW Block"><span class="arch-pal-icon" style="background:#4A6FA5">HW</span>HW</button>
+        <button class="arch-tb-item" data-type="SW"        title="Add SW Block"><span class="arch-pal-icon" style="background:#3A7D5C">SW</span>SW</button>
+        <button class="arch-tb-item" data-type="Mechanical" title="Add Mech Block"><span class="arch-pal-icon" style="background:#7A5C2E">ME</span>Mech</button>
+        <button class="arch-tb-item pal-item-port"     data-type="Port"       title="Add Port"><span class="arch-pal-icon arch-pal-icon-port">■</span>Port</button>
+        <div class="arch-tb-sep"></div>
+        <button class="arch-tb-zoom" id="btn-zoom-in"  title="Zoom in">＋</button>
+        <button class="arch-tb-zoom" id="btn-zoom-out" title="Zoom out">－</button>
+        <button class="arch-tb-zoom" id="btn-zoom-fit" title="Fit all">⊡</button>
+        <span class="arch-tb-zoom-lbl" id="arch-zoom-lbl">100%</span>
+      </div>
       <div class="arch-workspace">
         <!-- Left component tree — spec-nav pattern -->
         <nav class="spec-nav spec-nav--hidden" id="arch-tree-wrap">
@@ -383,11 +397,6 @@ function buildShell(container, title) {
         </nav>
 
         <div class="arch-canvas-outer" id="arch-outer">
-          <div class="canvas-zoom-fab" id="arch-zoom-fab">
-            <button class="czf-btn" id="btn-zoom-in"  title="Zoom in">＋</button>
-            <button class="czf-btn" id="btn-zoom-out" title="Zoom out">－</button>
-            <button class="czf-btn" id="btn-zoom-fit" title="Fit all">⊡</button>
-          </div>
           <div class="arch-viewport" id="arch-vp">
             <div class="arch-group-layer" id="arch-group-layer"></div>
             <svg class="arch-svg" id="arch-svg" xmlns="http://www.w3.org/2000/svg">
@@ -416,7 +425,7 @@ function buildShell(container, title) {
           </div>
         </div>
 
-        <!-- Right palette -->
+        <!-- Right properties panel -->
         <aside class="req-trace-panel arch-pal-wrap" id="arch-pal-wrap" style="border-right:none">
           <div class="swu-rail-tabs">
             <button class="swu-rail-btn swu-rail-btn--active" id="arch-pal-tab">Properties</button>
@@ -425,52 +434,11 @@ function buildShell(container, title) {
             <span class="req-trace-panel-title">Properties</span>
             <button class="btn-icon" id="arch-pal-close" title="Collapse">✕</button>
           </div>
-          <div class="arch-palette" id="arch-palette">
-
-          <!-- ── Add Block section ── -->
-          <div class="arch-pal-sec">
-            <button class="arch-pal-sec-hdr" data-target="pal-body-add" data-arrow="pal-arrow-add">
-              <span>Add Block</span>
-              <span class="arch-pal-arrow" id="pal-arrow-add">▾</span>
-            </button>
-            <div class="arch-pal-sec-body" id="pal-body-add">
-              <div class="arch-palette-items" style="padding:5px">
-                <button class="arch-pal-item pal-item-group" data-type="Group">
-                  <span class="arch-pal-icon arch-pal-icon-group">⬜</span>System
-                </button>
-                <button class="arch-pal-item pal-item-assembly" data-type="Assembly">
-                  <span class="arch-pal-icon arch-pal-icon-assembly">▭</span>Assembly
-                </button>
-                <button class="arch-pal-item" data-type="HW">
-                  <span class="arch-pal-icon" style="background:#4A6FA5">HW</span>HW Block
-                </button>
-                <button class="arch-pal-item" data-type="SW">
-                  <span class="arch-pal-icon" style="background:#3A7D5C">SW</span>SW Block
-                </button>
-                <button class="arch-pal-item" data-type="Mechanical">
-                  <span class="arch-pal-icon" style="background:#7A5C2E">ME</span>Mech Block
-                </button>
-                <button class="arch-pal-item pal-item-port" data-type="Port" title="UML port — external interface point">
-                  <span class="arch-pal-icon arch-pal-icon-port">■</span>Port
-                </button>
-              </div>
+          <div class="arch-props-scroll" id="pal-body-props">
+            <div id="arch-props-body">
+              <div class="arch-props-empty">↖ Select an element</div>
             </div>
           </div>
-
-          <!-- ── Properties section ── -->
-          <div class="arch-pal-sec arch-pal-sec--props">
-            <button class="arch-pal-sec-hdr" data-target="pal-body-props" data-arrow="pal-arrow-props">
-              <span>Properties</span>
-              <span class="arch-pal-arrow" id="pal-arrow-props">▾</span>
-            </button>
-            <div class="arch-pal-sec-body arch-pal-sec-body--props" id="pal-body-props">
-              <div id="arch-props-body">
-                <div class="arch-props-empty">↖ Select an element</div>
-              </div>
-            </div>
-          </div>
-
-          </div><!-- end arch-palette -->
         </aside><!-- end arch-pal-wrap -->
       </div>
 
@@ -1616,22 +1584,8 @@ function wireCanvas() {
     });
   }
 
-  document.querySelectorAll('.arch-pal-item').forEach(btn => {
+  document.querySelectorAll('.arch-tb-item').forEach(btn => {
     btn.addEventListener('click', () => addComp(btn.dataset.type));
-  });
-
-  // Collapsible palette sections
-  document.querySelectorAll('.arch-pal-sec-hdr').forEach(hdr => {
-    hdr.addEventListener('click', () => {
-      const bodyId  = hdr.dataset.target;
-      const arrowId = hdr.dataset.arrow;
-      const body  = document.getElementById(bodyId);
-      const arrow = document.getElementById(arrowId);
-      if (!body) return;
-      const open = body.style.display !== 'none';
-      body.style.display  = open ? 'none' : '';
-      if (arrow) arrow.textContent = open ? '▸' : '▾';
-    });
   });
 
   // Floating legend toggle
