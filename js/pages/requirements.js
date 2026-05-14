@@ -2683,13 +2683,28 @@ async function bulkDelete() {
 
   showModal({
     title: 'Delete Requirements',
-    body: `<p>Delete <strong>${n}</strong> requirement${n > 1 ? 's' : ''}?</p>
-      <div class="modal-warn-box" style="margin-top:10px">⚠ Associated connections and ports will also be deleted. This cannot be undone.</div>`,
+    body: `
+      <p style="margin-bottom:8px">You are about to delete <strong>${n}</strong> requirement${n > 1 ? 's' : ''}.</p>
+      <p style="margin-bottom:12px">What would you like to do?</p>
+      <div class="modal-warn-box">⚠ Deleting without removing connections may create inconsistencies in the Architecture canvas.</div>`,
     footer: `
       <button class="btn btn-secondary" id="bulk-del-cancel">Cancel</button>
-      <button class="btn btn-danger" id="bulk-del-confirm">Delete</button>`,
+      <button class="btn btn-secondary" id="bulk-del-req-only">Delete requirement${n > 1 ? 's' : ''} only</button>
+      <button class="btn btn-danger"    id="bulk-del-confirm">Delete requirement${n > 1 ? 's' : ''} + connection + ports</button>`,
   });
-  document.getElementById('bulk-del-cancel').onclick = () => hideModal();
+  document.getElementById('bulk-del-cancel').onclick   = () => hideModal();
+  document.getElementById('bulk-del-req-only').onclick = async () => {
+    hideModal();
+    const ids = reqs.map(r => r.id);
+    await Promise.all(ids.map(id => sb.from('requirements').delete().eq('id', id)));
+    ids.forEach(id => {
+      const idx = _data.findIndex(r => r.id === id);
+      if (idx !== -1) _data.splice(idx, 1);
+      document.querySelector(`tr[data-rid="${id}"]`)?.remove();
+    });
+    _selection.clear(); syncBulkBar(); buildReqNavTree();
+    toast(`${n} requirement${n > 1 ? 's' : ''} deleted.`, 'success');
+  };
   document.getElementById('bulk-del-confirm').onclick = async () => {
     hideModal();
     const ids = reqs.map(r => r.id);
