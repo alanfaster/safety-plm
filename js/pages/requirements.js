@@ -1337,17 +1337,24 @@ async function handleReqDelete(req) {
 
   let linkedConn = null;
   if (req.req_code) {
-    const { data: conns } = await sb.from('arch_connections')
+    const { data: conns, error: connErr } = await sb.from('arch_connections')
       .select('id,source_id,target_id').eq('requirement', req.req_code).maybeSingle();
+    console.log('[del] conn lookup for', req.req_code, '→', conns, connErr);
     linkedConn = conns;
   }
 
   const doDelete = async (alsoConn) => {
+    console.log('[del] doDelete alsoConn=', alsoConn, 'linkedConn=', linkedConn);
     await sb.from('requirements').delete().eq('id', req.id);
     if (alsoConn && linkedConn) {
-      await sb.from('arch_connections').delete().eq('id', linkedConn.id);
+      const { error: connDelErr } = await sb.from('arch_connections').delete().eq('id', linkedConn.id);
+      console.log('[del] connection delete error:', connDelErr);
       const portIds = [linkedConn.source_id, linkedConn.target_id].filter(Boolean);
-      if (portIds.length) await sb.from('arch_components').delete().in('id', portIds);
+      console.log('[del] portIds to delete:', portIds);
+      if (portIds.length) {
+        const { error: portDelErr } = await sb.from('arch_components').delete().in('id', portIds);
+        console.log('[del] port delete error:', portDelErr);
+      }
     }
     _data.splice(_data.findIndex(r => r.id === req.id), 1);
     const tr = document.querySelector(`tr[data-rid="${req.id}"]`);
