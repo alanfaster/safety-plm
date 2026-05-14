@@ -21,6 +21,9 @@
     .auth-error { color: var(--color-error); font-size: 13px; text-align: center; margin-top: 12px; min-height: 18px; }
     .auth-divider { border: none; border-top: 1px solid var(--color-border); margin: 24px 0; }
     .auth-footer { text-align: center; font-size: 12px; color: var(--color-text-muted); }
+    .btn-link { background: none; border: none; color: var(--color-primary); font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; }
+    .btn-link:hover { color: var(--color-primary-dark); }
+    .auth-success { color: var(--color-success, #1E8E3E); font-size: 13px; text-align: center; margin-top: 12px; }
   </style>
 </head>
 <body>
@@ -41,6 +44,10 @@
       <button type="submit" class="btn-primary" id="btn-login">Sign In</button>
       <p class="auth-error" id="auth-error"></p>
     </form>
+    <div style="text-align:right; margin-top:8px;">
+      <button class="btn-link" id="btn-forgot">Forgot password?</button>
+    </div>
+    <p class="auth-success" id="auth-success"></p>
     <hr class="auth-divider"/>
     <p class="auth-footer">Safety ALM v1.0 — ISO 26262 · ARP4761 · DO-254 · MIL-STD-882</p>
   </div>
@@ -56,6 +63,20 @@
       const { data: { session } } = await sb.auth.getSession();
       if (session) window.location.href = 'app.html';
     })();
+
+    document.getElementById('btn-forgot').addEventListener('click', async () => {
+      const email = document.getElementById('email').value.trim();
+      const errorEl = document.getElementById('auth-error');
+      const successEl = document.getElementById('auth-success');
+      errorEl.textContent = '';
+      successEl.textContent = '';
+      if (!email) { errorEl.textContent = 'Enter your email first.'; return; }
+      const { error } = await sb.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/index.html'
+      });
+      if (error) { errorEl.textContent = 'Could not send reset email: ' + error.message; }
+      else { successEl.textContent = 'Password reset email sent. Check your inbox.'; }
+    });
 
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
