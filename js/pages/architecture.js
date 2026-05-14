@@ -369,17 +369,18 @@ function buildShell(container, title) {
         </div>
       </div>
       <div class="arch-workspace">
-        <!-- Left component tree -->
-        <aside class="req-trace-panel arch-tree-wrap" id="arch-tree-wrap" style="border-left:none;border-right:1px solid var(--color-border)">
-          <div class="swu-rail-tabs">
-            <button class="swu-rail-btn swu-rail-btn--active" id="arch-tree-tab">Tree</button>
+        <!-- Left component tree — spec-nav pattern -->
+        <nav class="spec-nav spec-nav--hidden" id="arch-tree-wrap">
+          <button class="spec-nav-expand" id="arch-tree-tab" title="Open tree">
+            <span>❯</span>
+            <span class="spec-nav-rail-label">Tree</span>
+          </button>
+          <div class="spec-nav-hdr">
+            <span class="spec-nav-title">Tree</span>
+            <button class="btn-icon spec-nav-close" id="arch-tree-close" title="Close">✕</button>
           </div>
-          <div class="req-trace-panel-hdr">
-            <span class="req-trace-panel-title">Tree</span>
-            <button class="btn-icon" id="arch-tree-close" title="Collapse">✕</button>
-          </div>
-          <div class="req-trace-panel-body" id="arch-tree-body" style="padding:4px 0"></div>
-        </aside>
+          <div class="arch-tree-body" id="arch-tree-body"></div>
+        </nav>
 
         <div class="arch-canvas-outer" id="arch-outer">
           <div class="canvas-zoom-fab" id="arch-zoom-fab">
@@ -1458,11 +1459,10 @@ function wireCanvas() {
   document.getElementById('btn-zoom-in').onclick  = () => { _s.zoom=Math.min(2.5,_s.zoom*1.2); applyViewport(); };
   document.getElementById('btn-zoom-out').onclick = () => { _s.zoom=Math.max(0.2,_s.zoom*0.8); applyViewport(); };
   document.getElementById('btn-zoom-fit').onclick = fitView;
-  // Component tree toggle
-  const openTree  = () => { document.getElementById('arch-tree-wrap')?.classList.add('open'); renderArchTree(); };
-  const closeTree = () => document.getElementById('arch-tree-wrap')?.classList.remove('open');
-  document.getElementById('arch-tree-tab')?.addEventListener('click', () =>
-    document.getElementById('arch-tree-wrap')?.classList.contains('open') ? closeTree() : openTree());
+  // Component tree toggle — spec-nav pattern
+  const openTree  = () => { document.getElementById('arch-tree-wrap')?.classList.remove('spec-nav--hidden'); renderArchTree(); };
+  const closeTree = () => document.getElementById('arch-tree-wrap')?.classList.add('spec-nav--hidden');
+  document.getElementById('arch-tree-tab')?.addEventListener('click', openTree);
   document.getElementById('arch-tree-close')?.addEventListener('click', closeTree);
 
   // Right palette toggle (initially open)
@@ -1554,20 +1554,20 @@ function wireCanvas() {
     }
   }
 
-  // Palette resize handle
-  const pal = document.getElementById('arch-palette');
+  // Palette resize handle — resize the wrap so width persists on toggle
+  const palWrap = document.getElementById('arch-pal-wrap');
   const palHandle = document.getElementById('arch-pal-resize');
-  if (pal && palHandle) {
+  if (palWrap && palHandle) {
     let presize = null;
     palHandle.addEventListener('pointerdown', e => {
       e.preventDefault(); e.stopPropagation();
-      presize = { startX: e.clientX, origW: pal.offsetWidth };
+      presize = { startX: e.clientX, origW: palWrap.offsetWidth };
       palHandle.setPointerCapture(e.pointerId);
     });
     palHandle.addEventListener('pointermove', e => {
       if (!presize) return;
       const w = Math.max(180, Math.min(420, presize.origW - (e.clientX - presize.startX)));
-      pal.style.width = w + 'px';
+      palWrap.style.width = w + 'px';
     });
     palHandle.addEventListener('pointerup', () => { presize = null; });
   }
@@ -3369,7 +3369,7 @@ function focusComp(cid) {
 
 /** Refresh tree if it is open (call after any structural change). */
 function refreshArchTree() {
-  if (document.getElementById('arch-tree-wrap')?.classList.contains('open')) renderArchTree();
+  if (!document.getElementById('arch-tree-wrap')?.classList.contains('spec-nav--hidden')) renderArchTree();
 }
 
 

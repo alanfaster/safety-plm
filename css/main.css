@@ -2483,9 +2483,8 @@ tr.req-title-row td { cursor: default; }
 .arch-workspace{display:flex;flex:1;overflow:hidden}
 
 /* ── Component tree sidebar ── */
-/* Architecture tree/palette panels — extend req-trace-panel */
-.arch-tree-wrap { border-left: none !important; border-right: 1px solid var(--color-border) !important; }
-.arch-tree-wrap.open { width: 220px; min-width: 220px; }
+/* Architecture tree — spec-nav, override border direction */
+#arch-tree-wrap { border-left: none; border-right: 1px solid var(--color-border); }
 .arch-tree-body { flex:1; overflow-y:auto; padding:4px 0; }
 .arch-tree-hdr {
   display: flex;
@@ -2737,9 +2736,9 @@ tr.req-title-row td { cursor: default; }
 
 /* ── Right palette ── */
 /* ── Palette shell ── */
-.arch-pal-wrap { border-right: none !important; }
-.arch-pal-wrap.open { width: 240px; min-width: 240px; }
-.arch-pal-wrap:not(.open) .arch-palette { display: none; }
+/* Architecture right panel — req-trace-panel, no right border */
+#arch-pal-wrap { border-right: none; }
+#arch-pal-wrap:not(.open) .arch-palette { display: none; }
 .arch-palette{flex:1;background:var(--color-surface);display:flex;flex-direction:column;overflow:hidden;gap:0}
 
 /* ── Collapsible palette section ── */
