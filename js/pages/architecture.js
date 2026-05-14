@@ -345,6 +345,7 @@ export async function renderArchitecture(container, { project, item, system, dom
   renderAll();
   wireCanvas();
   wireGlobal();
+  requestAnimationFrame(fitView);
 }
 
 // ── Shell ─────────────────────────────────────────────────────────────────────
