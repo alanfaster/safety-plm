@@ -1345,9 +1345,11 @@ async function handleReqDelete(req) {
   const doDelete = async (alsoConn) => {
     await sb.from('requirements').delete().eq('id', req.id);
     if (alsoConn && linkedConn) {
-      await sb.from('arch_connections').delete().eq('id', linkedConn.id);
-      if (linkedConn.source_id) await sb.from('arch_components').delete().eq('id', linkedConn.source_id).eq('comp_type', 'Port');
-      if (linkedConn.target_id) await sb.from('arch_components').delete().eq('id', linkedConn.target_id).eq('comp_type', 'Port');
+      const portIds = [linkedConn.source_id, linkedConn.target_id].filter(Boolean);
+      await Promise.all([
+        sb.from('arch_connections').delete().eq('id', linkedConn.id),
+        ...portIds.map(pid => sb.from('arch_components').delete().eq('id', pid)),
+      ]);
     }
     _data.splice(_data.findIndex(r => r.id === req.id), 1);
     const tr = document.querySelector(`tr[data-rid="${req.id}"]`);
