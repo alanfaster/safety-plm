@@ -1459,18 +1459,45 @@ function wireCanvas() {
   document.getElementById('btn-zoom-in').onclick  = () => { _s.zoom=Math.min(2.5,_s.zoom*1.2); applyViewport(); };
   document.getElementById('btn-zoom-out').onclick = () => { _s.zoom=Math.max(0.2,_s.zoom*0.8); applyViewport(); };
   document.getElementById('btn-zoom-fit').onclick = fitView;
-  // Component tree toggle — spec-nav pattern
+  // Left tree panel — spec-nav pattern + resize handle
   const openTree  = () => { document.getElementById('arch-tree-wrap')?.classList.remove('spec-nav--hidden'); renderArchTree(); };
   const closeTree = () => document.getElementById('arch-tree-wrap')?.classList.add('spec-nav--hidden');
   document.getElementById('arch-tree-tab')?.addEventListener('click', openTree);
   document.getElementById('arch-tree-close')?.addEventListener('click', closeTree);
 
-  // Right palette toggle (initially open)
-  document.getElementById('arch-pal-wrap')?.classList.add('open');
+  // Left tree resize handle
+  const treeWrap = document.getElementById('arch-tree-wrap');
+  const treeResizeHandle = document.createElement('div');
+  treeResizeHandle.className = 'arch-tree-resize-handle';
+  treeWrap?.appendChild(treeResizeHandle);
+  let treeResize = null;
+  treeResizeHandle.addEventListener('pointerdown', e => {
+    e.preventDefault(); e.stopPropagation();
+    treeResize = { startX: e.clientX, origW: treeWrap.offsetWidth };
+    treeResizeHandle.setPointerCapture(e.pointerId);
+  });
+  treeResizeHandle.addEventListener('pointermove', e => {
+    if (!treeResize) return;
+    const w = Math.max(160, Math.min(400, treeResize.origW + (e.clientX - treeResize.startX)));
+    treeWrap.style.width = w + 'px';
+  });
+  treeResizeHandle.addEventListener('pointerup', () => { treeResize = null; });
+
+  // Right palette toggle — clear inline width when collapsing so CSS 32px takes over
+  const palWrap = document.getElementById('arch-pal-wrap');
+  let palSavedWidth = null;
+  const openPal = () => {
+    palWrap?.classList.add('open');
+    if (palSavedWidth) palWrap.style.width = palSavedWidth;
+  };
+  const closePal = () => {
+    if (palWrap) { palSavedWidth = palWrap.style.width || null; palWrap.style.width = ''; }
+    palWrap?.classList.remove('open');
+  };
+  palWrap?.classList.add('open');
   document.getElementById('arch-pal-tab')?.addEventListener('click', () =>
-    document.getElementById('arch-pal-wrap')?.classList.toggle('open'));
-  document.getElementById('arch-pal-close')?.addEventListener('click', () =>
-    document.getElementById('arch-pal-wrap')?.classList.remove('open'));
+    palWrap?.classList.contains('open') ? closePal() : openPal());
+  document.getElementById('arch-pal-close')?.addEventListener('click', closePal);
 
 
   // Interface Requirements panel — bp-bar (lazy load on first expand)
@@ -1554,20 +1581,21 @@ function wireCanvas() {
     }
   }
 
-  // Palette resize handle — resize the wrap so width persists on toggle
-  const palWrap = document.getElementById('arch-pal-wrap');
+  // Palette resize handle
   const palHandle = document.getElementById('arch-pal-resize');
-  if (palWrap && palHandle) {
+  if (palHandle) {
     let presize = null;
     palHandle.addEventListener('pointerdown', e => {
       e.preventDefault(); e.stopPropagation();
-      presize = { startX: e.clientX, origW: palWrap.offsetWidth };
+      presize = { startX: e.clientX, origW: document.getElementById('arch-pal-wrap').offsetWidth };
       palHandle.setPointerCapture(e.pointerId);
     });
     palHandle.addEventListener('pointermove', e => {
       if (!presize) return;
+      const pw = document.getElementById('arch-pal-wrap');
       const w = Math.max(180, Math.min(420, presize.origW - (e.clientX - presize.startX)));
-      palWrap.style.width = w + 'px';
+      pw.style.width = w + 'px';
+      palSavedWidth = w + 'px';
     });
     palHandle.addEventListener('pointerup', () => { presize = null; });
   }
