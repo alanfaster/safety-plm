@@ -220,12 +220,14 @@ export async function renderArchitecture(container, { project, item, system, dom
   // takes its display name from the live functions table, not the stored snapshot.
   const refIds = [...new Set(funs.map(f => f.function_ref_id).filter(Boolean))];
   if (refIds.length) {
-    const { data: liveFns } = await sb.from('functions').select('id,name').in('id', refIds);
+    const { data: liveFns } = await sb.from('functions').select('id,name,description').in('id', refIds);
     if (liveFns?.length) {
       const nameMap = Object.fromEntries(liveFns.map(f => [f.id, f.name]));
+      const descMap = Object.fromEntries(liveFns.map(f => [f.id, f.description || '']));
       funs.forEach(f => {
         if (f.function_ref_id && nameMap[f.function_ref_id] !== undefined) {
           f.name = nameMap[f.function_ref_id];
+          f._description = descMap[f.function_ref_id];
         }
       });
       // Persist updated names back to DB in one go (fire-and-forget)
@@ -3403,7 +3405,7 @@ function escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;
 
 // Returns tooltip data for an arch_function record (looks up Feature/UC/Description from _idef)
 function funTooltipAttrs(f) {
-  let feat = '', uc = '', desc = f.description || '', name = f.name || '';
+  let feat = '', uc = '', desc = f._description || f.description || '', name = f.name || '';
   if (f.function_ref_id && _idef.loaded) {
     const fn = _idef.functions.find(x => x.id === f.function_ref_id);
     if (fn) {
