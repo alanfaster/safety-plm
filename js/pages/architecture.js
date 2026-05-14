@@ -372,7 +372,7 @@ function buildShell(container, title) {
       <!-- Toolbar: add blocks + zoom controls + legend -->
       <div class="arch-toolbar">
         <button class="arch-tb-item pal-item-group"    data-type="Group"      title="Add System"><span class="arch-pal-icon arch-pal-icon-group">⬜</span>System</button>
-        <button class="arch-tb-item pal-item-assembly" data-type="Assembly"   title="Add Assembly"><span class="arch-pal-icon arch-pal-icon-assembly">▭</span>Assembly</button>
+        <button class="arch-tb-item pal-item-assembly" data-type="Assembly"   title="Add Assembly"><span class="arch-pal-icon arch-pal-icon-assembly">▭</span>Group</button>
         <button class="arch-tb-item" data-type="HW"        title="Add HW Block"><span class="arch-pal-icon" style="background:#4A6FA5">HW</span>HW</button>
         <button class="arch-tb-item" data-type="SW"        title="Add SW Block"><span class="arch-pal-icon" style="background:#3A7D5C">SW</span>SW</button>
         <button class="arch-tb-item" data-type="Mechanical" title="Add Mech Block"><span class="arch-pal-icon" style="background:#7A5C2E">ME</span>Mech</button>
@@ -663,7 +663,7 @@ function groupHTML(g) {
          id="comp-${g.id}" data-id="${g.id}" data-type="Group"
          style="left:${g.x}px;top:${g.y}px;width:${g.width}px;height:${g.height}px">
       <div class="arch-group-hdr" data-drag-id="${g.id}">
-        <span class="arch-group-stereo">«${isAssembly ? 'assembly' : 'system'}»</span>
+        <span class="arch-group-stereo">«${isAssembly ? 'group' : 'system'}»</span>
         <span class="arch-group-name" id="cname-${g.id}">${escH(g.name)}</span>
         ${sysLabel}
         ${!isAssembly ? `<button class="arch-group-info-btn" data-comp-id="${g.id}">≡</button>` : ''}
@@ -2504,7 +2504,7 @@ async function createGroup(name, systemId) {
 async function createAssembly() {
   captureUndo();
   const count = _s.components.filter(c=>c.comp_type==='Group').length;
-  const name = `Assembly-${String(count+1).padStart(2,'0')}`;
+  const name = `Group-${String(count+1).padStart(2,'0')}`;
   const ax = snap(40+(count%3)*340), ay = snap(40+Math.floor(count/3)*280);
   const aw = 280, ah = 200;
   // Auto-detect parent system group
