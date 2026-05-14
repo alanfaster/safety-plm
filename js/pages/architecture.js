@@ -1549,10 +1549,9 @@ function wireCanvas() {
         ].filter(Boolean).join('');
         if (!rows) return;
         funTip.innerHTML = rows + `<div class="arch-funtip-hint">Click to open in panel</div>`;
-        const cr = canvasOuter.getBoundingClientRect();
         funTip.style.display = 'block';
-        funTip.style.left = (e.clientX - cr.left + 12) + 'px';
-        funTip.style.top  = (e.clientY - cr.top  + 16) + 'px';
+        funTip.style.left = (e.clientX + 14) + 'px';
+        funTip.style.top  = (e.clientY + 16) + 'px';
       });
       canvasOuter.addEventListener('mouseout', e => {
         if (!e.relatedTarget?.closest('.arch-fun-box')) funTip.style.display = 'none';

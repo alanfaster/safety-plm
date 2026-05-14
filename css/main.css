@@ -2687,7 +2687,7 @@ tr.req-title-row td { cursor: default; }
 /* Per-component drag hover highlight */
 .arch-block.arch-fn-drop-hover,.arch-group.arch-fn-drop-hover,.arch-port-block.arch-fn-drop-hover{outline:2px solid var(--color-primary);outline-offset:-2px;background:rgba(26,115,232,0.08) !important}
 /* Function box hover tooltip */
-.arch-fun-tooltip{position:absolute;z-index:9999;background:#fff;border:1px solid #DADCE0;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.15);padding:8px 10px;min-width:180px;max-width:280px;pointer-events:none}
+.arch-fun-tooltip{position:fixed;z-index:9999;background:#fff;border:1px solid #DADCE0;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.15);padding:8px 10px;min-width:180px;max-width:280px;pointer-events:none}
 .arch-funtip-title{font-size:12px;font-weight:700;color:#1F2937;margin-bottom:4px}
 .arch-funtip-row{display:flex;flex-direction:column;gap:1px;margin-bottom:4px}
 .arch-funtip-row:last-child{margin-bottom:0}
