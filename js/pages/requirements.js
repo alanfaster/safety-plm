@@ -1336,7 +1336,7 @@ async function handleReqDelete(req) {
   const { project, item, system, parentType, parentId, typeFilter, pageId } = _ctx;
 
   let linkedConn = null;
-  if (['interface','interface_internal','interface_external'].includes(req.type) && req.req_code) {
+  if (req.req_code) {
     const { data: conns } = await sb.from('arch_connections')
       .select('id,source_id,target_id').eq('requirement', req.req_code).maybeSingle();
     linkedConn = conns;
