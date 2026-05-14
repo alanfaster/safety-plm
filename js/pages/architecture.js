@@ -3226,6 +3226,8 @@ function renderArchTree() {
   }
 
   const allGroups = _s.components.filter(c => c.comp_type === 'Group');
+  const assemblies = allGroups.filter(c => c.data?.subtype === 'assembly');
+  console.log('[tree] groups:', allGroups.map(g=>g.name), 'assemblies:', assemblies.map(a=>a.name));
 
   // Returns the smallest group containing comp's center (its direct parent)
   function smallestParent(comp) {
@@ -3233,7 +3235,9 @@ function renderArchTree() {
     const containers = allGroups.filter(g =>
       g.id !== comp.id &&
       cx > g.x && cx < g.x+g.width && cy > g.y && cy < g.y+g.height);
-    return containers.sort((a,b) => a.width*a.height - b.width*b.height)[0] || null;
+    const best = containers.sort((a,b) => a.width*a.height - b.width*b.height)[0] || null;
+    console.log(`[tree] smallestParent(${comp.name}) cx=${cx} cy=${cy} containers=[${containers.map(g=>g.name)}] best=${best?.name}`);
+    return best;
   }
 
   function groupSubtree(g, depth = 0) {
