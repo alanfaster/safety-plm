@@ -3427,7 +3427,9 @@ function funTooltipAttrs(f) {
 
 function openIdefPanel() {
   const panel = document.getElementById('arch-idef-panel');
-  if (panel && panel.style.display === 'none') panel.style.display = '';
+  if (!panel) return;
+  if (panel.style.display === 'none') panel.style.display = '';
+  if (panel.classList.contains('bp-collapsed')) panel.querySelector('.bp-hdr')?.click();
   toast('📎 Select a function from the list', 'idef-hint');
 }
 
