@@ -373,10 +373,6 @@ function buildShell(container, title) {
         <div class="arch-tree-wrap" id="arch-tree-wrap">
           <div class="arch-side-tab arch-tree-tab" id="arch-tree-tab" title="Toggle component tree">Tree</div>
           <div class="arch-tree-panel" id="arch-tree-panel">
-            <div class="arch-tree-hdr">
-              <span class="arch-tree-title">Components</span>
-              <button class="arch-tb-btn arch-tree-close-btn" id="arch-tree-close" title="Close tree">✕</button>
-            </div>
             <div class="arch-tree-body" id="arch-tree-body"></div>
           </div>
         </div>
