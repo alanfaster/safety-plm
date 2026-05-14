@@ -1338,7 +1338,7 @@ async function handleReqDelete(req) {
   let linkedConn = null;
   if (['interface','interface_internal','interface_external'].includes(req.type) && req.req_code) {
     const { data: conns } = await sb.from('arch_connections')
-      .select('id').eq('requirement', req.req_code).maybeSingle();
+      .select('id,source_id,target_id').eq('requirement', req.req_code).maybeSingle();
     linkedConn = conns;
   }
 
@@ -1346,12 +1346,21 @@ async function handleReqDelete(req) {
     await sb.from('requirements').delete().eq('id', req.id);
     if (alsoConn && linkedConn) {
       await sb.from('arch_connections').delete().eq('id', linkedConn.id);
+      // Also delete Port components at both ends of the connection
+      const portIds = [linkedConn.source_id, linkedConn.target_id].filter(Boolean);
+      if (portIds.length) {
+        const { data: ports } = await sb.from('arch_components')
+          .select('id').eq('comp_type', 'Port').in('id', portIds);
+        if (ports?.length) {
+          await sb.from('arch_components').delete().in('id', ports.map(p => p.id));
+        }
+      }
     }
     _data.splice(_data.findIndex(r => r.id === req.id), 1);
     const tr = document.querySelector(`tr[data-rid="${req.id}"]`);
     tr?.remove();
     buildReqNavTree();
-    toast(alsoConn ? 'Requirement and connection deleted.' : 'Requirement deleted.', 'success');
+    toast(alsoConn ? 'Requirement, connection and ports deleted.' : 'Requirement deleted.', 'success');
     // If nothing left, show empty state
     if (!_data.length) renderTable(document.getElementById('req-body'));
   };
@@ -1384,7 +1393,7 @@ async function handleReqDelete(req) {
     footer: `
       <button class="btn btn-secondary" id="dr-cancel">Cancel</button>
       <button class="btn btn-secondary" id="dr-req-only">Delete requirement only</button>
-      <button class="btn btn-danger"    id="dr-both">Delete requirement + connection</button>
+      <button class="btn btn-danger"    id="dr-both">Delete requirement + connection + ports</button>
     `,
   });
   document.getElementById('dr-cancel').onclick   = () => hideModal();
