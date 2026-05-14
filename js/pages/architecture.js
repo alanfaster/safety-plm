@@ -2060,6 +2060,7 @@ function handleDragEnd() {
     sb.from('arch_components').update({ x:c.x, y:c.y, data:c.data, updated_at:now }).eq('id', id).then();
     renderConnections();
   }
+  refreshArchTree();
 }
 
 // ── Connection endpoint drag ──────────────────────────────────────────────────
@@ -2505,6 +2506,7 @@ async function createGroup(name, systemId) {
   _s.components.push(data);
   renderGroups();
   selectComp(data.id);
+  refreshArchTree();
   setTimeout(()=>startRename(data.id),60);
 }
 
@@ -2532,6 +2534,7 @@ async function createAssembly() {
   resyncGroupIds();
   renderGroups();
   selectComp(data.id);
+  refreshArchTree();
   setTimeout(() => startRename(data.id), 60);
 }
 
@@ -2803,6 +2806,7 @@ async function addComp(type) {
   const layer=document.getElementById('arch-comp-layer');
   if (layer) { layer.insertAdjacentHTML('beforeend', blockHTML(data)); wireBlock(data.id); }
   selectComp(data.id);
+  refreshArchTree();
   setTimeout(()=>startRename(data.id),60);
 }
 
@@ -2991,6 +2995,7 @@ async function deleteComp(id) {
     selectComp(null);
     renderConnections();
     if (isGroup) renderGroups();
+    refreshArchTree();
     toast(`"${c.name}" deleted.`, 'success');
   };
 
@@ -3142,7 +3147,7 @@ function startRename(id) {
   const inp=document.createElement('input');
   inp.className='arch-rename-input'; inp.value=c.name;
   nameEl.replaceWith(inp); inp.focus(); inp.select();
-  const save=async()=>{ const n=inp.value.trim()||c.name; c.name=n; await sb.from('arch_components').update({name:n,updated_at:new Date().toISOString()}).eq('id',id); refreshComp(id); };
+  const save=async()=>{ const n=inp.value.trim()||c.name; c.name=n; await sb.from('arch_components').update({name:n,updated_at:new Date().toISOString()}).eq('id',id); refreshComp(id); refreshArchTree(); };
   inp.onblur=save; inp.onkeydown=e=>{if(e.key==='Enter')inp.blur();if(e.key==='Escape')refreshComp(id);};
 }
 
