@@ -1222,7 +1222,7 @@ tr.req-title-row td { cursor: default; }
 .fuf-col {
   display: flex; flex-direction: column;
   border-right: 1px solid var(--color-border);
-  min-height: 320px;
+  min-height: 0; height: 100%;
 }
 .fuf-col:last-child { border-right: none; }
 
@@ -1254,7 +1254,7 @@ tr.req-title-row td { cursor: default; }
 }
 .fuf-add-btn:hover { color: var(--color-primary); background: var(--color-primary-bg); }
 
-.fuf-col-body { flex: 1; overflow-y: auto; }
+.fuf-col-body { flex: 1; overflow-y: auto; min-height: 0; }
 
 /* Item row */
 .fuf-row {
@@ -2838,8 +2838,8 @@ tr.req-title-row td { cursor: default; }
 .arch-idef-hdr{display:flex;align-items:center;justify-content:space-between;padding:3px 10px;border-bottom:1px solid var(--color-border);flex-shrink:0;background:var(--color-bg)}
 .arch-idef-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-text-muted)}
 .arch-idef-hint{font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--color-text-muted);font-style:italic}
-.arch-idef-body{flex:1;overflow:hidden;display:flex}
-.arch-idef-cols{display:flex;flex:1;overflow:hidden}
+.arch-idef-body{flex:1;overflow-x:auto;overflow-y:hidden;display:flex;min-height:0}
+.arch-idef-cols{display:flex;height:100%;min-width:max-content}
 .idef-col{min-width:220px}
 /* Function row drag styles */
 .idef-fn-row{cursor:grab}
