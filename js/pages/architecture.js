@@ -369,13 +369,17 @@ function buildShell(container, title) {
         </div>
       </div>
       <div class="arch-workspace">
-        <!-- Left component tree with vertical tab -->
-        <div class="arch-tree-wrap" id="arch-tree-wrap">
-          <div class="arch-side-tab arch-tree-tab" id="arch-tree-tab" title="Toggle component tree">Tree</div>
-          <div class="arch-tree-panel" id="arch-tree-panel">
-            <div class="arch-tree-body" id="arch-tree-body"></div>
+        <!-- Left component tree -->
+        <aside class="req-trace-panel arch-tree-wrap" id="arch-tree-wrap" style="border-left:none;border-right:1px solid var(--color-border)">
+          <div class="swu-rail-tabs">
+            <button class="swu-rail-btn swu-rail-btn--active" id="arch-tree-tab">Tree</button>
           </div>
-        </div>
+          <div class="req-trace-panel-hdr">
+            <span class="req-trace-panel-title">Tree</span>
+            <button class="btn-icon" id="arch-tree-close" title="Collapse">✕</button>
+          </div>
+          <div class="req-trace-panel-body" id="arch-tree-body" style="padding:4px 0"></div>
+        </aside>
 
         <div class="arch-canvas-outer" id="arch-outer">
           <div class="canvas-zoom-fab" id="arch-zoom-fab">
@@ -411,9 +415,15 @@ function buildShell(container, title) {
           </div>
         </div>
 
-        <!-- Right palette with vertical tab -->
-        <div class="arch-pal-wrap" id="arch-pal-wrap">
-          <div class="arch-side-tab arch-pal-tab" id="arch-pal-tab" title="Toggle panel">Properties</div>
+        <!-- Right palette -->
+        <aside class="req-trace-panel arch-pal-wrap" id="arch-pal-wrap" style="border-right:none">
+          <div class="swu-rail-tabs">
+            <button class="swu-rail-btn swu-rail-btn--active" id="arch-pal-tab">Properties</button>
+          </div>
+          <div class="req-trace-panel-hdr">
+            <span class="req-trace-panel-title">Properties</span>
+            <button class="btn-icon" id="arch-pal-close" title="Collapse">✕</button>
+          </div>
           <div class="arch-palette" id="arch-palette">
           <div class="arch-palette-resize-handle" id="arch-pal-resize"></div>
 
@@ -461,7 +471,7 @@ function buildShell(container, title) {
           </div>
 
           </div><!-- end arch-palette -->
-        </div><!-- end arch-pal-wrap -->
+        </aside><!-- end arch-pal-wrap -->
       </div>
 
       <div class="arch-conn-popover" id="arch-sys-pop" style="display:none"></div>
@@ -1448,19 +1458,19 @@ function wireCanvas() {
   document.getElementById('btn-zoom-in').onclick  = () => { _s.zoom=Math.min(2.5,_s.zoom*1.2); applyViewport(); };
   document.getElementById('btn-zoom-out').onclick = () => { _s.zoom=Math.max(0.2,_s.zoom*0.8); applyViewport(); };
   document.getElementById('btn-zoom-fit').onclick = fitView;
-  // Component tree toggle via side tab
-  const openTree  = () => { document.getElementById('arch-tree-wrap')?.classList.add('arch-tree-open'); renderArchTree(); };
-  const closeTree = () => document.getElementById('arch-tree-wrap')?.classList.remove('arch-tree-open');
+  // Component tree toggle
+  const openTree  = () => { document.getElementById('arch-tree-wrap')?.classList.add('open'); renderArchTree(); };
+  const closeTree = () => document.getElementById('arch-tree-wrap')?.classList.remove('open');
   document.getElementById('arch-tree-tab')?.addEventListener('click', () =>
-    document.getElementById('arch-tree-wrap')?.classList.contains('arch-tree-open') ? closeTree() : openTree());
+    document.getElementById('arch-tree-wrap')?.classList.contains('open') ? closeTree() : openTree());
   document.getElementById('arch-tree-close')?.addEventListener('click', closeTree);
 
-  // Right palette toggle via side tab (initially open)
-  document.getElementById('arch-pal-wrap')?.classList.add('arch-pal-open');
-  document.getElementById('arch-pal-tab')?.addEventListener('click', () => {
-    const wrap = document.getElementById('arch-pal-wrap');
-    wrap?.classList.toggle('arch-pal-open');
-  });
+  // Right palette toggle (initially open)
+  document.getElementById('arch-pal-wrap')?.classList.add('open');
+  document.getElementById('arch-pal-tab')?.addEventListener('click', () =>
+    document.getElementById('arch-pal-wrap')?.classList.toggle('open'));
+  document.getElementById('arch-pal-close')?.addEventListener('click', () =>
+    document.getElementById('arch-pal-wrap')?.classList.remove('open'));
 
 
   // Interface Requirements panel — bp-bar (lazy load on first expand)
@@ -3359,7 +3369,7 @@ function focusComp(cid) {
 
 /** Refresh tree if it is open (call after any structural change). */
 function refreshArchTree() {
-  if (document.getElementById('arch-tree-wrap')?.classList.contains('arch-tree-open')) renderArchTree();
+  if (document.getElementById('arch-tree-wrap')?.classList.contains('open')) renderArchTree();
 }
 
 
