@@ -3567,23 +3567,20 @@ function wireIdefCols() {
       document.getElementById('idef-col-feat').outerHTML = idefFeatColHTML();
       document.getElementById('idef-col-uc').outerHTML   = idefUCColHTML();
       document.getElementById('idef-col-fun').outerHTML  = idefFunColHTML();
-      wireIdefCols();
       const { data } = await sb.from('use_cases').select('*')
         .eq('feature_id', id).order('sort_order').order('created_at');
       _idef.useCases = data || [];
       document.getElementById('idef-col-uc').outerHTML = idefUCColHTML();
-      wireIdefCols();
     } else if (idefType === 'uc') {
       if (_idef.selUCId === id) return;
       _idef.selUCId = id; _idef.functions = [];
       document.getElementById('idef-col-uc').outerHTML  = idefUCColHTML();
       document.getElementById('idef-col-fun').outerHTML = idefFunColHTML();
-      wireIdefCols();
       const { data } = await sb.from('functions').select('*')
         .eq('use_case_id', id).order('sort_order').order('created_at');
       _idef.functions = data || [];
       document.getElementById('idef-col-fun').outerHTML = idefFunColHTML();
-      wireIdefCols();
+      wireIdefDrag();
     }
   });
 
@@ -3618,8 +3615,11 @@ function wireIdefCols() {
     });
   });
 
-  // Drag (functions only)
-  cols.querySelectorAll('.idef-fn-row[draggable]').forEach(row => {
+  wireIdefDrag();
+}
+
+function wireIdefDrag() {
+  document.querySelectorAll('#idef-list-fun .idef-fn-row[draggable]').forEach(row => {
     row.addEventListener('dragstart', e => {
       e.dataTransfer.setData('text/plain', JSON.stringify({
         type:'idef-fn', fnId:row.dataset.id, fnName:row.dataset.fnName, ucId:row.dataset.ucId,
@@ -3641,7 +3641,7 @@ async function idefAddItem(type) {
     }).select().single();
     if (error) { toast('Error: '+error.message,'error'); return; }
     _idef.features.push(data);
-    document.getElementById('idef-col-feat').outerHTML = idefFeatColHTML(); wireIdefCols();
+    document.getElementById('idef-col-feat').outerHTML = idefFeatColHTML();
   } else if (type === 'uc') {
     const feat = _idef.features.find(f=>f.id===_idef.selFeatId); if (!feat) return;
     const idx  = await nextIndex('use_cases', { feature_id: _idef.selFeatId });
@@ -3652,7 +3652,7 @@ async function idefAddItem(type) {
     }).select().single();
     if (error) { toast('Error: '+error.message,'error'); return; }
     _idef.useCases.push(data);
-    document.getElementById('idef-col-uc').outerHTML = idefUCColHTML(); wireIdefCols();
+    document.getElementById('idef-col-uc').outerHTML = idefUCColHTML();
   } else if (type === 'fun') {
     const uc = (_idef.useCases||[]).find(u=>u.id===_idef.selUCId); if (!uc) return;
     const feat = _idef.features.find(f=>f.id===_idef.selFeatId);
@@ -3666,7 +3666,7 @@ async function idefAddItem(type) {
     if (error) { toast('Error: '+error.message,'error'); return; }
     if (!_idef.functions) _idef.functions = [];
     _idef.functions.push(data);
-    document.getElementById('idef-col-fun').outerHTML = idefFunColHTML(); wireIdefCols();
+    document.getElementById('idef-col-fun').outerHTML = idefFunColHTML(); wireIdefDrag();
   }
 }
 
@@ -3682,7 +3682,8 @@ async function idefReorder(type, id, dir) {
   ]);
   const col = type==='feat'?idefFeatColHTML():type==='uc'?idefUCColHTML():idefFunColHTML();
   const colId = type==='feat'?'idef-col-feat':type==='uc'?'idef-col-uc':'idef-col-fun';
-  document.getElementById(colId).outerHTML = col; wireIdefCols();
+  document.getElementById(colId).outerHTML = col;
+  if (type === 'fun') wireIdefDrag();
 }
 
 function idefInlineEdit(type, id) {
@@ -3707,13 +3708,15 @@ function idefInlineEdit(type, id) {
     item.name = name; item.description = desc;
     const col = type==='feat'?idefFeatColHTML():type==='uc'?idefUCColHTML():idefFunColHTML();
     const colId = type==='feat'?'idef-col-feat':type==='uc'?'idef-col-uc':'idef-col-fun';
-    document.getElementById(colId).outerHTML = col; wireIdefCols();
+    document.getElementById(colId).outerHTML = col;
+    if (type === 'fun') wireIdefDrag();
   };
   row.querySelector('#idef-edit-save').onclick = save;
   row.querySelector('#idef-edit-cancel').onclick = () => {
     const col = type==='feat'?idefFeatColHTML():type==='uc'?idefUCColHTML():idefFunColHTML();
     const colId = type==='feat'?'idef-col-feat':type==='uc'?'idef-col-uc':'idef-col-fun';
-    document.getElementById(colId).outerHTML = col; wireIdefCols();
+    document.getElementById(colId).outerHTML = col;
+    if (type === 'fun') wireIdefDrag();
   };
   inp.addEventListener('keydown', e => { if(e.key==='Enter') save(); if(e.key==='Escape') row.querySelector('#idef-edit-cancel').click(); });
 }
