@@ -3841,7 +3841,7 @@ function renderIfaceReqs() {
             const ifaceType = r.type === 'interface_external' ? 'External' : r.type === 'interface_internal' ? 'Internal' : '—';
             const ifaceClass = r.type === 'interface_external' ? 'arch-ifreqs-badge--ext' : 'arch-ifreqs-badge--int';
             return `
-            <tr class="arch-ifreqs-row" data-req-code="${escH(r.req_code)}" id="ifreq-row-${escH(r.req_code)}">
+            <tr class="arch-ifreqs-row" data-req-code="${escH(r.req_code)}" id="ifreq-row-${escH(r.req_code)}" style="cursor:pointer">
               <td class="arch-ifreqs-code">${escH(r.req_code)}</td>
               <td class="arch-ifreqs-title">${escH(r.title)}</td>
               <td><span class="arch-ifreqs-badge ${ifaceClass}">${ifaceType}</span></td>
@@ -3851,6 +3851,16 @@ function renderIfaceReqs() {
         </tbody>
       </table>
     </div>`;
+
+  body.querySelector('tbody')?.addEventListener('click', e => {
+    const row = e.target.closest('.arch-ifreqs-row');
+    if (!row) return;
+    const reqCode = row.dataset.reqCode;
+    body.querySelectorAll('.arch-ifreqs-row').forEach(r => r.classList.remove('arch-ifreqs-row--sel'));
+    row.classList.add('arch-ifreqs-row--sel');
+    const cn = (_s?.connections || []).find(c => c.requirement === reqCode);
+    if (cn) selectConn(cn.id);
+  });
 }
 
 function openIfaceReqsPanel(highlightCode) {
