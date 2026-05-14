@@ -1459,14 +1459,22 @@ function wireCanvas() {
   document.getElementById('btn-zoom-in').onclick  = () => { _s.zoom=Math.min(2.5,_s.zoom*1.2); applyViewport(); };
   document.getElementById('btn-zoom-out').onclick = () => { _s.zoom=Math.max(0.2,_s.zoom*0.8); applyViewport(); };
   document.getElementById('btn-zoom-fit').onclick = fitView;
-  // Left tree panel — spec-nav pattern + resize handle
-  const openTree  = () => { document.getElementById('arch-tree-wrap')?.classList.remove('spec-nav--hidden'); renderArchTree(); };
-  const closeTree = () => document.getElementById('arch-tree-wrap')?.classList.add('spec-nav--hidden');
+  // Left tree panel — spec-nav pattern + resize
+  const treeWrap = document.getElementById('arch-tree-wrap');
+  let treeSavedWidth = null;
+  const openTree = () => {
+    treeWrap?.classList.remove('spec-nav--hidden');
+    if (treeSavedWidth) treeWrap.style.width = treeSavedWidth;
+    renderArchTree();
+  };
+  const closeTree = () => {
+    if (treeWrap) { treeSavedWidth = treeWrap.style.width || null; treeWrap.style.width = ''; }
+    treeWrap?.classList.add('spec-nav--hidden');
+  };
   document.getElementById('arch-tree-tab')?.addEventListener('click', openTree);
   document.getElementById('arch-tree-close')?.addEventListener('click', closeTree);
 
-  // Left tree resize handle
-  const treeWrap = document.getElementById('arch-tree-wrap');
+  // Left tree resize handle (appended to wrap, right edge)
   const treeResizeHandle = document.createElement('div');
   treeResizeHandle.className = 'arch-tree-resize-handle';
   treeWrap?.appendChild(treeResizeHandle);
@@ -1480,6 +1488,7 @@ function wireCanvas() {
     if (!treeResize) return;
     const w = Math.max(160, Math.min(400, treeResize.origW + (e.clientX - treeResize.startX)));
     treeWrap.style.width = w + 'px';
+    treeSavedWidth = w + 'px';
   });
   treeResizeHandle.addEventListener('pointerup', () => { treeResize = null; });
 
