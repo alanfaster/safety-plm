@@ -3225,10 +3225,24 @@ function renderArchTree() {
       </div>${children}`;
   }
 
+  // Returns true if child is geometrically directly inside parent (not via another group)
+  function directlyInside(child, parent, allGroups) {
+    const cx = child.x + child.width/2, cy = child.y + child.height/2;
+    if (cx <= parent.x || cx >= parent.x+parent.width || cy <= parent.y || cy >= parent.y+parent.height) return false;
+    // Not directly inside if there's a smaller group between them
+    const between = allGroups.filter(g =>
+      g.id !== parent.id && g.id !== child.id &&
+      cx > g.x && cx < g.x+g.width && cy > g.y && cy < g.y+g.height &&
+      g.width*g.height < parent.width*parent.height);
+    return between.length === 0;
+  }
+
   function groupSubtree(g, depth = 0) {
     const isAssembly  = g.data?.subtype === 'assembly';
-    const directBlocks = blocks.filter(c => c.data?.group_id === g.id);
-    const directAssemblies = _s.components.filter(c => c.comp_type === 'Group' && c.data?.group_id === g.id);
+    const allGroups   = _s.components.filter(c => c.comp_type === 'Group');
+    // Use geometry for tree display — reliable regardless of group_id state
+    const directAssemblies = allGroups.filter(c => c.id !== g.id && c.data?.subtype === 'assembly' && directlyInside(c, g, allGroups));
+    const directBlocks = blocks.filter(c => directlyInside(c, g, allGroups));
     const myConns  = conns.filter(cn => cn.source_id === g.id || cn.target_id === g.id);
     const isCol    = col.has(g.id);
     const hasKids  = directBlocks.length > 0 || directAssemblies.length > 0 || myConns.length > 0;
