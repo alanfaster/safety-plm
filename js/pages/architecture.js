@@ -417,7 +417,8 @@ function buildShell(container, title) {
         </div>
 
         <!-- Right palette -->
-        <aside class="req-trace-panel arch-pal-wrap" id="arch-pal-wrap" style="border-right:none">
+        <aside class="req-trace-panel arch-pal-wrap" id="arch-pal-wrap" style="border-right:none;position:relative">
+          <div class="arch-pal-resize-handle" id="arch-pal-resize"></div>
           <div class="swu-rail-tabs">
             <button class="swu-rail-btn swu-rail-btn--active" id="arch-pal-tab">Properties</button>
           </div>
@@ -426,7 +427,6 @@ function buildShell(container, title) {
             <button class="btn-icon" id="arch-pal-close" title="Collapse">✕</button>
           </div>
           <div class="arch-palette" id="arch-palette">
-          <div class="arch-palette-resize-handle" id="arch-pal-resize"></div>
 
           <!-- ── Add Block section ── -->
           <div class="arch-pal-sec">

@@ -2742,6 +2742,8 @@ tr.req-title-row td { cursor: default; }
 #arch-pal-wrap { border-right: none; }
 #arch-pal-wrap:not(.open) .arch-palette { display: none; }
 .arch-palette{flex:1;background:var(--color-surface);display:flex;flex-direction:column;overflow:hidden;gap:0}
+.arch-pal-resize-handle{position:absolute;left:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:10;}
+.arch-pal-resize-handle:hover{background:rgba(26,115,232,0.15)}
 
 /* ── Collapsible palette section ── */
 .arch-pal-sec{border-bottom:1px solid var(--color-border);display:flex;flex-direction:column;min-height:0}
