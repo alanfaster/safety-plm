@@ -1166,9 +1166,18 @@ export function mountVmodelEditor(wrapper, { links = [], canvasNodes = [], confi
         </div>
       </div>`;
     wrapper.appendChild(overlay);
-    overlay.querySelector('.vme-confirm-ok').addEventListener('click', () => { overlay.remove(); onConfirm(); });
-    overlay.querySelector('.vme-confirm-cancel').addEventListener('click', () => overlay.remove());
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    const doConfirm = () => { overlay.remove(); document.removeEventListener('keydown', spaceHandler); onConfirm(); };
+    const doCancel  = () => { overlay.remove(); document.removeEventListener('keydown', spaceHandler); };
+    const spaceHandler = e => {
+      if (e.key !== ' ' && e.code !== 'Space') return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      e.preventDefault(); doConfirm();
+    };
+    overlay.querySelector('.vme-confirm-ok').addEventListener('click', doConfirm);
+    overlay.querySelector('.vme-confirm-cancel').addEventListener('click', doCancel);
+    overlay.addEventListener('click', e => { if (e.target === overlay) doCancel(); });
+    document.addEventListener('keydown', spaceHandler);
   }
 
   function loadTemplate(templateNodes, templateLinks) {
