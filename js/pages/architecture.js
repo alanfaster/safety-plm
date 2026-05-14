@@ -3225,21 +3225,27 @@ function renderArchTree() {
       </div>${children}`;
   }
 
-  function groupSubtree(g) {
-    const children = blocks.filter(c => (c.data?.group_id) === g.id);
-    const isCol    = col.has(g.id);
-    const hasKids  = children.length > 0;
+  function groupSubtree(g, depth = 0) {
+    const isAssembly  = g.data?.subtype === 'assembly';
+    const directBlocks = blocks.filter(c => c.data?.group_id === g.id);
+    const directAssemblies = _s.components.filter(c => c.comp_type === 'Group' && c.data?.group_id === g.id);
     const myConns  = conns.filter(cn => cn.source_id === g.id || cn.target_id === g.id);
+    const isCol    = col.has(g.id);
+    const hasKids  = directBlocks.length > 0 || directAssemblies.length > 0 || myConns.length > 0;
+    const pad      = depth * 14;
+    const icon     = isAssembly ? '▭' : '⬜';
+    const color    = isAssembly ? '#6B7280' : '#777';
 
     let inner = '';
     if (!isCol) {
-      inner = children.map(c => blockNode(c, 1)).join('');
+      inner += directAssemblies.map(a => groupSubtree(a, depth + 1)).join('');
+      inner += directBlocks.map(c => blockNode(c, depth + 1)).join('');
       if (myConns.length) {
         inner += myConns.map(cn => {
           const other = _s.components.find(cc => cc.id === (cn.source_id === g.id ? cn.target_id : cn.source_id));
           const dir   = cn.source_id === g.id ? '→' : '←';
           const itype = cn.data?.iface_type || 'Link';
-          return `<div class="arch-tree-leaf arch-tree-conn-leaf" style="padding-left:14px"
+          return `<div class="arch-tree-leaf arch-tree-conn-leaf" style="padding-left:${pad + 14}px"
               data-conn-id="${cn.id}" title="Click to select connection">
               <span class="arch-tree-leaf-icon" style="color:#666">${dir}</span>
               <span class="arch-tree-leaf-label" style="color:#555">${escH(itype)}: ${escH(other?.name || '?')}</span>
@@ -3248,23 +3254,24 @@ function renderArchTree() {
       }
     }
 
-    return `<div class="arch-tree-node arch-tree-group-node" id="${nodeId(g.id)}" data-cid="${g.id}">
-        <button class="arch-tree-chevron ${hasKids || myConns.length ? '' : 'arch-tree-chevron-empty'} ${isCol ? 'arch-tree-chevron-col' : ''}"
+    return `<div class="arch-tree-node arch-tree-group-node" id="${nodeId(g.id)}" data-cid="${g.id}" style="padding-left:${pad}px">
+        <button class="arch-tree-chevron ${hasKids ? '' : 'arch-tree-chevron-empty'} ${isCol ? 'arch-tree-chevron-col' : ''}"
           data-toggle="${g.id}">▾</button>
-        <span class="arch-tree-node-icon" style="color:#777">⬜</span>
+        <span class="arch-tree-node-icon" style="color:${color}">${icon}</span>
         <span class="arch-tree-node-label" data-focus="${g.id}">${escH(g.name)}</span>
       </div>${inner}`;
   }
 
+  // Only top-level groups (no parent group)
+  const topGroups = groups.filter(g => !g.data?.group_id);
   // Ungrouped blocks (not inside any group)
-  const groupIds = new Set(groups.map(g => g.id));
-  const ungrouped = blocks.filter(c => !groupIds.has(c.id) && !c.data?.group_id);
-  const ports     = blocks.filter(c => c.comp_type === 'Port');
+  const ungrouped = blocks.filter(c => !c.data?.group_id);
+  const ports     = _s.components.filter(c => c.comp_type === 'Port');
 
   let html = '';
 
-  if (groups.length) {
-    html += groups.map(g => groupSubtree(g)).join('');
+  if (topGroups.length) {
+    html += topGroups.map(g => groupSubtree(g)).join('');
   }
   const freeBlocks = ungrouped.filter(c => c.comp_type !== 'Port');
   if (freeBlocks.length) {

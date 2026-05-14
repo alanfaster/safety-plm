@@ -2510,7 +2510,6 @@ tr.req-title-row td { cursor: default; }
   position: relative;
 }
 .arch-tree-tab {
-  transform: rotate(180deg);
   border-right: 1px solid var(--color-border);
 }
 .arch-tree-wrap.arch-tree-open .arch-tree-tab { background: #E5E7EB; color: var(--color-primary); }
