@@ -1472,7 +1472,6 @@ function wireCanvas() {
     if (palWrap) { palSavedWidth = palWrap.style.width || null; palWrap.style.width = ''; }
     palWrap?.classList.remove('open');
   };
-  palWrap?.classList.add('open');
   document.getElementById('arch-pal-tab')?.addEventListener('click', () =>
     palWrap?.classList.contains('open') ? closePal() : openPal());
   document.getElementById('arch-pal-close')?.addEventListener('click', closePal);
