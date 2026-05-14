@@ -2442,14 +2442,12 @@ async function showConnPanel(srcId, srcPort, tgtId, tgtPort) {
     type: reqType,
     status: 'draft',
     priority: 'medium',
-    custom_fields: sysIds.length ? { system_components: sysIds } : {},
   }).select().single();
 
   if (reqErr) {
-    console.error('[arch] requirement insert failed:', reqErr);
     toast(`⚠ Interface created but requirement failed: ${reqErr.message}`, 'error');
-  } else {
-    console.log('[arch] requirement created:', reqCode, 'type:', reqType, 'parent_id:', _s.parentId);
+  } else if (newReq && sysIds.length) {
+    sb.from('requirements').update({ custom_fields: { system_components: sysIds } }).eq('id', newReq.id).then();
   }
 
   await sb.from('arch_connections').update({ requirement: reqCode }).eq('id', data.id).then();
