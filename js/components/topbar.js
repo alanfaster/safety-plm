@@ -2,6 +2,8 @@ import { t, getLang, setLang } from '../i18n/index.js';
 import { signOut } from '../auth.js';
 import { navigate } from '../router.js';
 import { VERSION } from '../version.js';
+import { sb } from '../config.js';
+import { showModal, hideModal } from './modal.js';
 
 export function initTopbar(user) {
   // Version
@@ -24,6 +26,41 @@ export function initTopbar(user) {
       }
     };
   }
+
+  // Change password on user-info click
+  document.getElementById('user-info').onclick = () => {
+    showModal({
+      title: 'Change Password',
+      body: `
+        <div class="form-group">
+          <label class="form-label">New password</label>
+          <input type="password" class="form-input" id="cp-new" placeholder="Min. 6 characters" autocomplete="new-password"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm new password</label>
+          <input type="password" class="form-input" id="cp-confirm" placeholder="Repeat password" autocomplete="new-password"/>
+        </div>
+        <p id="cp-error" style="color:var(--color-error);font-size:13px;margin-top:4px;min-height:18px"></p>`,
+      footer: `
+        <button class="btn btn-secondary" id="cp-cancel">Cancel</button>
+        <button class="btn btn-primary" id="cp-save">Save</button>`,
+    });
+    document.getElementById('cp-cancel').onclick = () => hideModal();
+    document.getElementById('cp-save').onclick = async () => {
+      const pw  = document.getElementById('cp-new').value;
+      const pw2 = document.getElementById('cp-confirm').value;
+      const err = document.getElementById('cp-error');
+      err.textContent = '';
+      if (pw.length < 6)    { err.textContent = 'Password must be at least 6 characters.'; return; }
+      if (pw !== pw2)       { err.textContent = 'Passwords do not match.'; return; }
+      const btn = document.getElementById('cp-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      const { error } = await sb.auth.updateUser({ password: pw });
+      if (error) { err.textContent = error.message; btn.disabled = false; btn.textContent = 'Save'; }
+      else { hideModal(); }
+    };
+    setTimeout(() => document.getElementById('cp-new')?.focus(), 100);
+  };
 
   // Logout
   document.getElementById('btn-logout').textContent = t('auth.signout');
