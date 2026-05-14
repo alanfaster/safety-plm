@@ -648,7 +648,7 @@ function groupHTML(g) {
     <div class="arch-group-funs" id="funlist-${g.id}">
       ${funs.map(f => `
         <div class="arch-fun-box arch-fun-box--group ${f.is_safety_related ? 'arch-fun-box--safe' : ''}"
-             data-fun-id="${f.id}" data-comp-id="${g.id}"${funTooltipAttrs(f)}>
+             data-fun-id="${f.id}" data-comp-id="${g.id}" data-fun-ref-id="${f.function_ref_id||''}"${funTooltipAttrs(f)}>
           <span class="arch-fun-box-label">f</span>
           <span class="arch-fun-box-name">${escH(f.name)}</span>
           ${f.is_safety_related ? '<span class="arch-fun-box-warn">⚠</span>' : ''}
@@ -715,7 +715,7 @@ function blockHTML(c) {
   const funItems = `
     ${funs.map(f => `
         <div class="arch-fun-box ${f.is_safety_related ? 'arch-fun-box--safe' : ''}"
-             data-fun-id="${f.id}" data-comp-id="${c.id}"${funTooltipAttrs(f)}>
+             data-fun-id="${f.id}" data-comp-id="${c.id}" data-fun-ref-id="${f.function_ref_id||''}"${funTooltipAttrs(f)}>
           <span class="arch-fun-box-label">f</span>
           <span class="arch-fun-box-name">${escH(f.name)}</span>
           ${f.is_safety_related ? '<span class="arch-fun-box-warn">⚠</span>' : ''}
@@ -1541,12 +1541,14 @@ function wireCanvas() {
         if (!box || !box.dataset.funtip) { funTip.style.display = 'none'; return; }
         let tip; try { tip = JSON.parse(box.dataset.funtip); } catch(_) { return; }
         const rows = [
+          tip.name ? `<div class="arch-funtip-title">${escH(tip.name)}</div>` : '',
+          tip.desc ? `<div class="arch-funtip-row arch-funtip-desc"><span class="arch-funtip-val">${escH(tip.desc)}</span></div>` : '',
+          (tip.feat || tip.uc) ? `<div class="arch-funtip-sep"></div>` : '',
           tip.feat ? `<div class="arch-funtip-row"><span class="arch-funtip-lbl">Feature</span><span class="arch-funtip-val">${escH(tip.feat)}</span></div>` : '',
           tip.uc   ? `<div class="arch-funtip-row"><span class="arch-funtip-lbl">Use Case</span><span class="arch-funtip-val">${escH(tip.uc)}</span></div>` : '',
-          tip.desc ? `<div class="arch-funtip-row arch-funtip-desc"><span class="arch-funtip-lbl">Description</span><span class="arch-funtip-val">${escH(tip.desc)}</span></div>` : '',
         ].filter(Boolean).join('');
         if (!rows) return;
-        funTip.innerHTML = rows;
+        funTip.innerHTML = rows + `<div class="arch-funtip-hint">Click to open in panel</div>`;
         const r = box.getBoundingClientRect();
         const cr = canvasOuter.getBoundingClientRect();
         funTip.style.display = 'block';
@@ -1555,6 +1557,46 @@ function wireCanvas() {
       });
       canvasOuter.addEventListener('mouseout', e => {
         if (!e.relatedTarget?.closest('.arch-fun-box')) funTip.style.display = 'none';
+      });
+
+      // Click on fun-box → open idef panel and navigate to that function
+      canvasOuter.addEventListener('click', async e => {
+        const box = e.target.closest('.arch-fun-box');
+        if (!box || e.target.closest('.arch-fun-del')) return;
+        const refId = box.dataset.funRefId;
+        if (!refId) return;
+        // Expand Item Definition panel
+        const idefPanel = document.getElementById('arch-idef-panel');
+        if (idefPanel?.classList.contains('bp-collapsed')) idefPanel.querySelector('.bp-hdr')?.click();
+        // Wait for idef data to load
+        if (!_idef.loaded) await loadIdefData();
+        // Look up function → UC → feature
+        const { data: fn } = await sb.from('functions').select('id,use_case_id').eq('id', refId).single();
+        if (!fn) return;
+        const { data: uc } = await sb.from('use_cases').select('id,feature_id').eq('id', fn.use_case_id).single();
+        if (!uc) return;
+        // Navigate: select feature
+        if (_idef.selFeatId !== uc.feature_id) {
+          _idef.selFeatId = uc.feature_id; _idef.selUCId = null; _idef.functions = []; _idef.useCases = [];
+          const { data: ucs } = await sb.from('use_cases').select('*').eq('feature_id', uc.feature_id).order('sort_order').order('created_at');
+          _idef.useCases = ucs || [];
+        }
+        // Select UC
+        if (_idef.selUCId !== uc.id) {
+          _idef.selUCId = uc.id; _idef.functions = [];
+          const { data: fns } = await sb.from('functions').select('*').eq('use_case_id', uc.id).order('sort_order').order('created_at');
+          _idef.functions = fns || [];
+        }
+        renderIdefCols();
+        // Scroll to and highlight the function row
+        requestAnimationFrame(() => {
+          const row = document.querySelector(`#idef-list-fun .fuf-row[data-id="${refId}"]`);
+          if (row) {
+            row.classList.add('idef-fn--highlight');
+            row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            setTimeout(() => row.classList.remove('idef-fn--highlight'), 2000);
+          }
+        });
       });
     }
   }
@@ -3363,10 +3405,11 @@ function escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;
 
 // Returns tooltip data for an arch_function record (looks up Feature/UC/Description from _idef)
 function funTooltipAttrs(f) {
-  let feat = '', uc = '', desc = f.description || '';
+  let feat = '', uc = '', desc = f.description || '', name = f.name || '';
   if (f.function_ref_id && _idef.loaded) {
     const fn = _idef.functions.find(x => x.id === f.function_ref_id);
     if (fn) {
+      name = fn.name || name;
       desc = fn.description || desc;
       const ucObj = _idef.useCases.find(x => x.id === fn.use_case_id);
       if (ucObj) {
@@ -3376,8 +3419,8 @@ function funTooltipAttrs(f) {
       }
     }
   }
-  if (!feat && !uc && !desc) return '';
-  return ` data-funtip="${escH(JSON.stringify({feat, uc, desc}))}"`;
+  if (!name && !feat && !uc && !desc) return '';
+  return ` data-funtip="${escH(JSON.stringify({name, feat, uc, desc}))}"`;
 }
 
 // ── Item Definition panel ─────────────────────────────────────────────────────
