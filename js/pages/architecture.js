@@ -3226,18 +3226,22 @@ function renderArchTree() {
   }
 
   const allGroups = _s.components.filter(c => c.comp_type === 'Group');
-  const assemblies = allGroups.filter(c => c.data?.subtype === 'assembly');
-  console.log('[tree] groups:', allGroups.map(g=>g.name), 'assemblies:', assemblies.map(a=>a.name));
 
-  // Returns the smallest group containing comp's center (its direct parent)
+  // Returns the direct parent group of comp.
+  // When two groups mutually contain each other's center, the larger one is the outer (parent).
   function smallestParent(comp) {
     const cx = comp.x + comp.width/2, cy = comp.y + comp.height/2;
-    const containers = allGroups.filter(g =>
-      g.id !== comp.id &&
-      cx > g.x && cx < g.x+g.width && cy > g.y && cy < g.y+g.height);
-    const best = containers.sort((a,b) => a.width*a.height - b.width*b.height)[0] || null;
-    console.log(`[tree] smallestParent(${comp.name}) cx=${cx} cy=${cy} containers=[${containers.map(g=>g.name)}] best=${best?.name}`);
-    return best;
+    const compArea = comp.width * comp.height;
+    const containers = allGroups.filter(g => {
+      if (g.id === comp.id) return false;
+      if (!(cx > g.x && cx < g.x+g.width && cy > g.y && cy < g.y+g.height)) return false;
+      // Mutual containment: if comp is larger than g and comp also contains g's center → comp is outer, skip g
+      const gcx = g.x + g.width/2, gcy = g.y + g.height/2;
+      const mutual = gcx > comp.x && gcx < comp.x+comp.width && gcy > comp.y && gcy < comp.y+comp.height;
+      if (mutual && compArea > g.width*g.height) return false;
+      return true;
+    });
+    return containers.sort((a,b) => a.width*a.height - b.width*b.height)[0] || null;
   }
 
   function groupSubtree(g, depth = 0) {
