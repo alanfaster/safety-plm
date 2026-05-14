@@ -3,6 +3,8 @@ import { t } from '../i18n/index.js';
 const overlay = () => document.getElementById('modal-overlay');
 const modal   = () => document.getElementById('modal');
 
+let _modalKeyHandler = null;
+
 export function showModal({ title, body, footer, large = false, onClose } = {}) {
   const m = modal();
   m.classList.toggle('modal-lg', !!large);
@@ -14,10 +16,23 @@ export function showModal({ title, body, footer, large = false, onClose } = {}) 
   const close = document.getElementById('modal-close');
   close.onclick = () => hideModal(onClose);
   overlay().onclick = (e) => { if (e.target === overlay()) hideModal(onClose); };
+
+  if (_modalKeyHandler) document.removeEventListener('keydown', _modalKeyHandler);
+  _modalKeyHandler = (e) => {
+    if (e.key !== ' ' && e.code !== 'Space') return;
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    const danger = document.getElementById('modal-footer')?.querySelector('.btn-danger');
+    if (!danger) return;
+    e.preventDefault();
+    danger.click();
+  };
+  document.addEventListener('keydown', _modalKeyHandler);
 }
 
 export function hideModal(callback) {
   overlay().classList.add('hidden');
+  if (_modalKeyHandler) { document.removeEventListener('keydown', _modalKeyHandler); _modalKeyHandler = null; }
   if (typeof callback === 'function') callback();
 }
 
