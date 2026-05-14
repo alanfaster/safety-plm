@@ -3262,16 +3262,27 @@ function renderArchTree() {
       </div>${inner}`;
   }
 
-  // Only top-level groups (no parent group)
-  const topGroups = groups.filter(g => !g.data?.group_id);
-  // Ungrouped blocks (not inside any group)
+  // System groups = all Groups without subtype (always top-level regardless of stored group_id)
+  const systemGroups = groups.filter(g => !g.data?.subtype);
+  // Ungrouped blocks
   const ungrouped = blocks.filter(c => !c.data?.group_id);
 
   let html = '';
+  const projectName = _s.project?.name || _s.item?.name || 'Project';
 
-  if (topGroups.length) {
-    html += topGroups.map(g => groupSubtree(g)).join('');
+  if (systemGroups.length > 1) {
+    // Multiple systems: wrap under a project root node
+    const isColProj = col.has('__project__');
+    const inner = isColProj ? '' : systemGroups.map(g => groupSubtree(g, 1)).join('');
+    html = `<div class="arch-tree-node arch-tree-group-node" id="atree-__project__" data-cid="">
+        <button class="arch-tree-chevron ${isColProj ? 'arch-tree-chevron-col' : ''}" data-toggle="__project__">▾</button>
+        <span class="arch-tree-node-icon" style="color:#374151">◈</span>
+        <span class="arch-tree-node-label" style="font-weight:700">${escH(projectName)}</span>
+      </div>${inner}`;
+  } else {
+    html += systemGroups.map(g => groupSubtree(g, 0)).join('');
   }
+
   const freeBlocks = ungrouped.filter(c => c.comp_type !== 'Port');
   if (freeBlocks.length) {
     if (html) html += `<div class="arch-tree-section-sep">Ungrouped</div>`;
