@@ -3413,7 +3413,8 @@ function escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;
 function parentSystem(comp) {
   if (!comp) return null;
   if (comp.comp_type === 'Group' && !comp.data?.subtype) return comp;
-  if (comp.group_id) return parentSystem(compById(comp.group_id));
+  const gid = comp.data?.group_id;
+  if (gid) return parentSystem(compById(gid));
   return null;
 }
 
