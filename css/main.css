@@ -4865,13 +4865,13 @@ th.col-managed { overflow:hidden; }
   background: var(--color-surface);
   display: flex;
   flex-direction: column;
-  transition: width 0.2s ease, min-width 0.2s ease;
+  transition: width 0.2s ease;
   flex-shrink: 0;
   height: 100%;
 }
 .req-trace-panel.open {
   width: 420px;
-  min-width: 420px;
+  min-width: 32px;
 }
 .req-trace-panel--hidden {
   display: none !important;

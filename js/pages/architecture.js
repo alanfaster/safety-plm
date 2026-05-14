@@ -1564,11 +1564,12 @@ function wireCanvas() {
     let palResizing = null;
     palWrap.addEventListener('pointerdown', e => {
       const rect = palWrap.getBoundingClientRect();
-      if (e.clientX > rect.left + 8) return; // only trigger within 8px of left edge
+      if (e.clientX > rect.left + 8) return;
       e.preventDefault(); e.stopPropagation();
       palResizing = { startX: e.clientX, origW: palWrap.offsetWidth };
       palWrap.setPointerCapture(e.pointerId);
       palWrap.style.cursor = 'col-resize';
+      palWrap.style.transition = 'none';
     });
     palWrap.addEventListener('pointermove', e => {
       const rect = palWrap.getBoundingClientRect();
@@ -1583,6 +1584,7 @@ function wireCanvas() {
     palWrap.addEventListener('pointerup', () => {
       palResizing = null;
       palWrap.style.cursor = '';
+      palWrap.style.transition = '';
     });
   }
 
