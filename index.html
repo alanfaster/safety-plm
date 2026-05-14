@@ -13,7 +13,7 @@
     .auth-logo p { font-size: 13px; color: var(--color-text-muted); margin-top: 4px; }
     .form-group { margin-bottom: 16px; }
     .form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
-    .form-group input { width: 100%; padding: 10px 12px; border: 2px solid var(--color-border); border-radius: 4px; font-size: 14px; color: var(--color-text); background: var(--color-surface); transition: border-color 0.15s; }
+    .form-group input { width: 100%; padding: 10px 12px; border: 2px solid var(--color-border); border-radius: 4px; font-size: 14px; color: var(--color-text); background: var(--color-surface); transition: border-color 0.15s; box-sizing: border-box; }
     .form-group input:focus { outline: none; border-color: var(--color-primary); }
     .btn-primary { width: 100%; padding: 11px; background: var(--color-primary); color: #fff; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s; margin-top: 8px; }
     .btn-primary:hover { background: var(--color-primary-dark); }
@@ -23,7 +23,8 @@
     .auth-footer { text-align: center; font-size: 12px; color: var(--color-text-muted); }
     .btn-link { background: none; border: none; color: var(--color-primary); font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; }
     .btn-link:hover { color: var(--color-primary-dark); }
-    .auth-success { color: var(--color-success, #1E8E3E); font-size: 13px; text-align: center; margin-top: 12px; }
+    .auth-success { color: #1E8E3E; font-size: 13px; text-align: center; margin-top: 12px; }
+    .auth-section-title { font-size: 13px; font-weight: 600; color: var(--color-text-muted); margin-bottom: 12px; }
   </style>
 </head>
 <body>
@@ -32,22 +33,45 @@
       <h1>Safety ALM</h1>
       <p>ALM/PLM &amp; Functional Safety Platform</p>
     </div>
-    <form id="login-form">
-      <div class="form-group">
-        <label for="email">Email</label>
-        <input type="email" id="email" placeholder="user@company.com" autocomplete="email" required/>
+
+    <!-- Login form -->
+    <div id="view-login">
+      <form id="login-form">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" placeholder="user@company.com" autocomplete="email" required/>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" required/>
+        </div>
+        <button type="submit" class="btn-primary" id="btn-login">Sign In</button>
+        <p class="auth-error" id="auth-error"></p>
+      </form>
+      <div style="text-align:right; margin-top:8px;">
+        <button class="btn-link" id="btn-forgot">Forgot password?</button>
       </div>
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" required/>
-      </div>
-      <button type="submit" class="btn-primary" id="btn-login">Sign In</button>
-      <p class="auth-error" id="auth-error"></p>
-    </form>
-    <div style="text-align:right; margin-top:8px;">
-      <button class="btn-link" id="btn-forgot">Forgot password?</button>
     </div>
-    <p class="auth-success" id="auth-success"></p>
+
+    <!-- Reset password form (shown on "Forgot password" or when recovery token in URL) -->
+    <div id="view-reset" style="display:none">
+      <p class="auth-section-title">Set new password</p>
+      <div class="form-group">
+        <label for="reset-new">New password</label>
+        <input type="password" id="reset-new" placeholder="Min. 6 characters" autocomplete="new-password"/>
+      </div>
+      <div class="form-group">
+        <label for="reset-confirm">Confirm password</label>
+        <input type="password" id="reset-confirm" placeholder="Repeat password" autocomplete="new-password"/>
+      </div>
+      <button class="btn-primary" id="btn-reset-save">Save new password</button>
+      <p class="auth-error" id="reset-error"></p>
+      <p class="auth-success" id="reset-success"></p>
+      <div style="text-align:center; margin-top:12px;">
+        <button class="btn-link" id="btn-back-login">← Back to login</button>
+      </div>
+    </div>
+
     <hr class="auth-divider"/>
     <p class="auth-footer">Safety ALM v1.0 — ISO 26262 · ARP4761 · DO-254 · MIL-STD-882</p>
   </div>
@@ -59,25 +83,53 @@
     const { createClient } = supabase;
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    function showLogin()  { document.getElementById('view-login').style.display=''; document.getElementById('view-reset').style.display='none'; }
+    function showReset()  { document.getElementById('view-login').style.display='none'; document.getElementById('view-reset').style.display=''; setTimeout(()=>document.getElementById('reset-new').focus(),100); }
+
+    // Detect recovery token in URL hash (from reset email link)
+    sb.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') showReset();
+      else if (event === 'SIGNED_IN' && session) window.location.href = 'app.html';
+    });
+
+    // Already logged in → redirect
     (async () => {
       const { data: { session } } = await sb.auth.getSession();
       if (session) window.location.href = 'app.html';
     })();
 
-    document.getElementById('btn-forgot').addEventListener('click', async () => {
-      const email = document.getElementById('email').value.trim();
-      const errorEl = document.getElementById('auth-error');
-      const successEl = document.getElementById('auth-success');
-      errorEl.textContent = '';
-      successEl.textContent = '';
-      if (!email) { errorEl.textContent = 'Enter your email first.'; return; }
-      const { error } = await sb.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin + '/index.html'
-      });
-      if (error) { errorEl.textContent = 'Could not send reset email: ' + error.message; }
-      else { successEl.textContent = 'Password reset email sent. Check your inbox.'; }
+    // Forgot password → show reset form directly
+    document.getElementById('btn-forgot').addEventListener('click', () => showReset());
+
+    // Back to login
+    document.getElementById('btn-back-login').addEventListener('click', () => showLogin());
+
+    // Save new password
+    document.getElementById('btn-reset-save').addEventListener('click', async () => {
+      const pw  = document.getElementById('reset-new').value;
+      const pw2 = document.getElementById('reset-confirm').value;
+      const err = document.getElementById('reset-error');
+      const suc = document.getElementById('reset-success');
+      err.textContent = ''; suc.textContent = '';
+
+      if (pw.length < 6) { err.textContent = 'Password must be at least 6 characters.'; return; }
+      if (pw !== pw2)    { err.textContent = 'Passwords do not match.'; return; }
+
+      const btn = document.getElementById('btn-reset-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+
+      const { error } = await sb.auth.updateUser({ password: pw });
+
+      if (error) {
+        err.textContent = error.message;
+        btn.disabled = false; btn.textContent = 'Save new password';
+      } else {
+        suc.textContent = 'Password updated. Redirecting…';
+        setTimeout(() => window.location.href = 'app.html', 1500);
+      }
     });
 
+    // Login form
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-login');
@@ -86,15 +138,13 @@
       const password = document.getElementById('password').value;
 
       errorEl.textContent = '';
-      btn.disabled = true;
-      btn.textContent = 'Signing in...';
+      btn.disabled = true; btn.textContent = 'Signing in...';
 
       const { error } = await sb.auth.signInWithPassword({ email, password });
 
       if (error) {
         errorEl.textContent = 'Invalid email or password.';
-        btn.disabled = false;
-        btn.textContent = 'Sign In';
+        btn.disabled = false; btn.textContent = 'Sign In';
       } else {
         window.location.href = 'app.html';
       }
