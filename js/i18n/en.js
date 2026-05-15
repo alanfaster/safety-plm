@@ -76,6 +76,7 @@ export default {
   'safety.TSC': 'TSC',
   'safety.FTA': 'FTA',
   'safety.FMEA': 'FMEA',
+  'safety.DFMEA': 'Functional FMEA',
   'safety.PHL_PHA': 'PHL/PHA',
   'safety.FHA': 'FHA',
   'safety.new_row': 'Add Row',

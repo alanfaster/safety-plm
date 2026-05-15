@@ -127,13 +127,13 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
     <div class="page-header">
       <div class="page-header-top">
         <div>
-          <h1>DFMEA</h1>
-          <p class="page-subtitle">Design FMEA · VDA 2019 · ${esc(parentName)}</p>
+          <h1>Functional FMEA</h1>
+          <p class="page-subtitle">VDA 2019 · ${esc(parentName)}</p>
         </div>
         <div class="dfmea-toolbar">
           <div class="arch-sep"></div>
           <button class="btn btn-secondary btn-sm" id="btn-dfmea-sync">⟳ Sync from System</button>
-          <button class="btn btn-primary   btn-sm" id="btn-dfmea-new" title="Add new Component / Function group">＋ New</button>
+          <button class="btn btn-primary   btn-sm" id="btn-dfmea-new" title="Add new Function group">＋ New</button>
         </div>
       </div>
     </div>
@@ -272,7 +272,7 @@ function renderTable(area){
     area.innerHTML=`<div class="empty-state">
       <div class="empty-state-icon">⚠</div>
       <h3>No DFMEA entries yet</h3>
-      <p>Click <strong>＋ New</strong> to start a new Component / Function group, or use <strong>⟳ Sync from System</strong>.</p>
+      <p>Click <strong>＋ New</strong> to start a new Function group, or use <strong>⟳ Sync from System</strong>.</p>
     </div>`;
     return;
   }
@@ -281,7 +281,7 @@ function renderTable(area){
     <div class="dfmea-table-wrap">
       <table class="dfmea-table">
         <thead><tr>
-          <th class="dfmea-col-compfunc">Component / Function</th>
+          <th class="dfmea-col-compfunc">Function</th>
           <th class="dfmea-col-fm">Failure Mode</th>
           <th class="dfmea-col-maxs" title="Max Severity">Max S</th>
           <th class="dfmea-col-status">Status</th>
@@ -324,7 +324,7 @@ function renderGroup(tbody,g){
     fmTr.className=`dfmea-row dfmea-row-fm${isFirstFm?' dfmea-group-first':''}${isLastFm&&!effects.length&&!directCauses.length?' dfmea-group-last':''}`;
     fmTr.dataset.id=fm.id; fmTr.dataset.type='fm';
 
-    // Component / Function cell (rowspan = entire group, only on first FM)
+    // Function cell (rowspan = entire group, only on first FM)
     if(isFirstFm){
       const cfTd=document.createElement('td');
       cfTd.rowSpan=totalSpan;
@@ -341,7 +341,7 @@ function renderGroup(tbody,g){
     // Failure Mode cell (rowspan = this FM's rows)
     const fmTd=makeTd('dfmea-col-fm dfmea-editable',fmSpan);
     fmTd.dataset.field='failure_mode';
-    fmTd.innerHTML=`${cellText(fm.failure_mode)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Component / Function">＋</button>`;
+    fmTd.innerHTML=`${cellText(fm.failure_mode)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button>`;
     fmTr.appendChild(fmTd);
 
     // Max S cell (rowspan = this FM's rows)
@@ -549,7 +549,7 @@ function wireFmCells(fmTr,fmTd,statusTd,fm,g){
     const ta=fmTd.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
     ta.addEventListener('blur',async()=>{
       const v=ta.value.trim(); fm.failure_mode=v;
-      fmTd.innerHTML=`${cellText(v)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Component / Function">＋</button>`;
+      fmTd.innerHTML=`${cellText(v)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button>`;
       await autosave(fm.id,{failure_mode:v});
       refreshMapComp(fm.component_id||fm.component_name);
       // Re-wire the new button
