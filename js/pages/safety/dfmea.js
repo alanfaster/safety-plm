@@ -66,6 +66,18 @@ function cellText(v){
 }
 function rtype(it){return it.row_type||'fm';}
 
+/** Wraps td content so the corner-del button survives innerHTML replacements on the inner div */
+function wrapWithDel(td, action, innerHtml){
+  td.innerHTML=`<div class="dfmea-cell-wrap"><button class="dfmea-corner-del" data-action="${action}" title="Delete">✕</button><div class="dfmea-cell-inner">${innerHtml}</div></div>`;
+}
+function setInner(td, html){
+  const inner=td.querySelector('.dfmea-cell-inner');
+  if(inner) inner.innerHTML=html; else td.innerHTML=html;
+}
+function getInner(td){
+  return td.querySelector('.dfmea-cell-inner')||td;
+}
+
 function maxSevForFm(fm){
   const effs=_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id);
   if(!effs.length) return fm.severity||0;
@@ -334,7 +346,7 @@ function renderGroup(tbody,g){
         <button class="dfmea-corner-del" data-action="del-group" title="Delete function group">✕</button>
         <div class="dfmea-cf-func dfmea-editable" data-field="function_name" data-fm-id="${fm.id}" title="dblclick to edit">${cellText(fm.function_name)}</div>
         ${fm.component_name?`<div class="dfmea-cf-comp-sub">${esc(fm.component_name)}</div>`:''}
-        </div>`;
+      </div>`;
 
       fmTr.appendChild(cfTd);
       cfTd.querySelector('[data-action="del-group"]')?.addEventListener('click', () => deleteGroup(g));
@@ -345,7 +357,7 @@ function renderGroup(tbody,g){
     // Failure Mode cell (rowspan = this FM's rows)
     const fmTd=makeTd('dfmea-col-fm dfmea-editable',fmSpan);
     fmTd.dataset.field='failure_mode';
-    fmTd.innerHTML=`<div class="dfmea-cell-wrap"><button class="dfmea-corner-del" data-action="del-fm" title="Delete Failure Mode">✕</button>${cellText(fm.failure_mode)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button></div>`;
+    wrapWithDel(fmTd,'del-fm',`${cellText(fm.failure_mode)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button>`);
     fmTr.appendChild(fmTd);
 
     // Max S cell (rowspan = this FM's rows)
@@ -402,7 +414,7 @@ function renderGroup(tbody,g){
       // Effect Higher (rowspan = 1 + causes under this effect)
       const effHTd=makeTd('dfmea-col-eff dfmea-editable',effSpan);
       effHTd.dataset.field='effect_higher';
-      effHTd.innerHTML=`<div class="dfmea-cell-wrap"><button class="dfmea-corner-del" data-action="del-effect" title="Delete Effect">✕</button>${cellText(eff.effect_higher)}${isLastEff?`<button class="dfmea-inline-add" data-action="add-effect" title="Add Effect">＋</button>`:''}</div>`;
+      wrapWithDel(effHTd,'del-effect',`${cellText(eff.effect_higher)}${isLastEff?`<button class="dfmea-inline-add" data-action="add-effect" title="Add Effect">＋</button>`:''}`)
       effTr.appendChild(effHTd);
 
       // Effect Local (rowspan)
@@ -465,7 +477,7 @@ function appendCauseCells(tr,cause,fm,isLast){
 
   const fcTd=makeTd('dfmea-col-fc dfmea-editable');
   fcTd.dataset.field='failure_cause';
-  fcTd.innerHTML=`<div class="dfmea-cell-wrap"><button class="dfmea-corner-del" data-action="del-cause" title="Delete Cause">✕</button>${cellText(cause.failure_cause)}${isLast?`<button class="dfmea-inline-add" data-action="add-cause" title="Add Cause">＋</button>`:''}</div>`;
+  wrapWithDel(fcTd,'del-cause',`${cellText(cause.failure_cause)}${isLast?`<button class="dfmea-inline-add" data-action="add-cause" title="Add Cause">＋</button>`:''}`);
   tr.appendChild(fcTd);
 
   const prevTd=makeTd('dfmea-col-ctrl dfmea-editable');prevTd.dataset.field='prevention_controls';prevTd.innerHTML=cellText(cause.prevention_controls);tr.appendChild(prevTd);
@@ -545,25 +557,25 @@ function wireFmCells(fmTr,fmTd,statusTd,fm,g){
   // FM text dblclick edit
   fmTd.addEventListener('dblclick',()=>{
     if(fmTd.querySelector('textarea')) return;
+    const inner=getInner(fmTd);
     const cur=fm.failure_mode||'';
-    fmTd.innerHTML=`<textarea class="dfmea-cell-input" rows="2">${esc(cur)}</textarea><button class="dfmea-inline-add" data-action="add-fm" title="Add FM" style="display:none">＋</button>`;
-    const ta=fmTd.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
+    inner.innerHTML=`<textarea class="dfmea-cell-input" rows="2">${esc(cur)}</textarea><button class="dfmea-inline-add" data-action="add-fm" title="Add FM" style="display:none">＋</button>`;
+    const ta=inner.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
     ta.addEventListener('blur',async()=>{
       const v=ta.value.trim(); fm.failure_mode=v;
-      fmTd.innerHTML=`${cellText(v)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button>`;
+      inner.innerHTML=`${cellText(v)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button>`;
       await autosave(fm.id,{failure_mode:v});
       refreshMapComp(fm.component_id||fm.component_name);
-      // Re-wire the new button
-      fmTd.querySelector('[data-action="add-fm"]')?.addEventListener('click',()=>addFmRow({component_id:fm.component_id,component_name:fm.component_name,function_name:fm.function_name},true));
+      inner.querySelector('[data-action="add-fm"]')?.addEventListener('click',()=>addFmRow({component_id:fm.component_id,component_name:fm.component_name,function_name:fm.function_name},true));
     });
     ta.addEventListener('keydown',e=>{
-      if(e.key==='Escape'){fm.failure_mode=cur;fmTd.innerHTML=`${cellText(cur)}<button class="dfmea-inline-add" data-action="add-fm">＋</button>`;wireFmCells(fmTr,fmTd,statusTd,fm,g);}
+      if(e.key==='Escape'){inner.innerHTML=`${cellText(cur)}<button class="dfmea-inline-add" data-action="add-fm">＋</button>`;}
       if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ta.blur();}
     });
   });
 
   // + Add FM
-  fmTd.querySelector('[data-action="add-fm"]')?.addEventListener('click',()=>
+  getInner(fmTd).querySelector('[data-action="add-fm"]')?.addEventListener('click',()=>
     addFmRow({component_id:fm.component_id,component_name:fm.component_name,function_name:fm.function_name},true));
 
   // Status
@@ -639,21 +651,22 @@ function wireCauseCells(tr,cause,fm){
 function wireTextCell(td,it,field,afterSave){
   td.addEventListener('dblclick',()=>{
     if(td.querySelector('textarea')) return;
+    const inner=getInner(td);
     const cur=it[field]||'';
-    const existingBtn=td.querySelector('.dfmea-inline-add');
+    const existingBtn=inner.querySelector('.dfmea-inline-add');
     const hasAddBtn=!!existingBtn;
     const addAction=existingBtn?.dataset.action||'';
     const btnHtml=hasAddBtn?`<button class="dfmea-inline-add" data-action="${addAction}" style="display:none">＋</button>`:'';
-    td.innerHTML=`<textarea class="dfmea-cell-input" rows="2">${esc(cur)}</textarea>${btnHtml}`;
-    const ta=td.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
+    inner.innerHTML=`<textarea class="dfmea-cell-input" rows="2">${esc(cur)}</textarea>${btnHtml}`;
+    const ta=inner.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
     ta.addEventListener('blur',async()=>{
       const v=ta.value.trim(); it[field]=v;
-      td.innerHTML=`${cellText(v)}${hasAddBtn?`<button class="dfmea-inline-add" data-action="${addAction}">＋</button>`:''}`;
+      inner.innerHTML=`${cellText(v)}${hasAddBtn?`<button class="dfmea-inline-add" data-action="${addAction}">＋</button>`:''}`;
       if(v!==(cur)) await autosave(it.id,{[field]:v});
       if(afterSave) afterSave();
     });
     ta.addEventListener('keydown',e=>{
-      if(e.key==='Escape'){td.innerHTML=`${cellText(cur)}${hasAddBtn?`<button class="dfmea-inline-add" data-action="${addAction}">＋</button>`:''}`;if(afterSave)afterSave();}
+      if(e.key==='Escape'){inner.innerHTML=`${cellText(cur)}${hasAddBtn?`<button class="dfmea-inline-add" data-action="${addAction}">＋</button>`:''}`;if(afterSave)afterSave();}
       if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ta.blur();}
     });
   });
