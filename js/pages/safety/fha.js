@@ -213,7 +213,7 @@ function funSection(fn, funHazards, scope) {
             <th class="fha-th-acts"></th>
             <th class="fha-th-code">ID</th>
             ${cols.map(f => {
-              const suffix = f.key === scope.topEventField ? ' <span class="fha-th-fta-badge" title="Used as FTA top event">FTA Top Event</span>' : '';
+              const suffix = f.key === scope.topEventField ? ' <span class="fha-th-fta-badge" title="Used as FTA top event">FTA TOP</span>' : '';
               return `<th class="fha-th-${f.key}">${esc(f.label)}${suffix}</th>`;
             }).join('')}
             <th class="fha-th-status">Status</th>
