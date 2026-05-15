@@ -22,6 +22,7 @@
 import { sb, buildCode, nextIndex } from '../../config.js';
 import { wireBottomPanel } from '../../utils/bottom-panel.js';
 import { toast } from '../../toast.js';
+import { showModal, hideModal } from '../../components/modal.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -286,7 +287,6 @@ function renderTable(area){
           <th class="dfmea-col-fm">Failure Mode</th>
           <th class="dfmea-col-maxs" title="Max Severity">Max S</th>
           <th class="dfmea-col-status">Status</th>
-          <th class="dfmea-col-del"></th>
           <th class="dfmea-col-eff">Effect — Higher Level</th>
           <th class="dfmea-col-eff">Effect — Local</th>
           <th class="dfmea-col-sod" title="Severity">S</th>
@@ -331,10 +331,12 @@ function renderGroup(tbody,g){
       cfTd.rowSpan=totalSpan;
       cfTd.className='dfmea-col-compfunc dfmea-group-cell';
       cfTd.innerHTML=`
+        <button class="dfmea-corner-del" data-action="del-group" title="Delete function group">✕</button>
         <div class="dfmea-cf-func dfmea-editable" data-field="function_name" data-fm-id="${fm.id}" title="dblclick to edit">${cellText(fm.function_name)}</div>
         ${fm.component_name?`<div class="dfmea-cf-comp-sub">${esc(fm.component_name)}</div>`:''}`;
 
       fmTr.appendChild(cfTd);
+      cfTd.querySelector('[data-action="del-group"]')?.addEventListener('click', () => deleteGroup(g));
       // Wire group-cell editing (edits ALL fms in group for comp/func)
       cfTd.querySelectorAll('.dfmea-editable').forEach(el=>wireGroupCellEdit(el,g));
     }
@@ -342,7 +344,7 @@ function renderGroup(tbody,g){
     // Failure Mode cell (rowspan = this FM's rows)
     const fmTd=makeTd('dfmea-col-fm dfmea-editable',fmSpan);
     fmTd.dataset.field='failure_mode';
-    fmTd.innerHTML=`${cellText(fm.failure_mode)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button>`;
+    fmTd.innerHTML=`<button class="dfmea-corner-del" data-action="del-fm" title="Delete Failure Mode">✕</button>${cellText(fm.failure_mode)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button>`;
     fmTr.appendChild(fmTd);
 
     // Max S cell (rowspan = this FM's rows)
@@ -357,9 +359,6 @@ function renderGroup(tbody,g){
     const statusTd=makeTd('dfmea-col-status',fmSpan);
     statusTd.innerHTML=`<select class="dfmea-sel" data-field="status">${ITEM_STATUSES.map(s=>`<option value="${s}"${fm.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
     fmTr.appendChild(statusTd);
-    const delTd=makeTd('dfmea-col-del',fmSpan);
-    delTd.innerHTML=`<button class="dfmea-del-row-btn" data-action="del-fm" title="Delete FM">✕</button>`;
-    fmTr.appendChild(delTd);
 
     // If no effects and no causes, show actionable placeholders so user can start filling in
     if(!effects.length&&!directCauses.length){
@@ -402,7 +401,7 @@ function renderGroup(tbody,g){
       // Effect Higher (rowspan = 1 + causes under this effect)
       const effHTd=makeTd('dfmea-col-eff dfmea-editable',effSpan);
       effHTd.dataset.field='effect_higher';
-      effHTd.innerHTML=`${cellText(eff.effect_higher)}<button class="dfmea-del-row-btn dfmea-del-inline" data-action="del-effect" title="Delete Effect">✕</button>${isLastEff?`<button class="dfmea-inline-add" data-action="add-effect" title="Add Effect">＋</button>`:''}`;
+      effHTd.innerHTML=`<button class="dfmea-corner-del" data-action="del-effect" title="Delete Effect">✕</button>${cellText(eff.effect_higher)}${isLastEff?`<button class="dfmea-inline-add" data-action="add-effect" title="Add Effect">＋</button>`:''}`;
       effTr.appendChild(effHTd);
 
       // Effect Local (rowspan)
@@ -465,7 +464,7 @@ function appendCauseCells(tr,cause,fm,isLast){
 
   const fcTd=makeTd('dfmea-col-fc dfmea-editable');
   fcTd.dataset.field='failure_cause';
-  fcTd.innerHTML=`${cellText(cause.failure_cause)}<button class="dfmea-del-row-btn dfmea-del-inline" data-action="del-cause" title="Delete Cause">✕</button>${isLast?`<button class="dfmea-inline-add" data-action="add-cause" title="Add Cause">＋</button>`:''}`;
+  fcTd.innerHTML=`<button class="dfmea-corner-del" data-action="del-cause" title="Delete Cause">✕</button>${cellText(cause.failure_cause)}${isLast?`<button class="dfmea-inline-add" data-action="add-cause" title="Add Cause">＋</button>`:''}`;
   tr.appendChild(fcTd);
 
   const prevTd=makeTd('dfmea-col-ctrl dfmea-editable');prevTd.dataset.field='prevention_controls';prevTd.innerHTML=cellText(cause.prevention_controls);tr.appendChild(prevTd);
@@ -744,35 +743,74 @@ async function addCauseRow(parentId,fm){
   },50);
 }
 
+async function deleteGroup(g){
+  const allIds=g.fms.flatMap(fm=>[fm.id,..._items.filter(i=>fmOf(i)?.id===fm.id&&i.id!==fm.id).map(i=>i.id)]);
+  const {title}=showModal({
+    title:'Delete Function Group',
+    body:`<p>Delete function <strong>${esc(g.fms[0]?.function_name||'—')}</strong> and all its failure modes, effects and causes?</p>
+      <div class="modal-warn-box" style="margin-top:10px">⚠ This will delete ${allIds.length} row(s). Cannot be undone.</div>`,
+    footer:`<button class="btn btn-secondary" id="dg-cancel">Cancel</button>
+            <button class="btn btn-danger" id="dg-confirm">Delete all</button>`,
+  });
+  document.getElementById('dg-cancel').onclick=()=>hideModal();
+  document.getElementById('dg-confirm').onclick=async()=>{
+    hideModal();
+    await sb.from('dfmea_items').delete().in('id',allIds);
+    allIds.forEach(id=>{_items=_items.filter(i=>i.id!==id);});
+    renderTable(); renderChain();
+    toast('Function group deleted.','success');
+  };
+}
+
 async function deleteFm(fm){
   const kids=_items.filter(i=>fmOf(i)?.id===fm.id&&i.id!==fm.id);
-  if(!confirm(`Delete FM "${fm.dfmea_code}"${kids.length?` and its ${kids.length} effect/cause row(s)`:''}?`)) return;
   const ids=[fm.id,...kids.map(i=>i.id)];
-  await sb.from('dfmea_items').delete().in('id',ids);
-  ids.forEach(id=>{_items=_items.filter(i=>i.id!==id);});
-  renderTable();
-  renderChain();
-  refreshMapComp(fm.component_id||fm.component_name);
-  toast('FM deleted.','success');
+  showModal({
+    title:'Delete Failure Mode',
+    body:`<p>Delete FM <strong>${esc(fm.dfmea_code)}</strong>${kids.length?` and its ${kids.length} effect/cause row(s)`:''}?</p>`,
+    footer:`<button class="btn btn-secondary" id="dfm-cancel">Cancel</button><button class="btn btn-danger" id="dfm-confirm">Delete</button>`,
+  });
+  document.getElementById('dfm-cancel').onclick=()=>hideModal();
+  document.getElementById('dfm-confirm').onclick=async()=>{
+    hideModal();
+    await sb.from('dfmea_items').delete().in('id',ids);
+    ids.forEach(id=>{_items=_items.filter(i=>i.id!==id);});
+    renderTable(); renderChain(); refreshMapComp(fm.component_id||fm.component_name);
+    toast('FM deleted.','success');
+  };
 }
 
 async function deleteEffect(eff,fm){
   const causes=_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===eff.id);
-  if(!confirm(`Delete this effect${causes.length?` and its ${causes.length} cause(s)`:''}?`)) return;
   const ids=[eff.id,...causes.map(i=>i.id)];
-  await sb.from('dfmea_items').delete().in('id',ids);
-  ids.forEach(id=>{_items=_items.filter(i=>i.id!==id);});
-  renderTable();
-  refreshMaxSCell(fm);
-  refreshMapComp(fm.component_id||fm.component_name);
+  showModal({
+    title:'Delete Effect',
+    body:`<p>Delete this effect${causes.length?` and its ${causes.length} cause(s)`:''}?</p>`,
+    footer:`<button class="btn btn-secondary" id="deff-cancel">Cancel</button><button class="btn btn-danger" id="deff-confirm">Delete</button>`,
+  });
+  document.getElementById('deff-cancel').onclick=()=>hideModal();
+  document.getElementById('deff-confirm').onclick=async()=>{
+    hideModal();
+    await sb.from('dfmea_items').delete().in('id',ids);
+    ids.forEach(id=>{_items=_items.filter(i=>i.id!==id);});
+    renderTable(); refreshMaxSCell(fm); refreshMapComp(fm.component_id||fm.component_name);
+  };
 }
 
 async function deleteCause(cause,fm){
-  if(!confirm('Delete this cause?')) return;
-  await sb.from('dfmea_items').delete().eq('id',cause.id);
-  _items=_items.filter(i=>i.id!==cause.id);
-  renderTable();
-  refreshMapComp(fm.component_id||fm.component_name);
+  showModal({
+    title:'Delete Cause',
+    body:`<p>Delete this failure cause?</p>`,
+    footer:`<button class="btn btn-secondary" id="dca-cancel">Cancel</button><button class="btn btn-danger" id="dca-confirm">Delete</button>`,
+  });
+  document.getElementById('dca-cancel').onclick=()=>hideModal();
+  document.getElementById('dca-confirm').onclick=async()=>{
+    hideModal();
+    await sb.from('dfmea_items').delete().eq('id',cause.id);
+    _items=_items.filter(i=>i.id!==cause.id);
+    renderTable();
+    refreshMapComp(fm.component_id||fm.component_name);
+  };
 }
 
 async function autosave(id,fields){
