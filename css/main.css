@@ -3154,8 +3154,8 @@ td.req-drag-cell .req-drag-handle { cursor: grab; color: var(--color-text-muted)
 /* ── DFMEA ───────────────────────────────────────────────────────────────── */
 
 /* Layout */
-.dfmea-layout{display:flex;flex-direction:column;height:calc(100vh - 120px);min-height:400px;overflow:hidden}
-.dfmea-table-area{flex:1 1 0;overflow:auto;min-height:80px}
+.dfmea-layout{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+.dfmea-table-area{flex:1;overflow:auto;min-height:0}
 
 /* Toolbar (in page-header-top) */
 .dfmea-toolbar{display:flex;align-items:center;gap:8px}

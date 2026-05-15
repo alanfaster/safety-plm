@@ -123,8 +123,9 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
 
   const parentName=system?.name||item?.name||'';
 
+  container.style.cssText='display:flex;flex-direction:column;height:100%;overflow:hidden';
   container.innerHTML=`
-    <div class="page-header">
+    <div class="page-header" style="flex-shrink:0">
       <div class="page-header-top">
         <div>
           <h1>Functional FMEA</h1>
