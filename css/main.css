@@ -2234,7 +2234,7 @@ tr.req-title-row td { cursor: default; }
 
 .fha-table-wrap {
   overflow-x: auto;
-  margin: 0 0 0 40px;
+  margin: 0 0 0 12px;
 }
 
 .fha-table {
@@ -2268,8 +2268,8 @@ tr.req-title-row td { cursor: default; }
 .fha-haz-row[title] { cursor: pointer; }
 
 /* Column widths */
-.fha-th-acts, .fha-td-acts    { width: 36px; text-align: center; white-space: nowrap; padding: 1px 2px !important; }
-.fha-td-acts .btn             { padding: 1px 3px; }
+.fha-th-acts, .fha-td-acts    { width: 28px; text-align: center; white-space: nowrap; padding: 1px !important; }
+.fha-td-acts .btn             { display: block; padding: 0 2px; font-size: 10px; line-height: 1.5; width: 100%; }
 .fha-th-code,  .fha-td-code   { width: 100px; }
 .fha-th-failure_condition      { width: 170px; }
 .fha-th-phase_of_op            { width: 120px; }
