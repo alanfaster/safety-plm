@@ -2248,7 +2248,7 @@ tr.req-title-row td { cursor: default; }
 .fha-table thead th {
   background: var(--color-bg-subtle);
   border: 1px solid var(--color-border);
-  padding: 3px 7px;
+  padding: 2px 6px;
   font-weight: 600;
   color: var(--color-text-muted);
   white-space: nowrap;
@@ -2258,9 +2258,11 @@ tr.req-title-row td { cursor: default; }
 
 .fha-table tbody td {
   border: 1px solid var(--color-border);
-  padding: 2px 7px;
-  vertical-align: middle;
-  line-height: 1.4;
+  padding: 2px 6px;
+  vertical-align: top;
+  line-height: 1.35;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .fha-haz-row { cursor: default; }
@@ -2284,7 +2286,6 @@ tr.req-title-row td { cursor: default; }
 .fha-th-requirements           { width: 110px; }
 .fha-th-remarks                { width: 110px; }
 .fha-th-status, .fha-td-status { width: 90px; }
-.fha-table td, .fha-table th   { overflow: hidden; text-overflow: ellipsis; }
 .fha-th-actions, .fha-td-actions { width: 64px; white-space: nowrap; text-align: right; }
 
 .fha-cell-empty { color: var(--color-text-subtle); }
