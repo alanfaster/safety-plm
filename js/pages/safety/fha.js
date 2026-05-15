@@ -210,13 +210,13 @@ function funSection(fn, funHazards, scope) {
       <div class="fha-table-wrap">
         <table class="fha-table" data-fn-id="${fn.id}">
           <thead><tr>
+            <th class="fha-th-acts"></th>
             <th class="fha-th-code">ID</th>
             ${cols.map(f => {
               const suffix = f.key === scope.topEventField ? ' <span class="fha-th-fta-badge" title="Used as FTA top event">FTA Top Event</span>' : '';
               return `<th class="fha-th-${f.key}">${esc(f.label)}${suffix}</th>`;
             }).join('')}
             <th class="fha-th-status">Status</th>
-            <th class="fha-th-actions"></th>
           </tr></thead>
           <tbody id="fha-tbody-${fn.id}">
             ${funHazards.map(h => hazRow(h, cols, scope)).join('')}
@@ -251,14 +251,14 @@ function hazRow(h, cols, scope) {
 
   return `
     <tr id="fha-${h.id}" class="fha-haz-row" data-haz-id="${h.id}" title="Double-click to edit">
+      <td class="fha-td-acts">
+        <button class="btn btn-ghost btn-xs btn-del-fha"       data-id="${h.id}" title="Delete">✕</button>
+        <button class="btn btn-ghost btn-xs btn-copy-link-fha" data-id="${h.id}" title="Copy link">🔗</button>
+        <button class="btn btn-ghost btn-xs btn-edit-fha"      data-id="${h.id}" title="Edit">✎</button>
+      </td>
       <td class="fha-td-code"><span class="pha-mono">${esc(h.haz_code)}</span></td>
       ${cols.map(f => `<td class="fha-td-${f.key}">${cellContent(f)}</td>`).join('')}
       <td class="fha-td-status"><span class="pha-status-chip" style="background:${sc}20;color:${sc}">${esc(h.status)}</span></td>
-      <td class="fha-td-actions">
-        <button class="btn-icon btn-edit-fha" data-id="${h.id}" title="Edit">✎</button>
-        <button class="btn-icon btn-copy-link-fha" data-id="${h.id}" title="Copy link">🔗</button>
-        <button class="btn-icon btn-del-fha"  data-id="${h.id}" title="Delete">✕</button>
-      </td>
     </tr>`;
 }
 

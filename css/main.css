@@ -2268,6 +2268,9 @@ tr.req-title-row td { cursor: default; }
 .fha-haz-row[title] { cursor: pointer; }
 
 /* Column widths */
+.fha-th-acts, .fha-td-acts    { width: 52px; text-align: center; white-space: nowrap; padding: 1px 2px !important; }
+.fha-td-acts .btn             { padding: 1px 3px; opacity: 0; transition: opacity .12s; }
+.fha-haz-row:hover .fha-td-acts .btn { opacity: 1; }
 .fha-th-code,  .fha-td-code   { width: 100px; }
 .fha-th-failure_condition      { width: 170px; }
 .fha-th-phase_of_op            { width: 120px; }
@@ -2284,7 +2287,6 @@ tr.req-title-row td { cursor: default; }
 .fha-th-requirements           { width: 110px; }
 .fha-th-remarks                { width: 110px; }
 .fha-th-status, .fha-td-status { width: 90px; }
-.fha-th-actions, .fha-td-actions { width: 64px; white-space: nowrap; text-align: right; }
 
 .fha-cell-empty { color: var(--color-text-subtle); }
 .fha-cell-text  { white-space: normal; word-break: break-word; line-height: 1.35; }
