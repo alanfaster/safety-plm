@@ -331,9 +331,9 @@ function renderGroup(tbody,g){
       cfTd.rowSpan=totalSpan;
       cfTd.className='dfmea-col-compfunc dfmea-group-cell';
       cfTd.innerHTML=`
-        <div class="dfmea-cf-comp dfmea-editable" data-field="component_name" data-fm-id="${fm.id}" title="dblclick to edit">${cellText(fm.component_name)}</div>
-        <div class="dfmea-cf-sep">/</div>
-        <div class="dfmea-cf-func dfmea-editable" data-field="function_name" data-fm-id="${fm.id}" title="dblclick to edit">${cellText(fm.function_name)}</div>`;
+        <div class="dfmea-cf-func dfmea-editable" data-field="function_name" data-fm-id="${fm.id}" title="dblclick to edit">${cellText(fm.function_name)}</div>
+        ${fm.component_name?`<div class="dfmea-cf-comp-sub">${esc(fm.component_name)}</div>`:''}`;
+
       fmTr.appendChild(cfTd);
       // Wire group-cell editing (edits ALL fms in group for comp/func)
       cfTd.querySelectorAll('.dfmea-editable').forEach(el=>wireGroupCellEdit(el,g));
@@ -357,7 +357,7 @@ function renderGroup(tbody,g){
     const statusTd=makeTd('dfmea-col-status',fmSpan);
     statusTd.innerHTML=`<select class="dfmea-sel" data-field="status">${ITEM_STATUSES.map(s=>`<option value="${s}"${fm.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
     fmTr.appendChild(statusTd);
-    const delTd=makeTd('dfmea-col-del',1);
+    const delTd=makeTd('dfmea-col-del',fmSpan);
     delTd.innerHTML=`<button class="dfmea-del-row-btn" data-action="del-fm" title="Delete FM">✕</button>`;
     fmTr.appendChild(delTd);
 
