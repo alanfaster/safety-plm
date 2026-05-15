@@ -203,34 +203,55 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
             </select>
             <span style="font-size:var(--text-xs);color:var(--color-text-muted)">One FTA tree created per unique value. Default: Item Effect.</span>
           </div>
-          <table class="settings-table">
+          <table class="settings-table" id="fha-fields-table">
             <thead>
               <tr>
                 <th>Field</th>
-                <th>Default Label</th>
-                <th>Custom Label</th>
+                <th>Label</th>
                 <th style="text-align:center">Visible</th>
+                <th></th>
               </tr>
             </thead>
-            <tbody>
-              ${fhaFields.map(f => `
-                <tr data-fha-field-key="${f.key}">
-                  <td><code class="field-key">${escHtml(f.key)}</code></td>
-                  <td style="color:var(--color-text-muted)">${escHtml(DEFAULT_FHA_FIELDS.find(x=>x.key===f.key)?.label || f.label)}</td>
+            <tbody id="fha-fields-tbody">
+              ${fhaFields.map(f => {
+                const isCustom = f.custom;
+                const defaultLabel = DEFAULT_FHA_FIELDS.find(x=>x.key===f.key)?.label || f.label;
+                return `
+                <tr data-fha-field-key="${f.key}" data-fha-custom="${isCustom?'1':'0'}">
+                  <td><code class="field-key">${escHtml(f.key)}</code>${isCustom?'<span style="margin-left:4px;font-size:10px;color:var(--color-primary)">custom</span>':''}</td>
                   <td>
-                    <input class="form-input fha-field-label-input" data-key="${f.key}"
-                      value="${escHtml(f.label !== DEFAULT_FHA_FIELDS.find(x=>x.key===f.key)?.label ? f.label : '')}"
-                      placeholder="${escHtml(DEFAULT_FHA_FIELDS.find(x=>x.key===f.key)?.label || f.label)}"/>
+                    <input class="form-input fha-field-label-input" style="width:100%"
+                      value="${escHtml(f.label)}"
+                      placeholder="${escHtml(defaultLabel)}"/>
                   </td>
                   <td style="text-align:center">
                     <label class="toggle-switch">
-                      <input type="checkbox" class="fha-field-visible-check" data-key="${f.key}" ${f.visible ? 'checked' : ''}/>
+                      <input type="checkbox" class="fha-field-visible-check" ${f.visible ? 'checked' : ''}/>
                       <span class="toggle-slider"></span>
                     </label>
                   </td>
-                </tr>`).join('')}
+                  <td style="text-align:center">
+                    ${isCustom ? `<button class="btn btn-ghost btn-xs fha-del-field-btn" data-key="${f.key}" title="Remove column">✕</button>` : ''}
+                  </td>
+                </tr>`;
+              }).join('')}
             </tbody>
           </table>
+
+          <!-- Add custom column -->
+          <div style="margin-top:14px;padding:12px;background:var(--color-bg);border:1px solid var(--color-border);border-radius:6px">
+            <div style="font-size:var(--text-sm);font-weight:600;margin-bottom:8px">Add custom column</div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input class="form-input" id="fha-new-col-label" placeholder="Column label" style="flex:1"/>
+              <select class="form-input" id="fha-new-col-type" style="width:120px">
+                <option value="text">Text</option>
+                <option value="textarea">Long text</option>
+                <option value="select">Select</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" id="btn-fha-add-col">＋ Add</button>
+            </div>
+          </div>
+
           <div style="margin-top:16px;display:flex;gap:8px">
             <button class="btn btn-primary" id="btn-save-fha-config">Save FHA Field Settings</button>
             <button class="btn btn-secondary" id="btn-reset-fha-config">Reset to Defaults</button>
@@ -614,20 +635,55 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
 
   // ── FHA Fields tab ─────────────────────────────────────────────────────────
 
+  // Add custom column
+  document.getElementById('btn-fha-add-col')?.addEventListener('click', () => {
+    const label = document.getElementById('fha-new-col-label').value.trim();
+    if (!label) { toast('Enter a column label.', 'warning'); return; }
+    const type  = document.getElementById('fha-new-col-type').value;
+    const key   = 'custom_' + label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    const tbody = document.getElementById('fha-fields-tbody');
+    if (tbody.querySelector(`[data-fha-field-key="${key}"]`)) { toast('Column already exists.', 'warning'); return; }
+    const tr = document.createElement('tr');
+    tr.dataset.fhaFieldKey = key;
+    tr.dataset.fhaCustom   = '1';
+    tr.innerHTML = `
+      <td><code class="field-key">${escHtml(key)}</code><span style="margin-left:4px;font-size:10px;color:var(--color-primary)">custom</span></td>
+      <td><input class="form-input fha-field-label-input" style="width:100%" value="${escHtml(label)}" placeholder="${escHtml(label)}"/></td>
+      <td style="text-align:center"><label class="toggle-switch"><input type="checkbox" class="fha-field-visible-check" checked/><span class="toggle-slider"></span></label></td>
+      <td style="text-align:center"><button class="btn btn-ghost btn-xs fha-del-field-btn" data-key="${key}" title="Remove column">✕</button></td>`;
+    tr.querySelector('.fha-del-field-btn').addEventListener('click', () => tr.remove());
+    tbody.appendChild(tr);
+    document.getElementById('fha-new-col-label').value = '';
+    toast(`Column "${label}" added — save to apply.`, 'success');
+  });
+
+  // Delete custom column rows
+  document.getElementById('fha-fields-tbody')?.addEventListener('click', e => {
+    const btn = e.target.closest('.fha-del-field-btn');
+    if (!btn) return;
+    btn.closest('tr')?.remove();
+  });
+
   document.getElementById('btn-save-fha-config').onclick = async () => {
     const btn = document.getElementById('btn-save-fha-config');
     btn.disabled = true;
 
     const fha_fields = {};
     container.querySelectorAll('[data-fha-field-key]').forEach(row => {
-      const key          = row.dataset.fhaFieldKey;
-      const labelEl      = row.querySelector('.fha-field-label-input');
-      const visEl        = row.querySelector('.fha-field-visible-check');
+      const key       = row.dataset.fhaFieldKey;
+      const isCustom  = row.dataset.fhaCustom === '1';
+      const labelEl   = row.querySelector('.fha-field-label-input');
+      const visEl     = row.querySelector('.fha-field-visible-check');
+      const label     = labelEl.value.trim();
       const defaultLabel = DEFAULT_FHA_FIELDS.find(f => f.key === key)?.label || '';
-      const customLabel  = labelEl.value.trim();
-      const patch = {};
-      if (customLabel && customLabel !== defaultLabel) patch.label = customLabel;
-      patch.visible = visEl.checked;
+      const patch = { visible: visEl.checked };
+      if (isCustom) {
+        patch.custom = true;
+        patch.label  = label;
+        patch.type   = 'text';
+      } else if (label && label !== defaultLabel) {
+        patch.label = label;
+      }
       fha_fields[key] = patch;
     });
 

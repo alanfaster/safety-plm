@@ -112,5 +112,9 @@ export const DEFAULT_FHA_FIELDS = [
 
 export function effectiveFHAFields(projectConfig) {
   const overrides = projectConfig?.config?.fha_fields || {};
-  return DEFAULT_FHA_FIELDS.map(f => ({ ...f, ...(overrides[f.key] || {}) }));
+  const defaults = DEFAULT_FHA_FIELDS.map(f => ({ ...f, ...(overrides[f.key] || {}) }));
+  const customFields = Object.entries(overrides)
+    .filter(([, v]) => v.custom)
+    .map(([key, v]) => ({ key, label: v.label || key, type: v.type || 'text', visible: v.visible !== false, custom: true }));
+  return [...defaults, ...customFields];
 }
