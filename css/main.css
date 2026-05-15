@@ -2242,6 +2242,7 @@ tr.req-title-row td { cursor: default; }
   border-collapse: collapse;
   font-size: var(--text-xs);
   min-width: 600px;
+  table-layout: fixed;
 }
 
 .fha-table thead th {
@@ -2267,22 +2268,23 @@ tr.req-title-row td { cursor: default; }
 .fha-haz-row[title] { cursor: pointer; }
 
 /* Column widths */
-.fha-th-code,  .fha-td-code   { width: 90px; white-space: nowrap; }
-.fha-th-failure_condition      { min-width: 160px; }
+.fha-th-code,  .fha-td-code   { width: 100px; }
+.fha-th-failure_condition      { width: 170px; }
 .fha-th-phase_of_op            { width: 120px; }
 .fha-th-effect_local,
 .fha-th-effect_system,
 .fha-th-effect_item,
 .fha-th-effect_environment,
-.fha-th-effect_3rdparties      { min-width: 110px; }
+.fha-th-effect_3rdparties      { width: 130px; }
 .fha-th-classification,
 .fha-th-dal                    { width: 110px; }
 .fha-th-probability            { width: 140px; }
 .fha-th-mitigation_avoid,
-.fha-th-safety_measures        { min-width: 130px; }
-.fha-th-requirements           { min-width: 100px; }
-.fha-th-remarks                { min-width: 100px; }
-.fha-th-status, .fha-td-status { width: 90px; white-space: nowrap; }
+.fha-th-safety_measures        { width: 140px; }
+.fha-th-requirements           { width: 110px; }
+.fha-th-remarks                { width: 110px; }
+.fha-th-status, .fha-td-status { width: 90px; }
+.fha-table td, .fha-table th   { overflow: hidden; text-overflow: ellipsis; }
 .fha-th-actions, .fha-td-actions { width: 64px; white-space: nowrap; text-align: right; }
 
 .fha-cell-empty { color: var(--color-text-subtle); }
