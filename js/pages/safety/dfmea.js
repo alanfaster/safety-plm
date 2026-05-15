@@ -998,11 +998,11 @@ async function syncFromSystem(){
   const btn=document.getElementById('btn-dfmea-sync');
   if(btn){btn.disabled=true;btn.textContent='⟳ Syncing…';}
   try{
-    const {data:comps}=await sb.from('arch_components').select('id,name,comp_type').eq('parent_type',_ctx.parentType).eq('parent_id',_ctx.parentId);
-    if(!comps?.length){toast('No components in Architecture Concept.','warning');return;}
-    const compIds=comps.map(c=>c.id);
-    const {data:archFns}=await sb.from('arch_functions').select('id,component_id,name,function_ref_id,is_safety_related').in('component_id',compIds);
     const {data:hazards}=await sb.from('hazards').select('id,data,function_id,status').eq('parent_type',_ctx.parentType).eq('parent_id',_ctx.parentId).eq('analysis_type','FHA');
+    if(!hazards?.length){toast('No FHA hazards found to sync from.','warning');return;}
+    const compIds=[...(new Set(hazards.map(h=>h.data?.component_id).filter(Boolean)))];
+    const comps=compIds.length?(await sb.from('arch_components').select('id,name').in('id',compIds)).data||[]:[];
+    const archFns=comps.length?(await sb.from('arch_functions').select('id,component_id,name,function_ref_id').in('component_id',compIds)).data||[]:[];
     let fnRefs={};
     if(hazards?.some(h=>h.function_id)){
       const fnIds=[...new Set(hazards.filter(h=>h.function_id).map(h=>h.function_id))];
@@ -1024,32 +1024,7 @@ async function syncFromSystem(){
       if(fcause) await addCauseRow(fm.id,fm).then(async()=>{const ca=_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===fm.id).at(-1);if(ca){ca.failure_cause=fcause;await autosave(ca.id,{failure_cause:fcause});}});
       created++;
     }
-    for(const comp of comps){
-      const cFns=(archFns||[]).filter(f=>f.component_id===comp.id);
-      for(const fn of cFns){
-        // Match by function_ref_id (hard link to item-def function) first, then by name
-        const exists=_items.some(i=>{
-          if(rtype(i)!=='fm'||i.component_id!==comp.id) return false;
-          if(fn.function_ref_id&&i.hazard_id){
-            const haz=(hazards||[]).find(h=>h.id===i.hazard_id);
-            if(haz?.function_id===fn.function_ref_id) return true;
-          }
-          return i.function_name===fn.name;
-        });
-        if(!exists){
-          await addFmRow({component_id:comp.id,component_name:comp.name,function_name:fn.name});
-          created++;
-        } else {
-          // Update component_name and function_name for existing rows if they drifted
-          const existing=_items.find(i=>rtype(i)==='fm'&&i.component_id===comp.id&&(i.function_name===fn.name||(fn.function_ref_id&&_items.some(j=>j.id===i.id))));
-          if(existing&&(existing.component_name!==comp.name||existing.function_name!==fn.name)){
-            existing.component_name=comp.name;existing.function_name=fn.name;
-            await sb.from('dfmea_items').update({component_name:comp.name,function_name:fn.name,updated_at:new Date().toISOString()}).eq('id',existing.id);
-          }
-        }
-      }
-    }
-    toast(created>0?`Synced ${created} new FM(s).`:'Already up to date.','success');
+    toast(created>0?`Synced ${created} new FM(s) from FHA.`:'Already up to date.','success');
   }catch(e){toast('Sync error: '+e.message,'error');}
   finally{if(btn){btn.disabled=false;btn.textContent='⟳ Sync from System';}}
 }
