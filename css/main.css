@@ -2268,8 +2268,8 @@ tr.req-title-row td { cursor: default; }
 .fha-haz-row[title] { cursor: pointer; }
 
 /* Column widths */
-.fha-th-acts, .fha-td-acts    { width: 28px; text-align: center; white-space: nowrap; padding: 1px !important; }
-.fha-td-acts .btn             { display: block; padding: 0 2px; font-size: 10px; line-height: 1.5; width: 100%; }
+.fha-th-acts, .fha-td-acts    { width: 24px; text-align: center; padding: 1px !important; }
+.fha-td-acts .btn             { padding: 1px 3px; font-size: 11px; }
 .fha-th-code,  .fha-td-code   { width: 100px; }
 .fha-th-failure_condition      { width: 170px; }
 .fha-th-phase_of_op            { width: 120px; }

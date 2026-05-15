@@ -252,8 +252,7 @@ function hazRow(h, cols, scope) {
   return `
     <tr id="fha-${h.id}" class="fha-haz-row" data-haz-id="${h.id}" title="Double-click to edit">
       <td class="fha-td-acts">
-        <button class="btn btn-ghost btn-xs btn-del-fha"       data-id="${h.id}" title="Delete">✕</button>
-        <button class="btn btn-ghost btn-xs btn-copy-link-fha" data-id="${h.id}" title="Copy link">🔗</button>
+        <button class="btn btn-ghost btn-xs btn-del-fha" data-id="${h.id}" title="Delete">✕</button>
       </td>
       <td class="fha-td-code"><span class="pha-mono">${esc(h.haz_code)}</span></td>
       ${cols.map(f => `<td class="fha-td-${f.key}">${cellContent(f)}</td>`).join('')}
