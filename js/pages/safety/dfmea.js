@@ -1017,12 +1017,11 @@ async function syncFromSystem(){
       const d=haz.data||{};
       let mComp=null,mFn=null;
       if(haz.function_id){const fnRef=fnRefs[haz.function_id];if(fnRef){mFn=(archFns||[]).find(af=>af.function_ref_id===haz.function_id||af.name===fnRef.name);if(mFn)mComp=comps.find(c=>c.id===mFn.component_id);}}
-      const fm=await addFmRow({component_id:mComp?.id||null,component_name:mComp?.name||'',function_name:mFn?.name||(fnRefs[haz.function_id]?.name||''),failure_mode:'',hazard_id:haz.id});
+      const fm=await addFmRow({component_id:mComp?.id||null,component_name:mComp?.name||'',function_name:mFn?.name||(fnRefs[haz.function_id]?.name||''),failure_mode:d.failure_condition||'',hazard_id:haz.id});
       if(!fm) continue;
-      const efL=d.failure_condition||'',efH=d.effect_system||d.effect||'';
-      if(efL||efH) await addEffectRow(fm).then(async()=>{const e=_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id).at(-1);if(e){e.effect_higher=efH;e.effect_local=efL;await autosave(e.id,{effect_higher:efH,effect_local:efL});}});
-      const fcause=d.effect_local||'';
-      if(fcause) await addCauseRow(fm.id,fm).then(async()=>{const ca=_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===fm.id).at(-1);if(ca){ca.failure_cause=fcause;await autosave(ca.id,{failure_cause:fcause});}});
+      const efH=d.effect_system||d.effect_item||d.effect||'';
+      const efL=d.effect_local||'';
+      if(efH||efL) await addEffectRow(fm).then(async()=>{const e=_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id).at(-1);if(e){e.effect_higher=efH;e.effect_local=efL;await autosave(e.id,{effect_higher:efH,effect_local:efL});}});
       created++;
     }
     toast(created>0?`Synced ${created} new FM(s) from FHA.`:'Already up to date.','success');
