@@ -3208,10 +3208,10 @@ td.req-drag-cell .req-drag-handle { cursor: grab; color: var(--color-text-muted)
 .dfmea-col-id{width:80px;white-space:nowrap;font-family:var(--font-mono);font-size:11px;color:var(--color-text-muted)}
 .dfmea-col-comp{width:130px}
 .dfmea-col-func{width:140px}
-.dfmea-col-fm{width:170px;position:relative}
+.dfmea-col-fm{width:170px}
 .dfmea-col-maxs{width:46px;text-align:center;padding:4px!important}
-.dfmea-col-eff{width:160px;position:relative}
-.dfmea-col-fc{width:155px;position:relative}
+.dfmea-col-eff{width:160px}
+.dfmea-col-fc{width:155px}
 .dfmea-col-sod{width:42px;text-align:center;padding:4px!important}
 .dfmea-col-ctrl{width:155px}
 .dfmea-col-ap{width:44px;text-align:center}
@@ -3276,8 +3276,9 @@ td:hover .dfmea-inline-add,.dfmea-group-cell:hover .dfmea-inline-add{display:inl
 .dfmea-add-btn:hover{background:#E8F0FE;border-color:var(--color-primary);color:var(--color-primary)}
 .dfmea-del-row-btn{font-size:11px;padding:2px 5px;border:1px solid transparent;border-radius:3px;background:none;cursor:pointer;color:var(--color-text-muted);transition:color 0.1s}
 .dfmea-del-row-btn:hover{color:var(--color-danger);background:#FFEBE6;border-color:#FFEBE6}
-.dfmea-corner-del{position:absolute;top:2px;right:2px;width:14px;height:14px;font-size:9px;line-height:14px;text-align:center;border-radius:3px;background:transparent;color:var(--color-text-subtle);border:none;cursor:pointer;opacity:0;transition:opacity .15s,background .15s,color .15s;padding:0;z-index:2}
-td:hover>.dfmea-corner-del,.dfmea-group-cell:hover .dfmea-corner-del{opacity:1}
+.dfmea-cell-wrap{position:relative;min-height:16px}
+.dfmea-corner-del{position:absolute;top:0;right:0;width:14px;height:14px;font-size:9px;line-height:14px;text-align:center;border-radius:3px;background:transparent;color:var(--color-text-subtle);border:none;cursor:pointer;opacity:0;transition:opacity .15s,background .15s,color .15s;padding:0;z-index:2}
+.dfmea-cell-wrap:hover>.dfmea-corner-del{opacity:1}
 .dfmea-corner-del:hover{background:#FFEBE6;color:var(--color-danger)}
 
 /* Editable cells */

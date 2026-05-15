@@ -330,10 +330,11 @@ function renderGroup(tbody,g){
       const cfTd=document.createElement('td');
       cfTd.rowSpan=totalSpan;
       cfTd.className='dfmea-col-compfunc dfmea-group-cell';
-      cfTd.innerHTML=`
+      cfTd.innerHTML=`<div class="dfmea-cell-wrap">
         <button class="dfmea-corner-del" data-action="del-group" title="Delete function group">✕</button>
         <div class="dfmea-cf-func dfmea-editable" data-field="function_name" data-fm-id="${fm.id}" title="dblclick to edit">${cellText(fm.function_name)}</div>
-        ${fm.component_name?`<div class="dfmea-cf-comp-sub">${esc(fm.component_name)}</div>`:''}`;
+        ${fm.component_name?`<div class="dfmea-cf-comp-sub">${esc(fm.component_name)}</div>`:''}
+        </div>`;
 
       fmTr.appendChild(cfTd);
       cfTd.querySelector('[data-action="del-group"]')?.addEventListener('click', () => deleteGroup(g));
@@ -344,7 +345,7 @@ function renderGroup(tbody,g){
     // Failure Mode cell (rowspan = this FM's rows)
     const fmTd=makeTd('dfmea-col-fm dfmea-editable',fmSpan);
     fmTd.dataset.field='failure_mode';
-    fmTd.innerHTML=`<button class="dfmea-corner-del" data-action="del-fm" title="Delete Failure Mode">✕</button>${cellText(fm.failure_mode)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button>`;
+    fmTd.innerHTML=`<div class="dfmea-cell-wrap"><button class="dfmea-corner-del" data-action="del-fm" title="Delete Failure Mode">✕</button>${cellText(fm.failure_mode)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button></div>`;
     fmTr.appendChild(fmTd);
 
     // Max S cell (rowspan = this FM's rows)
@@ -401,7 +402,7 @@ function renderGroup(tbody,g){
       // Effect Higher (rowspan = 1 + causes under this effect)
       const effHTd=makeTd('dfmea-col-eff dfmea-editable',effSpan);
       effHTd.dataset.field='effect_higher';
-      effHTd.innerHTML=`<button class="dfmea-corner-del" data-action="del-effect" title="Delete Effect">✕</button>${cellText(eff.effect_higher)}${isLastEff?`<button class="dfmea-inline-add" data-action="add-effect" title="Add Effect">＋</button>`:''}`;
+      effHTd.innerHTML=`<div class="dfmea-cell-wrap"><button class="dfmea-corner-del" data-action="del-effect" title="Delete Effect">✕</button>${cellText(eff.effect_higher)}${isLastEff?`<button class="dfmea-inline-add" data-action="add-effect" title="Add Effect">＋</button>`:''}</div>`;
       effTr.appendChild(effHTd);
 
       // Effect Local (rowspan)
@@ -464,7 +465,7 @@ function appendCauseCells(tr,cause,fm,isLast){
 
   const fcTd=makeTd('dfmea-col-fc dfmea-editable');
   fcTd.dataset.field='failure_cause';
-  fcTd.innerHTML=`<button class="dfmea-corner-del" data-action="del-cause" title="Delete Cause">✕</button>${cellText(cause.failure_cause)}${isLast?`<button class="dfmea-inline-add" data-action="add-cause" title="Add Cause">＋</button>`:''}`;
+  fcTd.innerHTML=`<div class="dfmea-cell-wrap"><button class="dfmea-corner-del" data-action="del-cause" title="Delete Cause">✕</button>${cellText(cause.failure_cause)}${isLast?`<button class="dfmea-inline-add" data-action="add-cause" title="Add Cause">＋</button>`:''}</div>`;
   tr.appendChild(fcTd);
 
   const prevTd=makeTd('dfmea-col-ctrl dfmea-editable');prevTd.dataset.field='prevention_controls';prevTd.innerHTML=cellText(cause.prevention_controls);tr.appendChild(prevTd);
