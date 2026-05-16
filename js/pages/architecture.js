@@ -239,27 +239,40 @@ export async function renderArchitecture(container, { project, item, system, dom
     }
   }
 
-  // Load failure modes for functions and components
-  const allFnIds  = funs.map(f=>f.id);
+  // Load sub-components
   const allCompIds= compList.map(c=>c.id);
-  let fnFmsByFnId={}, fnFmsByCompId={};
-  if(allFnIds.length||allCompIds.length){
+  let scByBlockId={};
+  if(allCompIds.length){
+    const {data:allScs}=await sb.from('sub_components').select('*')
+      .in('block_id',allCompIds).order('sort_order',{ascending:true});
+    (allScs||[]).forEach(sc=>{ sc._fms=[]; (scByBlockId[sc.block_id]||(scByBlockId[sc.block_id]=[])).push(sc); });
+  }
+
+  // Load failure modes for functions, components and sub-components
+  const allFnIds  = funs.map(f=>f.id);
+  const allScIds  = Object.values(scByBlockId).flat().map(sc=>sc.id);
+  let fnFmsByFnId={}, fnFmsByCompId={}, fnFmsByScId={};
+  if(allFnIds.length||allCompIds.length||allScIds.length){
     const parts=[];
     if(allFnIds.length)   parts.push(`function_id.in.(${allFnIds.join(',')})`);
     if(allCompIds.length) parts.push(`component_id.in.(${allCompIds.join(',')})`);
+    if(allScIds.length)   parts.push(`sub_component_id.in.(${allScIds.join(',')})`);
     const {data:allFms}=await sb.from('arch_function_fms').select('*')
       .or(parts.join(',')).order('sort_order',{ascending:true});
     (allFms||[]).forEach(fm=>{
       if(fm.function_id)(fnFmsByFnId[fm.function_id]||(fnFmsByFnId[fm.function_id]=[])).push(fm);
+      else if(fm.sub_component_id)(fnFmsByScId[fm.sub_component_id]||(fnFmsByScId[fm.sub_component_id]=[])).push(fm);
       else if(fm.component_id)(fnFmsByCompId[fm.component_id]||(fnFmsByCompId[fm.component_id]=[])).push(fm);
     });
   }
   funs.forEach(f=>{ f._fms=fnFmsByFnId[f.id]||[]; });
+  Object.values(scByBlockId).flat().forEach(sc=>{ sc._fms=fnFmsByScId[sc.id]||[]; });
 
   const components = compList.map(c => ({
     ...c,
     functions:  funs.filter(f=>f.component_id===c.id),
     _compFms:   fnFmsByCompId[c.id]||[],
+    _subComps:  scByBlockId[c.id]||[],
   }));
 
   // ── Single source of truth: reconcile group_id from geometry ─────────────
@@ -729,10 +742,11 @@ function portHTML(c) {
 // ── Block HTML (SysML) ────────────────────────────────────────────────────────
 
 function blockHTML(c) {
-  const st   = STYLES[c.comp_type] || STYLES.HW;
-  const safe = c.is_safety_critical;
-  const funs = c.functions || [];
-  const sel  = _s.selected === c.id;
+  const st      = STYLES[c.comp_type] || STYLES.HW;
+  const safe    = c.is_safety_critical;
+  const funs    = c.functions || [];
+  const scs     = c._subComps || [];
+  const sel     = _s.selected === c.id;
 
   const funItems = `
     ${funs.map(f => `
@@ -745,6 +759,8 @@ function blockHTML(c) {
         </div>`).join('')}
     <button class="arch-addfun-btn" data-comp-id="${c.id}">+ Add function</button>`;
 
+  const scBadge = `<button class="arch-sc-badge ${scs.length?'arch-sc-badge--has':''}" data-sc-open="${c.id}" title="Sub-components">◈ ${scs.length||'+'}</button>`;
+
   return `
     <div class="arch-block ${sel ? 'arch-block--sel' : ''} ${safe ? 'arch-block--safe' : ''}"
          id="comp-${c.id}" data-id="${c.id}" data-type="${c.comp_type}"
@@ -754,6 +770,7 @@ function blockHTML(c) {
         <span class="arch-block-type-badge" style="color:${safe ? '#C5221F' : st.border}">${c.comp_type}</span>
         <span class="arch-block-name" id="cname-${c.id}">${escH(c.name)}</span>
         ${safe ? '<span class="arch-block-safe-ico">⚠</span>' : ''}
+        ${scBadge}
       </div>
       <button class="arch-del-badge" data-del-id="${c.id}" title="Delete (Del)">✕</button>
       <div class="arch-block-funs" id="funlist-${c.id}">${funItems}</div>
@@ -1861,7 +1878,7 @@ function wireBlock(id) {
   const c  = compById(id);
 
   el.addEventListener('pointerdown', e => {
-    if (e.target.closest('.arch-port,.arch-resize-handle,.arch-fun-del,.arch-addfun-btn')) return;
+    if (e.target.closest('.arch-port,.arch-resize-handle,.arch-fun-del,.arch-addfun-btn,.arch-sc-badge')) return;
     selectComp(id);
   });
 
@@ -1879,6 +1896,9 @@ function wireBlock(id) {
   });
   el.querySelector('.arch-del-badge')?.addEventListener('click', e => {
     e.stopPropagation(); deleteComp(id);
+  });
+  el.querySelector('[data-sc-open]')?.addEventListener('click', e => {
+    e.stopPropagation(); openScPopover(id, e.currentTarget);
   });
   el.querySelector('.arch-addfun-btn')?.addEventListener('click', e => {
     e.stopPropagation(); openIdefPanel();
@@ -2664,6 +2684,140 @@ function propseFunSection(c) {
     </div>`;
 }
 
+function propsScSection(c) {
+  const scs = c._subComps || [];
+  return `
+    <div style="margin-top:10px">
+      <div class="arch-props-fun-hdr">
+        <span>◈ Sub-components</span>
+        <button class="arch-tb-btn" id="props-add-sc">＋</button>
+      </div>
+      <div id="props-sc-list">
+        ${scs.map(sc => `
+          <div class="arch-props-sc-entry" data-scid="${sc.id}">
+            <div class="arch-props-sc-row">
+              <span class="arch-props-sc-type">${escH(sc.type||'—')}</span>
+              <span class="arch-props-sc-name" id="psc-${sc.id}">${escH(sc.name)}</span>
+              <button class="btn-icon psc-ren" data-scid="${sc.id}" title="Rename">✎</button>
+              <button class="btn-icon psc-del" data-scid="${sc.id}">✕</button>
+            </div>
+            <div class="arch-fun-fms" id="sc-fms-${sc.id}">
+              ${(sc._fms||[]).map(fm=>`
+                <div class="arch-fun-fm-row" data-fmid="${fm.id}">
+                  <span class="arch-fun-fm-dot">●</span>
+                  <span class="arch-fun-fm-name" id="scfm-${fm.id}">${escH(fm.failure_mode)}</span>
+                  <button class="arch-fun-fm-del btn-icon" data-fmid="${fm.id}" data-scid="${sc.id}">✕</button>
+                </div>`).join('')}
+              <button class="arch-fun-fm-add" data-scid="${sc.id}">＋ Add FM</button>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function wirePropsScSection(c, compId) {
+  const body = document.getElementById('arch-props-body'); if (!body) return;
+
+  const refreshScList = () => {
+    const listEl = document.getElementById('props-sc-list'); if (!listEl) return;
+    listEl.innerHTML = (c._subComps||[]).map(sc => `
+      <div class="arch-props-sc-entry" data-scid="${sc.id}">
+        <div class="arch-props-sc-row">
+          <span class="arch-props-sc-type">${escH(sc.type||'—')}</span>
+          <span class="arch-props-sc-name" id="psc-${sc.id}">${escH(sc.name)}</span>
+          <button class="btn-icon psc-ren" data-scid="${sc.id}" title="Rename">✎</button>
+          <button class="btn-icon psc-del" data-scid="${sc.id}">✕</button>
+        </div>
+        <div class="arch-fun-fms" id="sc-fms-${sc.id}">
+          ${(sc._fms||[]).map(fm=>`
+            <div class="arch-fun-fm-row" data-fmid="${fm.id}">
+              <span class="arch-fun-fm-dot">●</span>
+              <span class="arch-fun-fm-name" id="scfm-${fm.id}">${escH(fm.failure_mode)}</span>
+              <button class="arch-fun-fm-del btn-icon" data-fmid="${fm.id}" data-scid="${sc.id}">✕</button>
+            </div>`).join('')}
+          <button class="arch-fun-fm-add" data-scid="${sc.id}">＋ Add FM</button>
+        </div>
+      </div>`).join('');
+    wireScRows();
+  };
+
+  const wireScRows = () => {
+    // Rename sub-component
+    body.querySelectorAll('.psc-ren').forEach(btn => {
+      btn.onclick = () => {
+        const scId = btn.dataset.scid;
+        const sc = (c._subComps||[]).find(s=>s.id===scId); if (!sc) return;
+        const span = document.getElementById(`psc-${scId}`); if (!span) return;
+        const inp = document.createElement('input');
+        inp.className='arch-rename-input'; inp.value=sc.name;
+        span.replaceWith(inp); inp.focus(); inp.select();
+        const save = async () => {
+          const n=inp.value.trim()||sc.name; sc.name=n;
+          await sb.from('sub_components').update({name:n}).eq('id',scId);
+          refreshScList(); refreshComp(compId); refreshArchTree();
+        };
+        inp.onblur=save; inp.onkeydown=e=>{if(e.key==='Enter')inp.blur();if(e.key==='Escape')refreshScList();};
+      };
+    });
+
+    // Delete sub-component
+    body.querySelectorAll('.psc-del').forEach(btn => {
+      btn.onclick = async () => {
+        const scId = btn.dataset.scid;
+        await sb.from('sub_components').delete().eq('id', scId);
+        c._subComps = (c._subComps||[]).filter(s=>s.id!==scId);
+        refreshScList(); refreshComp(compId); refreshArchTree();
+      };
+    });
+
+    // Add FM to sub-component
+    body.querySelectorAll('.arch-fun-fm-add[data-scid]').forEach(btn => {
+      btn.onclick = () => {
+        const scId = btn.dataset.scid;
+        const sc = (c._subComps||[]).find(s=>s.id===scId); if (!sc) return;
+        const container = document.getElementById(`sc-fms-${scId}`); if (!container) return;
+        const inp = document.createElement('input');
+        inp.className='arch-fun-fm-input'; inp.placeholder='Failure mode…';
+        btn.insertAdjacentElement('beforebegin', inp); inp.focus();
+        const save = async () => {
+          const v=inp.value.trim(); inp.remove(); if(!v) return;
+          const {data:fm}=await sb.from('arch_function_fms').insert({
+            sub_component_id:scId, failure_mode:v, sort_order:(sc._fms||[]).length,
+          }).select().single();
+          if(fm){ sc._fms=[...(sc._fms||[]),fm]; refreshScList(); refreshComp(compId); refreshArchTree(); }
+        };
+        inp.addEventListener('blur',save);
+        inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();inp.blur();}if(e.key==='Escape')inp.remove();});
+      };
+    });
+
+    // Delete FM from sub-component
+    body.querySelectorAll('.arch-fun-fm-del[data-scid]').forEach(btn => {
+      btn.onclick = async () => {
+        const fmId=btn.dataset.fmid, scId=btn.dataset.scid;
+        const sc=(c._subComps||[]).find(s=>s.id===scId); if (!sc) return;
+        await sb.from('arch_function_fms').delete().eq('id',fmId);
+        sc._fms=(sc._fms||[]).filter(m=>m.id!==fmId);
+        refreshScList(); refreshComp(compId); refreshArchTree();
+      };
+    });
+  };
+
+  // Add sub-component
+  document.getElementById('props-add-sc')?.addEventListener('click', async () => {
+    const name = prompt('Sub-component name:'); if (!name?.trim()) return;
+    const type = prompt('Type (e.g. Resistor, Capacitor, IC, Sensor):') || '';
+    const {data:sc}=await sb.from('sub_components').insert({
+      block_id:compId, project_id:c.project_id||_s.parentId,
+      name:name.trim(), type:type.trim(),
+      sort_order:(c._subComps||[]).length,
+    }).select().single();
+    if(sc){ sc._fms=[]; c._subComps=[...(c._subComps||[]),sc]; refreshScList(); refreshComp(compId); refreshArchTree(); }
+  });
+
+  wireScRows();
+}
+
 function openProps(id) {
   const c = compById(id); if (!c) return;
 
@@ -2780,7 +2934,8 @@ function openProps(id) {
     </div>
 
     ${propsPortSection(id)}
-    ${propseFunSection(c)}`);
+    ${propseFunSection(c)}
+    ${propsScSection(c)}`);
 
   document.getElementById('props-name').addEventListener('input', debName);
   document.getElementById('props-type').addEventListener('change', async () => {
@@ -2808,6 +2963,7 @@ function openProps(id) {
   document.getElementById('props-add-fun').onclick = () => openIdefPanel();
   wirePropsF(c, id);
   loadAndRenderFunFMs(c, id);
+  wirePropsScSection(c, id);
 }
 
 async function loadAndRenderFunFMs(c, compId) {
@@ -3295,6 +3451,66 @@ function startRename(id) {
   inp.onblur=save; inp.onkeydown=e=>{if(e.key==='Enter')inp.blur();if(e.key==='Escape')refreshComp(id);};
 }
 
+function openScPopover(compId, anchorEl) {
+  // Remove any existing popover
+  document.getElementById('arch-sc-popover')?.remove();
+  const c = compById(compId); if (!c) return;
+  const scs = c._subComps || [];
+
+  const pop = document.createElement('div');
+  pop.id = 'arch-sc-popover';
+  pop.className = 'arch-sc-popover';
+
+  const renderPop = () => {
+    const list = (c._subComps || []);
+    pop.innerHTML = `
+      <div class="arch-sc-pop-hdr">
+        <span>◈ Sub-components of <strong>${escH(c.name)}</strong></span>
+        <button class="arch-sc-pop-close">✕</button>
+      </div>
+      <div class="arch-sc-pop-list">
+        ${list.length ? list.map(sc => `
+          <div class="arch-sc-pop-item" data-scid="${sc.id}">
+            <span class="arch-sc-pop-type">${escH(sc.type||'—')}</span>
+            <span class="arch-sc-pop-name">${escH(sc.name)}</span>
+            <span class="arch-sc-pop-fms">${sc._fms?.length ? `⚡ ${sc._fms.length}` : ''}</span>
+          </div>`).join('') : `<div class="arch-sc-pop-empty">No sub-components yet</div>`}
+      </div>
+      <div class="arch-sc-pop-footer">
+        <button class="btn btn-sm arch-sc-pop-add" data-compid="${compId}">＋ Add sub-component</button>
+      </div>`;
+    // Position near anchor
+    const rect = anchorEl.getBoundingClientRect();
+    pop.style.top  = (rect.bottom + 6) + 'px';
+    pop.style.left = Math.min(rect.left, window.innerWidth - 260) + 'px';
+  };
+
+  renderPop();
+  document.body.appendChild(pop);
+
+  pop.querySelector('.arch-sc-pop-close').onclick = () => pop.remove();
+
+  pop.querySelector('.arch-sc-pop-add').onclick = async () => {
+    const name = prompt('Sub-component name:'); if (!name?.trim()) return;
+    const type = prompt('Type (e.g. Resistor, Capacitor, IC, Sensor):') || '';
+    const {data:sc} = await sb.from('sub_components').insert({
+      block_id: compId, project_id: c.project_id || _s.parentId,
+      name: name.trim(), type: type.trim(),
+      sort_order: (c._subComps||[]).length,
+    }).select().single();
+    if (sc) {
+      sc._fms = [];
+      c._subComps = [...(c._subComps||[]), sc];
+      refreshComp(compId);
+      renderPop();
+    }
+  };
+
+  // Close on outside click
+  const onOut = e => { if (!pop.contains(e.target) && !anchorEl.contains(e.target)) { pop.remove(); document.removeEventListener('pointerdown', onOut); } };
+  setTimeout(() => document.addEventListener('pointerdown', onOut), 0);
+}
+
 function fitView() {
   if(!_s.components.length){_s.zoom=1;_s.panX=20;_s.panY=20;applyViewport();return;}
   const outer=document.getElementById('arch-outer'); if(!outer) return;
@@ -3338,13 +3554,17 @@ function renderArchTree() {
   if(!renderArchTree._fnCol) renderArchTree._fnCol=new Set();
   const fnCol=renderArchTree._fnCol;
 
+  if(!renderArchTree._scCol) renderArchTree._scCol=new Set();
+  const scCol=renderArchTree._scCol;
+
   function blockNode(c, depth = 0) {
     const icon     = TYPE_ICON[c.comp_type]  || '▪';
     const color    = TYPE_COLOR[c.comp_type] || '#555';
     const fns      = c.functions || [];
     const compFms  = c._compFms  || [];
+    const subComps = c._subComps || [];
     const myConns  = conns.filter(cn => cn.source_id === c.id || cn.target_id === c.id);
-    const hasChildren = fns.length > 0 || myConns.length > 0 || compFms.length > 0;
+    const hasChildren = fns.length > 0 || myConns.length > 0 || compFms.length > 0 || subComps.length > 0;
     const isCol    = col.has(c.id);
     const pad      = depth * 14;
 
@@ -3398,7 +3618,34 @@ function renderArchTree() {
           </div>`;
       }).join('');
 
-      children = fnRows + directFmRows + cnRows;
+      // Sub-components with their failure modes
+      const scRows = subComps.map(sc => {
+        const scFmList = sc._fms || [];
+        const scCollapsed = scCol.has(sc.id);
+        return `
+          <div class="arch-tree-sc-entry arch-tree-row" style="padding-left:${pad+14}px" data-scid="${sc.id}">
+            <button class="arch-tree-chevron arch-tree-fn-chev ${scCollapsed?'arch-tree-chevron-col':''}"
+              data-sc-toggle="${sc.id}">▾</button>
+            <span class="arch-tree-sym arch-tree-sym--sc">◈</span>
+            <span class="arch-tree-leaf-label" data-rename-sc="${sc.id}" data-compid="${c.id}">${escH(sc.name)}</span>
+            <span class="arch-tree-sc-type">${escH(sc.type)}</span>
+            <span class="arch-tree-row-actions">
+              <button class="arch-tree-row-btn" style="visibility:hidden" disabled>λ＋</button>
+              <button class="arch-tree-row-btn" data-scid="${sc.id}" data-compid="${c.id}" data-add-sc-fm title="Add failure mode">FM＋</button>
+              <button class="arch-tree-row-btn arch-tree-row-del" data-del-sc="${sc.id}" data-compid="${c.id}" title="Delete sub-component">✕</button>
+            </span>
+          </div>
+          ${!scCollapsed?`<div class="arch-tree-fn-fms" data-sc-fms="${sc.id}">
+            ${scFmList.map(fm=>`
+              <div class="arch-tree-fm-row" style="padding-left:${pad+28}px" data-fmid="${fm.id}">
+                <span class="arch-tree-sym arch-tree-sym--fm">⚡</span>
+                <span class="arch-tree-fm-text" data-rename-fm="${fm.id}" data-scid="${sc.id}" data-compid="${c.id}">${escH(fm.failure_mode)}</span>
+                <button class="arch-tree-fm-del" data-fmid="${fm.id}" data-scid="${sc.id}" data-compid="${c.id}" title="Delete">✕</button>
+              </div>`).join('')}
+          </div>`:''}`;
+      }).join('');
+
+      children = fnRows + directFmRows + scRows + cnRows;
     }
 
     return `<div class="arch-tree-node arch-tree-row" id="${nodeId(c.id)}" data-cid="${c.id}"
@@ -3410,6 +3657,7 @@ function renderArchTree() {
         <span class="arch-tree-row-actions">
           <button class="arch-tree-row-btn" data-add-fn="${c.id}" title="Add function">λ＋</button>
           <button class="arch-tree-row-btn arch-tree-row-btn--fm" data-add-comp-fm="${c.id}" title="Add component failure mode">FM＋</button>
+          <button class="arch-tree-row-btn" data-add-sc="${c.id}" title="Add sub-component">SC＋</button>
           <button class="arch-tree-row-btn arch-tree-row-del" data-del-comp="${c.id}" title="Delete component">✕</button>
         </span>
       </div>${children}`;
@@ -3573,15 +3821,16 @@ function renderArchTree() {
     });
   });
 
-  // Dblclick FM text → rename failure mode
+  // Dblclick FM text → rename failure mode (handles fn, comp-direct, and sc FMs)
   body.querySelectorAll('[data-rename-fm]').forEach(el => {
     el.addEventListener('dblclick', e => {
       e.stopPropagation();
-      const fmId = el.dataset.renameFm, fnId = el.dataset.fnid, compId = el.dataset.compid;
+      const fmId = el.dataset.renameFm, fnId = el.dataset.fnid, scId = el.dataset.scid, compId = el.dataset.compid;
       const comp = _s.components.find(c => c.id === compId);
-      const fm = fnId
-        ? comp?.functions?.find(f => f.id === fnId)?._fms?.find(m => m.id === fmId)
-        : comp?._compFms?.find(m => m.id === fmId);
+      let fm;
+      if (scId)      fm = (comp?._subComps||[]).find(s=>s.id===scId)?._fms?.find(m=>m.id===fmId);
+      else if (fnId) fm = comp?.functions?.find(f=>f.id===fnId)?._fms?.find(m=>m.id===fmId);
+      else           fm = comp?._compFms?.find(m=>m.id===fmId);
       if (!fm) return;
       inlineRename(el, fm.failure_mode, async n => {
         fm.failure_mode = n;
@@ -3709,17 +3958,140 @@ function renderArchTree() {
     });
   });
 
-  // Delete FM
+  // Toggle sub-component FM collapse
+  body.querySelectorAll('[data-sc-toggle]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const scId=btn.dataset.scToggle;
+      if(scCol.has(scId)) scCol.delete(scId); else scCol.add(scId);
+      renderArchTree();
+    });
+  });
+
+  // SC＋ — add sub-component to block
+  body.querySelectorAll('[data-add-sc]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const compId=btn.dataset.addSc;
+      if(col.has(compId)){ col.delete(compId); renderArchTree(); }
+      const compNode=body.querySelector(`[data-cid="${compId}"]`);
+      if(!compNode) return;
+      // Find last sc-entry sibling
+      let afterEl=compNode, sib=compNode.nextElementSibling;
+      while(sib&&(sib.classList.contains('arch-tree-fn-entry')||sib.hasAttribute('data-fn-fms')||
+                  sib.classList.contains('arch-tree-fm-direct')||sib.classList.contains('arch-tree-sc-entry')||sib.hasAttribute('data-sc-fms'))){
+        afterEl=sib; sib=sib.nextElementSibling;
+      }
+      // Two-step input: name then type
+      const inp=document.createElement('input');
+      inp.className='arch-tree-fm-inp'; inp.placeholder='Sub-component name…';
+      afterEl.insertAdjacentElement('afterend',inp); inp.focus();
+      inp.addEventListener('blur',()=>inp.remove());
+      inp.addEventListener('keydown',async e2=>{
+        if(e2.key==='Escape'){inp.remove();return;}
+        if(e2.key!=='Enter') return;
+        e2.preventDefault();
+        const name=inp.value.trim(); if(!name){inp.remove();return;}
+        inp.removeEventListener('blur',()=>inp.remove());
+        inp.remove();
+        const typeInp=document.createElement('input');
+        typeInp.className='arch-tree-fm-inp'; typeInp.placeholder='Type (Resistor, IC, Sensor…)';
+        // re-find afterEl position
+        const compNodeFresh=body.querySelector(`[data-cid="${compId}"]`);
+        let aft2=compNodeFresh||document.getElementById('arch-tree-body');
+        if(compNodeFresh){let s=compNodeFresh.nextElementSibling;while(s&&(s.classList.contains('arch-tree-fn-entry')||s.hasAttribute('data-fn-fms')||s.classList.contains('arch-tree-fm-direct')||s.classList.contains('arch-tree-sc-entry')||s.hasAttribute('data-sc-fms'))){aft2=s;s=s.nextElementSibling;}}
+        aft2.insertAdjacentElement('afterend',typeInp); typeInp.focus();
+        const saveType=async()=>{
+          const type=typeInp.value.trim();
+          typeInp.remove();
+          const comp=_s.components.find(c=>c.id===compId); if(!comp) return;
+          const {data:sc}=await sb.from('sub_components').insert({
+            block_id:compId, project_id:comp.project_id||_s.parentId,
+            name, type, sort_order:(comp._subComps||[]).length,
+          }).select().single();
+          if(sc){ sc._fms=[]; comp._subComps=[...(comp._subComps||[]),sc]; }
+          renderArchTree(); refreshComp(compId);
+          if(_s.selected===compId) openProps(compId);
+        };
+        typeInp.addEventListener('blur',saveType);
+        typeInp.addEventListener('keydown',e3=>{if(e3.key==='Enter'){e3.preventDefault();typeInp.blur();}if(e3.key==='Escape')typeInp.remove();});
+      });
+    });
+  });
+
+  // FM＋ on sub-component row
+  body.querySelectorAll('[data-add-sc-fm]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const scId=btn.dataset.scid, compId=btn.dataset.compid;
+      if(scCol.has(scId)){ scCol.delete(scId); renderArchTree(); }
+      const scFmsDiv=body.querySelector(`[data-sc-fms="${scId}"]`);
+      const anchor=scFmsDiv||btn.closest('.arch-tree-row');
+      const append=!!scFmsDiv;
+      async function saveFm(v){
+        const {data:fm}=await sb.from('arch_function_fms').insert({
+          sub_component_id:scId, failure_mode:v, sort_order:99,
+        }).select().single();
+        if(fm){
+          const comp=_s.components.find(c=>c.id===compId);
+          const sc=(comp?._subComps||[]).find(s=>s.id===scId);
+          if(sc) sc._fms=[...(sc._fms||[]),fm];
+          renderArchTree();
+          if(_s.selected===compId) openProps(compId);
+        }
+      }
+      inlineInput(append?null:anchor,'Failure mode…',saveFm,append?anchor:null);
+    });
+  });
+
+  // Delete FM (extended to handle sub_component_id)
   body.querySelectorAll('.arch-tree-fm-del').forEach(btn=>{
     btn.addEventListener('click',async e=>{
       e.stopPropagation();
-      const fmId=btn.dataset.fmid, fnId=btn.dataset.fnid, compId=btn.dataset.compid;
+      const fmId=btn.dataset.fmid, fnId=btn.dataset.fnid, scId=btn.dataset.scid, compId=btn.dataset.compid;
       await sb.from('arch_function_fms').delete().eq('id',fmId);
       const comp=_s.components.find(c=>c.id===compId);
-      if(fnId){const fn=comp?.functions?.find(f=>f.id===fnId);if(fn)fn._fms=(fn._fms||[]).filter(fm=>fm.id!==fmId);}
+      if(scId){const sc=(comp?._subComps||[]).find(s=>s.id===scId);if(sc)sc._fms=(sc._fms||[]).filter(fm=>fm.id!==fmId);}
+      else if(fnId){const fn=comp?.functions?.find(f=>f.id===fnId);if(fn)fn._fms=(fn._fms||[]).filter(fm=>fm.id!==fmId);}
       else{if(comp)comp._compFms=(comp._compFms||[]).filter(fm=>fm.id!==fmId);}
       renderArchTree();
       if(_s.selected===compId) openProps(compId);
+    });
+  });
+
+  // Dblclick sub-component label → rename
+  body.querySelectorAll('[data-rename-sc]').forEach(el=>{
+    el.addEventListener('dblclick',e=>{
+      e.stopPropagation();
+      const scId=el.dataset.renameSc, compId=el.dataset.compid;
+      const comp=_s.components.find(c=>c.id===compId);
+      const sc=(comp?._subComps||[]).find(s=>s.id===scId); if(!sc) return;
+      inlineRename(el,sc.name,async n=>{
+        sc.name=n;
+        await sb.from('sub_components').update({name:n}).eq('id',scId);
+        renderArchTree();
+        if(_s.selected===compId) openProps(compId);
+      });
+    });
+  });
+
+  // Delete sub-component row
+  body.querySelectorAll('[data-del-sc]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const scId=btn.dataset.delSc, compId=btn.dataset.compid;
+      const comp=_s.components.find(c=>c.id===compId);
+      const sc=(comp?._subComps||[]).find(s=>s.id===scId);
+      const fmCount=sc?._fms?.length||0;
+      const msg=fmCount>0
+        ?`Delete sub-component "<strong>${escH(sc?.name||'')}</strong>"? This will also delete ${fmCount} failure mode${fmCount>1?'s':''}.`
+        :`Delete sub-component "<strong>${escH(sc?.name||'')}</strong>"?`;
+      confirmDialog(msg,async()=>{
+        await sb.from('sub_components').delete().eq('id',scId);
+        if(comp) comp._subComps=(comp._subComps||[]).filter(s=>s.id!==scId);
+        renderArchTree(); refreshComp(compId);
+        if(_s.selected===compId) openProps(compId);
+      });
     });
   });
 
