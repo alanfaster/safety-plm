@@ -239,8 +239,27 @@ export async function renderArchitecture(container, { project, item, system, dom
     }
   }
 
+  // Load failure modes for functions and components
+  const allFnIds  = funs.map(f=>f.id);
+  const allCompIds= compList.map(c=>c.id);
+  let fnFmsByFnId={}, fnFmsByCompId={};
+  if(allFnIds.length||allCompIds.length){
+    const parts=[];
+    if(allFnIds.length)   parts.push(`function_id.in.(${allFnIds.join(',')})`);
+    if(allCompIds.length) parts.push(`component_id.in.(${allCompIds.join(',')})`);
+    const {data:allFms}=await sb.from('arch_function_fms').select('*')
+      .or(parts.join(',')).order('sort_order',{ascending:true});
+    (allFms||[]).forEach(fm=>{
+      if(fm.function_id)(fnFmsByFnId[fm.function_id]||(fnFmsByFnId[fm.function_id]=[])).push(fm);
+      else if(fm.component_id)(fnFmsByCompId[fm.component_id]||(fnFmsByCompId[fm.component_id]=[])).push(fm);
+    });
+  }
+  funs.forEach(f=>{ f._fms=fnFmsByFnId[f.id]||[]; });
+
   const components = compList.map(c => ({
-    ...c, functions: funs.filter(f => f.component_id === c.id),
+    ...c,
+    functions:  funs.filter(f=>f.component_id===c.id),
+    _compFms:   fnFmsByCompId[c.id]||[],
   }));
 
   // ── Single source of truth: reconcile group_id from geometry ─────────────
@@ -2625,16 +2644,21 @@ function propseFunSection(c) {
       </div>
       <div id="props-fun-list">
         ${(c.functions||[]).map(f=>`
-          <div class="arch-props-fun-row">
-            <label style="display:flex;align-items:center;gap:3px;cursor:pointer">
-              <input type="checkbox" class="pf-safe" data-fid="${f.id}" ${f.is_safety_related?'checked':''}/>
-              <span style="font-size:11px;color:#C5221F">⚠</span>
-            </label>
-            <span class="arch-props-fun-name" id="pfn-${f.id}"
-              title="${f.function_ref_id ? 'Name managed in Item Definition' : ''}"
-            >${escH(f.name)}</span>
-            ${f.function_ref_id ? '' : `<button class="btn-icon pf-ren" data-fid="${f.id}" title="Rename">✎</button>`}
-            <button class="btn-icon pf-del" data-fid="${f.id}">✕</button>
+          <div class="arch-props-fun-entry">
+            <div class="arch-props-fun-row">
+              <label style="display:flex;align-items:center;gap:3px;cursor:pointer">
+                <input type="checkbox" class="pf-safe" data-fid="${f.id}" ${f.is_safety_related?'checked':''}/>
+                <span style="font-size:11px;color:#C5221F">⚠</span>
+              </label>
+              <span class="arch-props-fun-name" id="pfn-${f.id}"
+                title="${f.function_ref_id ? 'Name managed in Item Definition' : ''}"
+              >${escH(f.name)}</span>
+              ${f.function_ref_id ? '' : `<button class="btn-icon pf-ren" data-fid="${f.id}" title="Rename">✎</button>`}
+              <button class="btn-icon pf-del" data-fid="${f.id}">✕</button>
+            </div>
+            <div class="arch-fun-fms" id="fun-fms-${f.id}">
+              <span class="arch-fun-fms-loading">…</span>
+            </div>
           </div>`).join('')}
       </div>
     </div>`;
@@ -2703,6 +2727,7 @@ function openProps(id) {
     document.getElementById('props-add-fun').onclick = () => openIdefPanel();
     wirePropsPortSection(id);
     wirePropsF(c, id);
+    loadAndRenderFunFMs(c, id);
     return;
   }
 
@@ -2782,6 +2807,57 @@ function openProps(id) {
 
   document.getElementById('props-add-fun').onclick = () => openIdefPanel();
   wirePropsF(c, id);
+  loadAndRenderFunFMs(c, id);
+}
+
+async function loadAndRenderFunFMs(c, compId) {
+  const fnIds=(c.functions||[]).map(f=>f.id);
+  if(!fnIds.length) return;
+  const {data:fms}=await sb.from('arch_function_fms')
+    .select('*').in('function_id',fnIds).order('sort_order',{ascending:true});
+  const byFn={};
+  (fms||[]).forEach(fm=>{(byFn[fm.function_id]||(byFn[fm.function_id]=[])).push(fm);});
+  (c.functions||[]).forEach(f=>{
+    f._fms=byFn[f.id]||[];
+    const el=document.getElementById(`fun-fms-${f.id}`);
+    if(el) renderFunFMsInto(el,f,compId);
+  });
+}
+
+function renderFunFMsInto(container, f, compId){
+  container.innerHTML=`
+    ${(f._fms||[]).map(fm=>`
+      <div class="arch-fun-fm-row" data-fmid="${fm.id}">
+        <span class="arch-fun-fm-dot">●</span>
+        <span class="arch-fun-fm-text">${escH(fm.failure_mode)}</span>
+        <button class="btn-icon arch-fun-fm-del" data-fmid="${fm.id}" title="Delete">✕</button>
+      </div>`).join('')}
+    <button class="arch-fun-fm-add" data-fid="${f.id}">＋ Failure Mode</button>`;
+
+  container.querySelector('.arch-fun-fm-add')?.addEventListener('click',()=>{
+    const addBtn=container.querySelector('.arch-fun-fm-add');
+    const inp=document.createElement('input');
+    inp.placeholder='Failure mode…'; inp.className='form-input arch-fun-fm-inp';
+    container.insertBefore(inp,addBtn); inp.focus();
+    const save=async()=>{
+      const v=inp.value.trim(); if(!v){inp.remove();return;}
+      const {data:newFm}=await sb.from('arch_function_fms').insert({
+        function_id:f.id, failure_mode:v, sort_order:(f._fms||[]).length,
+      }).select().single();
+      if(newFm){f._fms=[...(f._fms||[]),newFm]; renderFunFMsInto(container,f,compId); refreshArchTree();}
+      else inp.remove();
+    };
+    inp.addEventListener('blur',save);
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();inp.blur();}if(e.key==='Escape')inp.remove();});
+  });
+
+  container.querySelectorAll('.arch-fun-fm-del').forEach(btn=>{
+    btn.addEventListener('click',async()=>{
+      await sb.from('arch_function_fms').delete().eq('id',btn.dataset.fmid);
+      f._fms=(f._fms||[]).filter(fm=>fm.id!==btn.dataset.fmid);
+      renderFunFMsInto(container,f,compId); refreshArchTree();
+    });
+  });
 }
 
 function wirePropsF(c, id) {
@@ -2977,6 +3053,22 @@ async function deleteComp(id) {
     ? _s.projectSystems.find(s => s.id === c.data.system_id) : null;
   const childCount = isGroup ? _s.components.filter(b => b.data?.group_id === id).length : 0;
 
+  const fnCount  = (c.functions || []).length;
+  const fmCount  = (c.functions || []).reduce((s, f) => s + (f._fms || []).length, 0)
+                 + (c._compFms || []).length;
+
+  const fnFmList = (fnCount || fmCount) ? `
+    <div class="del-comp-section">
+      <div class="del-comp-section-title">Functions and failure modes that will be deleted</div>
+      <ul class="del-comp-list">
+        ${(c.functions || []).map(f => {
+          const fms = f._fms || [];
+          return `<li><strong>${escH(f.name)}</strong>${fms.length ? ` — ${fms.length} FM(s): ${fms.map(fm=>escH(fm.failure_mode)).join(', ')}` : ''}</li>`;
+        }).join('')}
+        ${(c._compFms || []).map(fm => `<li>Component FM: ${escH(fm.failure_mode)}</li>`).join('')}
+      </ul>
+    </div>` : '';
+
   const connList = affectedConns.length ? `
     <div class="del-comp-section">
       <div class="del-comp-section-title">Connections that will be removed (${affectedConns.length})</div>
@@ -3002,9 +3094,14 @@ async function deleteComp(id) {
   const childNote = childCount
     ? `<p style="margin-top:4px;font-size:12px;color:var(--color-text-muted)">${childCount} block(s) inside will be unlinked from this group.</p>` : '';
 
-  const warnBox = (affectedConns.length || linkedReqs.length) ? `
+  const warnBox = (affectedConns.length || linkedReqs.length || fnCount || fmCount) ? `
     <div class="modal-warn-box" style="margin-top:12px">
-      ⚠ Deleting this component will permanently remove ${affectedConns.length} connection(s) and ${linkedReqs.length} interface requirement(s). This may create inconsistencies between the Architecture canvas and Requirements, Traceability, and other documents.
+      ⚠ Deleting this component will permanently remove ${[
+        affectedConns.length && `${affectedConns.length} connection(s)`,
+        linkedReqs.length   && `${linkedReqs.length} interface requirement(s)`,
+        fnCount             && `${fnCount} function(s)`,
+        fmCount             && `${fmCount} failure mode(s)`,
+      ].filter(Boolean).join(', ')}. This cannot be undone.
     </div>` : '';
 
   const execDelete = async () => {
@@ -3042,7 +3139,15 @@ async function deleteComp(id) {
     showModal({
       title: '⚠ Final Confirmation',
       body: `<p>This action <strong>cannot be undone</strong>.</p>
-             <p style="margin-top:8px">Are you sure you want to permanently delete <strong>"${escH(c.name)}"</strong>${linkedReqs.length ? ` along with ${linkedReqs.length} interface requirement(s)` : ''}?</p>`,
+             <p style="margin-top:8px">Are you sure you want to permanently delete <strong>"${escH(c.name)}"</strong>${[
+               linkedReqs.length && `${linkedReqs.length} interface requirement(s)`,
+               fnCount           && `${fnCount} function(s)`,
+               fmCount           && `${fmCount} failure mode(s)`,
+             ].filter(Boolean).length ? ` along with ${[
+               linkedReqs.length && `${linkedReqs.length} interface requirement(s)`,
+               fnCount           && `${fnCount} function(s)`,
+               fmCount           && `${fmCount} failure mode(s)`,
+             ].filter(Boolean).join(', ')}` : ''}?</p>`,
       footer: `
         <button class="btn btn-secondary" id="dc2-cancel">Cancel</button>
         <button class="btn btn-danger"    id="dc2-confirm">Yes, delete everything</button>
@@ -3052,8 +3157,8 @@ async function deleteComp(id) {
     document.getElementById('dc2-confirm').onclick = () => { hideModal(); execDelete(); };
   };
 
-  if (!affectedConns.length && !linkedReqs.length) {
-    // No connections — simple single confirm
+  if (!affectedConns.length && !linkedReqs.length && !fnCount && !fmCount) {
+    // Nothing extra — simple single confirm
     confirmDialog(`Delete "${c.name}"?${childCount ? ` (${childCount} block(s) will be unlinked)` : ''}`, execDelete);
     return;
   }
@@ -3062,7 +3167,7 @@ async function deleteComp(id) {
     title: `Delete "${escH(c.name)}"`,
     body: `
       <p style="margin-bottom:10px">Deleting this ${isGroup ? 'system group' : 'component'} will also remove the following:</p>
-      ${connList}${reqList}${sysNote}${childNote}${warnBox}`,
+      ${fnFmList}${connList}${reqList}${sysNote}${childNote}${warnBox}`,
     footer: `
       <button class="btn btn-secondary" id="dc1-cancel">Cancel</button>
       <button class="btn btn-danger"    id="dc1-confirm">Continue →</button>
@@ -3230,42 +3335,83 @@ function renderArchTree() {
     return `${itype ? itype + ': ' : ''}${srcName} → ${tgtName}`;
   }
 
+  if(!renderArchTree._fnCol) renderArchTree._fnCol=new Set();
+  const fnCol=renderArchTree._fnCol;
+
   function blockNode(c, depth = 0) {
-    const icon  = TYPE_ICON[c.comp_type]  || '▪';
-    const color = TYPE_COLOR[c.comp_type] || '#555';
-    const fns   = c.functions || [];
-    const myConns = conns.filter(cn => cn.source_id === c.id || cn.target_id === c.id);
-    const hasChildren = fns.length > 0 || myConns.length > 0;
-    const isCol = col.has(c.id);
-    const pad   = depth * 14;
+    const icon     = TYPE_ICON[c.comp_type]  || '▪';
+    const color    = TYPE_COLOR[c.comp_type] || '#555';
+    const fns      = c.functions || [];
+    const compFms  = c._compFms  || [];
+    const myConns  = conns.filter(cn => cn.source_id === c.id || cn.target_id === c.id);
+    const hasChildren = fns.length > 0 || myConns.length > 0 || compFms.length > 0;
+    const isCol    = col.has(c.id);
+    const pad      = depth * 14;
 
     let children = '';
-    if (!isCol && hasChildren) {
-      const fnRows = fns.map(f =>
-        `<div class="arch-tree-leaf" style="padding-left:${pad + 28}px">
-          <span class="arch-tree-leaf-icon">λ</span>
-          <span class="arch-tree-leaf-label">${escH(f.name)}</span>
-        </div>`
-      ).join('');
+    if (!isCol) {
+      // Functions with their failure modes
+      const fnRows = fns.map(f => {
+        const fmList = f._fms || [];
+        const fnCollapsed = fnCol.has(f.id);
+        return `
+          <div class="arch-tree-fn-entry arch-tree-row" style="padding-left:${pad+14}px">
+            <button class="arch-tree-chevron arch-tree-fn-chev ${fnCollapsed?'arch-tree-chevron-col':''}"
+              data-fn-toggle="${f.id}">▾</button>
+            <span class="arch-tree-sym arch-tree-sym--fn">λ</span>
+            <span class="arch-tree-leaf-label">${escH(f.name)}</span>
+            ${f.is_safety_related?'<span class="arch-tree-fn-safe">⚠</span>':''}
+            <span class="arch-tree-row-actions">
+              <button class="arch-tree-row-btn" style="visibility:hidden" disabled>λ＋</button>
+              <button class="arch-tree-row-btn" data-fnid="${f.id}" data-compid="${c.id}"
+                data-add-fn-fm title="Add failure mode to this function">FM＋</button>
+              <button class="arch-tree-row-btn arch-tree-row-del" data-del-fn="${f.id}" data-compid="${c.id}" title="Delete function">✕</button>
+            </span>
+          </div>
+          ${!fnCollapsed?`<div class="arch-tree-fn-fms" data-fn-fms="${f.id}">
+            ${fmList.map(fm=>`
+              <div class="arch-tree-fm-row" style="padding-left:${pad+28}px" data-fmid="${fm.id}">
+                <span class="arch-tree-sym arch-tree-sym--fm">⚡</span>
+                <span class="arch-tree-fm-text">${escH(fm.failure_mode)}</span>
+                <button class="arch-tree-fm-del" data-fmid="${fm.id}" data-fnid="${f.id}" data-compid="${c.id}" title="Delete">✕</button>
+              </div>`).join('')}
+          </div>`:''}`;
+      }).join('');
+
+      // Direct component-level FMs (FMEDA / no function required)
+      const directFmRows = compFms.map(fm=>`
+        <div class="arch-tree-fm-row arch-tree-fm-direct" style="padding-left:${pad+14}px" data-fmid="${fm.id}">
+          <span class="arch-tree-sym arch-tree-sym--fm-direct">⚡</span>
+          <span class="arch-tree-fm-text">${escH(fm.failure_mode)}</span>
+          <button class="arch-tree-fm-del" data-fmid="${fm.id}" data-compid="${c.id}" title="Delete">✕</button>
+        </div>`).join('');
+
+      // Connections
       const cnRows = myConns.map(cn => {
         const other = _s.components.find(cc => cc.id === (cn.source_id === c.id ? cn.target_id : cn.source_id));
         const dir   = cn.source_id === c.id ? '→' : '←';
         const itype = cn.data?.iface_type || 'Link';
-        return `<div class="arch-tree-leaf arch-tree-conn-leaf" style="padding-left:${pad + 28}px"
+        return `<div class="arch-tree-leaf arch-tree-conn-leaf" style="padding-left:${pad+28}px"
             data-conn-id="${cn.id}" title="Click to select connection">
             <span class="arch-tree-leaf-icon" style="color:#666">${dir}</span>
-            <span class="arch-tree-leaf-label" style="color:#555">${escH(itype)}: ${escH(other?.name || '?')}</span>
+            <span class="arch-tree-leaf-label" style="color:#555">${escH(itype)}: ${escH(other?.name||'?')}</span>
           </div>`;
       }).join('');
-      children = fnRows + cnRows;
+
+      children = fnRows + directFmRows + cnRows;
     }
 
-    return `<div class="arch-tree-node" id="${nodeId(c.id)}" data-cid="${c.id}"
+    return `<div class="arch-tree-node arch-tree-row" id="${nodeId(c.id)}" data-cid="${c.id}"
         style="padding-left:${pad}px">
-        <button class="arch-tree-chevron ${hasChildren ? '' : 'arch-tree-chevron-empty'} ${isCol ? 'arch-tree-chevron-col' : ''}"
+        <button class="arch-tree-chevron ${hasChildren?'':'arch-tree-chevron-empty'} ${isCol?'arch-tree-chevron-col':''}"
           data-toggle="${c.id}">▾</button>
         <span class="arch-tree-node-icon" style="color:${color}">${icon}</span>
         <span class="arch-tree-node-label" data-focus="${c.id}">${escH(c.name)}</span>
+        <span class="arch-tree-row-actions">
+          <button class="arch-tree-row-btn" data-add-fn="${c.id}" title="Add function">λ＋</button>
+          <button class="arch-tree-row-btn arch-tree-row-btn--fm" data-add-comp-fm="${c.id}" title="Add component failure mode">FM＋</button>
+          <button class="arch-tree-row-btn arch-tree-row-del" data-del-comp="${c.id}" title="Delete component">✕</button>
+        </span>
       </div>${children}`;
   }
 
@@ -3383,6 +3529,128 @@ function renderArchTree() {
     el.addEventListener('click', e => {
       e.stopPropagation();
       selectConn(el.dataset.connId);
+    });
+  });
+
+  // Toggle function FM section collapse
+  body.querySelectorAll('[data-fn-toggle]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const fid=btn.dataset.fnToggle;
+      if(fnCol.has(fid)) fnCol.delete(fid); else fnCol.add(fid);
+      renderArchTree();
+    });
+  });
+
+  // Helper: show inline input after a tree row and save as FM or function
+  function inlineInput(afterEl, placeholder, onSave){
+    const inp=document.createElement('input');
+    inp.className='arch-tree-fm-inp'; inp.placeholder=placeholder;
+    afterEl.insertAdjacentElement('afterend',inp); inp.focus();
+    const save=async()=>{ const v=inp.value.trim(); inp.remove(); if(v) await onSave(v); };
+    inp.addEventListener('blur',save);
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();inp.blur();}if(e.key==='Escape')inp.remove();});
+  }
+
+  // λ＋ — add function to component
+  body.querySelectorAll('[data-add-fn]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const compId=btn.dataset.addFn;
+      const row=btn.closest('.arch-tree-row');
+      inlineInput(row,'Function name…',async v=>{
+        const comp=_s.components.find(c=>c.id===compId); if(!comp) return;
+        const {data:fn}=await sb.from('arch_functions').insert({
+          component_id:compId, name:v, is_safety_related:false,
+          sort_order:(comp.functions||[]).length,
+        }).select().single();
+        if(fn){ fn._fms=[]; comp.functions=[...(comp.functions||[]),fn]; }
+        renderArchTree(); refreshComp(compId);
+        if(_s.selected===compId) openProps(compId);
+      });
+    });
+  });
+
+  // FM＋ on component row — add direct component FM
+  body.querySelectorAll('[data-add-comp-fm]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const compId=btn.dataset.addCompFm;
+      const row=btn.closest('.arch-tree-row');
+      inlineInput(row,'Component failure mode…',async v=>{
+        const {data:newFm}=await sb.from('arch_function_fms').insert({
+          component_id:compId, failure_mode:v, sort_order:99,
+        }).select().single();
+        if(newFm){
+          const comp=_s.components.find(c=>c.id===compId);
+          if(comp) comp._compFms=[...(comp._compFms||[]),newFm];
+          renderArchTree();
+          if(_s.selected===compId) openProps(compId);
+        }
+      });
+    });
+  });
+
+  // FM＋ on function row — add FM to function
+  body.querySelectorAll('[data-add-fn-fm]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const fnId=btn.dataset.fnid, compId=btn.dataset.compid;
+      const row=btn.closest('.arch-tree-row');
+      inlineInput(row,'Failure mode…',async v=>{
+        const {data:newFm}=await sb.from('arch_function_fms').insert({
+          function_id:fnId, failure_mode:v, sort_order:99,
+        }).select().single();
+        if(newFm){
+          const comp=_s.components.find(c=>c.id===compId);
+          const fn=comp?.functions?.find(f=>f.id===fnId);
+          if(fn) fn._fms=[...(fn._fms||[]),newFm];
+          renderArchTree();
+          if(_s.selected===compId) openProps(compId);
+        }
+      });
+    });
+  });
+
+  // Delete FM
+  body.querySelectorAll('.arch-tree-fm-del').forEach(btn=>{
+    btn.addEventListener('click',async e=>{
+      e.stopPropagation();
+      const fmId=btn.dataset.fmid, fnId=btn.dataset.fnid, compId=btn.dataset.compid;
+      await sb.from('arch_function_fms').delete().eq('id',fmId);
+      const comp=_s.components.find(c=>c.id===compId);
+      if(fnId){const fn=comp?.functions?.find(f=>f.id===fnId);if(fn)fn._fms=(fn._fms||[]).filter(fm=>fm.id!==fmId);}
+      else{if(comp)comp._compFms=(comp._compFms||[]).filter(fm=>fm.id!==fmId);}
+      renderArchTree();
+      if(_s.selected===compId) openProps(compId);
+    });
+  });
+
+  // Delete function row
+  body.querySelectorAll('[data-del-fn]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const fnId=btn.dataset.delFn, compId=btn.dataset.compid;
+      const comp=_s.components.find(c=>c.id===compId);
+      const fn=comp?.functions?.find(f=>f.id===fnId);
+      const fmCount=fn?._fms?.length||0;
+      const msg=fmCount>0
+        ?`Delete function "<strong>${escH(fn?.name||'')}</strong>"? This will also delete ${fmCount} linked failure mode${fmCount>1?'s':''}.`
+        :`Delete function "<strong>${escH(fn?.name||'')}</strong>"?`;
+      confirmDialog(msg,async()=>{
+        await sb.from('arch_functions').delete().eq('id',fnId);
+        if(comp) comp.functions=(comp.functions||[]).filter(f=>f.id!==fnId);
+        renderArchTree();
+        if(_s.selected===compId) openProps(compId);
+      });
+    });
+  });
+
+  // Delete component row
+  body.querySelectorAll('[data-del-comp]').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      deleteComp(btn.dataset.delComp);
     });
   });
 }
