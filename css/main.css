@@ -2850,7 +2850,7 @@ tr.req-title-row td { cursor: default; }
 .arch-tree-fn-chev{flex-shrink:0}
 .arch-tree-fn-safe{font-size:9px;color:#C5221F;margin-left:2px}
 .arch-tree-fn-fms{display:flex;flex-direction:column;gap:1px;padding:1px 0 3px}
-.arch-tree-fm-row{display:flex;align-items:center;gap:3px;font-size:11px;padding:1px 0}
+.arch-tree-fm-row{display:flex;align-items:center;gap:3px;font-size:11px;padding:1px 8px 1px 0;margin:1px 4px}
 .arch-tree-fm-row:hover .arch-tree-fm-del{opacity:1;pointer-events:all}
 .arch-tree-fm-dot{font-size:8px;color:#E37400;flex-shrink:0}
 .arch-tree-fm-direct .arch-tree-fm-dot{color:#9AA0A6}
