@@ -3520,20 +3520,68 @@ function openScPopover(compId, anchorEl) {
 
   pop.querySelector('.arch-sc-pop-close').onclick = () => pop.remove();
 
-  pop.querySelector('.arch-sc-pop-add').onclick = async () => {
-    const name = prompt('Sub-component name:'); if (!name?.trim()) return;
-    const type = prompt('Type (e.g. Resistor, Capacitor, IC, Sensor):') || '';
-    const {data:sc} = await sb.from('sub_components').insert({
-      block_id: compId, project_id: c.project_id || _s.parentId,
-      name: name.trim(), type: type.trim(),
-      sort_order: (c._subComps||[]).length,
-    }).select().single();
-    if (sc) {
-      sc._fms = [];
-      c._subComps = [...(c._subComps||[]), sc];
-      refreshComp(compId);
-      renderPop();
-    }
+  pop.querySelector('.arch-sc-pop-add').onclick = () => {
+    const listEl = pop.querySelector('.arch-sc-pop-list');
+    if (!listEl) return;
+
+    // Step 1 — name input
+    const nameInp = document.createElement('input');
+    nameInp.className = 'arch-sc-pop-inp';
+    nameInp.placeholder = 'Sub-component name…';
+    listEl.appendChild(nameInp);
+    nameInp.focus();
+
+    let nameDone = false;
+    nameInp.addEventListener('blur', () => { if (!nameDone) nameInp.remove(); });
+    nameInp.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { nameDone = true; nameInp.remove(); }
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const name = nameInp.value.trim(); if (!name) { nameDone = true; nameInp.remove(); return; }
+      nameDone = true; nameInp.remove();
+
+      // Step 2 — type select
+      const domain = c.comp_type || 'HW';
+      const typeList = _s.scTypes[domain] || SC_TYPE_DEFAULTS[domain] || [];
+      const sel = document.createElement('select');
+      sel.className = 'arch-sc-pop-inp';
+      sel.innerHTML = `<option value="">— Select type —</option>`
+        + typeList.map(t => `<option value="${t}">${t}</option>`).join('')
+        + `<option value="__custom__">Other (custom)…</option>`;
+      listEl.appendChild(sel);
+      sel.focus();
+
+      const doSave = async (type) => {
+        sel.remove();
+        const {data:sc} = await sb.from('sub_components').insert({
+          block_id: compId, project_id: c.project_id || _s.parentId,
+          name, type: type || '', sort_order: (c._subComps||[]).length,
+        }).select().single();
+        if (sc) { sc._fms = []; c._subComps = [...(c._subComps||[]), sc]; refreshComp(compId); renderPop(); }
+      };
+
+      let typeDone = false;
+      sel.addEventListener('change', () => {
+        if (sel.value === '__custom__') {
+          sel.remove();
+          const customInp = document.createElement('input');
+          customInp.className = 'arch-sc-pop-inp';
+          customInp.placeholder = 'Custom type…';
+          listEl.appendChild(customInp); customInp.focus();
+          let custDone = false;
+          customInp.addEventListener('blur', () => { if (!custDone) { custDone = true; doSave(customInp.value.trim()); } });
+          customInp.addEventListener('keydown', e2 => {
+            if (e2.key === 'Enter') { e2.preventDefault(); custDone = true; doSave(customInp.value.trim()); customInp.remove(); }
+            if (e2.key === 'Escape') { custDone = true; customInp.remove(); }
+          });
+        } else if (sel.value) { typeDone = true; doSave(sel.value); }
+      });
+      sel.addEventListener('blur', () => { if (!typeDone) { typeDone = true; sel.remove(); } });
+      sel.addEventListener('keydown', e2 => {
+        if (e2.key === 'Enter' && sel.value && sel.value !== '__custom__') { e2.preventDefault(); typeDone = true; doSave(sel.value); }
+        if (e2.key === 'Escape') { typeDone = true; sel.remove(); }
+      });
+    });
   };
 
   // Close on outside click
