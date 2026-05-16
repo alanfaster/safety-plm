@@ -2839,7 +2839,7 @@ tr.req-title-row td { cursor: default; }
 .arch-tree-row-btn[data-add-fn]:hover{background:#E8F0FE;color:#1A73E8}
 .arch-tree-row-btn[data-add-comp-fm]:hover,.arch-tree-row-btn[data-add-fn-fm]:hover{background:#FEF0E6;color:#E37400}
 .arch-tree-row-del{opacity:0;pointer-events:none;transition:opacity .12s}
-.arch-tree-node:hover .arch-tree-row-del,.arch-tree-fn-entry:hover .arch-tree-row-del{opacity:1;pointer-events:all}
+.arch-tree-node:hover .arch-tree-row-del,.arch-tree-fn-entry:hover .arch-tree-row-del,.arch-tree-sc-entry:hover .arch-tree-row-del{opacity:1;pointer-events:all}
 .arch-tree-row-del:hover{background:#FCE8E6!important;color:#C5221F!important}
 /* Tree FM elements */
 .arch-tree-sym{font-size:11px;font-weight:700;flex-shrink:0;width:14px;text-align:center}
