@@ -8,7 +8,7 @@
 import { sb, buildCode, nextIndex } from '../config.js';
 import { navigate } from '../router.js';
 import { toast } from '../toast.js';
-import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr } from '../components/col-mgr.js';
+import { loadColConfig, saveColConfig, applyColVisibility, wireColMgr, wireColResize, wirePanelResize } from '../components/col-mgr.js';
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 import { VMODEL_NODES, PHASE_DB_SOURCE } from '../components/vmodel-editor.js';
 import { showVersionHistory } from '../components/version-history.js';
@@ -67,7 +67,6 @@ const BUILTIN_COLS = [
   { id: 'trace',   name: 'Traced to',    visible: true },
   { id: 'status',  name: 'Status',       visible: true },
   { id: 'result',  name: 'Result',       visible: true },
-  { id: 'actions', name: '',             fixed: true,  visible: true },
 ];
 
 const SKIP_FILTER = new Set(['select', 'drag', 'actions']);
@@ -141,6 +140,13 @@ export async function renderTestSpecs(container, { project, item, system, phase,
         </div>
         <div></div>
       </div>
+      <div class="page-tabs-bar">
+        <div class="page-tabs">
+          <button class="page-tab active" data-tab="list">All Tests</button>
+          <button class="page-tab" data-tab="reviews">Reviews</button>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-start-review-ts">✓ Start Review</button>
+      </div>
     </div>
     <div class="page-body spec-page-body" id="ts-outer">
       <nav class="spec-nav" id="ts-nav">
@@ -170,8 +176,8 @@ export async function renderTestSpecs(container, { project, item, system, phase,
       </aside>
     </div>
     <div class="spec-fab" id="ts-fab">
-      <button class="btn btn-primary"   id="btn-new-test">＋ New Test</button>
-      <button class="btn btn-secondary" id="btn-new-section">＋ Section</button>
+      <button class="btn btn-primary"   id="btn-new-test">＋<span class="fab-label">New Test</span></button>
+      <button class="btn btn-secondary" id="btn-new-section">＋<span class="fab-label">Section</span></button>
     </div>
     <div class="req-bulk-bar" id="ts-bulk-bar">
       <span class="req-bulk-count" id="ts-bulk-count">0 selected</span>
@@ -184,11 +190,46 @@ export async function renderTestSpecs(container, { project, item, system, phase,
     </div>
   `;
 
+  // Enable sticky column headers: spec-content must own the scroll, not outer #content
+  const _contentEl = document.getElementById('content');
+  if (_contentEl) {
+    _contentEl.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;height:100%';
+    window.addEventListener('hashchange', () => { _contentEl.style.cssText = ''; }, { once: true });
+  }
+
   document.getElementById('btn-new-test').onclick    = () => createTest();
   document.getElementById('btn-new-section').onclick = () => addSection(null);
   document.getElementById('ts-nav-close').onclick    = () => toggleNav(false);
   document.getElementById('ts-nav-expand').onclick   = () => toggleNav(true);
   document.getElementById('ts-panel-close').onclick  = () => closeDetail();
+
+  wirePanelResize(document.getElementById('ts-detail-panel'), `ts_props_${_ctx.parentId}`);
+  wirePanelResize(document.getElementById('ts-nav'), `ts_nav_${_ctx.parentId}`,
+    { side: 'right', minWidth: 100, maxWidth: 400, defaultWidth: 220, collapseClass: 'spec-nav--hidden' });
+
+  container.querySelectorAll('.page-tab').forEach(tab => {
+    tab.onclick = () => {
+      container.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const isReviews = tab.dataset.tab === 'reviews';
+      document.getElementById('ts-nav')?.classList.toggle('spec-nav--hidden', isReviews);
+      document.getElementById('ts-detail-panel')?.classList.toggle('req-trace-panel--hidden', isReviews);
+      const fab = document.getElementById('ts-fab');
+      if (fab) fab.style.display = isReviews ? 'none' : '';
+      if (isReviews) renderTsPageReviews();
+      else loadData();
+    };
+  });
+
+  document.getElementById('btn-start-review-ts').onclick = () => {
+    const allIds = _rows.filter(r => r.type !== 'section').map(r => r.id);
+    allIds.forEach(id => _selection.add(id));
+    syncBulkBar();
+    document.querySelectorAll('.ts-row-chk').forEach(cb => {
+      cb.checked = _selection.has(cb.dataset.id);
+      cb.closest('tr')?.classList.toggle('req-row-selected', cb.checked);
+    });
+  };
 
   document.getElementById('ts-bulk-cancel').onclick = () => {
     _selection.clear(); syncBulkBar();
@@ -270,6 +311,27 @@ function buildNavTree() {
       const tr = document.querySelector(`tr[data-id="${el.dataset.sid}"]`);
       if (tr) tr.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
+    el.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const r = _rows.find(x => x.id === el.dataset.sid); if (!r) return;
+      const inp = document.createElement('input');
+      inp.className = 'arch-tree-rename-inp';
+      inp.value = r.name || '';
+      el.replaceWith(inp); inp.focus(); inp.select();
+      let saved = false;
+      const commit = async () => {
+        if (saved) return; saved = true;
+        const n = inp.value.trim() || r.name;
+        r.name = n;
+        await sb.from('test_specs').update({ name: n }).eq('id', r.id);
+        buildNavTree();
+      };
+      inp.addEventListener('blur', commit);
+      inp.addEventListener('keydown', e2 => {
+        if (e2.key === 'Enter') { e2.preventDefault(); inp.blur(); }
+        if (e2.key === 'Escape') { saved = true; buildNavTree(); }
+      });
+    });
   });
 }
 
@@ -361,16 +423,14 @@ function renderTable(body) {
   }).join('');
 
   body.innerHTML = `
-    <div class="card">
-      <div class="table-wrap">
-        <table class="data-table ts-table" id="ts-table">
-          <thead>
-            <tr id="ts-thead-row">${theadCells}</tr>
-            ${filterRowHTML}
-          </thead>
-          <tbody id="ts-tbody"></tbody>
-        </table>
-      </div>
+    <div class="table-wrap">
+      <table class="data-table ts-table" id="ts-table">
+        <thead>
+          <tr id="ts-thead-row">${theadCells}</tr>
+          ${filterRowHTML}
+        </thead>
+        <tbody id="ts-tbody"></tbody>
+      </table>
     </div>
   `;
 
@@ -381,6 +441,21 @@ function renderTable(body) {
   wireColMgr(theadRow, tableEl, _colKey, _cols, updated => {
     _cols = updated;
     renderTable(body);
+  });
+  wireColResize(theadRow, {
+    onResize: containerW => {
+      document.querySelectorAll('.spec-section-inner').forEach(el => { el.style.width = containerW + 'px'; });
+    },
+  });
+  requestAnimationFrame(() => {
+    const fitBtn = body.querySelector('.col-fit-btn');
+    const headerRight = document.querySelector('.page-header-top > div:last-child');
+    if (fitBtn && headerRight) {
+      headerRight.querySelectorAll('.col-fit-btn').forEach(b => b.remove());
+      headerRight.appendChild(fitBtn);
+    }
+    const theadH = theadRow?.offsetHeight ?? 37;
+    tableEl?.style.setProperty('--spec-thead-h', theadH + 'px');
   });
 
   function colVal(r, colId) {
@@ -527,9 +602,18 @@ function testRowHTML(r) {
   return _cols.filter(c => c.visible).map(c => {
     switch (c.id) {
       case 'select':
-        return `<td data-col="select" style="width:28px;padding:10px 6px 0;text-align:center;vertical-align:top"><input type="checkbox" class="ts-row-chk" data-id="${r.id}" title="Select"/></td>`;
+        return `<td data-col="select" style="width:36px;padding:6px 4px;text-align:center;vertical-align:top">
+          <input type="checkbox" class="ts-row-chk" data-id="${r.id}" title="Select" style="display:block;margin:0 auto 4px"/>
+          <div class="spec-row-acts">
+            <button class="btn btn-ghost btn-xs btn-copy-link spec-link-btn" data-id="${r.id}" title="Copy link"       style="padding:1px 3px">🔗</button>
+            <button class="btn btn-ghost btn-xs spec-history-btn"            data-id="${r.id}" title="Version history" style="padding:1px 3px">🕐</button>
+          </div>
+        </td>`;
       case 'drag':
-        return `<td data-col="drag" class="spec-drag-cell" style="vertical-align:top;padding-top:4px"><span class="spec-drag-handle" title="Drag">⠿</span></td>`;
+        return `<td data-col="drag" class="spec-drag-cell" style="vertical-align:middle;text-align:center;padding:4px 2px;position:relative">
+          <button class="btn btn-ghost btn-xs drag-col-del spec-del-btn" data-id="${r.id}" title="Delete" style="position:absolute;top:4px;left:50%;transform:translateX(-50%)">✕</button>
+          <span class="spec-drag-handle" title="Drag">⠿</span>
+        </td>`;
       case 'code':
         return `<td data-col="code" class="code-cell" style="white-space:nowrap">${esc(r.test_code || '—')}${r.version > 1 ? ` <span class="artifact-version-badge">v${r.version}</span>` : ''}</td>`;
       case 'name':
@@ -546,16 +630,6 @@ function testRowHTML(r) {
         return r.result
           ? `<td data-col="result"><span class="ts-badge ts-result--${r.result}">${RESULT_LABELS[r.result] || r.result}</span></td>`
           : `<td data-col="result" style="color:#ccc;font-size:11px">not run</td>`;
-      case 'actions':
-        return `<td data-col="actions" class="spec-row-actions">
-          <button class="btn btn-ghost btn-xs spec-move-up"   data-id="${r.id}" title="Move up">↑</button>
-          <button class="btn btn-ghost btn-xs spec-move-dn"   data-id="${r.id}" title="Move down">↓</button>
-          <button class="btn btn-ghost btn-xs spec-add-below" data-id="${r.id}" title="Add test below">+</button>
-          <button class="btn btn-ghost btn-xs spec-view-btn"  data-id="${r.id}" title="View detail">👁</button>
-          <button class="btn btn-ghost btn-xs btn-copy-link spec-link-btn" data-id="${r.id}" title="Copy link">🔗</button>
-          <button class="btn btn-ghost btn-xs spec-history-btn" data-id="${r.id}" title="Version history">🕐</button>
-          <button class="btn btn-ghost btn-xs spec-del-btn"   data-id="${r.id}" title="Delete" style="color:var(--color-danger)">✕</button>
-        </td>`;
       default:
         return `<td data-col="${c.id}"></td>`;
     }
@@ -1495,6 +1569,70 @@ async function loadTraceSourceData(item, system) {
     } else {
       _traceData[field.id] = [];
     }
+  }
+}
+
+// ── Reviews tab ───────────────────────────────────────────────────────────────
+
+async function renderTsPageReviews() {
+  const body = document.getElementById('ts-body');
+  if (!body) return;
+  body.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
+
+  try {
+  const { project, item, parentId } = _ctx;
+  const itemId = item?.id ?? parentId;
+  const base = `/project/${project.id}/item/${itemId}`;
+  const testIds = _rows.filter(r => r.type !== 'section').map(r => r.id);
+
+  let sessions = [];
+  if (testIds.length) {
+    const { data: snaps } = await sb.from('review_artifact_snapshots')
+      .select('session_id').eq('artifact_type', 'test_specs').in('artifact_id', testIds);
+    const sessionIds = [...new Set((snaps || []).map(s => s.session_id))];
+    if (sessionIds.length) {
+      const { data } = await sb.from('review_sessions')
+        .select('*, review_protocol_templates(name)').in('id', sessionIds)
+        .order('created_at', { ascending: false });
+      sessions = data || [];
+    }
+  }
+
+  const STATUS_BADGE = {
+    planned: 'badge-draft', in_progress: 'badge-review',
+    completed: 'badge-approved', cancelled: 'badge-deprecated',
+  };
+
+  if (!sessions.length) {
+    body.innerHTML = `<div class="card"><div class="card-body">
+      <div class="diagram-area">
+        <div class="diagram-area-icon">📋</div>
+        <p>No reviews yet for this page.</p>
+        <p class="text-muted" style="font-size:12px">Click <strong>✓ Start Review</strong> to create one.</p>
+      </div></div></div>`;
+    return;
+  }
+
+  body.innerHTML = `<div class="card"><div class="card-body" style="padding:0">
+    <table class="data-table"><thead><tr>
+      <th>Title</th><th>Type</th><th>Template</th><th>Status</th><th>Date</th><th></th>
+    </tr></thead><tbody>
+      ${sessions.map(s => `<tr>
+        <td>${esc(s.title)}</td>
+        <td><span class="badge" style="text-transform:capitalize">${esc(s.review_type || '')}</span></td>
+        <td>${esc(s.review_protocol_templates?.name || '—')}</td>
+        <td><span class="badge ${STATUS_BADGE[s.status] || ''}">${esc(s.status || '')}</span></td>
+        <td>${s.planned_date || '—'}</td>
+        <td><button class="btn btn-ghost btn-xs rv-open-btn" data-id="${s.id}">Open</button></td>
+      </tr>`).join('')}
+    </tbody></table></div></div>`;
+
+  body.querySelectorAll('.rv-open-btn').forEach(btn => {
+    btn.onclick = () => navigate(`${base}/reviews/${btn.dataset.id}/execute`);
+  });
+  } catch (err) {
+    console.error('renderTsPageReviews error:', err);
+    body.innerHTML = `<div style="padding:24px;color:var(--color-danger)">Error loading reviews: ${err.message}</div>`;
   }
 }
 

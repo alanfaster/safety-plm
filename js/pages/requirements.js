@@ -311,6 +311,27 @@ function buildReqNavTree() {
       const tr = document.querySelector(`tr[data-rid="${btn.dataset.rid}"]`);
       if (tr) tr.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
+    btn.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const r = _data.find(x => x.id === btn.dataset.rid); if (!r) return;
+      const inp = document.createElement('input');
+      inp.className = 'arch-tree-rename-inp';
+      inp.value = r.title || '';
+      btn.replaceWith(inp); inp.focus(); inp.select();
+      let saved = false;
+      const commit = async () => {
+        if (saved) return; saved = true;
+        const n = inp.value.trim() || r.title;
+        r.title = n;
+        await sb.from('requirements').update({ title: n }).eq('id', r.id);
+        buildReqNavTree();
+      };
+      inp.addEventListener('blur', commit);
+      inp.addEventListener('keydown', e2 => {
+        if (e2.key === 'Enter') { e2.preventDefault(); inp.blur(); }
+        if (e2.key === 'Escape') { saved = true; buildReqNavTree(); }
+      });
+    });
   });
 }
 

@@ -1217,6 +1217,27 @@ function buildNavTree() {
       tr.style.outline = '2px solid var(--color-primary)';
       setTimeout(() => { tr.style.outline = ''; }, 1800);
     });
+    el.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const sec = _items.find(x => x.id === el.dataset.secId); if (!sec) return;
+      const inp = document.createElement('input');
+      inp.className = 'arch-tree-rename-inp';
+      inp.value = sec.title || '';
+      el.replaceWith(inp); inp.focus(); inp.select();
+      let saved = false;
+      const commit = async () => {
+        if (saved) return; saved = true;
+        const n = inp.value.trim() || sec.title;
+        sec.title = n;
+        await sb.from('arch_spec_items').update({ title: n }).eq('id', sec.id);
+        buildNavTree();
+      };
+      inp.addEventListener('blur', commit);
+      inp.addEventListener('keydown', e2 => {
+        if (e2.key === 'Enter') { e2.preventDefault(); inp.blur(); }
+        if (e2.key === 'Escape') { saved = true; buildNavTree(); }
+      });
+    });
   });
 }
 
