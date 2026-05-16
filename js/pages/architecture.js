@@ -3515,12 +3515,34 @@ function renderArchTree() {
   });
 
   // Click label → select + focus component on canvas
+  // Dblclick → inline rename
   body.querySelectorAll('[data-focus]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
       const cid = el.dataset.focus;
       selectComp(cid);
       focusComp(cid);
+    });
+    el.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const cid = el.dataset.focus;
+      const c = compById(cid); if (!c) return;
+      const inp = document.createElement('input');
+      inp.className = 'arch-tree-rename-inp';
+      inp.value = c.name;
+      el.replaceWith(inp); inp.focus(); inp.select();
+      const save = async () => {
+        const n = inp.value.trim() || c.name;
+        c.name = n;
+        await sb.from('arch_components').update({ name: n, updated_at: new Date().toISOString() }).eq('id', cid);
+        refreshComp(cid);
+        renderArchTree();
+      };
+      inp.addEventListener('blur', save);
+      inp.addEventListener('keydown', e2 => {
+        if (e2.key === 'Enter') { e2.preventDefault(); inp.blur(); }
+        if (e2.key === 'Escape') { inp.replaceWith(el); }
+      });
     });
   });
 
