@@ -101,6 +101,7 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
   const reviewMode     = fullConfig.review_mode || 'internal';
   const externalRequiredFields = fullConfig.external_review_required_fields || ['url', 'verdict'];
   const swUnitTypes    = fullConfig.sw_unit_types || [];
+  const scTypes        = fullConfig.sc_types || {};
 
   container.innerHTML = `
     <div class="page-header">
@@ -139,6 +140,10 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
           <div class="ps-nav-group-label">SW Development</div>
           <button class="ps-nav-item" data-tab="swunittypes">SW Unit Types</button>
           <button class="ps-nav-item" data-tab="hdrkeys">Header Keywords</button>
+        </div>
+        <div class="ps-nav-group">
+          <div class="ps-nav-group-label">Architecture</div>
+          <button class="ps-nav-item" data-tab="sctypes">Sub-component Types</button>
         </div>
         <div class="ps-nav-group">
           <div class="ps-nav-group-label">Reviews</div>
@@ -521,6 +526,26 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
             </div>
           </div>
           <button class="btn btn-primary" style="margin-top:16px" id="ps-save-reviewmode">Save</button>
+        </div>
+      </div>
+
+      <div id="tab-sctypes" class="settings-tab-panel" style="display:none">
+        <div class="settings-section">
+          <h3 class="settings-section-title">Sub-component Types</h3>
+          <p class="settings-section-desc">
+            Define the type lists shown when adding sub-components to HW, SW, or Mechanical blocks.
+            The defaults below are pre-filled; customise per project as needed.
+          </p>
+          ${['HW','SW','Mechanical'].map(domain => `
+          <div style="margin-bottom:24px">
+            <div class="settings-label" style="margin-bottom:6px">${domain} Block Types</div>
+            <textarea class="form-input" id="sct-${domain}" rows="6"
+              style="font-size:12px;font-family:monospace;resize:vertical"
+              placeholder="One type per line…"></textarea>
+            <div style="font-size:11px;color:var(--color-text-muted);margin-top:3px">One entry per line. Leave blank to use the built-in defaults.</div>
+          </div>`).join('')}
+          <button class="btn btn-primary" id="btn-save-sctypes">Save Types</button>
+          <button class="btn btn-secondary" style="margin-left:8px" id="btn-reset-sctypes">Reset to defaults</button>
         </div>
       </div>
 
@@ -1028,6 +1053,44 @@ function render(container, project, phaOverrides, fhaOverrides, functionTypes, r
     fullConfig = newConfig;
     toast('SW unit types saved.', 'success');
   };
+
+  // ── Sub-component Types tab ──────────────────────────────────────────────
+  const SC_DEFAULTS_PS = {
+    HW: ['Resistor','Capacitor','Inductor','Diode','Transistor (BJT)','MOSFET','Integrated Circuit (IC)','Microcontroller (MCU)','Voltage Regulator','Crystal / Oscillator','Connector','Fuse','Relay','Sensor','Transformer','LED','Optocoupler','Memory (Flash/EEPROM)','FPGA','Power Module'],
+    SW: ['Module','Library','Driver','Algorithm','Interface','Service','Task / Thread','ISR (Interrupt)','State Machine','Filter','Protocol Stack','Scheduler','Bootloader','Middleware','HAL'],
+    Mechanical: ['Gear','Bearing','Spring','Shaft','Seal / O-Ring','Screw / Bolt','Bracket / Mount','Housing / Casing','Actuator','Pulley / Belt','Valve','Piston','Motor','Sensor (Mech)','Damper','Gasket','Pin / Clip','Membrane','Guide Rail','Bushing'],
+  };
+  // Pre-fill textareas with saved or default values
+  ['HW','SW','Mechanical'].forEach(d => {
+    const ta = document.getElementById(`sct-${d}`); if (!ta) return;
+    ta.value = (scTypes[d] || SC_DEFAULTS_PS[d]).join('\n');
+  });
+  document.getElementById('btn-save-sctypes')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save-sctypes');
+    btn.disabled = true;
+    const newScTypes = {};
+    ['HW','SW','Mechanical'].forEach(d => {
+      const ta = document.getElementById(`sct-${d}`); if (!ta) return;
+      newScTypes[d] = ta.value.split('\n').map(s=>s.trim()).filter(Boolean);
+    });
+    const newConfig = { ...fullConfig, sc_types: newScTypes };
+    let error;
+    if (configId) {
+      ({ error } = await sb.from('project_config').update({ config: newConfig, updated_at: new Date().toISOString() }).eq('id', configId));
+    } else {
+      ({ error } = await sb.from('project_config').insert({ project_id: project.id, config: newConfig }));
+    }
+    btn.disabled = false;
+    if (error) { toast(t('common.error'), 'error'); return; }
+    fullConfig = newConfig;
+    toast('Sub-component types saved.', 'success');
+  });
+  document.getElementById('btn-reset-sctypes')?.addEventListener('click', () => {
+    ['HW','SW','Mechanical'].forEach(d => {
+      const ta = document.getElementById(`sct-${d}`); if (ta) ta.value = SC_DEFAULTS_PS[d].join('\n');
+    });
+    toast('Reset to defaults — click Save to apply.', 'info');
+  });
 
   // ── Header Keywords tab ───────────────────────────────────────────────────
   const BUILTIN_HDR_KEYS = [

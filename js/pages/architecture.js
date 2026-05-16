@@ -48,6 +48,27 @@ const PORTS = {
 };
 
 const GRID = 20;
+
+// Default sub-component type lists per block domain
+const SC_TYPE_DEFAULTS = {
+  HW: [
+    'Resistor','Capacitor','Inductor','Diode','Transistor (BJT)','MOSFET',
+    'Integrated Circuit (IC)','Microcontroller (MCU)','Voltage Regulator',
+    'Crystal / Oscillator','Connector','Fuse','Relay','Sensor','Transformer',
+    'LED','Optocoupler','Memory (Flash/EEPROM)','FPGA','Power Module',
+  ],
+  SW: [
+    'Module','Library','Driver','Algorithm','Interface','Service',
+    'Task / Thread','ISR (Interrupt)','State Machine','Filter',
+    'Protocol Stack','Scheduler','Bootloader','Middleware','HAL',
+  ],
+  Mechanical: [
+    'Gear','Bearing','Spring','Shaft','Seal / O-Ring','Screw / Bolt',
+    'Bracket / Mount','Housing / Casing','Actuator','Pulley / Belt',
+    'Valve','Piston','Motor','Sensor (Mech)','Damper',
+    'Gasket','Pin / Clip','Membrane','Guide Rail','Bushing',
+  ],
+};
 const MIN_W = 140, MIN_H = 90;
 const GROUP_MIN_W = 240, GROUP_MIN_H = 160;
 const PORT_SIZE = 20;
@@ -192,13 +213,14 @@ export async function renderArchitecture(container, { project, item, system, dom
 
   container.innerHTML = '<div class="content-loading"><div class="spinner"></div></div>';
 
-  // Load all arch data + project systems in parallel
-  const [compRes, connRes, sysRes] = await Promise.all([
+  // Load all arch data + project systems + project config in parallel
+  const [compRes, connRes, sysRes, cfgRes] = await Promise.all([
     sb.from('arch_components').select('*')
       .eq('parent_type', parentType).eq('parent_id', parentId).order('sort_order'),
     sb.from('arch_connections').select('*')
       .eq('parent_type', parentType).eq('parent_id', parentId),
     sb.from('systems').select('id,name,system_code').eq('item_id', item?.id || '').order('created_at'),
+    sb.from('project_config').select('config').eq('project_id', project.id).maybeSingle(),
   ]);
 
   if (compRes.error) {
@@ -362,6 +384,13 @@ export async function renderArchitecture(container, { project, item, system, dom
     }
   }
 
+  const cfgScTypes = cfgRes.data?.config?.sc_types || {};
+  const scTypes = {
+    HW:         cfgScTypes.HW         || SC_TYPE_DEFAULTS.HW,
+    SW:         cfgScTypes.SW         || SC_TYPE_DEFAULTS.SW,
+    Mechanical: cfgScTypes.Mechanical || SC_TYPE_DEFAULTS.Mechanical,
+  };
+
   _s = {
     container, project, item, system,
     parentType, parentId,
@@ -369,6 +398,7 @@ export async function renderArchitecture(container, { project, item, system, dom
     connections: connRes.data || [],
     projectSystems: sysRes.data || [],
     specItems,
+    scTypes,
     panX: 20, panY: 20, zoom: 1,
     dragging: null, resizing: null, connecting: null, draggingEndpoint: null,
     selected: null,
@@ -3994,30 +4024,53 @@ function renderArchTree() {
         e2.preventDefault();
         const name=inp.value.trim(); if(!name){inpDone=true;inp.remove();return;}
         inpDone=true; inp.remove();
-        const typeInp=document.createElement('input');
-        typeInp.className='arch-tree-fm-inp'; typeInp.placeholder='Type (Resistor, IC, Sensor…)';
+        // Determine type list from block's domain
+        const blockComp=_s.components.find(c=>c.id===compId);
+        const domain=blockComp?.comp_type||'HW';
+        const typeList=_s.scTypes[domain]||SC_TYPE_DEFAULTS[domain]||[];
+        // Build select with type options + custom entry
+        const sel=document.createElement('select');
+        sel.className='arch-tree-fm-inp';
+        sel.innerHTML=`<option value="">— Select type —</option>`
+          +typeList.map(t=>`<option value="${t}">${t}</option>`).join('')
+          +`<option value="__custom__">Other (custom)…</option>`;
         const compNodeFresh=body.querySelector(`[data-cid="${compId}"]`);
         let aft2=compNodeFresh||document.getElementById('arch-tree-body');
         if(compNodeFresh){let s=compNodeFresh.nextElementSibling;while(s&&(s.classList.contains('arch-tree-fn-entry')||s.hasAttribute('data-fn-fms')||s.classList.contains('arch-tree-fm-direct')||s.classList.contains('arch-tree-sc-entry')||s.hasAttribute('data-sc-fms'))){aft2=s;s=s.nextElementSibling;}}
-        aft2.insertAdjacentElement('afterend',typeInp); typeInp.focus();
+        aft2.insertAdjacentElement('afterend',sel); sel.focus();
         let typeDone=false;
-        const saveType=async()=>{
+        const doSave=async(type)=>{
           if(typeDone) return; typeDone=true;
-          const type=typeInp.value.trim();
-          typeInp.remove();
+          sel.remove();
           const comp=_s.components.find(c=>c.id===compId); if(!comp) return;
           const {data:sc}=await sb.from('sub_components').insert({
             block_id:compId, project_id:comp.project_id||_s.parentId,
-            name, type, sort_order:(comp._subComps||[]).length,
+            name, type:type||'', sort_order:(comp._subComps||[]).length,
           }).select().single();
           if(sc){ sc._fms=[]; comp._subComps=[...(comp._subComps||[]),sc]; }
           renderArchTree(); refreshComp(compId);
           if(_s.selected===compId) openProps(compId);
         };
-        typeInp.addEventListener('blur',saveType);
-        typeInp.addEventListener('keydown',e3=>{
-          if(e3.key==='Enter'){e3.preventDefault();typeInp.blur();}
-          if(e3.key==='Escape'){typeDone=true;typeInp.remove();}
+        sel.addEventListener('change',()=>{
+          if(sel.value==='__custom__'){
+            sel.remove();
+            const customInp=document.createElement('input');
+            customInp.className='arch-tree-fm-inp'; customInp.placeholder='Custom type…';
+            aft2.insertAdjacentElement('afterend',customInp); customInp.focus();
+            let custDone=false;
+            customInp.addEventListener('blur',()=>{ if(!custDone){custDone=true;doSave(customInp.value.trim());} });
+            customInp.addEventListener('keydown',e4=>{
+              if(e4.key==='Enter'){e4.preventDefault();custDone=true;doSave(customInp.value.trim());customInp.remove();}
+              if(e4.key==='Escape'){custDone=true;typeDone=true;customInp.remove();}
+            });
+          } else if(sel.value){
+            doSave(sel.value);
+          }
+        });
+        sel.addEventListener('blur',()=>{ if(!typeDone){typeDone=true;sel.remove();} });
+        sel.addEventListener('keydown',e3=>{
+          if(e3.key==='Enter'&&sel.value&&sel.value!=='__custom__'){e3.preventDefault();doSave(sel.value);}
+          if(e3.key==='Escape'){typeDone=true;sel.remove();}
         });
       });
     });
