@@ -3373,7 +3373,7 @@ function renderArchTree() {
               <div class="arch-tree-fm-row" style="padding-left:${pad+28}px" data-fmid="${fm.id}">
                 <span class="arch-tree-sym arch-tree-sym--fm">⚡</span>
                 <span class="arch-tree-fm-text">${escH(fm.failure_mode)}</span>
-                <button class="arch-tree-row-btn arch-tree-fm-del" data-fmid="${fm.id}" data-fnid="${f.id}" data-compid="${c.id}" title="Delete">✕</button>
+                <button class="arch-tree-fm-del" data-fmid="${fm.id}" data-fnid="${f.id}" data-compid="${c.id}" title="Delete">✕</button>
               </div>`).join('')}
           </div>`:''}`;
       }).join('');
@@ -3383,7 +3383,7 @@ function renderArchTree() {
         <div class="arch-tree-fm-row arch-tree-fm-direct" style="padding-left:${pad+14}px" data-fmid="${fm.id}">
           <span class="arch-tree-sym arch-tree-sym--fm-direct">⚡</span>
           <span class="arch-tree-fm-text">${escH(fm.failure_mode)}</span>
-          <button class="arch-tree-row-btn arch-tree-fm-del" data-fmid="${fm.id}" data-compid="${c.id}" title="Delete">✕</button>
+          <button class="arch-tree-fm-del" data-fmid="${fm.id}" data-compid="${c.id}" title="Delete">✕</button>
         </div>`).join('');
 
       // Connections

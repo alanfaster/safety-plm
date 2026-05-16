@@ -2855,7 +2855,7 @@ tr.req-title-row td { cursor: default; }
 .arch-tree-fm-dot{font-size:8px;color:#E37400;flex-shrink:0}
 .arch-tree-fm-direct .arch-tree-fm-dot{color:#9AA0A6}
 .arch-tree-fm-text{flex:1;color:var(--color-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.arch-tree-fm-del{opacity:0;pointer-events:none;transition:opacity .12s;flex-shrink:0}
+.arch-tree-fm-del{opacity:0;pointer-events:none;transition:opacity .12s;flex-shrink:0;margin-left:auto;background:#F1F3F4;color:#6B778C;border:none;border-radius:3px;font-size:9px;font-weight:700;padding:1px 4px;height:16px;cursor:pointer;line-height:1}
 .arch-tree-fm-del:hover{background:#FCE8E6!important;color:#C5221F!important}
 .arch-tree-fm-add-btn{background:none;border:1px dashed var(--color-border);border-radius:3px;font-size:10px;color:var(--color-text-muted);cursor:pointer;padding:1px 6px;margin:2px 0;transition:color .1s,border-color .1s}
 .arch-tree-fm-add-btn:hover{color:var(--color-primary);border-color:var(--color-primary)}
