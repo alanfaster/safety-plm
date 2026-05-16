@@ -314,8 +314,11 @@ function buildReqNavTree() {
     btn.addEventListener('dblclick', e => {
       e.stopPropagation();
       const r = _data.find(x => x.id === btn.dataset.rid); if (!r) return;
+      const cs = getComputedStyle(btn);
       const inp = document.createElement('input');
       inp.className = 'arch-tree-rename-inp';
+      inp.style.fontSize = cs.fontSize;
+      inp.style.fontWeight = cs.fontWeight;
       inp.value = r.title || '';
       btn.replaceWith(inp); inp.focus(); inp.select();
       let saved = false;

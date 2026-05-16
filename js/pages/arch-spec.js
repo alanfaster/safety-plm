@@ -1220,8 +1220,11 @@ function buildNavTree() {
     el.addEventListener('dblclick', e => {
       e.stopPropagation();
       const sec = _items.find(x => x.id === el.dataset.secId); if (!sec) return;
+      const cs = getComputedStyle(el);
       const inp = document.createElement('input');
       inp.className = 'arch-tree-rename-inp';
+      inp.style.fontSize = cs.fontSize;
+      inp.style.fontWeight = cs.fontWeight;
       inp.value = sec.title || '';
       el.replaceWith(inp); inp.focus(); inp.select();
       let saved = false;

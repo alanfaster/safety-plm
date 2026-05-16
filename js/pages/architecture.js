@@ -3516,8 +3516,11 @@ function renderArchTree() {
 
   // Shared inline-rename helper: replaces el with an input, calls onSave(trimmedValue) on commit
   function inlineRename(el, currentValue, onSave) {
+    const cs = getComputedStyle(el);
     const inp = document.createElement('input');
     inp.className = 'arch-tree-rename-inp';
+    inp.style.fontSize = cs.fontSize;
+    inp.style.fontWeight = cs.fontWeight;
     inp.value = currentValue;
     el.replaceWith(inp); inp.focus(); inp.select();
     let saved = false;
