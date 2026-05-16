@@ -3657,7 +3657,8 @@ function renderArchTree() {
             <button class="arch-tree-chevron arch-tree-fn-chev ${fnCollapsed?'arch-tree-chevron-col':''}"
               data-fn-toggle="${f.id}">▾</button>
             <span class="arch-tree-sym arch-tree-sym--fn">λ</span>
-            <span class="arch-tree-leaf-label" data-rename-fn="${f.id}" data-compid="${c.id}">${escH(f.name)}</span>
+            <span class="arch-tree-leaf-label" data-rename-fn="${f.id}" data-compid="${c.id}"
+              title="${escH(f._description||f.description||'')}">${escH(f.name)}</span>
             ${f.is_safety_related?'<span class="arch-tree-fn-safe">⚠</span>':''}
             <span class="arch-tree-row-actions">
               <button class="arch-tree-row-btn" style="visibility:hidden" disabled>λ＋</button>
@@ -3949,29 +3950,57 @@ function renderArchTree() {
     inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();inp.blur();}if(e.key==='Escape')inp.remove();});
   }
 
-  // λ＋ — add function to component
+  // λ＋ — add function to component (two-step: name → description)
   body.querySelectorAll('[data-add-fn]').forEach(btn=>{
     btn.addEventListener('click',e=>{
       e.stopPropagation();
       const compId=btn.dataset.addFn;
-      // Expand component if collapsed so children are visible
       if(col.has(compId)){ col.delete(compId); renderArchTree(); }
-      // Input goes after the last fn-entry / fn-fms sibling (= end of function list)
       const compNode=body.querySelector(`[data-cid="${compId}"]`);
       if(!compNode) return;
       let afterEl=compNode, sib=compNode.nextElementSibling;
       while(sib&&(sib.classList.contains('arch-tree-fn-entry')||sib.hasAttribute('data-fn-fms'))){
         afterEl=sib; sib=sib.nextElementSibling;
       }
-      inlineInput(afterEl,'Function name…',async v=>{
-        const comp=_s.components.find(c=>c.id===compId); if(!comp) return;
-        const {data:fn}=await sb.from('arch_functions').insert({
-          component_id:compId, name:v, is_safety_related:false,
-          sort_order:(comp.functions||[]).length,
-        }).select().single();
-        if(fn){ fn._fms=[]; comp.functions=[...(comp.functions||[]),fn]; }
-        renderArchTree(); refreshComp(compId);
-        if(_s.selected===compId) openProps(compId);
+      // Step 1: name
+      const nameInp=document.createElement('input');
+      nameInp.className='arch-tree-fm-inp'; nameInp.placeholder='Function name…';
+      afterEl.insertAdjacentElement('afterend',nameInp); nameInp.focus();
+      let nameDone=false;
+      nameInp.addEventListener('blur',()=>{ if(!nameDone) nameInp.remove(); });
+      nameInp.addEventListener('keydown',e2=>{
+        if(e2.key==='Escape'){nameDone=true;nameInp.remove();return;}
+        if(e2.key!=='Enter') return;
+        e2.preventDefault();
+        const name=nameInp.value.trim(); if(!name){nameDone=true;nameInp.remove();return;}
+        nameDone=true; nameInp.remove();
+        // Step 2: description
+        const descInp=document.createElement('input');
+        descInp.className='arch-tree-fm-inp'; descInp.placeholder='Description… (Enter or Escape to skip)';
+        // Re-find insertion point in fresh DOM
+        const freshNode=body.querySelector(`[data-cid="${compId}"]`);
+        let aft2=freshNode||afterEl;
+        if(freshNode){let s=freshNode.nextElementSibling;while(s&&(s.classList.contains('arch-tree-fn-entry')||s.hasAttribute('data-fn-fms'))){aft2=s;s=s.nextElementSibling;}}
+        aft2.insertAdjacentElement('afterend',descInp); descInp.focus();
+        let descDone=false;
+        const save=async()=>{
+          if(descDone) return; descDone=true;
+          const description=descInp.value.trim();
+          descInp.remove();
+          const comp=_s.components.find(c=>c.id===compId); if(!comp) return;
+          const {data:fn}=await sb.from('arch_functions').insert({
+            component_id:compId, name, description, is_safety_related:false,
+            sort_order:(comp.functions||[]).length,
+          }).select().single();
+          if(fn){ fn._fms=[]; comp.functions=[...(comp.functions||[]),fn]; }
+          renderArchTree(); refreshComp(compId);
+          if(_s.selected===compId) openProps(compId);
+        };
+        descInp.addEventListener('blur',save);
+        descInp.addEventListener('keydown',e3=>{
+          if(e3.key==='Enter'){e3.preventDefault();descInp.blur();}
+          if(e3.key==='Escape'){descDone=true;descInp.remove();save();}
+        });
       });
     });
   });
