@@ -3986,22 +3986,23 @@ function renderArchTree() {
       const inp=document.createElement('input');
       inp.className='arch-tree-fm-inp'; inp.placeholder='Sub-component name…';
       afterEl.insertAdjacentElement('afterend',inp); inp.focus();
-      inp.addEventListener('blur',()=>inp.remove());
+      let inpDone=false;
+      inp.addEventListener('blur',()=>{ if(!inpDone) inp.remove(); });
       inp.addEventListener('keydown',async e2=>{
-        if(e2.key==='Escape'){inp.remove();return;}
+        if(e2.key==='Escape'){inpDone=true;inp.remove();return;}
         if(e2.key!=='Enter') return;
         e2.preventDefault();
-        const name=inp.value.trim(); if(!name){inp.remove();return;}
-        inp.removeEventListener('blur',()=>inp.remove());
-        inp.remove();
+        const name=inp.value.trim(); if(!name){inpDone=true;inp.remove();return;}
+        inpDone=true; inp.remove();
         const typeInp=document.createElement('input');
         typeInp.className='arch-tree-fm-inp'; typeInp.placeholder='Type (Resistor, IC, Sensor…)';
-        // re-find afterEl position
         const compNodeFresh=body.querySelector(`[data-cid="${compId}"]`);
         let aft2=compNodeFresh||document.getElementById('arch-tree-body');
         if(compNodeFresh){let s=compNodeFresh.nextElementSibling;while(s&&(s.classList.contains('arch-tree-fn-entry')||s.hasAttribute('data-fn-fms')||s.classList.contains('arch-tree-fm-direct')||s.classList.contains('arch-tree-sc-entry')||s.hasAttribute('data-sc-fms'))){aft2=s;s=s.nextElementSibling;}}
         aft2.insertAdjacentElement('afterend',typeInp); typeInp.focus();
+        let typeDone=false;
         const saveType=async()=>{
+          if(typeDone) return; typeDone=true;
           const type=typeInp.value.trim();
           typeInp.remove();
           const comp=_s.components.find(c=>c.id===compId); if(!comp) return;
@@ -4014,7 +4015,10 @@ function renderArchTree() {
           if(_s.selected===compId) openProps(compId);
         };
         typeInp.addEventListener('blur',saveType);
-        typeInp.addEventListener('keydown',e3=>{if(e3.key==='Enter'){e3.preventDefault();typeInp.blur();}if(e3.key==='Escape')typeInp.remove();});
+        typeInp.addEventListener('keydown',e3=>{
+          if(e3.key==='Enter'){e3.preventDefault();typeInp.blur();}
+          if(e3.key==='Escape'){typeDone=true;typeInp.remove();}
+        });
       });
     });
   });
