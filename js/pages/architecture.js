@@ -3359,7 +3359,7 @@ function renderArchTree() {
             <button class="arch-tree-chevron arch-tree-fn-chev ${fnCollapsed?'arch-tree-chevron-col':''}"
               data-fn-toggle="${f.id}">▾</button>
             <span class="arch-tree-sym arch-tree-sym--fn">λ</span>
-            <span class="arch-tree-leaf-label">${escH(f.name)}</span>
+            <span class="arch-tree-leaf-label" data-rename-fn="${f.id}" data-compid="${c.id}">${escH(f.name)}</span>
             ${f.is_safety_related?'<span class="arch-tree-fn-safe">⚠</span>':''}
             <span class="arch-tree-row-actions">
               <button class="arch-tree-row-btn" style="visibility:hidden" disabled>λ＋</button>
@@ -3372,7 +3372,7 @@ function renderArchTree() {
             ${fmList.map(fm=>`
               <div class="arch-tree-fm-row" style="padding-left:${pad+28}px" data-fmid="${fm.id}">
                 <span class="arch-tree-sym arch-tree-sym--fm">⚡</span>
-                <span class="arch-tree-fm-text">${escH(fm.failure_mode)}</span>
+                <span class="arch-tree-fm-text" data-rename-fm="${fm.id}" data-fnid="${f.id}" data-compid="${c.id}">${escH(fm.failure_mode)}</span>
                 <button class="arch-tree-fm-del" data-fmid="${fm.id}" data-fnid="${f.id}" data-compid="${c.id}" title="Delete">✕</button>
               </div>`).join('')}
           </div>`:''}`;
@@ -3382,7 +3382,7 @@ function renderArchTree() {
       const directFmRows = compFms.map(fm=>`
         <div class="arch-tree-fm-row arch-tree-fm-direct" style="padding-left:${pad+14}px" data-fmid="${fm.id}">
           <span class="arch-tree-sym arch-tree-sym--fm-direct">⚡</span>
-          <span class="arch-tree-fm-text">${escH(fm.failure_mode)}</span>
+          <span class="arch-tree-fm-text" data-rename-fm="${fm.id}" data-compid="${c.id}">${escH(fm.failure_mode)}</span>
           <button class="arch-tree-fm-del" data-fmid="${fm.id}" data-compid="${c.id}" title="Delete">✕</button>
         </div>`).join('');
 
@@ -3514,34 +3514,77 @@ function renderArchTree() {
     });
   });
 
-  // Click label → select + focus component on canvas
-  // Dblclick → inline rename
+  // Shared inline-rename helper: replaces el with an input, calls onSave(trimmedValue) on commit
+  function inlineRename(el, currentValue, onSave) {
+    const inp = document.createElement('input');
+    inp.className = 'arch-tree-rename-inp';
+    inp.value = currentValue;
+    el.replaceWith(inp); inp.focus(); inp.select();
+    let saved = false;
+    const commit = async () => {
+      if (saved) return; saved = true;
+      const n = inp.value.trim() || currentValue;
+      await onSave(n);
+    };
+    inp.addEventListener('blur', commit);
+    inp.addEventListener('keydown', e2 => {
+      if (e2.key === 'Enter') { e2.preventDefault(); inp.blur(); }
+      if (e2.key === 'Escape') { saved = true; inp.replaceWith(el); }
+    });
+  }
+
+  // Click label → select + focus component on canvas; dblclick → rename
   body.querySelectorAll('[data-focus]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
-      const cid = el.dataset.focus;
-      selectComp(cid);
-      focusComp(cid);
+      selectComp(el.dataset.focus);
+      focusComp(el.dataset.focus);
     });
     el.addEventListener('dblclick', e => {
       e.stopPropagation();
       const cid = el.dataset.focus;
       const c = compById(cid); if (!c) return;
-      const inp = document.createElement('input');
-      inp.className = 'arch-tree-rename-inp';
-      inp.value = c.name;
-      el.replaceWith(inp); inp.focus(); inp.select();
-      const save = async () => {
-        const n = inp.value.trim() || c.name;
+      inlineRename(el, c.name, async n => {
         c.name = n;
         await sb.from('arch_components').update({ name: n, updated_at: new Date().toISOString() }).eq('id', cid);
         refreshComp(cid);
         renderArchTree();
-      };
-      inp.addEventListener('blur', save);
-      inp.addEventListener('keydown', e2 => {
-        if (e2.key === 'Enter') { e2.preventDefault(); inp.blur(); }
-        if (e2.key === 'Escape') { inp.replaceWith(el); }
+      });
+    });
+  });
+
+  // Dblclick function label → rename function
+  body.querySelectorAll('[data-rename-fn]').forEach(el => {
+    el.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const fnId = el.dataset.renameFn, compId = el.dataset.compid;
+      const comp = _s.components.find(c => c.id === compId);
+      const fn = comp?.functions?.find(f => f.id === fnId);
+      if (!fn) return;
+      inlineRename(el, fn.name, async n => {
+        fn.name = n;
+        await sb.from('arch_functions').update({ name: n }).eq('id', fnId);
+        renderArchTree();
+        if (_s.selected === compId) openProps(compId);
+      });
+    });
+  });
+
+  // Dblclick FM text → rename failure mode
+  body.querySelectorAll('[data-rename-fm]').forEach(el => {
+    el.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const fmId = el.dataset.renameFm, fnId = el.dataset.fnid, compId = el.dataset.compid;
+      const comp = _s.components.find(c => c.id === compId);
+      const fm = fnId
+        ? comp?.functions?.find(f => f.id === fnId)?._fms?.find(m => m.id === fmId)
+        : comp?._compFms?.find(m => m.id === fmId);
+      if (!fm) return;
+      inlineRename(el, fm.failure_mode, async n => {
+        fm.failure_mode = n;
+        await sb.from('arch_function_fms').update({ failure_mode: n }).eq('id', fmId);
+        renderArchTree();
+        if (_s.selected === compId) openProps(compId);
       });
     });
   });
