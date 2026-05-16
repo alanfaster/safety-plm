@@ -28,9 +28,10 @@ const SEVERITY_LABELS  = { critical:'Critical', major:'Major', minor:'Minor', ob
 const SEVERITY_CLASSES = { critical:'rv-sev-critical', major:'rv-sev-major', minor:'rv-sev-minor', observation:'rv-sev-observation' };
 
 
-const FINAL_VERDICT_LABELS  = { ok:'OK', partially_ok:'Partially OK', nok:'NOK', na:'N/A' };
+const FINAL_VERDICT_LABELS  = { ok:'OK', partially_ok:'Partly OK', nok:'NOK', na:'N/A' };
 const FINAL_VERDICT_CLASSES = { ok:'rve-artcard-go', partially_ok:'rve-artcard-conditional', nok:'rve-artcard-no_go', na:'rve-artcard-na' };
 const VERDICT_REQUIRES_FINDING = new Set(['nok','partially_ok']);
+
 
 const ARTIFACT_DISPLAY_FIELDS = {
   requirements:         ['req_code','title','description','type','status','priority','asil','dal'],
@@ -391,10 +392,6 @@ export async function renderReviewExecute(container, ctx) {
     });
   }
 
-  const FINDING_STATUS_LABELS = {
-    open:'Open', accepted:'Accepted', fixed:'Implemented – pending review', closed:'Closed', rejected:'Rejected',
-  };
-
   // ── Props panel findings list helpers ────────────────────────────────────────
 
   function renderPropsFindingRow(f) {
@@ -413,7 +410,7 @@ export async function renderReviewExecute(container, ctx) {
     if (!snapFindings.length) return '<p class="text-muted" style="font-size:11px;margin:4px 0">No findings.</p>';
 
     // One pill per status that has at least one finding
-    const STATUS_ORDER = ['open','accepted','fixed','verified','closed','rejected','deferred','duplicate'];
+    const STATUS_ORDER = ['open','resolved','closed','rejected','duplicate'];
     const countsByStatus = {};
     snapFindings.forEach(f => { countsByStatus[f.status] = (countsByStatus[f.status] || 0) + 1; });
     const summaryBar = `<div class="rve-props-fnd-summary">
@@ -653,7 +650,8 @@ export async function renderReviewExecute(container, ctx) {
         ? `<span class="rve-atbl-fnds ${openFnds ? 'rve-atbl-fnds--open' : 'rve-atbl-fnds--closed'}">⚑ ${openFnds ? openFnds + ' open' : allFnds + ' closed'}</span>`
         : '<span class="text-muted" style="font-size:11px">—</span>'}</td>`;
 
-      return `<tr class="rve-atbl-row ${isActive ? 'rve-atbl-row--active' : ''}" data-snap-id="${snap.id}">
+      const verdictRowClass = mv ? FINAL_VERDICT_CLASSES[mv] : 'rve-artcard-pending';
+      return `<tr class="rve-atbl-row ${isActive ? 'rve-atbl-row--active' : ''} ${verdictRowClass}" data-snap-id="${snap.id}">
         ${_bulkMode
           ? `<td class="rve-atbl-chk-col"><input type="checkbox" class="rve-bulk-chk" data-snap-id="${snap.id}" ${_bulkSelected.has(snap.id) ? 'checked' : ''}></td>`
           : `<td class="rve-atbl-status-col">${verdictIndicator}${driftIndicator}</td>`}
@@ -1089,7 +1087,7 @@ export async function renderReviewExecute(container, ctx) {
     }).join('');
 
     return `
-      <div class="rve-art-card ${mv ? FINAL_VERDICT_CLASSES[mv] : ''} ${_bulkMode ? 'rve-art-card--bulk' : ''}" data-snap-id="${snap.id}">
+      <div class="rve-art-card ${mv ? FINAL_VERDICT_CLASSES[mv] : 'rve-artcard-pending'} ${_bulkMode ? 'rve-art-card--bulk' : ''}" data-snap-id="${snap.id}">
         ${_bulkMode ? `<label class="rve-bulk-chk-wrap" title="Select for bulk verdict">
           <input type="checkbox" class="rve-bulk-chk" data-snap-id="${snap.id}" ${_bulkSelected.has(snap.id) ? 'checked' : ''}>
         </label>` : ''}
@@ -1566,6 +1564,7 @@ export async function renderReviewExecute(container, ctx) {
           line_number: lineFrom,
           line_to:     lineTo !== lineFrom ? lineTo : null,
           status: 'open', created_by: currentUserId,
+          sw_unit_version_at_finding: snap.artifact_type === 'sw_units' ? (snap.snapshot_data?.version || null) : null,
         }).select().single();
         saveBtn.disabled = false;
         if (error) { toast('Error: ' + error.message, 'error'); return; }
@@ -1587,20 +1586,37 @@ export async function renderReviewExecute(container, ctx) {
       const rangeLabel = lineFrom === lineTo ? `Line ${lineFrom}` : `Lines ${lineFrom}–${lineTo}`;
 
       const items = findings.map(f => {
-        const isOpen    = f.status === 'open';
-        const isMine    = f.created_by === currentUserId;
+        const isOpen     = f.status === 'open';
+        const isResolved = f.status === 'resolved';
+        const isClosed   = ['closed','rejected','duplicate'].includes(f.status);
+        const isMine     = f.created_by === currentUserId;
+        const isReviewer = !isMine; // simplified: any non-author can verify
+        let actions = '';
+        if (isOpen) {
+          actions += `<button class="btn btn-ghost btn-xs rve-if-action" data-action="resolve" data-fid="${f.id}" title="Mark as resolved">✓ Resolve</button>`;
+        } else if (isResolved) {
+          if (isReviewer) {
+            actions += `<button class="btn btn-success btn-xs rve-if-action" data-action="verify-fix" data-fid="${f.id}" title="Verify fix">🔍 Verify Fix</button>`;
+          } else {
+            actions += `<button class="btn btn-ghost btn-xs rve-if-action" data-action="reopen" data-fid="${f.id}" title="Reopen">↺ Reopen</button>`;
+          }
+        } else if (!isClosed) {
+          actions += `<button class="btn btn-ghost btn-xs rve-if-action" data-action="reopen" data-fid="${f.id}" title="Reopen">↺ Reopen</button>`;
+        }
+        if (isMine && (isOpen || isResolved)) {
+          actions += `<button class="btn btn-ghost btn-xs rve-if-action" data-action="edit" data-fid="${f.id}" title="Edit">✏</button>`;
+          actions += `<button class="btn btn-ghost btn-xs rve-if-action" data-action="delete" data-fid="${f.id}" title="Delete" style="color:var(--color-danger)">✕</button>`;
+        }
+        const statusBadge = isResolved
+          ? `<span class="badge badge-warning" style="font-size:10px">Resolved</span>`
+          : isClosed ? `<span class="badge badge-success" style="font-size:10px">Closed</span>` : '';
         return `
         <div class="rve-inline-finding" data-fid="${f.id}" data-status="${f.status}">
           <div class="rve-inline-finding-hdr">
             <span class="rve-inline-finding-code mono">${escHtml(f.finding_code)}</span>
             <span class="badge ${SEVERITY_CLASSES[f.severity] || ''}" style="font-size:10px">${SEVERITY_LABELS[f.severity] || f.severity}</span>
-            <span class="rve-inline-finding-actions">
-              ${isOpen
-                ? `<button class="btn btn-ghost btn-xs rve-if-action" data-action="resolve" data-fid="${f.id}" title="Mark resolved">✓ Resolve</button>`
-                : `<button class="btn btn-ghost btn-xs rve-if-action" data-action="reopen"  data-fid="${f.id}" title="Reopen">↺ Reopen</button>`}
-              ${isMine ? `<button class="btn btn-ghost btn-xs rve-if-action" data-action="edit"   data-fid="${f.id}" title="Edit">✏</button>` : ''}
-              ${isMine ? `<button class="btn btn-ghost btn-xs rve-if-action" data-action="delete" data-fid="${f.id}" title="Delete" style="color:var(--color-danger)">✕</button>` : ''}
-            </span>
+            ${statusBadge}
+            <span class="rve-inline-finding-actions">${actions}</span>
           </div>
           <div class="rve-inline-finding-body" id="rve-fbody-${f.id}">
             <div class="rve-inline-finding-desc">${escHtml(f.description || f.title || '')}</div>
@@ -1614,6 +1630,86 @@ export async function renderReviewExecute(container, ctx) {
       </div>`;
     }
 
+    // ── Verify Fix modal ────────────────────────────────────────────────────────
+
+    async function openVerifyFixModal(f, snap) {
+      const atVer  = f.sw_unit_version_at_finding;
+      const fixVer = f.resolved_at_version;
+      const unitId = snap.artifact_id;
+
+      showModal({ title: `🔍 Verify Fix — ${escHtml(f.finding_code)}`, body: `<div class="content-loading"><div class="spinner"></div><span style="margin-left:8px">Loading code versions…</span></div>`, footer: '' });
+
+      // Fetch both versions in parallel
+      const [{ data: atData }, { data: fixData }] = await Promise.all([
+        atVer  ? sb.from('sw_unit_versions').select('source_code').eq('sw_unit_id', unitId).eq('version', atVer).maybeSingle()  : Promise.resolve({ data: null }),
+        fixVer ? sb.from('sw_unit_versions').select('source_code').eq('sw_unit_id', unitId).eq('version', fixVer).maybeSingle() : Promise.resolve({ data: null }),
+      ]);
+
+      const oldCode = atData?.source_code  ?? (atVer  ? null : snap.snapshot_data?.source_code ?? '');
+      const newCode = fixData?.source_code ?? (fixVer ? null : snap.snapshot_data?.source_code ?? '');
+      const lineFrom = f.line_number ?? 1;
+      const lineTo   = f.line_to    ?? lineFrom;
+
+      const diffHtml = (oldCode != null && newCode != null)
+        ? renderVerifyDiff(oldCode, newCode, lineFrom, lineTo)
+        : `<p class="text-muted">Could not load code versions for comparison.</p>`;
+
+      const verLabel = atVer && fixVer ? `v${atVer} → v${fixVer}` : 'versions';
+      document.getElementById('modal-body').innerHTML = `
+        <div style="margin-bottom:8px">
+          <strong>${escHtml(f.finding_code)}</strong>: ${escHtml(f.description || f.title || '')}
+        </div>
+        <div style="font-size:11px;color:var(--color-text-muted);margin-bottom:8px">Diff ${verLabel} · Lines ${lineFrom}–${lineTo} highlighted</div>
+        <div class="rve-verify-diff-wrap" style="max-height:50vh;overflow:auto;border:1px solid var(--color-border);border-radius:4px;font-family:monospace;font-size:12px">
+          ${diffHtml}
+        </div>`;
+      document.getElementById('modal-footer').innerHTML = `
+        <button class="btn btn-secondary" id="vfix-cancel">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="vfix-reject">↩ Reject Fix</button>
+        <button class="btn btn-success btn-sm" id="vfix-approve">✓ Approve Fix</button>`;
+
+      document.getElementById('vfix-cancel').onclick  = hideModal;
+      document.getElementById('vfix-approve').onclick = async () => {
+        document.getElementById('vfix-approve').disabled = true;
+        const { error } = await sb.from('review_findings').update({ status: 'closed' }).eq('id', f.id);
+        if (error) { toast('Error: ' + error.message, 'error'); document.getElementById('vfix-approve').disabled = false; return; }
+        f.status = 'closed';
+        toast(`${f.finding_code} fix approved — finding closed.`, 'success');
+        hideModal();
+        afterFindingMutation();
+        refreshDiff();
+      };
+      document.getElementById('vfix-reject').onclick = async () => {
+        document.getElementById('vfix-reject').disabled = true;
+        const { error } = await sb.from('review_findings').update({ status: 'open', resolved_by: null, resolved_at_version: null }).eq('id', f.id);
+        if (error) { toast('Error: ' + error.message, 'error'); document.getElementById('vfix-reject').disabled = false; return; }
+        f.status = 'open'; f.resolved_by = null; f.resolved_at_version = null;
+        toast(`${f.finding_code} fix rejected — finding reopened.`, 'success');
+        hideModal();
+        afterFindingMutation();
+        refreshDiff();
+      };
+    }
+
+    function renderVerifyDiff(oldCode, newCode, highlightFrom, highlightTo) {
+      const oldLines = oldCode.split('\n');
+      const newLines = newCode.split('\n');
+      const diffRows = computeLineDiff(oldLines, newLines);
+      let newLineNum = 0;
+      return diffRows.map(([type, line]) => {
+        if (type !== 'del') newLineNum++;
+        const cls = type === 'add' ? 'rve-diff-line--add' : type === 'del' ? 'rve-diff-line--del' : 'rve-diff-line--ctx';
+        const hl  = type !== 'del' && newLineNum >= highlightFrom && newLineNum <= highlightTo ? ' rve-diff-line--ann rve-diff-line--ann-first' : '';
+        const prefix = type === 'add' ? '+' : type === 'del' ? '-' : ' ';
+        const num  = type !== 'del' ? newLineNum : '';
+        return `<div class="rve-diff-line ${cls}${hl}" style="display:flex;align-items:baseline">
+          <span class="rve-diff-prefix" style="padding:0 4px;user-select:none;color:var(--color-text-muted)">${prefix}</span>
+          <span class="rve-diff-linenum rve-diff-linenum--num" style="min-width:32px;padding-right:8px;user-select:none;text-align:right;color:var(--color-text-muted)">${num}</span>
+          <span class="rve-diff-linecontent">${escHtml(line)}</span>
+        </div>`;
+      }).join('');
+    }
+
     // ── Thread actions ──────────────────────────────────────────────────────────
 
     function wireThreadActions(body) {
@@ -1623,14 +1719,43 @@ export async function renderReviewExecute(container, ctx) {
           const f = _findings.find(x => x.id === fid);
           if (!f) return;
 
-          if (action === 'resolve' || action === 'reopen') {
-            const newStatus = action === 'resolve' ? 'closed' : 'open';
-            const { error } = await sb.from('review_findings').update({ status: newStatus }).eq('id', fid);
+          if (action === 'resolve') {
+            // For SW unit findings: mark as 'resolved' (author fixed it), store version
+            const updates = { status: 'resolved', resolved_by: currentUserId };
+            if (snap.artifact_type === 'sw_units') updates.resolved_at_version = version;
+            const { error } = await sb.from('review_findings').update(updates).eq('id', fid);
             if (error) { toast('Error: ' + error.message, 'error'); return; }
-            f.status = newStatus;
-            toast(action === 'resolve' ? `${f.finding_code} resolved.` : `${f.finding_code} reopened.`, 'success');
+            Object.assign(f, updates);
+            toast(`${f.finding_code} marked as resolved — awaiting reviewer verification.`, 'success');
             afterFindingMutation();
             refreshDiff();
+
+          } else if (action === 'reopen') {
+            const { error } = await sb.from('review_findings').update({ status: 'open', resolved_by: null, resolved_at_version: null }).eq('id', fid);
+            if (error) { toast('Error: ' + error.message, 'error'); return; }
+            f.status = 'open'; f.resolved_by = null; f.resolved_at_version = null;
+            toast(`${f.finding_code} reopened.`, 'success');
+            afterFindingMutation();
+            refreshDiff();
+
+          } else if (action === 'approve-fix') {
+            const { error } = await sb.from('review_findings').update({ status: 'closed' }).eq('id', fid);
+            if (error) { toast('Error: ' + error.message, 'error'); return; }
+            f.status = 'closed';
+            toast(`${f.finding_code} fix approved — finding closed.`, 'success');
+            afterFindingMutation();
+            refreshDiff();
+
+          } else if (action === 'reject-fix') {
+            const { error } = await sb.from('review_findings').update({ status: 'open', resolved_by: null, resolved_at_version: null }).eq('id', fid);
+            if (error) { toast('Error: ' + error.message, 'error'); return; }
+            f.status = 'open'; f.resolved_by = null; f.resolved_at_version = null;
+            toast(`${f.finding_code} fix rejected — finding reopened.`, 'success');
+            afterFindingMutation();
+            refreshDiff();
+
+          } else if (action === 'verify-fix') {
+            await openVerifyFixModal(f, snap);
 
           } else if (action === 'edit') {
             const bodyEl = document.getElementById(`rve-fbody-${fid}`);
@@ -1741,13 +1866,59 @@ export async function renderReviewExecute(container, ctx) {
       return;
     }
 
-    // SW unit internal review: show diff viewer instead of checklist.
-    // If already mounted for this snap, just refresh — do NOT remount (destroys listeners).
+    // SW unit internal review: diff viewer on top.
+    // If template has sections, also mount the checklist below the diff.
     if (snap.artifact_type === 'sw_units') {
-      if (col._swDiffSnap === snap.id && col._swDiffRefresh) {
-        col._swDiffRefresh();
+      if (sections.length) {
+        // Option A: diff + checklist — wrap in a flex column container
+        if (col._swDiffSnap !== snap.id) {
+          col.innerHTML = `
+            <div class="rve-swu-split" id="rve-swu-split">
+              <div class="rve-swu-diff-area" id="rve-swu-diff-area"></div>
+              <div class="rve-swu-checklist-area" id="rve-swu-checklist-area"></div>
+            </div>`;
+          col._swDiffSnap = null; // force remount in diff area
+        }
+        const diffArea = col.querySelector('#rve-swu-diff-area');
+        const ckArea   = col.querySelector('#rve-swu-checklist-area');
+        if (diffArea) {
+          if (col._swDiffSnap === snap.id && col._swDiffRefresh) {
+            col._swDiffRefresh();
+          } else {
+            mountSwUnitDiffPanel(diffArea, snap);
+            col._swDiffSnap    = diffArea._swDiffSnap;
+            col._swDiffRefresh = diffArea._swDiffRefresh;
+          }
+        }
+        if (ckArea) {
+          const isShared = session.checklist_mode === 'shared';
+          const ckSnap   = isShared ? (snapshots?.[0] || snap) : snap;
+          mountReviewChecklist(ckArea, {
+            session, snapshot: snap, sections,
+            responseSnapshot: isShared ? ckSnap : undefined,
+            allResponses: _allResponses.filter(r => r.snapshot_id === ckSnap.id),
+            currentUserId, reviewers: reviewerList,
+            findings: _findings.filter(f => f.snapshot_id === snap.id),
+            isDrifted: !!driftMap[snap.artifact_id],
+            onSaved: ({ snapshotId, itemId, verdict }) => {
+              const existing = _allResponses.find(r => r.snapshot_id === snapshotId && r.template_item_id === itemId && r.reviewer_id === currentUserId);
+              if (existing) existing.verdict = verdict;
+              else _allResponses.push({ snapshot_id: snapshotId, template_item_id: itemId, reviewer_id: currentUserId, verdict, session_id: sessionId });
+              refreshArtifactCard(snap);
+            },
+            onFindingRaise: opts => openRaiseFindingModal(opts),
+            onFindingCreated: f => { _findings.push(f); afterFindingMutation(); },
+            onFindingDeleted: ({ id }) => { const i = _findings.findIndex(x => x.id === id); if (i >= 0) _findings.splice(i, 1); afterFindingMutation(); },
+            onFindingStatusChanged: ({ id, status }) => { const f = _findings.find(x => x.id === id); if (f) f.status = status; afterFindingMutation(); },
+          });
+        }
       } else {
-        mountSwUnitDiffPanel(col, snap);
+        // No template: diff only
+        if (col._swDiffSnap === snap.id && col._swDiffRefresh) {
+          col._swDiffRefresh();
+        } else {
+          mountSwUnitDiffPanel(col, snap);
+        }
       }
       return;
     }
@@ -1940,9 +2111,10 @@ export async function renderReviewExecute(container, ctx) {
     const findingsList = panel.querySelector('#rve-findings-list');
     if (findingsList) wirePropsFindingsList(findingsList);
 
-    // Wire verdict buttons — NOK/Partially OK require a finding before saving
-    let _stagedVerdict = null;
-    const findingForm  = panel.querySelector('#rve-finding-form');
+    // Wire verdict buttons — NOK/Partly OK require a finding before saving
+    let _stagedVerdict  = null;
+    let _currentVerdict = mv;   // track current saved verdict so toggle-deselect works (mv is const)
+    const findingForm   = panel.querySelector('#rve-finding-form');
 
     function highlightVbtn(v) {
       panel.querySelectorAll('.rve-props-vbtn').forEach(b => {
@@ -1954,6 +2126,17 @@ export async function renderReviewExecute(container, ctx) {
     panel.querySelectorAll('.rve-props-vbtn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const v = btn.dataset.verdict;
+
+        // Clicking the already-selected verdict deselects it
+        if (v === _currentVerdict) {
+          _currentVerdict = null;
+          highlightVbtn(null);
+          _stagedVerdict = null;
+          findingForm.style.display = 'none';
+          await saveArtifactVerdict(snap, null);
+          return;
+        }
+
         if (v === 'ok') {
           const reasons = okBlockReasons(snap);
           if (reasons.length) { showOkBlockedModal(reasons); return; }
@@ -1967,6 +2150,7 @@ export async function renderReviewExecute(container, ctx) {
         } else {
           _stagedVerdict = null;
           findingForm.style.display = 'none';
+          _currentVerdict = v;
           await saveArtifactVerdict(snap, v);
         }
       });
@@ -1992,6 +2176,7 @@ export async function renderReviewExecute(container, ctx) {
         session_id: sessionId, snapshot_id: snap.id,
         finding_code: findingCode, title, description: desc,
         severity: sev, status: 'open', created_by: currentUserId,
+        sw_unit_version_at_finding: snap.artifact_type === 'sw_units' ? (snap.snapshot_data?.version || null) : null,
       }).select().single();
 
       saveBtn.disabled = false;
@@ -2190,6 +2375,18 @@ export async function renderReviewExecute(container, ctx) {
   }
 
   async function saveArtifactVerdict(snap, verdict) {
+    // null verdict = deselect → delete the row
+    if (verdict === null) {
+      const existing = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
+      if (existing?.id) {
+        const { error } = await sb.from('review_artifact_verdicts').delete().eq('id', existing.id);
+        if (error) { toast('Error clearing verdict: ' + error.message, 'error'); return; }
+      }
+      const idx = _artifactVerdicts.findIndex(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
+      if (idx >= 0) _artifactVerdicts.splice(idx, 1);
+      refreshArtifactCard(snap);
+      return;
+    }
     const { data, error } = await sb.from('review_artifact_verdicts')
       .upsert({
         session_id: sessionId, snapshot_id: snap.id,
@@ -2197,11 +2394,13 @@ export async function renderReviewExecute(container, ctx) {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'snapshot_id,reviewer_id' })
       .select().single();
-    if (!error && data) {
+    if (error) { toast('Error saving verdict: ' + error.message, 'error'); return; }
+    if (data) {
       const existing = _artifactVerdicts.find(v => v.snapshot_id === snap.id && v.reviewer_id === currentUserId);
-      if (existing) existing.verdict = verdict;
-      else _artifactVerdicts.push({ snapshot_id: snap.id, reviewer_id: currentUserId, verdict, session_id: sessionId });
+      if (existing) Object.assign(existing, data);
+      else _artifactVerdicts.push(data);
       refreshArtifactCard(snap);
+      toast(`Verdict set to ${FINAL_VERDICT_LABELS[verdict] ?? verdict}.`, 'success');
     }
   }
 
@@ -2274,6 +2473,7 @@ export async function renderReviewExecute(container, ctx) {
       const resolvedSnapshotId = snapshotId || document.getElementById('fnd-snap')?.value || null;
       const finding_code = `FND-${String(_findings.length + 1).padStart(3,'0')}`;
 
+      const resolvedSnap = resolvedSnapshotId ? snapshots?.find(s => s.id === resolvedSnapshotId) : null;
       const { data: finding, error } = await sb.from('review_findings').insert({
         session_id:       sessionId,
         snapshot_id:      resolvedSnapshotId || null,
@@ -2286,6 +2486,7 @@ export async function renderReviewExecute(container, ctx) {
         description: document.getElementById('fnd-desc').value.trim(),
         status:      'open',
         created_by:  currentUserId,
+        sw_unit_version_at_finding: resolvedSnap?.artifact_type === 'sw_units' ? (resolvedSnap.snapshot_data?.version || null) : null,
       }).select().single();
 
       if (error) { toast('Error: ' + error.message, 'error'); btn.disabled = false; return; }

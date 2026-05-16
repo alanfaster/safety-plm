@@ -77,6 +77,7 @@ export default {
   'safety.FTA': 'FTA',
   'safety.FMEA': 'FMEA',
   'safety.DFMEA': 'Functional FMEA',
+  'safety.SYS_DFMEA': 'System DFMEA',
   'safety.PHL_PHA': 'PHL/PHA',
   'safety.FHA': 'FHA',
   'safety.new_row': 'Add Row',

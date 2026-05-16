@@ -4,19 +4,19 @@
  */
 
 export const FINDING_STATUS_LABELS = {
-  open:        'Open',
-  accepted:    'Accepted',
-  fixed:       'Implemented – pending review',
-  closed:      'Closed',
-  rejected:    'Rejected',
+  open:      'Open',
+  resolved:  'Resolved – pending verification',
+  closed:    'Closed',
+  rejected:  'Rejected',
+  duplicate: 'Duplicate',
 };
 
 export const FINDING_STATUS_CLASSES = {
-  open:     'rv-fs-open',
-  accepted: 'rv-fs-accepted',
-  fixed:    'rv-fs-fixed',
-  closed:   'rv-fs-closed',
-  rejected: 'rv-fs-closed',
+  open:      'rv-fs-open',
+  resolved:  'rv-fs-fixed',
+  closed:    'rv-fs-closed',
+  rejected:  'rv-fs-closed',
+  duplicate: 'rv-fs-closed',
 };
 
 // Valid transitions (from → [to])

@@ -37,9 +37,9 @@ const SUB_PHASES = ALL_PHASES.slice(0, 6);
 export const VCYCLE_PHASES = ALL_PHASES;
 
 export const SAFETY_MENU = {
-  automotive: ['HARA', 'FSC', 'TSC', 'FTA', 'DFA', 'FMEA', 'DFMEA'],
-  aerospace:  ['PHL_PHA', 'FHA', 'FTA', 'DFA', 'FMEA', 'DFMEA'],
-  military:   ['PHL_PHA', 'FHA', 'FTA', 'DFA', 'FMEA', 'DFMEA'],
+  automotive: ['HARA', 'FSC', 'TSC', 'FTA', 'DFA', 'FMEA', 'DFMEA', 'SYS_DFMEA'],
+  aerospace:  ['PHL_PHA', 'FHA', 'FTA', 'DFA', 'FMEA', 'DFMEA', 'SYS_DFMEA'],
+  military:   ['PHL_PHA', 'FHA', 'FTA', 'DFA', 'FMEA', 'DFMEA', 'SYS_DFMEA'],
 };
 
 const DOMAINS = [

@@ -50,12 +50,16 @@ const COMP_COLORS  = {
 
 // ── Module state ──────────────────────────────────────────────────────────────
 
-let _ctx   = null;
-let _items = [];
-let _selId = null;
-let _chain = {components:[],functions:[],selCompId:null,selFuncId:null};
-let _map   = {components:[],connections:[],functions:[]};
-let _netVisible = true;
+let _ctx     = null;
+let _items   = [];
+let _selId   = null;
+let _chain   = {components:[],functions:[],selCompId:null,selFuncId:null};
+let _map     = {components:[],connections:[],functions:[]};
+let _netVisible  = true;
+let _focusFmId   = null;
+let _rowCtx      = new WeakMap();
+let _pill        = null;
+let _activeTbody = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -130,7 +134,7 @@ function groupRowCount(g){return g.fms.reduce((n,fm)=>n+fmRowCount(fm),0);}
 
 export async function renderDFMEA(container, {project,item,system,parentType,parentId}){
   _ctx={project,parentType,parentId};
-  _items=[]; _selId=null; _netVisible=true;
+  _items=[]; _selId=null; _netVisible=true; _focusFmId=null;
   _chain={components:[],functions:[],selCompId:null,selFuncId:null};
   _map={components:[],connections:[],functions:[]};
 
@@ -155,23 +159,15 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
       <div class="dfmea-table-area" id="dfmea-table-area">
         <div class="content-loading"><div class="spinner"></div></div>
       </div>
-      <div class="bp-bar bp-collapsed dfmea-bp-map" id="dfmea-map-panel">
+      <div class="bp-bar bp-collapsed dfmea-bp-fnet" id="dfmea-fnet-panel">
         <div class="bp-resize-handle"></div>
         <div class="bp-hdr">
-          <span class="bp-title">◈ Structure Map</span>
-          <span class="bp-subtitle">Live — dblclick to edit</span>
-          <button class="dfmea-tb-btn" id="btn-dfmea-net" style="margin-left:8px">⇄ Net</button>
+          <span class="bp-title">⬡ Failure Net</span>
+          <span class="bp-subtitle" id="fnet-focus-label">All FMs · click FM node to focus · drag to pan · scroll to zoom</span>
+          <button class="dfmea-tb-btn" id="btn-fnet-all" style="margin-left:auto">All FMs</button>
           <span class="bp-toggle">▲</span>
         </div>
-        <div class="bp-body dfmea-map-body" id="dfmea-map-body"></div>
-      </div>
-      <div class="bp-bar bp-collapsed dfmea-bp-chain" id="dfmea-chain-panel">
-        <div class="bp-resize-handle"></div>
-        <div class="bp-hdr">
-          <span class="bp-title">⬡ Structure — Function — Failure Chain</span>
-          <span class="bp-toggle">▲</span>
-        </div>
-        <div class="bp-body dfmea-chain-body" id="dfmea-chain-body"></div>
+        <div class="bp-body dfmea-fnet-body" id="dfmea-fnet-body"></div>
       </div>
     </div>`;
 
@@ -179,32 +175,19 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
   document.getElementById('btn-dfmea-new').onclick  = ()=>addFmRow();
   document.getElementById('btn-dfmea-sync').onclick = ()=>syncFromSystem();
 
-  await Promise.all([loadItems(), loadChainData(), loadMapData()]);
+  await loadItems();
 }
 
 // ── Panels ────────────────────────────────────────────────────────────────────
 
 function wirePanelToggles(){
-  // Structure Map — lazy-render on first expand
-  const mapBar = document.getElementById('dfmea-map-panel');
-  wireBottomPanel(mapBar, {
-    key: 'dfmea_map_h',
-    defaultH: 260,
-    onExpand: () => renderMap(),
-  });
-  // ⇄ Net toggle (inside header, stops propagation via bp-hdr logic)
-  document.getElementById('btn-dfmea-net')?.addEventListener('click', () => {
-    _netVisible = !_netVisible;
-    document.getElementById('btn-dfmea-net')?.classList.toggle('active', _netVisible);
-    document.querySelectorAll('.dmap-net-legend').forEach(s => { s.style.display = _netVisible ? '' : 'none'; });
-  });
-
-  // Failure Chain — lazy-render on first expand
-  const chainBar = document.getElementById('dfmea-chain-panel');
-  wireBottomPanel(chainBar, {
-    key: 'dfmea_chain_h',
-    defaultH: 200,
-    onExpand: () => renderChain(),
+  const fnetBar=document.getElementById('dfmea-fnet-panel');
+  wireBottomPanel(fnetBar,{key:'dfmea_fnet_h',defaultH:300,onExpand:()=>renderFailureNet()});
+  document.getElementById('btn-fnet-all')?.addEventListener('click',e=>{
+    e.stopPropagation();
+    _focusFmId=null;
+    document.getElementById('fnet-focus-label').textContent='All FMs · click FM node to focus · drag to pan · scroll to zoom';
+    renderFailureNet();
   });
 }
 
@@ -319,6 +302,7 @@ function renderTable(area){
 
   const tbody=document.getElementById('dfmea-tbody');
   groups.forEach(g=>renderGroup(tbody,g));
+  wireInsertHover(tbody);
 }
 
 // ── Group rendering ───────────────────────────────────────────────────────────
@@ -357,7 +341,7 @@ function renderGroup(tbody,g){
     // Failure Mode cell (rowspan = this FM's rows)
     const fmTd=makeTd('dfmea-col-fm dfmea-editable',fmSpan);
     fmTd.dataset.field='failure_mode';
-    wrapWithDel(fmTd,'del-fm',`${cellText(fm.failure_mode)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button>`);
+    wrapWithDel(fmTd,'del-fm',cellText(fm.failure_mode));
     fmTr.appendChild(fmTd);
 
     // Max S cell (rowspan = this FM's rows)
@@ -373,30 +357,22 @@ function renderGroup(tbody,g){
     statusTd.innerHTML=`<select class="dfmea-sel" data-field="status">${ITEM_STATUSES.map(s=>`<option value="${s}"${fm.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
     fmTr.appendChild(statusTd);
 
-    // If no effects and no causes, show actionable placeholders so user can start filling in
     if(!effects.length&&!directCauses.length){
-      const addEffTd=makeTd('dfmea-col-eff dfmea-cell-na-add');
-      addEffTd.innerHTML=`<button class="dfmea-inline-add dfmea-add-first-cause" data-action="add-effect" title="Add Effect">＋ Add Effect</button>`;
-      fmTr.appendChild(addEffTd);
-      fmTr.appendChild(naCell('dfmea-col-eff'));
+      const naEff1=naCell('dfmea-col-eff dfmea-na-editable'); naEff1.title='Double-click to add Effect';
+      naEff1.innerHTML='<span class="dfmea-placeholder">—</span>';
+      naEff1.addEventListener('dblclick',()=>addEffectRow(fm)); fmTr.appendChild(naEff1);
+      const naEff2=naCell('dfmea-col-eff dfmea-na-editable'); naEff2.title='Double-click to add Effect';
+      naEff2.innerHTML='<span class="dfmea-placeholder">—</span>';
+      naEff2.addEventListener('dblclick',()=>addEffectRow(fm)); fmTr.appendChild(naEff2);
       fmTr.appendChild(naCell('dfmea-col-sod'));
-      const addCauseTd=makeTd('dfmea-col-fc dfmea-cell-na-add');
-      addCauseTd.innerHTML=`<button class="dfmea-inline-add dfmea-add-first-cause" data-action="add-cause" title="Add Cause">＋ Add Cause</button>`;
-      fmTr.appendChild(addCauseTd);
-      fmTr.appendChild(naCell('dfmea-col-ctrl'));
-      fmTr.appendChild(naCell('dfmea-col-sod'));
-      fmTr.appendChild(naCell('dfmea-col-ctrl'));
-      fmTr.appendChild(naCell('dfmea-col-sod'));
-      fmTr.appendChild(naCell('dfmea-col-ap'));
-      fmTr.appendChild(naCell('dfmea-col-actions'));
-      fmTr.appendChild(naCell('dfmea-col-resp'));
-      fmTr.appendChild(naCell('dfmea-col-date'));
-      fmTr.appendChild(naCell('dfmea-col-astatus'));
-      // Wire add buttons
-      addEffTd.querySelector('[data-action="add-effect"]').addEventListener('click',()=>addEffectRow(fm));
-      addCauseTd.querySelector('[data-action="add-cause"]').addEventListener('click',()=>addCauseRow(fm.id,fm));
+      const naFc=naCell('dfmea-col-fc dfmea-na-editable'); naFc.title='Double-click to add Cause';
+      naFc.innerHTML='<span class="dfmea-placeholder">—</span>';
+      naFc.addEventListener('dblclick',()=>addCauseRow(fm.id,fm)); fmTr.appendChild(naFc);
+      ['dfmea-col-ctrl','dfmea-col-sod','dfmea-col-ctrl','dfmea-col-sod','dfmea-col-ap',
+       'dfmea-col-actions','dfmea-col-resp','dfmea-col-date','dfmea-col-astatus'].forEach(c=>fmTr.appendChild(naCell(c)));
     }
 
+    _rowCtx.set(fmTr,{type:'fm',fm,g});
     tbody.appendChild(fmTr);
     wireFmCells(fmTr,fmTd,statusTd,fm,g);
 
@@ -414,7 +390,7 @@ function renderGroup(tbody,g){
       // Effect Higher (rowspan = 1 + causes under this effect)
       const effHTd=makeTd('dfmea-col-eff dfmea-editable',effSpan);
       effHTd.dataset.field='effect_higher';
-      wrapWithDel(effHTd,'del-effect',`${cellText(eff.effect_higher)}${isLastEff?`<button class="dfmea-inline-add" data-action="add-effect" title="Add Effect">＋</button>`:''}`)
+      wrapWithDel(effHTd,'del-effect',cellText(eff.effect_higher));
       effTr.appendChild(effHTd);
 
       // Effect Local (rowspan)
@@ -429,6 +405,7 @@ function renderGroup(tbody,g){
       effTr.appendChild(sTd);
 
       // First cause inline (or NA if no causes)
+      _rowCtx.set(effTr,{type:'effect',eff,fm,g});
       if(effCauses.length){
         appendCauseCells(effTr,effCauses[0],fm,effCauses.length===1);
         tbody.appendChild(effTr);
@@ -437,6 +414,7 @@ function renderGroup(tbody,g){
         // Remaining causes
         effCauses.slice(1).forEach((c,ci)=>{
           const cTr=causeTrShell(c,fm,ci===effCauses.length-2);
+          _rowCtx.set(cTr,{type:'cause',cause:c,fm,g});
           tbody.appendChild(cTr);
           wireCauseCells(cTr,c,fm);
         });
@@ -453,6 +431,7 @@ function renderGroup(tbody,g){
     // Direct causes have no effect row above them → prepend NA cells for Effect Higher/Local/S
     directCauses.forEach((c,ci)=>{
       const cTr=causeTrShell(c,fm,ci===directCauses.length-1,true);
+      _rowCtx.set(cTr,{type:'cause',cause:c,fm,g});
       tbody.appendChild(cTr);
       wireCauseCells(cTr,c,fm);
     });
@@ -477,7 +456,7 @@ function appendCauseCells(tr,cause,fm,isLast){
 
   const fcTd=makeTd('dfmea-col-fc dfmea-editable');
   fcTd.dataset.field='failure_cause';
-  wrapWithDel(fcTd,'del-cause',`${cellText(cause.failure_cause)}${isLast?`<button class="dfmea-inline-add" data-action="add-cause" title="Add Cause">＋</button>`:''}`);
+  wrapWithDel(fcTd,'del-cause',cellText(cause.failure_cause));
   tr.appendChild(fcTd);
 
   const prevTd=makeTd('dfmea-col-ctrl dfmea-editable');prevTd.dataset.field='prevention_controls';prevTd.innerHTML=cellText(cause.prevention_controls);tr.appendChild(prevTd);
@@ -500,9 +479,11 @@ function appendCauseCells(tr,cause,fm,isLast){
 }
 
 function appendNaCauseCells(tr, parentId, fm){
-  const placeholder=makeTd('dfmea-col-fc dfmea-cell-na-add');
-  placeholder.innerHTML=`<button class="dfmea-inline-add dfmea-add-first-cause" data-action="add-cause" title="Add Cause">＋ Add Cause</button>`;
-  tr.appendChild(placeholder);
+  const fcNa=naCell('dfmea-col-fc dfmea-na-editable');
+  fcNa.title='Double-click to add Cause';
+  fcNa.innerHTML='<span class="dfmea-placeholder">—</span>';
+  fcNa.addEventListener('dblclick',()=>addCauseRow(parentId,fm,null));
+  tr.appendChild(fcNa);
   ['dfmea-col-ctrl','dfmea-col-sod','dfmea-col-ctrl','dfmea-col-sod','dfmea-col-ap','dfmea-col-actions','dfmea-col-resp','dfmea-col-date','dfmea-col-astatus'].forEach(c=>tr.appendChild(naCell(c)));
 }
 
@@ -530,7 +511,8 @@ function wireGroupCellEdit(el,g){
     const fmId =el.dataset.fmId;
     const fm   =_items.find(i=>i.id===fmId); if(!fm) return;
     const cur  =fm[field]||'';
-    el.innerHTML=`<textarea class="dfmea-cell-input" rows="2">${esc(cur)}</textarea>`;
+    const h=Math.max(el.closest('td')?.offsetHeight-4||40,20);
+    el.innerHTML=`<textarea class="dfmea-cell-input" style="height:${h}px">${esc(cur)}</textarea>`;
     const ta=el.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
     ta.addEventListener('blur',async()=>{
       const v=ta.value.trim(); el.innerHTML=cellText(v);
@@ -559,24 +541,20 @@ function wireFmCells(fmTr,fmTd,statusTd,fm,g){
     if(fmTd.querySelector('textarea')) return;
     const inner=getInner(fmTd);
     const cur=fm.failure_mode||'';
-    inner.innerHTML=`<textarea class="dfmea-cell-input" rows="2">${esc(cur)}</textarea><button class="dfmea-inline-add" data-action="add-fm" title="Add FM" style="display:none">＋</button>`;
+    const h=Math.max(fmTd.offsetHeight-4,20);
+    inner.innerHTML=`<textarea class="dfmea-cell-input" style="height:${h}px">${esc(cur)}</textarea>`;
     const ta=inner.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
     ta.addEventListener('blur',async()=>{
       const v=ta.value.trim(); fm.failure_mode=v;
-      inner.innerHTML=`${cellText(v)}<button class="dfmea-inline-add" data-action="add-fm" title="Add Failure Mode to this Function">＋</button>`;
+      inner.innerHTML=cellText(v);
       await autosave(fm.id,{failure_mode:v});
       refreshMapComp(fm.component_id||fm.component_name);
-      inner.querySelector('[data-action="add-fm"]')?.addEventListener('click',()=>addFmRow({component_id:fm.component_id,component_name:fm.component_name,function_name:fm.function_name},true));
     });
     ta.addEventListener('keydown',e=>{
-      if(e.key==='Escape'){inner.innerHTML=`${cellText(cur)}<button class="dfmea-inline-add" data-action="add-fm">＋</button>`;}
+      if(e.key==='Escape') inner.innerHTML=cellText(cur);
       if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ta.blur();}
     });
   });
-
-  // + Add FM
-  getInner(fmTd).querySelector('[data-action="add-fm"]')?.addEventListener('click',()=>
-    addFmRow({component_id:fm.component_id,component_name:fm.component_name,function_name:fm.function_name},true));
 
   // Status
   statusTd.querySelector('.dfmea-sel')?.addEventListener('change',async e=>{
@@ -588,19 +566,9 @@ function wireFmCells(fmTr,fmTd,statusTd,fm,g){
 }
 
 function wireEffCells(effTr,effHTd,effLTd,sTd,eff,fm){
-  // Effect Higher dblclick
-  wireTextCell(effHTd,eff,'effect_higher',()=>{
-    refreshMapComp(fm.component_id||fm.component_name);
-    // Re-wire the + button after replacing content
-    effHTd.querySelector('[data-action="add-effect"]')?.addEventListener('click',()=>addEffectRow(fm));
-  });
-  // + Add Effect
-  effHTd.querySelector('[data-action="add-effect"]')?.addEventListener('click',()=>addEffectRow(fm));
-
-  // Effect Local dblclick
+  wireTextCell(effHTd,eff,'effect_higher',()=>refreshMapComp(fm.component_id||fm.component_name));
   wireTextCell(effLTd,eff,'effect_local',()=>refreshMapComp(fm.component_id||fm.component_name));
 
-  // S input
   sTd.querySelector('.dfmea-sod-input')?.addEventListener('change',async e=>{
     const val=Math.min(10,Math.max(1,+e.target.value||5));
     e.target.value=val; eff.severity=val;
@@ -609,23 +577,14 @@ function wireEffCells(effTr,effHTd,effLTd,sTd,eff,fm){
     refreshCauseAPs(fm);
     refreshMapComp(fm.component_id||fm.component_name);
   });
-
-  // + Add Cause from NA placeholder
-  effTr.querySelector('[data-action="add-cause"]')?.addEventListener('click',()=>addCauseRow(eff.id,fm));
 }
 
 function wireCauseCells(tr,cause,fm){
   tr.addEventListener('click',e=>{if(!e.target.closest('input,select,button')) selectRow(cause.id);});
 
   tr.querySelectorAll('.dfmea-editable').forEach(td=>{
-    if(td.dataset.field) wireTextCell(td,cause,td.dataset.field,()=>{
-      refreshMapComp(fm.component_id||fm.component_name);
-      // Re-wire add-cause button if it was in failure_cause cell
-      td.querySelector('[data-action="add-cause"]')?.addEventListener('click',()=>addCauseRow(cause.parent_row_id,fm));
-    });
+    if(td.dataset.field) wireTextCell(td,cause,td.dataset.field,()=>refreshMapComp(fm.component_id||fm.component_name));
   });
-
-  tr.querySelector('[data-action="add-cause"]')?.addEventListener('click',()=>addCauseRow(cause.parent_row_id,fm));
 
   tr.querySelectorAll('.dfmea-sod-input').forEach(inp=>{
     inp.addEventListener('change',async e=>{
@@ -653,20 +612,17 @@ function wireTextCell(td,it,field,afterSave){
     if(td.querySelector('textarea')) return;
     const inner=getInner(td);
     const cur=it[field]||'';
-    const existingBtn=inner.querySelector('.dfmea-inline-add');
-    const hasAddBtn=!!existingBtn;
-    const addAction=existingBtn?.dataset.action||'';
-    const btnHtml=hasAddBtn?`<button class="dfmea-inline-add" data-action="${addAction}" style="display:none">＋</button>`:'';
-    inner.innerHTML=`<textarea class="dfmea-cell-input" rows="2">${esc(cur)}</textarea>${btnHtml}`;
+    const h=Math.max(td.offsetHeight-4,20);
+    inner.innerHTML=`<textarea class="dfmea-cell-input" style="height:${h}px">${esc(cur)}</textarea>`;
     const ta=inner.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
     ta.addEventListener('blur',async()=>{
       const v=ta.value.trim(); it[field]=v;
-      inner.innerHTML=`${cellText(v)}${hasAddBtn?`<button class="dfmea-inline-add" data-action="${addAction}">＋</button>`:''}`;
-      if(v!==(cur)) await autosave(it.id,{[field]:v});
+      inner.innerHTML=cellText(v);
+      if(v!==cur) await autosave(it.id,{[field]:v});
       if(afterSave) afterSave();
     });
     ta.addEventListener('keydown',e=>{
-      if(e.key==='Escape'){inner.innerHTML=`${cellText(cur)}${hasAddBtn?`<button class="dfmea-inline-add" data-action="${addAction}">＋</button>`:''}`;if(afterSave)afterSave();}
+      if(e.key==='Escape'){inner.innerHTML=cellText(cur);if(afterSave)afterSave();}
       if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ta.blur();}
     });
   });
@@ -723,16 +679,35 @@ async function addFmRow(prefill={}, rebuild=false){
   return fm;
 }
 
-async function addEffectRow(fm){
+async function addEffectRow(fm, afterEff=null){
+  const existingEffs=_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id);
+  const insertPos=afterEff!=null ? existingEffs.findIndex(e=>e.id===afterEff.id)+1 : existingEffs.length;
+  // Shift sort_order of effects after insertion point (keep integers)
+  const toShift=existingEffs.slice(insertPos);
+  if(toShift.length){
+    await Promise.all(toShift.map((e,i)=>sb.from('dfmea_items').update({sort_order:insertPos+1+i}).eq('id',e.id)));
+    toShift.forEach((e,i)=>{e.sort_order=insertPos+1+i;});
+  }
   const {data:eff,error}=await sb.from('dfmea_items').insert({
-    dfmea_code:`${fm.dfmea_code}-E${_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id).length+1}`,
+    dfmea_code:`${fm.dfmea_code}-E${existingEffs.length+1}`,
     parent_type:_ctx.parentType, parent_id:_ctx.parentId, project_id:_ctx.project.id,
     row_type:'effect', parent_row_id:fm.id,
-    sort_order:_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id).length,
+    sort_order:insertPos,
     severity:5, occurrence:5, detection:5, action_status:'open', status:'draft',
   }).select().single();
   if(error){toast('Error creating Effect.','error');return;}
-  _items.push(eff);
+  eff.sort_order=insertPos;
+  if(afterEff!=null){
+    let idx=_items.findIndex(i=>i.id===afterEff.id)+1;
+    while(idx<_items.length){
+      const it=_items[idx];
+      if(rtype(it)==='fm'||(rtype(it)==='effect'&&it.parent_row_id===afterEff.parent_row_id)) break;
+      idx++;
+    }
+    _items.splice(idx,0,eff);
+  } else {
+    _items.push(eff);
+  }
   renderTable();
   setTimeout(()=>{
     const td=document.querySelector(`tr[data-id="${eff.id}"] .dfmea-col-eff`);
@@ -740,16 +715,29 @@ async function addEffectRow(fm){
   },50);
 }
 
-async function addCauseRow(parentId,fm){
+async function addCauseRow(parentId,fm,afterCause=null){
+  const existingCauses=_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===parentId);
+  const insertPos=afterCause!=null ? existingCauses.findIndex(c=>c.id===afterCause.id)+1 : existingCauses.length;
+  const toShift=existingCauses.slice(insertPos);
+  if(toShift.length){
+    await Promise.all(toShift.map((c,i)=>sb.from('dfmea_items').update({sort_order:insertPos+1+i}).eq('id',c.id)));
+    toShift.forEach((c,i)=>{c.sort_order=insertPos+1+i;});
+  }
   const {data:cause,error}=await sb.from('dfmea_items').insert({
     dfmea_code:`${fm.dfmea_code}-C${_items.filter(i=>rtype(i)==='cause'&&fmOf(i)?.id===fm.id).length+1}`,
     parent_type:_ctx.parentType, parent_id:_ctx.parentId, project_id:_ctx.project.id,
     row_type:'cause', parent_row_id:parentId,
-    sort_order:_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===parentId).length,
+    sort_order:insertPos,
     severity:5, occurrence:5, detection:5, action_status:'open', status:'draft',
   }).select().single();
   if(error){toast('Error creating Cause.','error');return;}
-  _items.push(cause);
+  cause.sort_order=insertPos;
+  if(afterCause!=null){
+    const afterIdx=_items.findIndex(i=>i.id===afterCause.id);
+    _items.splice(afterIdx>=0?afterIdx+1:_items.length,0,cause);
+  } else {
+    _items.push(cause);
+  }
   renderTable();
   setTimeout(()=>{
     const td=document.querySelector(`tr[data-id="${cause.id}"] .dfmea-col-fc`);
@@ -759,7 +747,7 @@ async function addCauseRow(parentId,fm){
 
 async function deleteGroup(g){
   const allIds=g.fms.flatMap(fm=>[fm.id,..._items.filter(i=>fmOf(i)?.id===fm.id&&i.id!==fm.id).map(i=>i.id)]);
-  const {title}=showModal({
+  showModal({
     title:'Delete Function Group',
     body:`<p>Delete function <strong>${esc(g.fms[0]?.function_name||'—')}</strong> and all its failure modes, effects and causes?</p>
       <div class="modal-warn-box" style="margin-top:10px">⚠ This will delete ${allIds.length} row(s). Cannot be undone.</div>`,
@@ -845,7 +833,8 @@ async function loadChainData(){
   renderChain();
 }
 
-function renderChain(){
+function renderChain(){ refreshNet(); }
+function _renderChain_unused(){
   const body=document.getElementById('dfmea-chain-body'); if(!body) return;
   const comps=_chain.components, fns=_chain.functions;
   const selFns=_chain.selCompId?fns.filter(f=>f.component_id===_chain.selCompId):[];
@@ -987,14 +976,15 @@ function openMapInlineText(el,it,field,comp){
     const v=inp.value.trim(); it[field]=v; el.textContent=v||'—';
     await autosave(it.id,{[field]:v});
     const tr=document.querySelector(`tr[data-id="${it.id}"] .dfmea-col-fm`);
-    if(tr) tr.innerHTML=`${cellText(v)}<button class="dfmea-inline-add" data-action="add-fm">＋</button>`;
+    if(tr) setInner(tr,cellText(v));
     refreshMapComp(comp.id);
   };
   inp.addEventListener('blur',commit);
   inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();inp.blur();}if(e.key==='Escape')el.textContent=cur||'—';});
 }
 
-function refreshMapComp(compIdOrName){
+function refreshMapComp(compIdOrName){ refreshNet(); }
+function _refreshMapComp_unused(compIdOrName){
   const panel=document.getElementById('dfmea-map-panel');
   if(!panel||panel.style.display==='none') return;
   const map=document.getElementById('dfmea-map-body'); if(!map) return;
@@ -1043,6 +1033,307 @@ function renderMap(){
     btn.addEventListener('click',e=>{e.stopPropagation();const t=document.getElementById(btn.dataset.target);if(t)btn.textContent=t.classList.toggle('collapsed')?'▶':'▼';});
   });
   leafComps.forEach(c=>{const node=document.getElementById(`dmap-c-${c.id}`);if(node)wireMapCompNode(node,c);});
+}
+
+// ── Failure Net ───────────────────────────────────────────────────────────────
+
+const FNET_W     = 190;
+const FNET_H_EST = 100;
+const FNET_GAP   = 12;
+const FNET_BLK   = 32;
+const FNET_PAD   = 48;
+const FNET_X_EFF   = 30;
+const FNET_X_FM    = 290;
+const FNET_X_CAUSE = 550;
+
+function refreshNet(){
+  const panel=document.getElementById('dfmea-fnet-panel');
+  if(!panel||panel.classList.contains('bp-collapsed')) return;
+  renderFailureNet();
+}
+
+function renderFailureNet(){
+  const body=document.getElementById('dfmea-fnet-body'); if(!body) return;
+  body.innerHTML='';
+
+  const fms=_focusFmId
+    ?_items.filter(i=>rtype(i)==='fm'&&i.id===_focusFmId)
+    :_items.filter(i=>rtype(i)==='fm');
+
+  if(!fms.length){
+    body.innerHTML='<div style="padding:40px;text-align:center;color:var(--color-text-muted)">No FMEA data. Add entries using ＋ New.</div>';
+    return;
+  }
+
+  // Build node + edge lists
+  const nodes=[], edges=[], nodeMap={};
+  let y=FNET_PAD;
+
+  for(const fm of fms){
+    const effects =_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id);
+    const causes  =_items.filter(i=>rtype(i)==='cause'&&fmOf(i)?.id===fm.id);
+    const rows    =Math.max(effects.length||1, causes.length||1);
+    const blockH  =rows*(FNET_H_EST+FNET_GAP)-FNET_GAP;
+    const fmY     =y+blockH/2-FNET_H_EST/2;
+
+    const fmNode={id:fm.id,type:'fm',x:FNET_X_FM,y:fmY,data:fm,focus:fm.id===_focusFmId};
+    nodes.push(fmNode); nodeMap[fm.id]=fmNode;
+
+    effects.forEach((eff,i)=>{
+      const n={id:eff.id,type:'effect',x:FNET_X_EFF,y:y+i*(FNET_H_EST+FNET_GAP),data:eff};
+      nodes.push(n); nodeMap[eff.id]=n;
+      edges.push({from:fm.id,to:eff.id,cls:'fnet-edge-eff'});
+    });
+
+    causes.forEach((c,i)=>{
+      const n={id:c.id,type:'cause',x:FNET_X_CAUSE,y:y+i*(FNET_H_EST+FNET_GAP),data:c};
+      nodes.push(n); nodeMap[c.id]=n;
+      edges.push({from:c.id,to:fm.id,cls:'fnet-edge-cause'});
+    });
+
+    y+=blockH+FNET_BLK;
+  }
+
+  const canvasW=FNET_X_EFF+FNET_W+FNET_PAD;
+  const canvasH=y+FNET_PAD;
+
+  // Wrap + canvas
+  const wrap=document.createElement('div');
+  wrap.className='fnet-wrap';
+  body.appendChild(wrap);
+
+  const canvas=document.createElement('div');
+  canvas.className='fnet-canvas';
+  canvas.style.width=canvasW+'px';
+  canvas.style.height=canvasH+'px';
+
+  // SVG defs + overlay
+  const NS='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(NS,'svg');
+  svg.setAttribute('width',canvasW); svg.setAttribute('height',canvasH);
+  svg.setAttribute('class','fnet-svg');
+  const defs=document.createElementNS(NS,'defs');
+  [['arr-cause','#E37400'],['arr-eff','#1E8E3E']].forEach(([id,col])=>{
+    const m=document.createElementNS(NS,'marker');
+    m.setAttribute('id',id); m.setAttribute('markerWidth','8'); m.setAttribute('markerHeight','6');
+    m.setAttribute('refX','7'); m.setAttribute('refY','3'); m.setAttribute('orient','auto');
+    const p=document.createElementNS(NS,'polygon');
+    p.setAttribute('points','0 0,8 3,0 6'); p.setAttribute('fill',col); m.appendChild(p);
+    defs.appendChild(m);
+  });
+  svg.appendChild(defs);
+  canvas.appendChild(svg);
+
+  // Render nodes
+  nodes.forEach(n=>{
+    const el=buildFnetNode(n,body,nodeMap);
+    canvas.appendChild(el); n._el=el;
+  });
+
+  wrap.appendChild(canvas);
+
+  // Draw edges after layout (need actual heights)
+  requestAnimationFrame(()=>{
+    nodes.forEach(n=>{if(n._el) n.h=n._el.offsetHeight||FNET_H_EST;});
+    edges.forEach(({from,to,cls})=>{
+      const f=nodeMap[from], t=nodeMap[to]; if(!f||!t) return;
+      const y1=f.y+(f.h||FNET_H_EST)/2, y2=t.y+(t.h||FNET_H_EST)/2;
+      // Connect right-edge of leftmost node to left-edge of rightmost node
+      const x1=f.x<t.x ? f.x+FNET_W : f.x;
+      const x2=f.x<t.x ? t.x        : t.x+FNET_W;
+      const cx=(x1+x2)/2;
+      const path=document.createElementNS(NS,'path');
+      path.setAttribute('d',`M${x1} ${y1} C${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`);
+      path.setAttribute('class',`fnet-edge ${cls}`);
+      path.setAttribute('marker-end',`url(#${cls==='fnet-edge-cause'?'arr-cause':'arr-eff'})`);
+      svg.appendChild(path);
+    });
+  });
+
+  // Pan + zoom
+  let scale=1,tx=0,ty=0,drag=false,sx=0,sy=0,stx=0,sty=0;
+  const apply=()=>{canvas.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;};
+  const fitView=()=>{
+    const r=wrap.getBoundingClientRect();
+    if(!r.width||!r.height) return;
+    scale=Math.min(r.width/canvasW, r.height/canvasH)*0.88;
+    tx=(r.width -canvasW*scale)/2;
+    ty=(r.height-canvasH*scale)/2;
+    apply();
+  };
+  wrap.addEventListener('mousedown',e=>{
+    if(e.target.closest('.fnet-node,.fnet-controls')) return;
+    drag=true; sx=e.clientX; sy=e.clientY; stx=tx; sty=ty; wrap.style.cursor='grabbing';
+    e.preventDefault();
+  });
+  const onMove=e=>{if(!drag)return; tx=stx+(e.clientX-sx); ty=sty+(e.clientY-sy); apply();};
+  const onUp  =()=>{drag=false; wrap.style.cursor='grab';};
+  window.addEventListener('mousemove',onMove);
+  window.addEventListener('mouseup',onUp);
+  wrap.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const d=e.deltaY<0?1.12:0.9;
+    const r=wrap.getBoundingClientRect();
+    const mx=e.clientX-r.left, my=e.clientY-r.top;
+    tx=(tx-mx)*d+mx; ty=(ty-my)*d+my;
+    scale=Math.max(0.2,Math.min(4,scale*d)); apply();
+  },{passive:false});
+
+  // Floating controls
+  const ctrls=document.createElement('div');
+  ctrls.className='fnet-controls';
+  ctrls.innerHTML=`
+    <button class="fnet-ctrl-btn" title="Fit view">⊡</button>
+    <button class="fnet-ctrl-btn" title="Zoom in">＋</button>
+    <button class="fnet-ctrl-btn" title="Zoom out">－</button>`;
+  const [btnFit,btnIn,btnOut]=ctrls.querySelectorAll('.fnet-ctrl-btn');
+  btnFit.addEventListener('click',e=>{e.stopPropagation();fitView();});
+  btnIn .addEventListener('click',e=>{e.stopPropagation();scale=Math.min(4,scale*1.25);apply();});
+  btnOut.addEventListener('click',e=>{e.stopPropagation();scale=Math.max(0.2,scale/1.25);apply();});
+  wrap.appendChild(ctrls);
+
+  // Auto fit on first render
+  requestAnimationFrame(()=>requestAnimationFrame(fitView));
+
+  // Cleanup listeners when panel collapses
+  const observer=new MutationObserver(()=>{
+    if(!document.contains(wrap)){window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);observer.disconnect();}
+  });
+  observer.observe(document.body,{childList:true,subtree:true});
+}
+
+function buildFnetNode(n,body,nodeMap){
+  const d=n.data;
+  const div=document.createElement('div');
+  div.className=`fnet-node fnet-node-${n.type}${n.focus?' fnet-node-focus':''}`;
+  div.style.cssText=`left:${n.x}px;top:${n.y}px`;
+  div.dataset.id=n.id;
+
+  let title='', sub='', metrics='';
+  if(n.type==='fm'){
+    title=d.failure_mode||'—';
+    sub=d.function_name?`<div class="fnet-sub">${esc(d.function_name)}</div>`:'';
+    const maxS=maxSevForFm(d);
+    const causes=_items.filter(i=>rtype(i)==='cause'&&fmOf(i)?.id===d.id);
+    const worstAP=causes.reduce((b,c)=>{const ap=calcAP(maxS,c.occurrence,c.detection);const r={H:0,M:1,L:2,N:3,'-':4};return r[ap]<r[b]?ap:b;},'-');
+    const apClr=AP_COLORS[worstAP]||'#9AA0A6';
+    metrics=`<div class="fnet-metrics">
+      <span class="fnet-metric">Max S: ${maxS||'—'}</span>
+      ${worstAP!=='-'?`<span class="fnet-ap" style="background:${apClr}">${worstAP}</span>`:''}
+      <span class="fnet-status">${d.status||''}</span>
+    </div>`;
+  } else if(n.type==='effect'){
+    title=d.effect_higher||'—';
+    sub=d.effect_local?`<div class="fnet-sub">${esc(d.effect_local)}</div>`:'';
+    metrics=`<div class="fnet-metrics"><span class="fnet-metric">S: ${d.severity||'—'}</span></div>`;
+  } else {
+    title=d.failure_cause||'—';
+    const fm=fmOf(d);
+    const maxS=fm?maxSevForFm(fm):0;
+    const ap=calcAP(maxS,d.occurrence,d.detection);
+    const apClr=AP_COLORS[ap]||'#9AA0A6';
+    metrics=`<div class="fnet-metrics">
+      <span class="fnet-metric">O: ${d.occurrence||'—'}</span>
+      <span class="fnet-metric">D: ${d.detection||'—'}</span>
+      <span class="fnet-ap" style="background:${apClr}">${ap}</span>
+    </div>
+    ${d.prevention_controls?`<div class="fnet-ctrl-row"><span class="fnet-ctrl-label">Prev:</span> ${esc(d.prevention_controls)}</div>`:''}
+    ${d.detection_controls?`<div class="fnet-ctrl-row"><span class="fnet-ctrl-label">Det:</span> ${esc(d.detection_controls)}</div>`:''}
+    `;
+  }
+
+  const typeLabel={fm:'Failure Mode',effect:'Effect',cause:'Cause'}[n.type];
+  div.innerHTML=`
+    <div class="fnet-code">${esc(d.dfmea_code||'')}&ensp;<span class="fnet-type-tag">${typeLabel}</span></div>
+    ${sub}
+    <div class="fnet-title">${esc(title)}</div>
+    ${metrics}`;
+
+  div.addEventListener('click',()=>{
+    if(n.type==='fm'){
+      _focusFmId=_focusFmId===n.id?null:n.id;
+      const lbl=document.getElementById('fnet-focus-label');
+      if(lbl) lbl.textContent=_focusFmId?`Focus: ${esc(d.dfmea_code)} — ${esc(d.failure_mode||'')}` :'All FMs · click FM node to focus · drag to pan · scroll to zoom';
+      renderFailureNet();
+    }
+    selectRow(n.id);
+    document.querySelector(`.dfmea-row[data-id="${n.id}"]`)?.scrollIntoView({block:'nearest',behavior:'smooth'});
+  });
+  return div;
+}
+
+// ── Hover insert pill ─────────────────────────────────────────────────────────
+
+const _EFF_COLS  = ['dfmea-col-eff'];
+const _CAUSE_COLS= ['dfmea-col-fc','dfmea-col-ctrl','dfmea-col-ap',
+                    'dfmea-col-actions','dfmea-col-resp','dfmea-col-date','dfmea-col-astatus'];
+
+function colAction(td, ctx){
+  const c=td.className;
+  if(_EFF_COLS.some(x=>c.includes(x)))   return 'add-effect';
+  if(_CAUSE_COLS.some(x=>c.includes(x))) return 'add-cause';
+  if(c.includes('dfmea-col-sod'))         return ctx?.type==='cause'?'add-cause':'add-effect';
+  return null;
+}
+
+function wireInsertHover(tbody){
+  _activeTbody=tbody;
+  if(!_pill){
+    _pill=document.createElement('div');
+    _pill.className='spec-insert-pill';
+    // pointer-events:none on container so the pill never intercepts clicks on cells beneath it
+    _pill.style.cssText='display:none;pointer-events:none';
+    document.body.appendChild(_pill);
+  }
+  let _hovTd=null;
+  tbody.addEventListener('mousemove',e=>{
+    const td=e.target.closest('td');
+    if(!td||!tbody.contains(td)){hidePill();_hovTd=null;return;}
+    if(td===_hovTd) return;
+    _hovTd=td;
+    showPillForCell(td, _rowCtx.get(td.closest('tr')));
+  });
+  tbody.addEventListener('mouseleave',e=>{
+    const rt=e.relatedTarget;
+    // Keep visible if leaving to the pill button (which has pointer-events:auto)
+    if(rt&&_pill&&_pill.contains(rt)) return;
+    hidePill(); _hovTd=null;
+  });
+  tbody.addEventListener('mousedown',()=>{hidePill();_hovTd=null;});
+}
+
+function showPillForCell(td, ctx){
+  const action=colAction(td,ctx);
+  if(!action||!ctx){hidePill();return;}
+  const rect=td.getBoundingClientRect();
+  _pill.style.top=(rect.bottom-9)+'px';
+  _pill.style.transform='none';
+
+  _pill.style.left=rect.left+'px';
+  _pill.style.width=rect.width+'px';
+  const label=action==='add-effect'?'＋ Effect':'＋ Cause';
+  const cls  =action==='add-effect'?'spec-insert-section':'spec-insert-item';
+  _pill.innerHTML=`<div class="spec-insert-line" style="pointer-events:none"></div><button class="spec-insert-plus ${cls}" data-action="${action}" style="pointer-events:auto">${label}</button><div class="spec-insert-line" style="pointer-events:none"></div>`;
+  _pill.style.display='flex';
+  const btn=_pill.querySelector(`[data-action="${action}"]`);
+  btn.addEventListener('click',()=>{
+    hidePill();
+    if(action==='add-effect'){
+      addEffectRow(ctx.fm, ctx.type==='effect'?ctx.eff:null);
+    } else {
+      const parentId=ctx.type==='effect'?ctx.eff.id
+                    :ctx.type==='cause' ?ctx.cause.parent_row_id
+                    :ctx.fm.id;
+      addCauseRow(parentId, ctx.fm, ctx.type==='cause'?ctx.cause:null);
+    }
+  });
+  btn.addEventListener('mouseleave',e=>{
+    if(!(e.relatedTarget&&_activeTbody&&_activeTbody.contains(e.relatedTarget))) hidePill();
+  });
+}
+
+function hidePill(){
+  if(_pill) _pill.style.display='none';
 }
 
 // ── Sync from System ──────────────────────────────────────────────────────────

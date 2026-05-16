@@ -6,7 +6,7 @@ CREATE TABLE review_artifact_verdicts (
   session_id      UUID REFERENCES review_sessions(id) ON DELETE CASCADE,
   snapshot_id     UUID REFERENCES review_artifact_snapshots(id) ON DELETE CASCADE,
   reviewer_id     UUID REFERENCES auth.users(id),
-  verdict         TEXT CHECK (verdict IN ('go','conditional','no_go')),
+  verdict         TEXT CHECK (verdict IN ('ok','nok','partially_ok')),
   verdict_comment TEXT,
   updated_at      TIMESTAMPTZ DEFAULT now(),
   UNIQUE (snapshot_id, reviewer_id)

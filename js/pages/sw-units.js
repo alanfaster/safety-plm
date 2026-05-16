@@ -8,7 +8,7 @@ import { setBreadcrumb } from '../components/topbar.js';
 import { toast } from '../toast.js';
 import { showModal, hideModal } from '../components/modal.js';
 import { copyElementLink, scrollToAnchor } from '../deep-link.js';
-import { loadColConfig, saveColConfig, wireColMgr } from '../components/col-mgr.js';
+import { loadColConfig, saveColConfig, wireColMgr, wireColResize, wirePanelResize } from '../components/col-mgr.js';
 import { buildFilterRowHTML, applyColFilters, wireColFilterIcons } from '../components/col-filter.js';
 import { showVersionHistory } from '../components/version-history.js';
 import { createTracePanel } from '../components/trace-panel.js';
@@ -97,6 +97,13 @@ export async function renderSwUnits(container, ctx) {
           <button class="btn btn-secondary" id="swu-btn-upload">⬆ Upload Code (ZIP)</button>
           <button class="btn btn-primary" id="swu-btn-new">＋ New SW Unit</button>
         </div>
+      </div>
+      <div class="page-tabs-bar">
+        <div class="page-tabs">
+          <button class="page-tab active" data-tab="list">All SW Units</button>
+          <button class="page-tab" data-tab="reviews">Reviews</button>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-start-review-swu">✓ Start Review</button>
       </div>
     </div>
     <div class="page-body spec-page-body" id="swu-outer">
@@ -245,15 +252,94 @@ export async function renderSwUnits(container, ctx) {
     if (_selectedUnitId) _tp.openPanel(_selectedUnitId);
   };
 
+  // Enable sticky column headers: spec-content must own the scroll, not outer #content
+  const _contentEl = document.getElementById('content');
+  if (_contentEl) {
+    _contentEl.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;height:100%';
+    window.addEventListener('hashchange', () => { _contentEl.style.cssText = ''; }, { once: true });
+  }
+
   document.getElementById('swu-btn-new').onclick    = () => openForm(null);
   document.getElementById('swu-form-close').onclick  = closeForm;
   document.getElementById('swu-form-cancel').onclick = closeForm;
   document.getElementById('swu-btn-upload').onclick  = () => openUploadModal();
   document.getElementById('swu-props-close').onclick = e => { e.stopPropagation(); closePropsPanel(); };
+  wirePanelResize(document.getElementById('swu-props-panel'), `swu_props_${ctx.parentId ?? ctx.item?.id}`);
   document.getElementById('swu-props-panel').addEventListener('click', e => {
     const panel = document.getElementById('swu-props-panel');
     if (!panel.classList.contains('open') && !e.target.closest('button')) panel.classList.add('open');
   });
+
+  container.querySelectorAll('.page-tab').forEach(tab => {
+    tab.onclick = () => {
+      container.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const isReviews = tab.dataset.tab === 'reviews';
+      document.getElementById('swu-btn-upload').style.display = isReviews ? 'none' : '';
+      document.getElementById('swu-btn-new').style.display    = isReviews ? 'none' : '';
+      document.getElementById('btn-start-review-swu').style.display = isReviews ? 'none' : '';
+      document.getElementById('swu-props-panel')?.classList.toggle('req-trace-panel--hidden', isReviews);
+      if (isReviews) renderSwuPageReviews();
+      else loadUnits();
+    };
+  });
+
+  document.getElementById('btn-start-review-swu').onclick = () => {
+    _allUnits.forEach(u => _selection.add(u.id));
+    syncBulkBar();
+    renderTable();
+  };
+
+  async function renderSwuPageReviews() {
+    const wrap = document.getElementById('swu-list-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = `<div class="content-loading"><div class="spinner"></div></div>`;
+    try {
+    const itemId = item?.id ?? ctx.parentId;
+    const base = `/project/${project.id}/item/${itemId}`;
+    const unitIds = _allUnits.map(u => u.id);
+    let sessions = [];
+    if (unitIds.length) {
+      const { data: snaps } = await sb.from('review_artifact_snapshots')
+        .select('session_id').eq('artifact_type', 'sw_units').in('artifact_id', unitIds);
+      const sessionIds = [...new Set((snaps || []).map(s => s.session_id))];
+      if (sessionIds.length) {
+        const { data } = await sb.from('review_sessions')
+          .select('*, review_protocol_templates(name)').in('id', sessionIds)
+          .order('created_at', { ascending: false });
+        sessions = data || [];
+      }
+    }
+    const STATUS_BADGE = { planned:'badge-draft', in_progress:'badge-review', completed:'badge-approved', cancelled:'badge-deprecated' };
+    if (!sessions.length) {
+      wrap.innerHTML = `<div class="card"><div class="card-body"><div class="diagram-area">
+        <div class="diagram-area-icon">📋</div>
+        <p>No reviews yet for these SW units.</p>
+        <p class="text-muted" style="font-size:12px">Click <strong>✓ Start Review</strong> to create one.</p>
+      </div></div></div>`;
+      return;
+    }
+    wrap.innerHTML = `<div class="card"><div class="card-body" style="padding:0">
+      <table class="data-table"><thead><tr>
+        <th>Title</th><th>Type</th><th>Template</th><th>Status</th><th>Date</th><th></th>
+      </tr></thead><tbody>
+        ${sessions.map(s => `<tr>
+          <td>${escHtml(s.title)}</td>
+          <td><span class="badge" style="text-transform:capitalize">${escHtml(s.review_type||'')}</span></td>
+          <td>${escHtml(s.review_protocol_templates?.name||'—')}</td>
+          <td><span class="badge ${STATUS_BADGE[s.status]||''}">${escHtml(s.status||'')}</span></td>
+          <td>${s.planned_date||'—'}</td>
+          <td><button class="btn btn-ghost btn-xs rv-open-btn" data-id="${s.id}">Open</button></td>
+        </tr>`).join('')}
+      </tbody></table></div></div>`;
+    wrap.querySelectorAll('.rv-open-btn').forEach(btn => {
+      btn.onclick = () => navigate(`${base}/reviews/${btn.dataset.id}/execute`);
+    });
+    } catch (err) {
+      console.error('renderSwuPageReviews error:', err);
+      wrap.innerHTML = `<div style="padding:24px;color:var(--color-danger)">Error loading reviews: ${err.message}</div>`;
+    }
+  }
 
   document.getElementById('swu-bulk-cancel').onclick = () => {
     _selection.clear();
@@ -461,7 +547,7 @@ export async function renderSwUnits(container, ctx) {
 
   // ── Column definitions ───────────────────────────────────────────────────────
   const COL_KEY = `swu_${project.id}_${parentId}`;
-  const SKIP_FILTER = new Set(['drag', 'select', 'actions']);
+  const SKIP_FILTER = new Set(['drag', 'select']);
 
   const BUILTIN_COLS = [
     { id:'drag',         name:'',        visible:true,  fixed:true  },
@@ -474,15 +560,13 @@ export async function renderSwUnits(container, ctx) {
     { id:'version',      name:'Version', visible:true,  fixed:false },
     { id:'status',       name:'Status',  visible:true,  fixed:false },
     { id:'needs_review', name:'Review',  visible:true,  fixed:false },
-    { id:'actions',      name:'',        visible:true,  fixed:true  },
   ];
 
   let _cols = loadColConfig(COL_KEY, BUILTIN_COLS);
   _cols = [
     ..._cols.filter(c => c.id === 'drag'),
     ..._cols.filter(c => c.id === 'select'),
-    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select' && c.id !== 'actions'),
-    ..._cols.filter(c => c.id === 'actions'),
+    ..._cols.filter(c => c.id !== 'drag' && c.id !== 'select'),
   ];
   let _filters   = {};
   let _allUnits  = [];
@@ -512,8 +596,19 @@ export async function renderSwUnits(container, ctx) {
 
   function renderTd(colId, u) {
     switch (colId) {
-      case 'drag':         return `<td data-col="drag" class="req-drag-cell" style="vertical-align:top;padding-top:6px"><span class="req-drag-handle" title="Drag to reorder">⠿</span></td>`;
-      case 'select':       return `<td data-col="select" style="width:28px;padding:10px 6px 0;text-align:center;vertical-align:top"><input type="checkbox" class="swu-row-chk" data-id="${u.id}" ${_selection.has(u.id)?'checked':''} title="Select"/></td>`;
+      case 'drag':
+        return `<td data-col="drag" class="req-drag-cell" style="vertical-align:middle;text-align:center;padding:4px 2px;position:relative">
+          <button class="btn btn-ghost btn-xs drag-col-del btn-del-swu" data-id="${u.id}" title="Delete" style="position:absolute;top:4px;left:50%;transform:translateX(-50%)">✕</button>
+          <span class="req-drag-handle" title="Drag to reorder">⠿</span>
+        </td>`;
+      case 'select':
+        return `<td data-col="select" style="width:36px;padding:6px 4px;text-align:center;vertical-align:top">
+          <input type="checkbox" class="swu-row-chk" data-id="${u.id}" ${_selection.has(u.id)?'checked':''} title="Select" style="display:block;margin:0 auto 4px"/>
+          <div class="spec-row-acts">
+            <button class="btn btn-ghost btn-xs btn-link-swu"  data-id="${u.id}" title="Copy link"       style="padding:1px 3px">🔗</button>
+            <button class="btn btn-ghost btn-xs btn-hist-swu"  data-id="${u.id}" title="Version history" style="padding:1px 3px">🕐</button>
+          </div>
+        </td>`;
       case 'unit_code':    return `<td data-col="unit_code"><span class="mono">${escHtml(u.unit_code)}</span></td>`;
       case 'name':         return `<td data-col="name">${escHtml(u.name)}</td>`;
       case 'unit_type':    return `<td data-col="unit_type"><span class="badge badge-draft" style="font-size:10px">${escHtml(allUnitTypes.find(t=>t.id===u.unit_type)?.label||u.unit_type||'—')}</span></td>`;
@@ -524,11 +619,6 @@ export async function renderSwUnits(container, ctx) {
       case 'needs_review': return `<td data-col="needs_review">${u.needs_review
         ? `<span class="badge badge-review swu-needs-review-badge" data-id="${u.id}" style="cursor:pointer">⚠ Changed</span>`
         : '<span class="text-muted">—</span>'}</td>`;
-      case 'actions':      return `<td data-col="actions" class="actions-cell">
-        <button class="btn btn-ghost btn-xs btn-link-swu"  data-id="${u.id}" title="Copy link">🔗</button>
-        <button class="btn btn-ghost btn-xs btn-hist-swu"  data-id="${u.id}" title="Version history">🕐</button>
-        <button class="btn btn-ghost btn-xs btn-del-swu"   data-id="${u.id}" title="Delete" style="color:var(--color-danger)">✕</button>
-      </td>`;
       default: return `<td data-col="${escHtml(colId)}"></td>`;
     }
   }
@@ -574,6 +664,17 @@ export async function renderSwUnits(container, ctx) {
     wireColMgr(theadRowEl, tableEl, COL_KEY, _cols, updatedCols => {
       _cols = updatedCols;
       renderTable();
+    });
+    wireColResize(theadRowEl);
+    requestAnimationFrame(() => {
+      const fitBtn = wrap.querySelector('.col-fit-btn');
+      const headerRight = document.querySelector('.page-header-top > div:last-child');
+      if (fitBtn && headerRight) {
+        headerRight.querySelectorAll('.col-fit-btn').forEach(b => b.remove());
+        headerRight.appendChild(fitBtn);
+      }
+      const theadH = theadRowEl?.offsetHeight ?? 37;
+      tableEl?.style.setProperty('--spec-thead-h', theadH + 'px');
     });
 
     // Action buttons via event delegation

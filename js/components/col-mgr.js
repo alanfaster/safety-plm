@@ -354,8 +354,6 @@ export function wirePanelResize(panelEl, key, {
 
 const MIN_COL_W = 8;
 
-export function loadColWidths()  { return {}; } // no persistence by design
-export function saveColWidths()  {}             // no-op
 
 export function wireColResize(theadRow, { onResize } = {}) {
   const tableEl  = theadRow.closest('table');

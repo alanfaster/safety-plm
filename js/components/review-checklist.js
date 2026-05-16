@@ -25,7 +25,7 @@ import {
   SEVERITY_LABELS, SEVERITY_CLASSES,
 } from './finding-constants.js';
 
-const VERDICT_LABELS  = { ok:'OK', nok:'NOK', partially_ok:'Partially OK', na:'N/A' };
+const VERDICT_LABELS  = { ok:'OK', nok:'NOK', partially_ok:'Partly OK', na:'N/A' };
 const VERDICT_CLASSES = { ok:'sel-ok', nok:'sel-nok', partially_ok:'sel-partially_ok', na:'sel-na' };
 
 const ARTIFACT_FINAL_LABELS  = { go:'GO', conditional:'Conditional', no_go:'NO-GO' };
@@ -376,23 +376,31 @@ export function mountReviewChecklist(container, opts) {
         const itemId  = btn.dataset.itemId;
         const verdict = btn.dataset.verdict;
         const itemEl  = container.querySelector(`.rvck-item[data-item-id="${itemId}"]`);
+        const current = responseIndex[itemId]?.[currentUserId]?.verdict;
+
+        // Clicking the already-active verdict deselects it
+        const newVerdict = current === verdict ? null : verdict;
 
         itemEl?.querySelectorAll('.rvck-vbtn').forEach(b => b.classList.remove(...Object.values(VERDICT_CLASSES), 'active'));
-        btn.classList.add(VERDICT_CLASSES[verdict], 'active');
-        if (itemEl) itemEl.dataset.verdict = verdict;
+        if (newVerdict) {
+          btn.classList.add(VERDICT_CLASSES[newVerdict], 'active');
+          if (itemEl) itemEl.dataset.verdict = newVerdict;
+        } else {
+          if (itemEl) delete itemEl.dataset.verdict;
+        }
 
         const raiseForm = itemEl?.querySelector(`.rvck-inline-raise-form[data-item-id="${itemId}"]`);
-        const needsForm = verdict === 'nok' || verdict === 'partially_ok';
+        const needsForm = newVerdict === 'nok' || newVerdict === 'partially_ok';
         if (raiseForm) raiseForm.style.display = needsForm ? '' : 'none';
 
         if (!responseIndex[itemId]) responseIndex[itemId] = {};
         if (!responseIndex[itemId][currentUserId]) responseIndex[itemId][currentUserId] = {};
-        responseIndex[itemId][currentUserId].verdict = verdict;
+        responseIndex[itemId][currentUserId].verdict = newVerdict;
 
         const desc = itemEl?.querySelector(`.rvck-raise-desc[data-item-id="${itemId}"]`)?.value || '';
-        await saveResponse(itemId, verdict, desc);
+        await saveResponse(itemId, newVerdict, desc);
         updateSectionProgress(itemId);
-        onSaved?.({ snapshotId: ckSnap.id, itemId, verdict, comment: desc });
+        onSaved?.({ snapshotId: ckSnap.id, itemId, verdict: newVerdict, comment: desc });
       });
     });
 
