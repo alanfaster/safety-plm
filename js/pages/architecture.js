@@ -3542,11 +3542,13 @@ function renderArchTree() {
     });
   });
 
-  // Helper: show inline input after a tree row and save as FM or function
-  function inlineInput(afterEl, placeholder, onSave){
+  // Helper: show inline input inserted after afterEl (or appended to container)
+  function inlineInput(afterEl, placeholder, onSave, appendTo=null){
     const inp=document.createElement('input');
     inp.className='arch-tree-fm-inp'; inp.placeholder=placeholder;
-    afterEl.insertAdjacentElement('afterend',inp); inp.focus();
+    if(appendTo) appendTo.appendChild(inp);
+    else afterEl.insertAdjacentElement('afterend',inp);
+    inp.focus();
     const save=async()=>{ const v=inp.value.trim(); inp.remove(); if(v) await onSave(v); };
     inp.addEventListener('blur',save);
     inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();inp.blur();}if(e.key==='Escape')inp.remove();});
@@ -3557,8 +3559,16 @@ function renderArchTree() {
     btn.addEventListener('click',e=>{
       e.stopPropagation();
       const compId=btn.dataset.addFn;
-      const row=btn.closest('.arch-tree-row');
-      inlineInput(row,'Function name…',async v=>{
+      // Expand component if collapsed so children are visible
+      if(col.has(compId)){ col.delete(compId); renderArchTree(); }
+      // Input goes after the last fn-entry / fn-fms sibling (= end of function list)
+      const compNode=body.querySelector(`[data-cid="${compId}"]`);
+      if(!compNode) return;
+      let afterEl=compNode, sib=compNode.nextElementSibling;
+      while(sib&&(sib.classList.contains('arch-tree-fn-entry')||sib.hasAttribute('data-fn-fms'))){
+        afterEl=sib; sib=sib.nextElementSibling;
+      }
+      inlineInput(afterEl,'Function name…',async v=>{
         const comp=_s.components.find(c=>c.id===compId); if(!comp) return;
         const {data:fn}=await sb.from('arch_functions').insert({
           component_id:compId, name:v, is_safety_related:false,
@@ -3576,8 +3586,16 @@ function renderArchTree() {
     btn.addEventListener('click',e=>{
       e.stopPropagation();
       const compId=btn.dataset.addCompFm;
-      const row=btn.closest('.arch-tree-row');
-      inlineInput(row,'Component failure mode…',async v=>{
+      // Expand component if collapsed
+      if(col.has(compId)){ col.delete(compId); renderArchTree(); }
+      // Input goes after the last fn-entry / fn-fms / fm-direct sibling
+      const compNode=body.querySelector(`[data-cid="${compId}"]`);
+      if(!compNode) return;
+      let afterEl=compNode, sib=compNode.nextElementSibling;
+      while(sib&&(sib.classList.contains('arch-tree-fn-entry')||sib.hasAttribute('data-fn-fms')||sib.classList.contains('arch-tree-fm-direct'))){
+        afterEl=sib; sib=sib.nextElementSibling;
+      }
+      inlineInput(afterEl,'Component failure mode…',async v=>{
         const {data:newFm}=await sb.from('arch_function_fms').insert({
           component_id:compId, failure_mode:v, sort_order:99,
         }).select().single();
@@ -3596,8 +3614,19 @@ function renderArchTree() {
     btn.addEventListener('click',e=>{
       e.stopPropagation();
       const fnId=btn.dataset.fnid, compId=btn.dataset.compid;
-      const row=btn.closest('.arch-tree-row');
-      inlineInput(row,'Failure mode…',async v=>{
+      // Expand fn section if collapsed so fn-fms div is visible
+      if(fnCol.has(fnId)){ fnCol.delete(fnId); renderArchTree(); }
+      // Input goes at end of fn-fms container (after last FM, or appended if empty)
+      const fnFmsDiv=body.querySelector(`[data-fn-fms="${fnId}"]`);
+      if(fnFmsDiv){
+        const last=fnFmsDiv.lastElementChild;
+        if(last) inlineInput(last,'Failure mode…',save);
+        else inlineInput(null,'Failure mode…',save,fnFmsDiv);
+      } else {
+        // Fallback (shouldn't happen after expand)
+        inlineInput(btn.closest('.arch-tree-row'),'Failure mode…',save);
+      }
+      async function save(v){
         const {data:newFm}=await sb.from('arch_function_fms').insert({
           function_id:fnId, failure_mode:v, sort_order:99,
         }).select().single();
@@ -3608,7 +3637,7 @@ function renderArchTree() {
           renderArchTree();
           if(_s.selected===compId) openProps(compId);
         }
-      });
+      }
     });
   });
 
