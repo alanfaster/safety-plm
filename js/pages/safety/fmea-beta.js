@@ -1,9 +1,7 @@
 // NEW FMEA Beta — graph-based functional failure modeling
 // Prototype: interactive node graph with failure injection simulation
 
-import { getSupabase } from '../../supabase.js';
-
-const sb = getSupabase();
+import { sb } from '../../config.js';
 
 // ── Palette ────────────────────────────────────────────────────────────────────
 const C = {
@@ -829,7 +827,6 @@ function wireLeftPanel() {
 }
 
 function wireTabBar() {
-  const bar = document.querySelector('[data-tab]')?.closest('div');
   document.querySelectorAll('.fmea-tab').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
