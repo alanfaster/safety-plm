@@ -1,70 +1,132 @@
-// NEW FMEA Beta — functional dependency graph
-// Nodes = functional elements  |  Edges = dependency/propagation paths
-// Own data model, independent from arch_components
+// NEW FMEA Beta v2
+// Nodes   = arch_functions (grouped by arch_components)
+// Edges   = fmea_function_edges (functional dependencies)
+// FMs     = arch_function_fms (reused)
+// Rules   = fmea_propagation_rules (auto-inferred, editable)
+// Config  = fmea_node_config (canvas pos + cut mechanisms)
 
 import { sb } from '../../config.js';
 
-// ── Palette ────────────────────────────────────────────────────────────────────
+// ── Light palette ──────────────────────────────────────────────────────────────
 const C = {
-  bg:        '#0f1117',
-  surface:   '#1a1d27',
-  surface2:  '#22263a',
-  border:    '#2e3350',
-  borderHov: '#4a5080',
-  text:      '#e8eaf6',
-  textMuted: '#6b7db3',
-  textDim:   '#3d4a70',
-  primary:   '#5c6bc0',
-  accent:    '#00e5ff',
-  green:     '#00e676',
-  orange:    '#ff9100',
-  red:       '#ff1744',
-  yellow:    '#ffea00',
-  purple:    '#d500f9',
+  bg:          '#f5f6fa',
+  canvas:      '#ffffff',
+  surface:     '#ffffff',
+  surface2:    '#f0f2f8',
+  border:      '#dde1f0',
+  borderHov:   '#9099c8',
+  text:        '#1a1f3a',
+  textMuted:   '#5a6490',
+  textDim:     '#9aa3c8',
+  primary:     '#4f5fc4',
+  primaryLight:'#eef0fb',
+  accent:      '#0090d4',
+  accentLight: '#e6f4fc',
+  green:       '#1a8f5c',
+  greenLight:  '#e6f6ee',
+  orange:      '#c45f00',
+  orangeLight: '#fff3e6',
+  red:         '#c4002a',
+  redLight:    '#fde8ed',
+  yellow:      '#9a7400',
+  yellowLight: '#fffbe6',
+  purple:      '#7c3dc4',
+  purpleLight: '#f3ecfb',
+  shadow:      '0 2px 8px rgba(79,95,196,.10)',
+  shadowHov:   '0 4px 16px rgba(79,95,196,.18)',
 };
 
-const NODE_TYPES = {
-  function:       { icon: 'λ',  label: 'Function',       color: C.accent  },
-  sensor:         { icon: '◉',  label: 'Sensor',         color: C.green   },
-  actuator:       { icon: '⬡',  label: 'Actuator',       color: C.orange  },
-  controller:     { icon: '⬟',  label: 'Controller',     color: C.primary },
-  bus:            { icon: '⇌',  label: 'Bus / Network',  color: C.purple  },
-  power:          { icon: '⚡',  label: 'Power Supply',   color: C.yellow  },
-  safety_monitor: { icon: '⊕',  label: 'Safety Monitor', color: C.red     },
-  external:       { icon: '□',  label: 'External',       color: C.textMuted },
-};
-
+// ── Constants ──────────────────────────────────────────────────────────────────
 const EDGE_TYPES = {
-  depends_on:       { label: 'Depends on',      dash: ''    },
-  controls:         { label: 'Controls',         dash: ''    },
-  monitors:         { label: 'Monitors',         dash: '6,3' },
-  powers:           { label: 'Powers',           dash: ''    },
-  communicates_with:{ label: 'Communicates',     dash: '3,3' },
-  triggers:         { label: 'Triggers',         dash: '8,2,2,2' },
+  depends_on:        { label: 'Depends on',    dash: '',        color: C.primary },
+  controls:          { label: 'Controls',      dash: '',        color: C.orange  },
+  monitors:          { label: 'Monitors',      dash: '6,3',     color: C.green   },
+  powers:            { label: 'Powers',        dash: '',        color: C.yellow  },
+  communicates_with: { label: 'Communicates',  dash: '3,3',     color: C.purple  },
+  triggers:          { label: 'Triggers',      dash: '8,2,2,2', color: C.accent  },
 };
 
-const NODE_W = 160;
-const NODE_H = 80;
+// Inference table: FM keyword × edge_type → effect template
+const INFER = {
+  missing: {
+    depends_on:        'Missing input → function cannot execute',
+    controls:          'Loss of control signal → uncontrolled behavior',
+    monitors:          'Loss of monitoring → fault goes undetected',
+    powers:            'Loss of power → function unavailable',
+    communicates_with: 'Communication loss → missing data at receiver',
+    triggers:          'Missing trigger → function not activated',
+  },
+  incorrect: {
+    depends_on:        'Incorrect input → incorrect output produced',
+    controls:          'Incorrect control → erroneous behavior',
+    monitors:          'Incorrect monitoring → wrong diagnostic result',
+    powers:            'Incorrect voltage/current → degraded operation',
+    communicates_with: 'Corrupted data → incorrect processing at receiver',
+    triggers:          'Incorrect trigger → wrong activation sequence',
+  },
+  delayed: {
+    depends_on:        'Delayed input → delayed output',
+    controls:          'Delayed control → late system response',
+    monitors:          'Delayed monitoring → late fault detection',
+    powers:            'Power delay → startup failure',
+    communicates_with: 'Communication delay → timing violation',
+    triggers:          'Delayed trigger → late activation',
+  },
+  intermittent: {
+    depends_on:        'Intermittent input → sporadic failure of function',
+    controls:          'Intermittent control → unstable behavior',
+    monitors:          'Intermittent monitoring → unreliable diagnostics',
+    powers:            'Intermittent power → repeated restarts',
+    communicates_with: 'Intermittent communication → sporadic data loss',
+    triggers:          'Intermittent trigger → sporadic activation failures',
+  },
+  unstable: {
+    depends_on:        'Unstable input → unstable output',
+    controls:          'Unstable control → oscillation or instability',
+    monitors:          'Unstable monitoring → fluctuating diagnostics',
+    powers:            'Unstable power → erratic operation',
+    communicates_with: 'Unstable communication → intermittent data errors',
+    triggers:          'Unstable trigger → repeated unintended activations',
+  },
+};
+
+function inferEffect(fmText, edgeType) {
+  const fm = (fmText || '').toLowerCase();
+  const key = fm.includes('miss') || fm.includes('absent') || fm.includes('loss') ? 'missing'
+    : fm.includes('incorrect') || fm.includes('wrong') || fm.includes('erron') ? 'incorrect'
+    : fm.includes('delay') || fm.includes('late') || fm.includes('slow') ? 'delayed'
+    : fm.includes('intermit') || fm.includes('sporadic') ? 'intermittent'
+    : fm.includes('unstable') || fm.includes('oscillat') ? 'unstable'
+    : 'incorrect';
+  return (INFER[key] || INFER.incorrect)[edgeType] || 'Failure propagated to dependent function';
+}
+
+// ── Layout constants ───────────────────────────────────────────────────────────
+const FN_W  = 152;
+const FN_H  = 68;
+const COMP_PAD = 14;
+const COMP_HEADER = 28;
+const COL_W = 220;
+const ROW_H = 100;
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let _ctx = null;
 let _s = {
-  nodes: [],
-  edges: [],
-  fms: {},        // nodeId → [fm, ...]
-  propRules: {},  // edgeId → [rule, ...]
+  comps:      [],   // arch_components
+  fns:        [],   // arch_functions enriched with _fms, _cfg
+  edges:      [],   // fmea_function_edges enriched with _rules
+  cfgMap:     {},   // fnId → fmea_node_config row
   selectedId: null,
-  selectedType: null,  // 'node' | 'edge'
-  pan: { x: 80, y: 80 },
-  zoom: 1,
-  connecting: null,   // { fromId, fromX, fromY, curX, curY }
-  draggingNode: null,
-  injected: null,     // { nodeId, fmId }
-  propagated: {},     // nodeId → { level, path, effects[] }
-  activeTab: 'graph',
+  selType:    null, // 'fn' | 'edge'
+  pan:        { x: 40, y: 40 },
+  zoom:       1,
+  connecting: null,
+  injected:   null,   // { fnId, fmId }
+  propagated: {},     // fnId → { level, cut, cutReason, path, effects }
+  activeTab:  'graph',
 };
 
-// ── Entry point ────────────────────────────────────────────────────────────────
+// ── Entry ──────────────────────────────────────────────────────────────────────
 export async function renderFmeaBeta(container, ctx) {
   _ctx = ctx;
   const { item, system } = ctx;
@@ -72,110 +134,191 @@ export async function renderFmeaBeta(container, ctx) {
 
   container.innerHTML = `
     <div id="fb-root" style="display:flex;flex-direction:column;height:100%;
-      background:${C.bg};color:${C.text};font-family:'Inter',system-ui,sans-serif;overflow:hidden;">
-      ${topbar(scope)}
+      background:${C.bg};color:${C.text};font-family:'Inter',system-ui,sans-serif;overflow:hidden;
+      font-size:13px;">
+      ${buildTopbar(scope)}
       <div style="display:flex;flex:1;overflow:hidden;">
-        ${leftPanel()}
+        ${buildLeft()}
         <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
-          ${tabBar()}
+          ${buildTabBar()}
           <div id="fb-center" style="flex:1;position:relative;overflow:hidden;">
-            ${canvasHTML()}
-            ${tableHTML()}
+            ${buildCanvas()}
+            ${buildTableWrap()}
           </div>
         </div>
-        ${rightPanel()}
+        ${buildRight()}
       </div>
-    </div>
-  `;
+    </div>`;
 
-  await load();
+  await loadData();
+  autoLayout();
   wire();
   renderAll();
 }
 
 // ── Load ───────────────────────────────────────────────────────────────────────
-async function load() {
-  const { parentType, parentId } = _ctx;
-  const [nRes, eRes, fRes, rRes] = await Promise.all([
-    sb.from('fmea_nodes').select('*').eq('parent_type', parentType).eq('parent_id', parentId).order('created_at'),
-    sb.from('fmea_edges').select('*').eq('project_id', _ctx.project.id),
-    sb.from('fmea_failure_modes').select('*').eq('project_id', _ctx.project.id).order('sort_order'),
+async function loadData() {
+  const { parentType, parentId, project } = _ctx;
+
+  const [cRes, fmRes, cfgRes, edgeRes, ruleRes] = await Promise.all([
+    sb.from('arch_components').select('*').eq('parent_type', parentType).eq('parent_id', parentId).order('sort_order'),
+    sb.from('arch_function_fms').select('*').eq('project_id', project.id),
+    sb.from('fmea_node_config').select('*').eq('parent_type', parentType).eq('parent_id', parentId),
+    sb.from('fmea_function_edges').select('*').eq('parent_type', parentType).eq('parent_id', parentId),
     sb.from('fmea_propagation_rules').select('*'),
   ]);
-  _s.nodes = nRes.data || [];
-  // filter edges to only those between our nodes
-  const nids = new Set(_s.nodes.map(n => n.id));
-  _s.edges = (eRes.data || []).filter(e => nids.has(e.source_id) && nids.has(e.target_id));
-  _s.fms = {};
-  (fRes.data || []).forEach(fm => { (_s.fms[fm.node_id] ||= []).push(fm); });
-  _s.propRules = {};
-  const eids = new Set(_s.edges.map(e => e.id));
-  (rRes.data || []).filter(r => eids.has(r.edge_id)).forEach(r => { (_s.propRules[r.edge_id] ||= []).push(r); });
+
+  _s.comps = cRes.data || [];
+  const compIds = _s.comps.map(c => c.id);
+
+  let allFns = [];
+  if (compIds.length) {
+    const { data } = await sb.from('arch_functions').select('*').in('component_id', compIds).order('sort_order');
+    allFns = data || [];
+  }
+
+  // Build maps
+  const fmsByFn = {};
+  (fmRes.data || []).forEach(fm => { (fmsByFn[fm.function_id] ||= []).push(fm); });
+
+  _s.cfgMap = {};
+  (cfgRes.data || []).forEach(c => { _s.cfgMap[c.fn_id] = c; });
+
+  const rulesByEdge = {};
+  (ruleRes.data || []).forEach(r => { (rulesByEdge[r.edge_id] ||= []).push(r); });
+
+  _s.fns = allFns.map(f => ({
+    ...f,
+    _fms: fmsByFn[f.id] || [],
+    _cfg: _s.cfgMap[f.id] || null,
+  }));
+
+  const fnIds = new Set(_s.fns.map(f => f.id));
+  _s.edges = (edgeRes.data || [])
+    .filter(e => fnIds.has(e.source_fn_id) && fnIds.has(e.target_fn_id))
+    .map(e => ({ ...e, _rules: rulesByEdge[e.id] || [] }));
+
   _s.injected   = null;
   _s.propagated = {};
-  log('Model loaded', `${_s.nodes.length} nodes · ${_s.edges.length} edges`);
+}
+
+// ── Auto-layout: arrange fns inside component boxes ───────────────────────────
+function autoLayout() {
+  // Only position fns that have no saved config yet
+  const needsPos = _s.fns.filter(f => !_s.cfgMap[f.id]);
+  if (!needsPos.length) return;
+
+  // Group by component
+  const byComp = {};
+  _s.comps.forEach(c => { byComp[c.id] = []; });
+  _s.fns.forEach(f => { (byComp[f.component_id] ||= []).push(f); });
+
+  let cx = COMP_PAD, cy = COMP_PAD;
+  const colLimit = 4;
+  let col = 0;
+
+  _s.comps.forEach(comp => {
+    const fns = byComp[comp.id] || [];
+    const cols = Math.min(fns.length, 2);
+    const rows = Math.ceil(fns.length / cols);
+    const boxW = COMP_PAD * 2 + cols * FN_W + (cols - 1) * 12;
+    const boxH = COMP_HEADER + COMP_PAD + rows * FN_H + (rows - 1) * 10 + COMP_PAD;
+
+    comp._bx = cx;
+    comp._by = cy;
+    comp._bw = Math.max(boxW, 160);
+    comp._bh = Math.max(boxH, 80);
+
+    fns.forEach((fn, i) => {
+      const col2 = i % cols;
+      const row  = Math.floor(i / cols);
+      fn._x = cx + COMP_PAD + col2 * (FN_W + 12);
+      fn._y = cy + COMP_HEADER + COMP_PAD + row * (FN_H + 10);
+    });
+
+    col++;
+    if (col >= colLimit) {
+      col = 0;
+      cx  = COMP_PAD;
+      cy += comp._bh + 32;
+    } else {
+      cx += comp._bw + 32;
+    }
+  });
+}
+
+function fnPos(fn) {
+  const cfg = _s.cfgMap[fn.id];
+  return cfg ? { x: cfg.x, y: cfg.y } : { x: fn._x || 0, y: fn._y || 0 };
 }
 
 // ── HTML builders ──────────────────────────────────────────────────────────────
-function topbar(scope) {
-  return `<div style="display:flex;align-items:center;gap:12px;padding:0 16px;height:48px;
-    flex-shrink:0;background:${C.surface};border-bottom:1px solid ${C.border};">
-    <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:${C.accent};text-transform:uppercase;">NEW FMEA</span>
+function buildTopbar(scope) {
+  return `<div style="display:flex;align-items:center;gap:12px;padding:0 16px;height:46px;
+    flex-shrink:0;background:${C.surface};border-bottom:1px solid ${C.border};box-shadow:0 1px 4px rgba(0,0,0,.06);">
+    <span style="font-size:12px;font-weight:800;letter-spacing:2px;color:${C.primary};text-transform:uppercase;">NEW FMEA</span>
     <span style="color:${C.border};font-size:16px;">|</span>
-    <span style="font-size:11px;font-weight:600;letter-spacing:1px;color:${C.primary};text-transform:uppercase;opacity:.7;">Beta</span>
+    <span style="font-size:10px;font-weight:700;letter-spacing:1px;color:${C.textDim};text-transform:uppercase;">Beta</span>
     <span style="flex:1;"></span>
     <span style="font-size:12px;color:${C.textMuted};">${escH(scope)}</span>
-    <span id="fb-prop-status" style="font-size:11px;color:${C.textMuted};"></span>
-    <button id="fb-clear-btn" style="${btnS(C.surface2)};display:none;">✕ Clear</button>
-    <button id="fb-gen-btn"   style="${btnS(C.primary)};">⚡ Generate DFMEA</button>
+    <span id="fb-prop-status" style="font-size:11px;color:${C.orange};font-weight:600;"></span>
+    <button id="fb-clear-btn" style="${btnS('white',C.border)};display:none;color:${C.textMuted};">✕ Clear injection</button>
+    <button id="fb-gen-btn"   style="${btnS(C.primary,'transparent')};color:white;">⚡ Generate DFMEA</button>
   </div>`;
 }
 
-function leftPanel() {
+function buildLeft() {
   return `<div style="width:220px;flex-shrink:0;background:${C.surface};border-right:1px solid ${C.border};
     display:flex;flex-direction:column;overflow:hidden;">
-    <div style="${sectionHeader()}">Add Node</div>
-    <div style="padding:6px 8px;display:flex;flex-direction:column;gap:3px;">
-      ${Object.entries(NODE_TYPES).map(([k, v]) => `
-        <button class="fb-add-node-btn" data-type="${k}" style="
-          display:flex;align-items:center;gap:8px;
-          background:${C.surface2};border:1px solid ${C.border};border-radius:5px;
-          color:${C.text};font-size:11px;padding:5px 8px;cursor:pointer;text-align:left;
-          transition:border-color .15s;">
-          <span style="color:${v.color};font-size:13px;width:16px;text-align:center;">${v.icon}</span>
-          <span>${v.label}</span>
-        </button>`).join('')}
+    <div style="${secHead()}">System Explorer</div>
+    <div id="fb-fn-list" style="flex:1;overflow-y:auto;padding:4px 6px 8px;"></div>
+    <div style="border-top:1px solid ${C.border};padding:10px 12px;">
+      <div style="${secHead()};padding:0 0 8px;">Inject Failure Mode</div>
+      <div style="font-size:11px;color:${C.textDim};line-height:1.6;">
+        1. Click a function node<br>
+        2. Click a failure mode below its panel<br>
+        3. View propagation on graph
+      </div>
     </div>
-    <div style="${sectionHeader()};margin-top:auto;">System Explorer</div>
-    <div id="fb-node-list" style="flex:1;overflow-y:auto;padding:0 6px 8px;min-height:0;"></div>
   </div>`;
 }
 
-function tabBar() {
+function buildTabBar() {
   return `<div style="display:flex;align-items:center;background:${C.surface};
     border-bottom:1px solid ${C.border};padding:0 16px;height:38px;flex-shrink:0;">
     <button class="fb-tab active" data-tab="graph" style="${tabS(true)}">⬡ Graph</button>
     <button class="fb-tab" data-tab="table" style="${tabS(false)}">⊞ DFMEA Table</button>
     <span style="flex:1;"></span>
-    <span style="font-size:11px;color:${C.textDim};">Double-click canvas to add node · Drag node border to connect</span>
+    <span style="font-size:11px;color:${C.textDim};">Drag ● on node edge to connect · Click edge to configure · Delete key removes selection</span>
   </div>`;
 }
 
-function canvasHTML() {
+function buildCanvas() {
   return `<div id="fb-canvas" style="position:absolute;inset:0;
-    background:${C.bg};
+    background:${C.canvas};
     background-image:radial-gradient(${C.border} 1px,transparent 1px);
-    background-size:28px 28px;
-    overflow:hidden;cursor:default;">
-    <svg id="fb-svg" style="position:absolute;inset:0;width:100%;height:100%;
-      pointer-events:none;overflow:visible;">
+    background-size:24px 24px;overflow:hidden;cursor:default;">
+    <svg id="fb-svg" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;">
       <defs>
-        <marker id="fb-arrow"        markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="${C.textMuted}"/></marker>
-        <marker id="fb-arrow-active" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="${C.accent}"/></marker>
-        <marker id="fb-arrow-danger" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="${C.red}"/></marker>
-        <filter id="fb-glow-a"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-        <filter id="fb-glow-r"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        ${Object.entries(EDGE_TYPES).map(([k,v]) => `
+          <marker id="arr-${k}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="${v.color}"/>
+          </marker>
+          <marker id="arr-${k}-prop" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0,8 3,0 6" fill="${C.red}"/>
+          </marker>`).join('')}
+        <marker id="arr-drag" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="${C.accent}"/>
+        </marker>
+        <filter id="fb-shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="${C.primary}" flood-opacity=".12"/>
+        </filter>
+        <filter id="fb-glow-red" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="4" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
       </defs>
+      <g id="fb-comp-boxes-g"></g>
       <g id="fb-edges-g"></g>
       <g id="fb-drag-edge-g"></g>
     </svg>
@@ -183,524 +326,666 @@ function canvasHTML() {
     <div id="fb-empty" style="position:absolute;inset:0;display:flex;flex-direction:column;
       align-items:center;justify-content:center;gap:10px;
       color:${C.textDim};font-size:13px;pointer-events:none;">
-      <div style="font-size:40px;opacity:.2;">λ</div>
-      <div>No functional nodes yet.</div>
-      <div style="font-size:11px;">Click a node type on the left, then click on the canvas to place it.</div>
+      <div style="font-size:40px;opacity:.25;">⬡</div>
+      <div style="font-weight:600;">No functions found in this scope.</div>
+      <div style="font-size:11px;">Add components and functions in Architecture Specification first.</div>
     </div>
   </div>`;
 }
 
-function tableHTML() {
+function buildTableWrap() {
   return `<div id="fb-table-wrap" style="position:absolute;inset:0;display:none;
-    background:${C.bg};overflow:auto;padding:20px;">
+    background:${C.bg};overflow:auto;padding:20px 24px;">
     <div id="fb-table-inner"></div>
   </div>`;
 }
 
-function rightPanel() {
-  return `<div style="width:280px;flex-shrink:0;background:${C.surface};
+function buildRight() {
+  return `<div style="width:288px;flex-shrink:0;background:${C.surface};
     border-left:1px solid ${C.border};display:flex;flex-direction:column;overflow:hidden;">
-    <div style="${sectionHeader()}">Properties</div>
+    <div style="${secHead()}">Properties</div>
     <div id="fb-props" style="flex:1;overflow-y:auto;padding:12px 14px;">
-      <div style="color:${C.textDim};font-size:12px;padding-top:8px;">
-        Select a node or edge to inspect.<br><br>
-        <span style="color:${C.textDim};font-size:11px;line-height:1.8;">
-          • Click node → inspect / add FMs<br>
-          • Drag from node edge → create connection<br>
-          • Double-click canvas → add node<br>
-          • Delete key → remove selected
-        </span>
-      </div>
+      ${emptyProps()}
     </div>
   </div>`;
 }
 
-// ── Render ─────────────────────────────────────────────────────────────────────
+function emptyProps() {
+  return `<div style="color:${C.textDim};font-size:12px;padding-top:8px;line-height:1.9;">
+    Select a node or edge.<br>
+    <span style="font-size:11px;">
+      • Click node → inspect / add FMs / inject<br>
+      • Drag ● handle → connect functions<br>
+      • Click edge → configure type + rules<br>
+      • Delete → remove selection
+    </span></div>`;
+}
+
+// ── Render all ─────────────────────────────────────────────────────────────────
 function renderAll() {
-  renderNodeList();
+  renderFnList();
   renderGraph();
   renderProps();
 }
 
-function renderNodeList() {
-  const el = document.getElementById('fb-node-list');
+// ── Left panel fn list ─────────────────────────────────────────────────────────
+function renderFnList() {
+  const el = document.getElementById('fb-fn-list');
   if (!el) return;
-  if (!_s.nodes.length) {
-    el.innerHTML = `<div style="padding:8px 6px;color:${C.textDim};font-size:11px;">No nodes yet</div>`;
-    return;
-  }
-  el.innerHTML = _s.nodes.map(n => {
-    const nt   = NODE_TYPES[n.node_type] || NODE_TYPES.function;
-    const prop = _s.propagated[n.id];
-    const isInj = _s.injected?.nodeId === n.id;
-    const dotC = isInj ? C.orange : prop?.level === 3 ? C.red : prop?.level === 2 ? C.orange : prop?.level === 1 ? C.yellow : C.textDim;
-    const isSel = _s.selectedId === n.id && _s.selectedType === 'node';
-    return `<div class="fb-nl-item" data-id="${n.id}" style="
-      display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:5px;
-      cursor:pointer;margin-bottom:2px;
-      background:${isSel ? C.surface2 : 'transparent'};
-      border:1px solid ${isSel ? C.primary : 'transparent'};transition:background .1s;">
-      <span style="width:7px;height:7px;border-radius:50%;background:${dotC};flex-shrink:0;"></span>
-      <span style="color:${nt.color};font-size:11px;width:14px;text-align:center;">${nt.icon}</span>
-      <span style="font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escH(n.name)}</span>
+  if (!_s.fns.length) { el.innerHTML = `<div style="padding:8px;color:${C.textDim};font-size:11px;">No functions found.</div>`; return; }
+
+  const byComp = {};
+  _s.comps.forEach(c => { byComp[c.id] = { comp: c, fns: [] }; });
+  _s.fns.forEach(f => { (byComp[f.component_id] ||= { comp: null, fns: [] }).fns.push(f); });
+
+  el.innerHTML = Object.values(byComp).filter(g => g.fns.length).map(({ comp, fns }) => {
+    const fnRows = fns.map(fn => {
+      const prop  = _s.propagated[fn.id];
+      const isInj = _s.injected?.fnId === fn.id;
+      const isSel = _s.selectedId === fn.id && _s.selType === 'fn';
+      const dotC  = isInj ? C.orange : prop?.cut ? C.green : prop?.level === 3 ? C.red : prop?.level >= 1 ? C.orange : C.textDim;
+      return `<div class="fb-fn-item" data-id="${fn.id}" style="
+        display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:4px;
+        cursor:pointer;margin-bottom:1px;font-size:11px;
+        background:${isSel ? C.primaryLight : 'transparent'};
+        color:${isSel ? C.primary : C.text};">
+        <span style="width:7px;height:7px;border-radius:50%;background:${dotC};flex-shrink:0;"></span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escH(fn.name)}</span>
+        ${fn._fms.length ? `<span style="font-size:10px;color:${C.textDim};">⚠${fn._fms.length}</span>` : ''}
+      </div>`;
+    }).join('');
+    return `<div style="margin-bottom:6px;">
+      <div style="font-size:10px;font-weight:700;color:${C.textMuted};text-transform:uppercase;
+        letter-spacing:.8px;padding:4px 8px 2px;">${escH(comp?.name || '?')}</div>
+      ${fnRows}
     </div>`;
   }).join('');
 }
 
+// ── Graph ──────────────────────────────────────────────────────────────────────
 function renderGraph() {
-  const nodesG = document.getElementById('fb-nodes-g');
-  const edgesG = document.getElementById('fb-edges-g');
-  const empty  = document.getElementById('fb-empty');
+  const nodesG   = document.getElementById('fb-nodes-g');
+  const edgesG   = document.getElementById('fb-edges-g');
+  const compBoxG = document.getElementById('fb-comp-boxes-g');
+  const empty    = document.getElementById('fb-empty');
   if (!nodesG) return;
 
-  empty.style.display = _s.nodes.length ? 'none' : 'flex';
+  empty.style.display = _s.fns.length ? 'none' : 'flex';
   edgesG.innerHTML = '';
+  compBoxG.innerHTML = '';
   nodesG.innerHTML = '';
 
   const { x: px, y: py } = _s.pan;
   const z = _s.zoom;
 
-  // Edges
+  // ── Component bounding boxes ──
+  const byComp = {};
+  _s.comps.forEach(c => { byComp[c.id] = { comp: c, fns: [] }; });
+  _s.fns.forEach(f => {
+    const pos = fnPos(f);
+    (byComp[f.component_id] ||= { comp: null, fns: [] }).fns.push({ f, pos });
+  });
+
+  Object.values(byComp).forEach(({ comp, fns }) => {
+    if (!fns.length || !comp) return;
+    const xs = fns.map(({ pos }) => pos.x);
+    const ys = fns.map(({ pos }) => pos.y);
+    const minX = Math.min(...xs) - COMP_PAD;
+    const minY = Math.min(...ys) - COMP_HEADER - 4;
+    const maxX = Math.max(...xs) + FN_W + COMP_PAD;
+    const maxY = Math.max(...ys) + FN_H + COMP_PAD;
+
+    const bx = minX * z + px;
+    const by = minY * z + py;
+    const bw = (maxX - minX) * z;
+    const bh = (maxY - minY) * z;
+    const isInj = fns.some(({ f }) => _s.injected?.fnId === f.id);
+    const hasProp = fns.some(({ f }) => _s.propagated[f.id]);
+    const hasCrit = fns.some(({ f }) => _s.propagated[f.id]?.level === 3);
+
+    const stroke = hasCrit ? C.red : hasProp ? C.orange : isInj ? C.orange : C.border;
+    const fill   = hasCrit ? '#fff8f9' : hasProp ? '#fffaf5' : '#fafbff';
+
+    compBoxG.innerHTML += `
+      <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="${8*z}"
+        fill="${fill}" stroke="${stroke}" stroke-width="${hasProp||hasCrit?1.5:1}" opacity=".9"/>
+      <text x="${bx + 10*z}" y="${by + 18*z}" font-size="${Math.max(9,11*z)}"
+        font-family="Inter,sans-serif" font-weight="700" fill="${C.textMuted}"
+        text-transform="uppercase" letter-spacing="1">${escH(comp.name.toUpperCase())}</text>`;
+  });
+
+  // ── Edges ──
   _s.edges.forEach(e => {
-    const src = _s.nodes.find(n => n.id === e.source_id);
-    const tgt = _s.nodes.find(n => n.id === e.target_id);
-    if (!src || !tgt) return;
+    const srcFn = _s.fns.find(f => f.id === e.source_fn_id);
+    const tgtFn = _s.fns.find(f => f.id === e.target_fn_id);
+    if (!srcFn || !tgtFn) return;
 
-    const sx = src.x * z + px + (NODE_W * z) / 2;
-    const sy = src.y * z + py + (NODE_H * z) / 2;
-    const tx = tgt.x * z + px + (NODE_W * z) / 2;
-    const ty = tgt.y * z + py + (NODE_H * z) / 2;
+    const sp = fnPos(srcFn);
+    const tp = fnPos(tgtFn);
 
-    const propTgt = _s.propagated[tgt.id];
-    const propSrc = _s.propagated[src.id];
-    const isActive = !!(propSrc && propTgt);
-    const isCrit   = propTgt?.level === 3;
-    const isSel    = _s.selectedId === e.id && _s.selectedType === 'edge';
+    const sx = (sp.x + FN_W) * z + px;
+    const sy = (sp.y + FN_H / 2) * z + py;
+    const tx = tp.x * z + px;
+    const ty = (tp.y + FN_H / 2) * z + py;
 
-    const color  = isCrit ? C.red : isActive ? C.accent : isSel ? C.primary : C.border;
-    const marker = isCrit ? 'fb-arrow-danger' : isActive ? 'fb-arrow-active' : 'fb-arrow';
-    const width  = isActive || isSel ? 2 : 1.5;
+    const prop    = _s.propagated[tgtFn.id];
+    const propSrc = _s.propagated[srcFn.id] || _s.injected?.fnId === srcFn.id;
+    const isActive = !!(propSrc && prop);
+    const isCut    = prop?.cut && isActive;
+    const isCrit   = prop?.level === 3 && isActive;
+    const isSel    = _s.selectedId === e.id && _s.selType === 'edge';
+
     const et     = EDGE_TYPES[e.edge_type] || EDGE_TYPES.depends_on;
-    const dash   = et.dash ? `stroke-dasharray="${et.dash}"` : '';
-    const filter = isCrit ? 'filter="url(#fb-glow-r)"' : isActive ? 'filter="url(#fb-glow-a)"' : '';
-    const cx1 = sx + (tx - sx) * 0.45;
-    const cx2 = tx - (tx - sx) * 0.45;
+    const color  = isCrit ? C.red : isCut ? C.green : isActive ? C.orange : isSel ? C.primary : et.color;
+    const marker = `arr-${isCrit||isActive ? e.edge_type+'-prop' : e.edge_type}`;
+    const dash   = isCut ? '5,4' : et.dash;
+    const width  = isActive || isSel ? 2.5 : 1.5;
+    const filter = isCrit ? 'filter="url(#fb-glow-red)"' : '';
 
-    const mx = (sx + tx) / 2;
-    const my = (sy + ty) / 2;
-    const hasEffect = _s.propRules[e.id]?.length > 0;
+    const cx1 = sx + Math.abs(tx - sx) * 0.45;
+    const cx2 = tx - Math.abs(tx - sx) * 0.45;
+    const mx  = (sx + tx) / 2;
+    const my  = (sy + ty) / 2 - 10;
 
     edgesG.innerHTML += `
-      <g class="fb-edge-hit" data-eid="${e.id}" style="cursor:pointer;pointer-events:stroke;">
+      <g class="fb-edge-g" data-eid="${e.id}" style="pointer-events:stroke;cursor:pointer;">
         <path d="M${sx},${sy} C${cx1},${sy} ${cx2},${ty} ${tx},${ty}"
-          stroke="transparent" stroke-width="12" fill="none" pointer-events="stroke"/>
+          stroke="transparent" stroke-width="14" fill="none" pointer-events="stroke"/>
         <path d="M${sx},${sy} C${cx1},${sy} ${cx2},${ty} ${tx},${ty}"
           stroke="${color}" stroke-width="${width}" fill="none"
-          ${dash} ${filter} marker-end="url(#${marker})"
-          style="${isActive ? 'animation:fmea-pulse 1.2s ease-in-out infinite;' : ''}"/>
-        ${e.label ? `<text x="${mx}" y="${my - 6}" text-anchor="middle" font-size="9"
-          font-family="Inter,sans-serif" fill="${C.textMuted}">${escH(e.label)}</text>` : ''}
-        ${hasEffect && _s.injected ? `
-          <g transform="translate(${mx},${my+8})">
-            <rect x="-28" y="-8" width="56" height="16" rx="3" fill="${C.surface}" stroke="${color}" stroke-width="1" opacity=".9"/>
-            <text x="0" y="4" text-anchor="middle" font-size="9" font-family="monospace" fill="${color}">⚡ effect</text>
-          </g>` : ''}
+          ${dash ? `stroke-dasharray="${dash}"` : ''} ${filter}
+          marker-end="url(#${marker})"
+          style="${isActive && !isCut ? 'animation:fmea-pulse 1.4s ease-in-out infinite;' : ''}"/>
+        ${e.label || isSel || (isActive && !isCut) ? `
+          <rect x="${mx - 30}" y="${my - 9}" width="60" height="16" rx="3"
+            fill="${C.surface}" stroke="${color}" stroke-width="1" opacity=".95"/>
+          <text x="${mx}" y="${my + 4}" text-anchor="middle" font-size="9"
+            font-family="Inter,sans-serif" fill="${color}" font-weight="600">
+            ${isCut ? '✓ Cut' : escH(e.label || et.label)}
+          </text>` : ''}
+        ${e.diagnostic_coverage > 0 ? `
+          <text x="${mx}" y="${my + 18}" text-anchor="middle" font-size="9"
+            font-family="Inter,sans-serif" fill="${C.green}">
+            Diag ${e.diagnostic_coverage}%
+          </text>` : ''}
       </g>`;
   });
 
-  // Nodes
-  _s.nodes.forEach(n => {
-    const nt   = NODE_TYPES[n.node_type] || NODE_TYPES.function;
-    const prop = _s.propagated[n.id];
-    const isInj = _s.injected?.nodeId === n.id;
-    const isSel = _s.selectedId === n.id && _s.selectedType === 'node';
-    const fms   = _s.fms[n.id] || [];
+  // ── Function nodes ──
+  _s.fns.forEach(fn => {
+    const pos   = fnPos(fn);
+    const prop  = _s.propagated[fn.id];
+    const isInj = _s.injected?.fnId === fn.id;
+    const isSel = _s.selectedId === fn.id && _s.selType === 'fn';
 
-    const nx = n.x * z + px;
-    const ny = n.y * z + py;
-    const nw = NODE_W * z;
-    const nh = NODE_H * z;
+    const nx = pos.x * z + px;
+    const ny = pos.y * z + py;
+    const nw = FN_W * z;
+    const nh = FN_H * z;
 
     let borderColor = isSel ? C.primary : C.border;
     let bgColor     = C.surface;
     let glow        = '';
+    let topBar      = '';
 
-    if (isInj)            { borderColor = C.orange; bgColor = '#1f1500'; glow = `box-shadow:0 0 18px ${C.orange}66;`; }
-    else if (prop?.level === 3) { borderColor = C.red;    bgColor = '#1a0008'; glow = `box-shadow:0 0 20px ${C.red}55;`; }
-    else if (prop?.level === 2) { borderColor = C.orange; bgColor = '#1a0e00'; glow = `box-shadow:0 0 14px ${C.orange}44;`; }
-    else if (prop?.level === 1) { borderColor = C.yellow; bgColor = '#191600'; glow = `box-shadow:0 0 10px ${C.yellow}33;`; }
+    if (prop?.cut) {
+      borderColor = C.green;
+      bgColor     = C.greenLight;
+      topBar      = C.green;
+    } else if (isInj) {
+      borderColor = C.orange;
+      bgColor     = C.orangeLight;
+      topBar      = C.orange;
+    } else if (prop?.level === 3) {
+      borderColor = C.red;
+      bgColor     = C.redLight;
+      topBar      = C.red;
+      glow        = `filter:url(#fb-glow-red);`;
+    } else if (prop?.level === 2) {
+      borderColor = C.orange;
+      bgColor     = C.orangeLight;
+      topBar      = C.orange;
+    } else if (prop?.level === 1) {
+      borderColor = C.yellow;
+      bgColor     = C.yellowLight;
+      topBar      = C.yellow;
+    } else if (isSel) {
+      bgColor = C.primaryLight;
+    }
 
-    const fmBadge  = fms.length ? `<div style="font-size:${Math.max(9,10*z)}px;color:${isInj||prop?C.red:C.textMuted};">⚠ ${fms.length} FM${fms.length!==1?'s':''}</div>` : '';
-    const safetyDot = n.is_safety_critical ? `<span style="color:${C.red};font-size:10px;" title="Safety critical">⬟</span>` : '';
-    const injLabel  = isInj && _s.injected?.fmId
-      ? `<div style="margin-top:3px;padding:2px 5px;border-radius:3px;background:#ff910022;border:1px solid ${C.orange};font-size:${Math.max(8,9*z)}px;color:${C.orange};font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-           ⚡ ${escH(fms.find(f=>f.id===_s.injected.fmId)?.failure_mode||'')}
-         </div>` : '';
+    const cfg      = _s.cfgMap[fn.id];
+    const hasCuts  = cfg && (cfg.has_redundancy || cfg.has_safe_state || cfg.fault_tolerance !== 'none');
+    const fmCount  = fn._fms.length;
+    const safetyDot = fn.is_safety_related ? `<span style="color:${C.red};font-size:9px;margin-left:2px;" title="Safety related">FS</span>` : '';
+
+    const statusLabel = prop?.cut
+      ? `<div style="font-size:9px;color:${C.green};font-weight:600;">✓ ${escH(prop.cutReason)}</div>`
+      : isInj && _s.injected?.fmId
+        ? `<div style="font-size:9px;color:${C.orange};font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">⚡ ${escH(fn._fms.find(f=>f.id===_s.injected.fmId)?.failure_mode||'')}</div>`
+        : prop?.level === 3 ? `<div style="font-size:9px;color:${C.red};font-weight:600;">⚠ Critical effect</div>`
+        : prop?.level === 2 ? `<div style="font-size:9px;color:${C.orange};font-weight:600;">⚡ Propagated</div>`
+        : prop?.level === 1 ? `<div style="font-size:9px;color:${C.yellow};font-weight:600;">→ Local effect</div>`
+        : fmCount ? `<div style="font-size:9px;color:${C.textDim};">⚠ ${fmCount} FM${fmCount!==1?'s':''}</div>` : '';
 
     const el = document.createElement('div');
-    el.className   = 'fb-node';
-    el.dataset.id  = n.id;
+    el.className   = 'fb-fn-node';
+    el.dataset.id  = fn.id;
     el.style.cssText = `
       position:absolute;left:${nx}px;top:${ny}px;width:${nw}px;height:${nh}px;
-      background:${bgColor};border:1.5px solid ${borderColor};border-radius:8px;
-      padding:8px 10px;box-sizing:border-box;cursor:pointer;pointer-events:all;
-      transition:border-color .2s,background .2s;${glow}
-      display:flex;flex-direction:column;gap:3px;user-select:none;`;
+      background:${bgColor};border:1.5px solid ${borderColor};border-radius:${6*z}px;
+      box-sizing:border-box;cursor:pointer;pointer-events:all;
+      box-shadow:${isSel ? C.shadowHov : C.shadow};${glow}
+      display:flex;flex-direction:column;user-select:none;overflow:hidden;
+      transition:box-shadow .15s,border-color .2s;`;
+
     el.innerHTML = `
-      <div style="display:flex;align-items:center;gap:6px;">
-        <span style="color:${nt.color};font-size:${Math.max(11,14*z)}px;flex-shrink:0;">${nt.icon}</span>
-        <span style="font-size:${Math.max(10,12*z)}px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escH(n.name)}</span>
-        ${safetyDot}
+      ${topBar ? `<div style="height:${3*z}px;background:${topBar};flex-shrink:0;"></div>` : ''}
+      <div style="flex:1;padding:${6*z}px ${8*z}px;display:flex;flex-direction:column;gap:${2*z}px;overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:4px;overflow:hidden;">
+          <span style="font-size:${Math.max(11,12*z)}px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;color:${C.text};">${escH(fn.name)}</span>
+          ${safetyDot}
+          ${hasCuts ? `<span style="font-size:9px;color:${C.green};" title="Has cut mechanism">✓</span>` : ''}
+        </div>
+        ${statusLabel}
       </div>
-      <div style="font-size:${Math.max(9,10*z)}px;color:${C.textMuted};">${nt.label}</div>
-      ${fmBadge}${injLabel}
-      <div class="fb-conn-handle" data-id="${n.id}" style="
+      <div class="fb-conn-handle" data-id="${fn.id}" style="
         position:absolute;right:-6px;top:50%;transform:translateY(-50%);
         width:12px;height:12px;border-radius:50%;
-        background:${C.accent};border:2px solid ${C.bg};
-        cursor:crosshair;pointer-events:all;opacity:0;transition:opacity .15s;"></div>`;
+        background:${C.accent};border:2px solid white;
+        cursor:crosshair;pointer-events:all;opacity:0;transition:opacity .15s;
+        box-shadow:0 1px 4px rgba(0,0,0,.2);"></div>`;
+
     nodesG.appendChild(el);
   });
 }
 
+// ── Props panel ────────────────────────────────────────────────────────────────
 function renderProps() {
   const el = document.getElementById('fb-props');
   if (!el) return;
-
-  if (!_s.selectedId) {
-    el.innerHTML = `<div style="color:${C.textDim};font-size:12px;padding-top:8px;">
-      Select a node or edge to inspect.<br><br>
-      <span style="color:${C.textDim};font-size:11px;line-height:1.8;">
-        • Click node → inspect / add FMs<br>
-        • Drag from ● handle → create connection<br>
-        • Double-click canvas → add node<br>
-        • Delete key → remove selected
-      </span></div>`;
-    return;
-  }
-
-  if (_s.selectedType === 'node') renderNodeProps();
+  if (!_s.selectedId) { el.innerHTML = emptyProps(); return; }
+  if (_s.selType === 'fn') renderFnProps();
   else renderEdgeProps();
 }
 
-function renderNodeProps() {
-  const el   = document.getElementById('fb-props');
-  const node = _s.nodes.find(n => n.id === _s.selectedId);
-  if (!el || !node) return;
-  const nt   = NODE_TYPES[node.node_type] || NODE_TYPES.function;
-  const fms  = _s.fms[node.id] || [];
-  const prop = _s.propagated[node.id];
-  const isInj = _s.injected?.nodeId === node.id;
+function renderFnProps() {
+  const el = document.getElementById('fb-props');
+  const fn = _s.fns.find(f => f.id === _s.selectedId);
+  if (!el || !fn) return;
+  const cfg  = _s.cfgMap[fn.id];
+  const prop = _s.propagated[fn.id];
+  const isInj = _s.injected?.fnId === fn.id;
 
-  const propBadge = isInj
-    ? pill('⚡ INJECTION', C.orange)
+  const badge = isInj ? pill('⚡ INJECTION', C.orange)
+    : prop?.cut ? pill('✓ ' + prop.cutReason, C.green)
     : prop?.level === 3 ? pill('⚠ CRITICAL', C.red)
     : prop?.level === 2 ? pill('⚡ PROPAGATED', C.orange)
     : prop?.level === 1 ? pill('→ LOCAL EFFECT', C.yellow)
     : '';
 
-  const fmRows = fms.map(fm => {
-    const rules = Object.values(_s.propRules).flat().filter(r => r.source_fm_id === fm.id);
-    return `<div class="fb-fm-row" data-fmid="${fm.id}" style="
-      padding:6px 8px;border-radius:4px;background:${C.surface2};border:1px solid ${C.border};
-      margin-bottom:4px;cursor:pointer;transition:border-color .15s;">
+  const fmRows = fn._fms.map(fm => `
+    <div style="padding:6px 8px;border-radius:5px;background:${C.surface2};border:1px solid ${C.border};margin-bottom:4px;">
       <div style="display:flex;align-items:center;gap:6px;">
-        <span style="color:${C.red};font-size:10px;">⚠</span>
+        <span style="color:${C.red};font-size:11px;">⚠</span>
         <span style="font-size:12px;flex:1;">${escH(fm.failure_mode)}</span>
-        <button class="fb-del-fm" data-fmid="${fm.id}" style="background:none;border:none;
-          color:${C.textDim};cursor:pointer;font-size:12px;padding:0 2px;" title="Delete FM">✕</button>
+        <button class="fb-inject-btn" data-fnid="${fn.id}" data-fmid="${fm.id}"
+          style="${btnS(C.primaryLight,C.primary)};color:${C.primary};font-size:10px;padding:3px 8px;">
+          ⚡ Inject
+        </button>
       </div>
-      ${fm.local_effect ? `<div style="font-size:11px;color:${C.textMuted};margin-top:3px;margin-left:16px;">${escH(fm.local_effect)}</div>` : ''}
-      ${rules.length ? `<div style="font-size:10px;color:${C.textDim};margin-top:3px;margin-left:16px;">→ ${rules.length} propagation rule${rules.length!==1?'s':''}</div>` : ''}
-      <button class="fb-inject-fm" data-nodeid="${node.id}" data-fmid="${fm.id}" style="
-        margin-top:5px;width:100%;${btnS(C.surface)};font-size:10px;border-color:${C.primary};">
-        ⚡ Inject this failure
-      </button>
-    </div>`;
-  }).join('');
+      ${fm.local_effect ? `<div style="font-size:11px;color:${C.textMuted};margin-top:3px;margin-left:17px;">${escH(fm.local_effect)}</div>` : ''}
+    </div>`).join('');
 
-  el.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px;">
+  el.innerHTML = `<div style="display:flex;flex-direction:column;gap:12px;">
     <div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-        <span style="color:${nt.color};font-size:16px;">${nt.icon}</span>
-        <span style="font-size:14px;font-weight:700;">${escH(node.name)}</span>
-      </div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:5px;">${escH(fn.name)}</div>
       <div style="display:flex;gap:5px;flex-wrap:wrap;">
-        ${pill(nt.label, nt.color)}
-        ${node.is_safety_critical ? pill('Safety Critical', C.red) : ''}
-        ${propBadge}
+        ${fn.is_safety_related ? pill('Safety Related', C.red) : ''}
+        ${badge}
       </div>
     </div>
-    ${node.description ? `<div style="font-size:12px;color:${C.textMuted};line-height:1.5;">${escH(node.description)}</div>` : ''}
 
     <div>
-      <div style="${sectionLabel()}">Failure Modes</div>
-      ${fmRows || `<div style="font-size:11px;color:${C.textDim};margin-bottom:6px;">No FMs defined yet.</div>`}
-      <div id="fb-fm-add-area">
-        <button id="fb-add-fm-btn" data-nodeid="${node.id}" style="${btnS(C.surface2)};width:100%;font-size:11px;">＋ Add Failure Mode</button>
+      <div style="${secLabel()}">Failure Modes</div>
+      ${fmRows || `<div style="font-size:11px;color:${C.textDim};margin-bottom:6px;">No FMs — add them in Architecture Specification.</div>`}
+    </div>
+
+    <div style="border-top:1px solid ${C.border};padding-top:10px;">
+      <div style="${secLabel()}">Cut Mechanisms</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="fb-redundancy" ${cfg?.has_redundancy?'checked':''} style="accent-color:${C.green};">
+          <span>Redundancy</span>
+        </label>
+        ${cfg?.has_redundancy ? `<input id="fb-redundancy-desc" value="${escH(cfg.redundancy_desc||'')}" placeholder="e.g. dual channel sensor…"
+          style="${inpS()};margin-left:24px;">` : ''}
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="fb-safestate" ${cfg?.has_safe_state?'checked':''} style="accent-color:${C.green};">
+          <span>Safe state</span>
+        </label>
+        ${cfg?.has_safe_state ? `<input id="fb-safestate-desc" value="${escH(cfg.safe_state_desc||'')}" placeholder="e.g. motor stops, default value…"
+          style="${inpS()};margin-left:24px;">` : ''}
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label style="font-size:12px;">Fault tolerance</label>
+          <select id="fb-ft-sel" style="background:${C.surface2};border:1px solid ${C.border};border-radius:4px;
+            color:${C.text};font-size:12px;padding:3px 6px;cursor:pointer;">
+            <option value="none"    ${(cfg?.fault_tolerance||'none')==='none'?'selected':''}>None</option>
+            <option value="partial" ${cfg?.fault_tolerance==='partial'?'selected':''}>Partial</option>
+            <option value="full"    ${cfg?.fault_tolerance==='full'?'selected':''}>Full</option>
+          </select>
+        </div>
       </div>
+      <button id="fb-save-cfg" style="${btnS(C.primary,'transparent')};color:white;width:100%;margin-top:8px;font-size:11px;">Save cut config</button>
     </div>
 
     ${prop?.effects?.length ? `
       <div>
-        <div style="${sectionLabel()}">Propagation Effects</div>
-        ${prop.effects.map(e => `<div style="font-size:11px;color:${C.textMuted};padding:4px 0;border-bottom:1px solid ${C.border};">${escH(e)}</div>`).join('')}
+        <div style="${secLabel()}">Propagated Effects</div>
+        ${prop.effects.map(e=>`<div style="font-size:11px;color:${C.textMuted};padding:3px 0;border-bottom:1px solid ${C.border};">→ ${escH(e)}</div>`).join('')}
       </div>` : ''}
-
-    <div style="margin-top:4px;display:flex;flex-direction:column;gap:4px;">
-      <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
-        <input type="checkbox" id="fb-sc-check" ${node.is_safety_critical?'checked':''} style="accent-color:${C.red};">
-        Safety critical node
-      </label>
-      <button id="fb-del-node-btn" data-nodeid="${node.id}" style="${btnS(C.surface2)};color:${C.red};border-color:${C.red}33;font-size:11px;width:100%;margin-top:4px;">
-        🗑 Delete node
-      </button>
-    </div>
   </div>`;
 
-  document.getElementById('fb-sc-check')?.addEventListener('change', async e => {
-    node.is_safety_critical = e.target.checked;
-    await sb.from('fmea_nodes').update({ is_safety_critical: node.is_safety_critical }).eq('id', node.id);
-    renderGraph(); renderNodeList();
+  // Wire cut config
+  document.getElementById('fb-redundancy')?.addEventListener('change', () => renderFnProps());
+  document.getElementById('fb-safestate')?.addEventListener('change',  () => renderFnProps());
+
+  document.getElementById('fb-save-cfg')?.addEventListener('click', async () => {
+    const hasRed = document.getElementById('fb-redundancy')?.checked || false;
+    const hasSSt = document.getElementById('fb-safestate')?.checked  || false;
+    const redDesc = document.getElementById('fb-redundancy-desc')?.value.trim() || null;
+    const sstDesc = document.getElementById('fb-safestate-desc')?.value.trim()  || null;
+    const ft      = document.getElementById('fb-ft-sel')?.value || 'none';
+    const payload = {
+      fn_id: fn.id, project_id: _ctx.project.id,
+      parent_type: _ctx.parentType, parent_id: _ctx.parentId,
+      has_redundancy: hasRed, redundancy_desc: redDesc,
+      has_safe_state: hasSSt, safe_state_desc: sstDesc,
+      fault_tolerance: ft,
+      x: fnPos(fn).x, y: fnPos(fn).y,
+    };
+    const { data } = await sb.from('fmea_node_config')
+      .upsert(payload, { onConflict: 'fn_id,parent_type,parent_id' })
+      .select().single();
+    if (data) { _s.cfgMap[fn.id] = data; fn._cfg = data; }
+    renderAll();
   });
 
-  document.getElementById('fb-add-fm-btn')?.addEventListener('click', () => showAddFmForm(node.id));
-
-  el.querySelectorAll('.fb-inject-fm').forEach(btn => {
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      injectFailure(btn.dataset.nodeid, btn.dataset.fmid);
-    });
+  el.querySelectorAll('.fb-inject-btn').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); inject(btn.dataset.fnid, btn.dataset.fmid); });
   });
-
-  el.querySelectorAll('.fb-del-fm').forEach(btn => {
-    btn.addEventListener('click', async e => {
-      e.stopPropagation();
-      const fmid = btn.dataset.fmid;
-      await sb.from('fmea_failure_modes').delete().eq('id', fmid);
-      _s.fms[node.id] = (_s.fms[node.id] || []).filter(f => f.id !== fmid);
-      renderAll();
-    });
-  });
-
-  document.getElementById('fb-del-node-btn')?.addEventListener('click', () => deleteNode(node.id));
 }
 
 function renderEdgeProps() {
   const el   = document.getElementById('fb-props');
   const edge = _s.edges.find(e => e.id === _s.selectedId);
   if (!el || !edge) return;
-  const src  = _s.nodes.find(n => n.id === edge.source_id);
-  const tgt  = _s.nodes.find(n => n.id === edge.target_id);
-  const et   = EDGE_TYPES[edge.edge_type] || EDGE_TYPES.depends_on;
-  const rules = _s.propRules[edge.id] || [];
-  const srcFms = _s.fms[edge.source_id] || [];
+  const srcFn = _s.fns.find(f => f.id === edge.source_fn_id);
+  const tgtFn = _s.fns.find(f => f.id === edge.target_fn_id);
+  const et    = EDGE_TYPES[edge.edge_type] || EDGE_TYPES.depends_on;
+  const rules = edge._rules || [];
+  const srcFms = srcFn?._fms || [];
 
   const rulesHtml = rules.map(r => {
     const fm = srcFms.find(f => f.id === r.source_fm_id);
-    return `<div style="padding:6px 8px;border-radius:4px;background:${C.surface2};
-      border:1px solid ${C.border};margin-bottom:4px;font-size:11px;">
-      <div style="color:${C.orange};">⚠ ${escH(fm?.failure_mode || '?')}</div>
+    return `<div style="padding:6px 8px;border-radius:5px;background:${C.surface2};border:1px solid ${C.border};margin-bottom:4px;font-size:11px;">
+      <div style="color:${C.orange};font-weight:600;">⚠ ${escH(fm?.failure_mode||'?')}</div>
       <div style="color:${C.textMuted};margin-top:2px;">→ ${escH(r.effect_at_target)}</div>
-      <div style="color:${C.textDim};margin-top:1px;font-size:10px;">Severity ${r.severity}/10</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+        <span style="color:${C.textDim};font-size:10px;">Severity ${r.severity}/10</span>
+        ${r.is_inferred ? `<span style="color:${C.textDim};font-size:10px;">(inferred)</span>` : ''}
+        <button class="fb-edit-rule" data-rid="${r.id}" style="${btnS(C.surface,'transparent')};border-color:${C.border};font-size:10px;padding:2px 6px;margin-left:auto;">Edit</button>
+        <button class="fb-del-rule" data-rid="${r.id}" style="${btnS(C.surface,'transparent')};border-color:${C.border};font-size:10px;padding:2px 6px;color:${C.red};">✕</button>
+      </div>
     </div>`;
   }).join('');
 
   el.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px;">
     <div>
       <div style="font-size:13px;font-weight:700;margin-bottom:6px;">Connection</div>
-      <div style="font-size:12px;color:${C.textMuted};">
-        <span style="color:${C.text};">${escH(src?.name||'?')}</span>
-        <span style="color:${C.accent};margin:0 6px;">→</span>
-        <span style="color:${C.text};">${escH(tgt?.name||'?')}</span>
+      <div style="font-size:12px;color:${C.textMuted};display:flex;align-items:center;gap:6px;">
+        <span style="color:${C.text};font-weight:600;">${escH(srcFn?.name||'?')}</span>
+        <span style="color:${et.color};">→</span>
+        <span style="color:${C.text};font-weight:600;">${escH(tgtFn?.name||'?')}</span>
       </div>
-      <div style="margin-top:6px;">${pill(et.label, C.primary)}</div>
     </div>
 
     <div>
-      <div style="${sectionLabel()}">Edge type</div>
-      <select id="fb-edge-type-sel" style="width:100%;background:${C.surface2};border:1px solid ${C.border};
-        border-radius:4px;color:${C.text};font-size:12px;padding:5px 8px;cursor:pointer;">
+      <div style="${secLabel()}">Edge type</div>
+      <select id="fb-etype-sel" style="width:100%;${inpS()}">
         ${Object.entries(EDGE_TYPES).map(([k,v])=>`<option value="${k}" ${k===edge.edge_type?'selected':''}>${v.label}</option>`).join('')}
       </select>
     </div>
 
     <div>
-      <div style="${sectionLabel()}">Label (signal name)</div>
-      <input id="fb-edge-label" value="${escH(edge.label||'')}" placeholder="e.g. CAN signal, PWM…"
-        style="width:100%;box-sizing:border-box;background:${C.surface2};border:1px solid ${C.border};
-        border-radius:4px;color:${C.text};font-size:12px;padding:5px 8px;outline:none;">
+      <div style="${secLabel()}">Signal / Interface label</div>
+      <input id="fb-elabel" value="${escH(edge.label||'')}" placeholder="e.g. CAN signal, PWM, voltage…" style="width:100%;box-sizing:border-box;${inpS()}">
     </div>
 
     <div>
-      <div style="${sectionLabel()}">Propagation Rules <span style="color:${C.textDim};font-weight:400;">(if FM occurs at source, effect at target is…)</span></div>
-      ${rulesHtml || `<div style="font-size:11px;color:${C.textDim};margin-bottom:6px;">No rules yet.</div>`}
-      ${srcFms.length ? `
-        <div id="fb-rule-add-area">
-          <button id="fb-add-rule-btn" style="${btnS(C.surface2)};width:100%;font-size:11px;">＋ Add propagation rule</button>
-        </div>` : `<div style="font-size:11px;color:${C.textDim};">Add FMs to source node first.</div>`}
+      <div style="${secLabel()}">Diagnostic coverage</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input id="fb-diag-cov" type="range" min="0" max="100" step="10"
+          value="${edge.diagnostic_coverage||0}" style="flex:1;accent-color:${C.green};">
+        <span id="fb-diag-cov-val" style="font-size:12px;font-weight:600;color:${edge.diagnostic_coverage>0?C.green:C.textMuted};min-width:36px;">${edge.diagnostic_coverage||0}%</span>
+      </div>
+      <input id="fb-diag-mech" value="${escH(edge.diagnostic_mechanism||'')}" placeholder="e.g. CRC, watchdog, E2E…" style="width:100%;box-sizing:border-box;${inpS()};margin-top:4px;">
+    </div>
+    <button id="fb-save-edge" style="${btnS(C.primary,'transparent')};color:white;width:100%;font-size:11px;">Save connection config</button>
+
+    <div>
+      <div style="${secLabel()}">Propagation Rules</div>
+      ${rulesHtml || `<div style="font-size:11px;color:${C.textDim};margin-bottom:6px;">No rules. ${srcFms.length?'Click below to add.':'Add FMs to source node in Architecture Specification.'}</div>`}
+      ${srcFms.length ? `<button id="fb-add-rule-btn" style="${btnS(C.surface2,C.border)};width:100%;font-size:11px;">＋ Add propagation rule</button>` : ''}
     </div>
 
-    <button id="fb-del-edge-btn" style="${btnS(C.surface2)};color:${C.red};border-color:${C.red}33;font-size:11px;width:100%;">
-      🗑 Delete connection
-    </button>
+    <button id="fb-del-edge-btn" style="${btnS('white',C.border)};color:${C.red};width:100%;font-size:11px;border-color:${C.red}44;">🗑 Delete connection</button>
   </div>`;
 
-  document.getElementById('fb-edge-type-sel')?.addEventListener('change', async e => {
-    edge.edge_type = e.target.value;
-    await sb.from('fmea_edges').update({ edge_type: edge.edge_type }).eq('id', edge.id);
-    renderGraph();
+  // Diagnostic range live update
+  document.getElementById('fb-diag-cov')?.addEventListener('input', e => {
+    const v = e.target.value;
+    const valEl = document.getElementById('fb-diag-cov-val');
+    if (valEl) { valEl.textContent = v + '%'; valEl.style.color = v > 0 ? C.green : C.textMuted; }
   });
 
-  document.getElementById('fb-edge-label')?.addEventListener('blur', async e => {
-    edge.label = e.target.value.trim();
-    await sb.from('fmea_edges').update({ label: edge.label }).eq('id', edge.id);
-    renderGraph();
+  document.getElementById('fb-save-edge')?.addEventListener('click', async () => {
+    edge.edge_type            = document.getElementById('fb-etype-sel')?.value || edge.edge_type;
+    edge.label                = document.getElementById('fb-elabel')?.value.trim() || null;
+    edge.diagnostic_coverage  = parseInt(document.getElementById('fb-diag-cov')?.value) || 0;
+    edge.diagnostic_mechanism = document.getElementById('fb-diag-mech')?.value.trim() || null;
+    await sb.from('fmea_function_edges').update({
+      edge_type: edge.edge_type, label: edge.label,
+      diagnostic_coverage: edge.diagnostic_coverage,
+      diagnostic_mechanism: edge.diagnostic_mechanism,
+    }).eq('id', edge.id);
+    renderAll();
   });
 
   document.getElementById('fb-add-rule-btn')?.addEventListener('click', () => showAddRuleForm(edge, srcFms));
 
+  el.querySelectorAll('.fb-del-rule').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const rid = btn.dataset.rid;
+      await sb.from('fmea_propagation_rules').delete().eq('id', rid);
+      edge._rules = edge._rules.filter(r => r.id !== rid);
+      renderEdgeProps();
+    });
+  });
+
+  el.querySelectorAll('.fb-edit-rule').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const rule = edge._rules.find(r => r.id === btn.dataset.rid);
+      if (rule) showEditRuleForm(edge, srcFms, rule);
+    });
+  });
+
   document.getElementById('fb-del-edge-btn')?.addEventListener('click', async () => {
-    await sb.from('fmea_edges').delete().eq('id', edge.id);
+    await sb.from('fmea_function_edges').delete().eq('id', edge.id);
     _s.edges = _s.edges.filter(e => e.id !== edge.id);
     _s.selectedId = null;
     renderAll();
   });
 }
 
-// ── Add FM form ────────────────────────────────────────────────────────────────
-function showAddFmForm(nodeId) {
-  const area = document.getElementById('fb-fm-add-area');
+// ── Rule forms ─────────────────────────────────────────────────────────────────
+function showAddRuleForm(edge, srcFms) {
+  const area = document.getElementById('fb-add-rule-btn');
   if (!area) return;
-  area.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:4px;padding:6px;background:${C.surface2};border:1px solid ${C.border};border-radius:5px;">
-      <input id="fb-fm-inp" placeholder="Failure mode…" style="background:${C.bg};border:1px solid ${C.border};
-        border-radius:4px;color:${C.text};font-size:12px;padding:5px 8px;outline:none;width:100%;box-sizing:border-box;">
-      <input id="fb-fe-inp" placeholder="Local effect (optional)…" style="background:${C.bg};border:1px solid ${C.border};
-        border-radius:4px;color:${C.text};font-size:12px;padding:5px 8px;outline:none;width:100%;box-sizing:border-box;">
-      <div style="display:flex;gap:4px;">
-        <button id="fb-fm-save" style="${btnS(C.primary)};flex:1;font-size:11px;">Save</button>
-        <button id="fb-fm-cancel" style="${btnS(C.surface)};font-size:11px;">Cancel</button>
-      </div>
-    </div>`;
-  document.getElementById('fb-fm-inp')?.focus();
-
-  const save = async () => {
-    const fm   = document.getElementById('fb-fm-inp')?.value.trim();
-    const fe   = document.getElementById('fb-fe-inp')?.value.trim();
-    if (!fm) return;
-    const { data } = await sb.from('fmea_failure_modes').insert({
-      node_id: nodeId, project_id: _ctx.project.id,
-      failure_mode: fm, local_effect: fe || null,
-      sort_order: (_s.fms[nodeId] || []).length,
-    }).select().single();
-    if (data) { (_s.fms[nodeId] ||= []).push(data); }
-    renderProps();
-    log('FM added', fm);
-  };
-
-  document.getElementById('fb-fm-save')?.addEventListener('click', save);
-  document.getElementById('fb-fm-cancel')?.addEventListener('click', renderProps);
-  document.getElementById('fb-fm-inp')?.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('fb-fe-inp')?.focus(); });
-  document.getElementById('fb-fe-inp')?.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+  area.outerHTML; // keep reference via selector below
+  document.getElementById('fb-add-rule-btn').replaceWith(ruleFormEl(edge, srcFms, null));
+  wireRuleForm(edge, srcFms, null);
 }
 
-// ── Add propagation rule form ──────────────────────────────────────────────────
-function showAddRuleForm(edge, srcFms) {
-  const area = document.getElementById('fb-rule-add-area');
-  if (!area) return;
-  area.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:4px;padding:6px;background:${C.surface2};border:1px solid ${C.border};border-radius:5px;">
-      <select id="fb-rule-fm-sel" style="background:${C.bg};border:1px solid ${C.border};border-radius:4px;
-        color:${C.text};font-size:12px;padding:5px 8px;width:100%;box-sizing:border-box;">
-        <option value="">— Select source FM —</option>
-        ${srcFms.map(f => `<option value="${f.id}">${escH(f.failure_mode)}</option>`).join('')}
-      </select>
-      <input id="fb-rule-eff" placeholder="Effect at target node…" style="background:${C.bg};border:1px solid ${C.border};
-        border-radius:4px;color:${C.text};font-size:12px;padding:5px 8px;outline:none;width:100%;box-sizing:border-box;">
-      <div style="display:flex;align-items:center;gap:6px;">
-        <label style="font-size:11px;color:${C.textMuted};">Severity</label>
-        <input id="fb-rule-sev" type="number" min="1" max="10" value="5" style="width:50px;background:${C.bg};
-          border:1px solid ${C.border};border-radius:4px;color:${C.text};font-size:12px;padding:4px 6px;outline:none;">
-        <span style="font-size:10px;color:${C.textDim};">/10</span>
-      </div>
-      <div style="display:flex;gap:4px;">
-        <button id="fb-rule-save" style="${btnS(C.primary)};flex:1;font-size:11px;">Save</button>
-        <button id="fb-rule-cancel" style="${btnS(C.surface)};font-size:11px;">Cancel</button>
-      </div>
+function showEditRuleForm(edge, srcFms, rule) {
+  const btn = document.querySelector(`.fb-edit-rule[data-rid="${rule.id}"]`);
+  if (!btn) return;
+  const row = btn.closest('div[style*="padding:6px"]');
+  if (row) row.replaceWith(ruleFormEl(edge, srcFms, rule));
+  wireRuleForm(edge, srcFms, rule);
+}
+
+function ruleFormEl(edge, srcFms, rule) {
+  const el = document.createElement('div');
+  el.id = 'fb-rule-form';
+  el.style.cssText = `padding:8px;background:${C.surface2};border:1px solid ${C.border};border-radius:5px;margin-bottom:6px;`;
+  el.innerHTML = `
+    <select id="fb-rf-fm" style="width:100%;box-sizing:border-box;${inpS()};margin-bottom:4px;">
+      <option value="">— Source failure mode —</option>
+      ${srcFms.map(f=>`<option value="${f.id}" ${rule?.source_fm_id===f.id?'selected':''}>${escH(f.failure_mode)}</option>`).join('')}
+    </select>
+    <textarea id="fb-rf-eff" rows="2" placeholder="Effect at target node…"
+      style="width:100%;box-sizing:border-box;${inpS()};resize:vertical;margin-bottom:4px;">${escH(rule?.effect_at_target||'')}</textarea>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <label style="font-size:11px;color:${C.textMuted};">Severity</label>
+      <input id="fb-rf-sev" type="number" min="1" max="10" value="${rule?.severity||5}"
+        style="width:52px;${inpS()}">
+      <span style="font-size:10px;color:${C.textDim};">/10</span>
+    </div>
+    <div style="display:flex;gap:4px;">
+      <button id="fb-rf-save" style="${btnS(C.primary,'transparent')};color:white;flex:1;font-size:11px;">Save</button>
+      <button id="fb-rf-cancel" style="${btnS('white',C.border)};font-size:11px;">Cancel</button>
     </div>`;
+  return el;
+}
 
-  const save = async () => {
-    const fmId  = document.getElementById('fb-rule-fm-sel')?.value;
-    const eff   = document.getElementById('fb-rule-eff')?.value.trim();
-    const sev   = parseInt(document.getElementById('fb-rule-sev')?.value) || 5;
+function wireRuleForm(edge, srcFms, existingRule) {
+  // auto-fill effect when FM selected
+  document.getElementById('fb-rf-fm')?.addEventListener('change', e => {
+    const fm   = srcFms.find(f => f.id === e.target.value);
+    const eff  = document.getElementById('fb-rf-eff');
+    if (eff && fm && (!eff.value.trim() || existingRule?.is_inferred !== false)) {
+      eff.value = inferEffect(fm.failure_mode, edge.edge_type);
+    }
+  });
+
+  document.getElementById('fb-rf-save')?.addEventListener('click', async () => {
+    const fmId = document.getElementById('fb-rf-fm')?.value;
+    const eff  = document.getElementById('fb-rf-eff')?.value.trim();
+    const sev  = parseInt(document.getElementById('fb-rf-sev')?.value) || 5;
     if (!fmId || !eff) return;
-    const { data } = await sb.from('fmea_propagation_rules').insert({
-      edge_id: edge.id, source_fm_id: fmId,
-      effect_at_target: eff, severity: sev,
-    }).select().single();
-    if (data) { (_s.propRules[edge.id] ||= []).push(data); }
-    renderEdgeProps();
-    log('Propagation rule added', eff);
-  };
 
-  document.getElementById('fb-rule-save')?.addEventListener('click', save);
-  document.getElementById('fb-rule-cancel')?.addEventListener('click', renderEdgeProps);
+    if (existingRule) {
+      const { data } = await sb.from('fmea_propagation_rules')
+        .update({ source_fm_id: fmId, effect_at_target: eff, severity: sev, is_inferred: false })
+        .eq('id', existingRule.id).select().single();
+      if (data) { const i = edge._rules.findIndex(r => r.id === existingRule.id); if (i>=0) edge._rules[i] = data; }
+    } else {
+      const { data } = await sb.from('fmea_propagation_rules')
+        .insert({ edge_id: edge.id, source_fm_id: fmId, effect_at_target: eff, severity: sev, is_inferred: false })
+        .select().single();
+      if (data) edge._rules.push(data);
+    }
+    renderEdgeProps();
+  });
+
+  document.getElementById('fb-rf-cancel')?.addEventListener('click', renderEdgeProps);
 }
 
 // ── Propagation engine ─────────────────────────────────────────────────────────
-function injectFailure(nodeId, fmId) {
-  _s.injected   = { nodeId, fmId };
+function inject(fnId, fmId) {
+  _s.injected   = { fnId, fmId };
   _s.propagated = {};
 
-  // BFS
-  const queue   = [{ id: nodeId, level: 0, path: [nodeId], effects: [] }];
-  const visited = new Set([nodeId]);
-  _s.propagated[nodeId] = { level: 0, path: [nodeId], effects: [] };
+  const startFm = _s.fns.find(f => f.id === fnId)?._fms.find(f => f.id === fmId);
+  const queue   = [{ id: fnId, level: 0, path: [fnId], effects: [] }];
+  const visited = new Set([fnId]);
+  _s.propagated[fnId] = { level: 0, path: [fnId], effects: [] };
 
-  let currentFmIds = new Set([fmId]);
+  const activeFmIds = new Set([fmId]);
 
   while (queue.length) {
     const { id, level, path } = queue.shift();
+    const srcFn = _s.fns.find(f => f.id === id);
 
     _s.edges.forEach(e => {
-      if (e.source_id !== id) return;
-      const nextId = e.target_id;
+      if (e.source_fn_id !== id) return;
+      const nextId = e.target_fn_id;
       if (visited.has(nextId)) return;
 
-      // Check if any propagation rules match current active FMs on this edge
-      const rules = (_s.propRules[e.id] || []).filter(r => currentFmIds.has(r.source_fm_id));
-      const hasSemanticRule = rules.length > 0;
+      // Check diagnostic cut
+      if (e.diagnostic_coverage === 100) {
+        // Full coverage — propagation stopped
+        visited.add(nextId);
+        _s.propagated[nextId] = { level: 0, cut: true, cutReason: 'Diagnostic 100%', path: [...path, nextId], effects: [] };
+        return;
+      }
 
-      // Always propagate topologically, but semantic rules give us effects + severity
-      visited.add(nextId);
-      const nextNode   = _s.nodes.find(n => n.id === nextId);
-      const maxSev     = rules.length ? Math.max(...rules.map(r => r.severity)) : 5;
-      const isCritical = nextNode?.is_safety_critical || maxSev >= 8;
+      // Find semantic rules for active FMs on this edge
+      const matchingRules = (e._rules || []).filter(r => activeFmIds.has(r.source_fm_id));
+
+      // If no rules defined, generate inferred effect
+      const effects = matchingRules.length
+        ? matchingRules.map(r => r.effect_at_target)
+        : startFm ? [inferEffect(startFm.failure_mode, e.edge_type)] : ['Failure propagated'];
+
+      // Severity: max from rules, adjusted by diagnostic coverage
+      let maxSev = matchingRules.length ? Math.max(...matchingRules.map(r => r.severity)) : 5;
+      if (e.diagnostic_coverage > 0) maxSev = maxSev * (1 - e.diagnostic_coverage / 100);
+
+      const tgtFn  = _s.fns.find(f => f.id === nextId);
+      const tgtCfg = _s.cfgMap[nextId];
+
+      // Check node-level cut mechanisms
+      let cut = false; let cutReason = '';
+      if (tgtCfg?.fault_tolerance === 'full') {
+        cut = true; cutReason = 'Full fault tolerance';
+      } else if (tgtCfg?.has_redundancy) {
+        cut = true; cutReason = 'Redundancy';
+      }
+
+      if (cut) {
+        visited.add(nextId);
+        _s.propagated[nextId] = { level: 0, cut: true, cutReason, path: [...path, nextId], effects };
+        return;
+      }
+
+      // Severity reduction for partial tolerance / safe state
+      if (tgtCfg?.fault_tolerance === 'partial') maxSev *= 0.6;
+      const cappedBySafeState = tgtCfg?.has_safe_state;
+
+      const isCritical = !cappedBySafeState && (tgtFn?.is_safety_related || maxSev >= 8);
       const newLevel   = isCritical ? 3 : level + 1 >= 2 ? 2 : 1;
-      const effects    = rules.map(r => r.effect_at_target);
       const newPath    = [...path, nextId];
 
-      _s.propagated[nextId] = { level: newLevel, path: newPath, effects, hasSemanticRule };
+      visited.add(nextId);
+      _s.propagated[nextId] = { level: newLevel, path: newPath, effects, cut: false };
       queue.push({ id: nextId, level: level + 1, path: newPath, effects });
 
-      // Next hop FMs: use target node's FMs if they were triggered
-      if (hasSemanticRule) {
-        (_s.fms[nextId] || []).forEach(f => currentFmIds.add(f.id));
-      }
+      // Propagate FMs of target node onwards
+      (tgtFn?._fms || []).forEach(f => activeFmIds.add(f.id));
     });
   }
 
-  const affected = Object.keys(_s.propagated).length - 1;
-  const critical = Object.values(_s.propagated).filter(p => p.level === 3).length;
-  const fm       = (_s.fms[nodeId] || []).find(f => f.id === fmId);
-  const node     = _s.nodes.find(n => n.id === nodeId);
+  const affected  = Object.keys(_s.propagated).length - 1;
+  const critical  = Object.values(_s.propagated).filter(p => p.level === 3).length;
+  const cut       = Object.values(_s.propagated).filter(p => p.cut).length;
+  const srcNode   = _s.fns.find(f => f.id === fnId);
 
   document.getElementById('fb-prop-status').textContent =
-    `⚡ ${affected} affected${critical ? ` · ⚠ ${critical} critical` : ''}`;
+    `⚡ ${affected} affected${critical?` · ⚠ ${critical} critical`:''}${cut?` · ✓ ${cut} cut`:''}`;
   document.getElementById('fb-clear-btn').style.display = '';
 
-  log('Failure injected', `${node?.name} → "${fm?.failure_mode}" → ${affected} nodes affected`);
+  console.log(`[FMEA Beta] Inject: ${srcNode?.name} — "${startFm?.failure_mode}" → ${affected} nodes`);
   renderAll();
 }
 
@@ -709,146 +994,102 @@ function clearInjection() {
   _s.propagated = {};
   document.getElementById('fb-prop-status').textContent = '';
   document.getElementById('fb-clear-btn').style.display = 'none';
-  log('Injection cleared', '');
   renderAll();
 }
 
-// ── DFMEA table generation ─────────────────────────────────────────────────────
+// ── DFMEA table ────────────────────────────────────────────────────────────────
 function generateTable() {
   const rows = [];
-  _s.nodes.forEach(node => {
-    const fms = _s.fms[node.id] || [];
-    fms.forEach(fm => {
-      const outEdges = _s.edges.filter(e => e.source_id === node.id);
-      const rules    = outEdges.flatMap(e => (_s.propRules[e.id] || []).filter(r => r.source_fm_id === fm.id));
-      const nextNodes = [...new Set(outEdges.map(e => _s.nodes.find(n => n.id === e.target_id)?.name).filter(Boolean))];
-      const endNodes  = [...new Set(outEdges.map(e => e.target_id).flatMap(tid => {
-        const n = _s.nodes.find(x => x.id === tid);
-        return n?.is_safety_critical ? [n.name] : [];
-      }))];
-      const maxSev   = rules.length ? Math.max(...rules.map(r => r.severity)) : null;
-      const sevLabel = maxSev ? (maxSev >= 8 ? `⚠ ${maxSev}` : `${maxSev}`) : '—';
-      const sevColor = maxSev >= 8 ? C.red : maxSev >= 5 ? C.orange : C.textMuted;
+  _s.fns.forEach(fn => {
+    fn._fms.forEach(fm => {
+      const outEdges = _s.edges.filter(e => e.source_fn_id === fn.id);
+      const rules    = outEdges.flatMap(e => (e._rules||[]).filter(r => r.source_fm_id === fm.id));
+      const inferred = outEdges.length && !rules.length
+        ? outEdges.map(e => inferEffect(fm.failure_mode, e.edge_type))
+        : rules.map(r => r.effect_at_target);
+
+      const nextFns  = [...new Set(outEdges.map(e => _s.fns.find(f=>f.id===e.target_fn_id)?.name).filter(Boolean))];
+      const endFns   = outEdges.map(e => _s.fns.find(f=>f.id===e.target_fn_id)).filter(f=>f?.is_safety_related).map(f=>f.name);
+      const cuts     = outEdges.filter(e => e.diagnostic_coverage === 100 || _s.cfgMap[e.target_fn_id]?.has_redundancy || _s.cfgMap[e.target_fn_id]?.fault_tolerance === 'full');
+      const maxSev   = rules.length ? Math.max(...rules.map(r=>r.severity)) : outEdges.length ? 5 : null;
+      const comp     = _s.comps.find(c => c.id === fn.component_id);
 
       rows.push({
-        node:        node.name,
-        nodeType:    NODE_TYPES[node.node_type]?.label || node.node_type,
-        fm:          fm.failure_mode,
-        localEffect: fm.local_effect || '—',
-        effects:     rules.map(r => r.effect_at_target),
-        nextHigher:  nextNodes.join(', ') || '—',
-        endEffect:   endNodes.join(', ')  || nextNodes[0] || '—',
-        severity:    sevLabel,
-        sevColor,
-        safety:      node.is_safety_critical || (maxSev >= 8),
+        comp:      comp?.name || '—',
+        fn:        fn.name,
+        fm:        fm.failure_mode,
+        localEff:  fm.local_effect || '—',
+        effects:   inferred,
+        nextHigher:nextFns.join(', ') || '—',
+        endEffect: endFns.join(', ') || nextFns[0] || '—',
+        severity:  maxSev,
+        cutCount:  cuts.length,
+        isInferred:!rules.length && outEdges.length > 0,
+        safety:    fn.is_safety_related,
       });
     });
   });
 
-  renderTableView(rows);
-  log('DFMEA generated', `${rows.length} rows from ${_s.nodes.length} nodes`);
+  renderTable(rows);
 }
 
-function renderTableView(rows) {
+function renderTable(rows) {
   const el = document.getElementById('fb-table-inner');
   if (!el) return;
   if (!rows.length) {
-    el.innerHTML = `<div style="color:${C.textDim};font-size:13px;padding:24px;">No failure modes defined yet. Add FMs to nodes first.</div>`;
+    el.innerHTML = `<div style="color:${C.textDim};font-size:13px;padding:24px;">No failure modes found. Add FMs in Architecture Specification.</div>`;
     return;
   }
-  const th = s => `<th style="padding:8px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${C.textMuted};border-bottom:1px solid ${C.border};white-space:nowrap;">${s}</th>`;
-  const td = (s, color) => `<td style="padding:8px 12px;font-size:12px;border-bottom:1px solid ${C.border};vertical-align:top;${color?`color:${color};`:'color:${C.text};'}">${s}</td>`;
+
+  const thS = `padding:10px 14px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${C.textMuted};border-bottom:2px solid ${C.border};white-space:nowrap;background:${C.surface};`;
+  const tdS = (color='') => `padding:8px 14px;font-size:12px;border-bottom:1px solid ${C.border};vertical-align:top;${color?`color:${color};`:''}`;
 
   el.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;color:${C.text};">
-      <thead><tr style="background:${C.surface};">
-        ${['Node','Type','Failure Mode','Local Effect','Propagated Effects','Next Higher','End Effect','Severity'].map(th).join('')}
+    <h3 style="font-size:15px;font-weight:700;margin:0 0 16px;color:${C.text};">DFMEA — Auto-generated</h3>
+    <table style="width:100%;border-collapse:collapse;background:${C.surface};border-radius:8px;overflow:hidden;box-shadow:${C.shadow};">
+      <thead><tr>
+        <th style="${thS}">Component</th>
+        <th style="${thS}">Function</th>
+        <th style="${thS}">Failure Mode</th>
+        <th style="${thS}">Local Effect</th>
+        <th style="${thS}">Propagated Effects</th>
+        <th style="${thS}">Next Higher</th>
+        <th style="${thS}">End Effect</th>
+        <th style="${thS}">Sev</th>
+        <th style="${thS}">Mitigations</th>
       </tr></thead>
       <tbody>
-        ${rows.map((r,i) => `<tr style="background:${i%2===0?C.bg:C.surface};">
-          ${td(escH(r.node) + (r.safety ? ` <span style="color:${C.red};font-size:9px;">FS</span>` : ''))}
-          ${td(escH(r.nodeType), C.textMuted)}
-          ${td(escH(r.fm), C.orange)}
-          ${td(escH(r.localEffect), C.textMuted)}
-          ${td(r.effects.map(e => `<div>→ ${escH(e)}</div>`).join('') || '<span style="color:'+C.textDim+';">—</span>')}
-          ${td(escH(r.nextHigher), C.textMuted)}
-          ${td(escH(r.endEffect), C.textMuted)}
-          ${td(r.severity, r.sevColor)}
+        ${rows.map((r,i) => `<tr style="background:${i%2===0?C.surface:C.surface2};">
+          <td style="${tdS()}">${escH(r.comp)}</td>
+          <td style="${tdS()}">${escH(r.fn)}${r.safety?` <span style="color:${C.red};font-size:9px;font-weight:700;">FS</span>`:''}${r.isInferred?` <span style="font-size:9px;color:${C.textDim};" title="Effects inferred automatically">~</span>`:''}</td>
+          <td style="${tdS(C.orange)};font-weight:600;">${escH(r.fm)}</td>
+          <td style="${tdS(C.textMuted)}">${escH(r.localEff)}</td>
+          <td style="${tdS()}">${r.effects.map(e=>`<div style="font-size:11px;color:${C.textMuted};">→ ${escH(e)}</div>`).join('')||'<span style="color:'+C.textDim+';">—</span>'}</td>
+          <td style="${tdS(C.textMuted)}">${escH(r.nextHigher)}</td>
+          <td style="${tdS(C.textMuted)}">${escH(r.endEffect)}</td>
+          <td style="${tdS()};font-weight:700;color:${!r.severity?C.textDim:r.severity>=8?C.red:r.severity>=5?C.orange:C.green};">${r.severity||'—'}</td>
+          <td style="${tdS()};color:${r.cutCount?C.green:C.textDim};">${r.cutCount?`✓ ${r.cutCount} mechanism${r.cutCount>1?'s':''}` : '—'}</td>
         </tr>`).join('')}
       </tbody>
     </table>
-    <div style="margin-top:12px;font-size:11px;color:${C.textDim};">${rows.length} rows · ${rows.filter(r=>r.safety).length} safety-related</div>`;
-}
-
-// ── Node CRUD ──────────────────────────────────────────────────────────────────
-async function addNode(type, canvasX, canvasY) {
-  const name = `${NODE_TYPES[type]?.label || 'Node'} ${_s.nodes.length + 1}`;
-  const { data } = await sb.from('fmea_nodes').insert({
-    project_id:  _ctx.project.id,
-    parent_type: _ctx.parentType,
-    parent_id:   _ctx.parentId,
-    name, node_type: type,
-    x: canvasX, y: canvasY,
-  }).select().single();
-  if (!data) return;
-  _s.nodes.push(data);
-  _s.selectedId   = data.id;
-  _s.selectedType = 'node';
-  log('Node added', name);
-  renderAll();
-  // Start inline rename immediately
-  scheduleRename(data.id);
-}
-
-async function deleteNode(nodeId) {
-  await sb.from('fmea_nodes').delete().eq('id', nodeId);
-  _s.nodes  = _s.nodes.filter(n => n.id !== nodeId);
-  _s.edges  = _s.edges.filter(e => e.source_id !== nodeId && e.target_id !== nodeId);
-  delete _s.fms[nodeId];
-  if (_s.selectedId === nodeId) _s.selectedId = null;
-  if (_s.injected?.nodeId === nodeId) clearInjection();
-  log('Node deleted', nodeId);
-  renderAll();
-}
-
-function scheduleRename(nodeId) {
-  requestAnimationFrame(() => {
-    const el = document.querySelector(`.fb-node[data-id="${nodeId}"] span:nth-child(2)`);
-    if (!el) return;
-    const cur = _s.nodes.find(n => n.id === nodeId);
-    if (!cur) return;
-    const inp = document.createElement('input');
-    inp.value = cur.name;
-    inp.style.cssText = `background:transparent;border:none;border-bottom:1px solid ${C.accent};
-      outline:none;color:${C.text};font-size:inherit;font-weight:inherit;width:100%;padding:0;`;
-    el.replaceWith(inp);
-    inp.focus(); inp.select();
-    let done = false;
-    const commit = async () => {
-      if (done) return; done = true;
-      const name = inp.value.trim() || cur.name;
-      cur.name = name;
-      await sb.from('fmea_nodes').update({ name }).eq('id', nodeId);
-      renderAll();
-    };
-    inp.addEventListener('blur', commit);
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-      if (e.key === 'Escape') { done = true; renderAll(); }
-    });
-  });
+    <div style="margin-top:12px;font-size:11px;color:${C.textDim};">
+      ${rows.length} rows · ${rows.filter(r=>r.safety).length} safety-related ·
+      ${rows.filter(r=>r.isInferred).length} with inferred effects (marked ~) ·
+      ${rows.filter(r=>r.cutCount>0).length} with mitigations
+    </div>`;
 }
 
 // ── Wiring ─────────────────────────────────────────────────────────────────────
 function wire() {
   const canvas = document.getElementById('fb-canvas');
   const svg    = document.getElementById('fb-svg');
+  const nodesG = document.getElementById('fb-nodes-g');
   if (!canvas) return;
 
-  // ── Pan ──
+  // Pan
   let panStart = null;
   canvas.addEventListener('mousedown', e => {
-    if (e.target.closest('.fb-node') || e.target.closest('.fb-conn-handle') || e.target.closest('.fb-edge-hit')) return;
+    if (e.target.closest('.fb-fn-node') || e.target.closest('.fb-conn-handle') || e.target.closest('.fb-edge-g')) return;
     panStart = { mx: e.clientX, my: e.clientY, px: _s.pan.x, py: _s.pan.y };
     canvas.style.cursor = 'grabbing';
   });
@@ -860,89 +1101,69 @@ function wire() {
   });
   window.addEventListener('mouseup', () => { panStart = null; canvas.style.cursor = 'default'; });
 
-  // ── Zoom ──
+  // Zoom
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
-    const f = e.deltaY > 0 ? 0.92 : 1.08;
-    _s.zoom = Math.max(0.25, Math.min(3, _s.zoom * f));
+    _s.zoom = Math.max(0.25, Math.min(3, _s.zoom * (e.deltaY > 0 ? 0.92 : 1.08)));
     renderGraph();
   }, { passive: false });
 
-  // ── Double-click canvas → add node ──
-  let pendingNodeType = null;
-  document.getElementById('fb-root').addEventListener('click', e => {
-    const btn = e.target.closest('.fb-add-node-btn');
-    if (btn) {
-      pendingNodeType = btn.dataset.type;
-      canvas.style.cursor = 'crosshair';
-      document.getElementById('fb-empty').querySelector('div:last-child').textContent = `Click on the canvas to place ${NODE_TYPES[pendingNodeType]?.label}`;
-    }
-  });
-
-  canvas.addEventListener('click', async e => {
-    if (e.target.closest('.fb-node') || e.target.closest('.fb-edge-hit') || _s.connecting) return;
-    if (!pendingNodeType) return;
-    const rect = canvas.getBoundingClientRect();
-    const cx = (e.clientX - rect.left - _s.pan.x) / _s.zoom - NODE_W / 2;
-    const cy = (e.clientY - rect.top  - _s.pan.y) / _s.zoom - NODE_H / 2;
-    const type = pendingNodeType;
-    pendingNodeType = null;
-    canvas.style.cursor = 'default';
-    await addNode(type, cx, cy);
-  });
-
-  // ── Node drag + select ──
-  const nodesG = document.getElementById('fb-nodes-g');
+  // Node interaction
   nodesG.addEventListener('mousedown', e => {
     // Connection handle drag
     const handle = e.target.closest('.fb-conn-handle');
     if (handle) {
       e.stopPropagation();
       const fromId = handle.dataset.id;
-      const fromNode = _s.nodes.find(n => n.id === fromId);
-      if (!fromNode) return;
-      const rect = canvas.getBoundingClientRect();
-      _s.connecting = {
-        fromId,
-        curX: e.clientX - rect.left,
-        curY: e.clientY - rect.top,
-      };
+      const fromFn = _s.fns.find(f => f.id === fromId);
+      if (!fromFn) return;
+      const rect  = canvas.getBoundingClientRect();
       const dragG = document.getElementById('fb-drag-edge-g');
 
       const onMove = mv => {
         const cx = mv.clientX - rect.left;
         const cy = mv.clientY - rect.top;
-        _s.connecting.curX = cx;
-        _s.connecting.curY = cy;
-        const sx = fromNode.x * _s.zoom + _s.pan.x + (NODE_W * _s.zoom);
-        const sy = fromNode.y * _s.zoom + _s.pan.y + (NODE_H * _s.zoom) / 2;
+        const pos = fnPos(fromFn);
+        const sx  = (pos.x + FN_W) * _s.zoom + _s.pan.x;
+        const sy  = (pos.y + FN_H / 2) * _s.zoom + _s.pan.y;
         dragG.innerHTML = `<line x1="${sx}" y1="${sy}" x2="${cx}" y2="${cy}"
           stroke="${C.accent}" stroke-width="2" stroke-dasharray="6,3"
-          marker-end="url(#fb-arrow-active)"/>`;
+          marker-end="url(#arr-drag)"/>`;
       };
+
       const onUp = async mv => {
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
         dragG.innerHTML = '';
-        const cx = mv.clientX - rect.left;
-        const cy = mv.clientY - rect.top;
-        // Find target node under cursor
-        const targetEl = document.elementFromPoint(mv.clientX, mv.clientY)?.closest('.fb-node');
-        const toId = targetEl?.dataset.id;
-        _s.connecting = null;
+        const tgtEl = document.elementFromPoint(mv.clientX, mv.clientY)?.closest('.fb-fn-node');
+        const toId  = tgtEl?.dataset.id;
         if (toId && toId !== fromId) {
-          const exists = _s.edges.find(e => e.source_id === fromId && e.target_id === toId);
+          const exists = _s.edges.find(e => e.source_fn_id === fromId && e.target_fn_id === toId);
           if (!exists) {
-            const { data } = await sb.from('fmea_edges').insert({
+            const { data: edgeData } = await sb.from('fmea_function_edges').insert({
               project_id: _ctx.project.id,
-              source_id: fromId, target_id: toId,
+              parent_type: _ctx.parentType, parent_id: _ctx.parentId,
+              source_fn_id: fromId, target_fn_id: toId,
               edge_type: 'depends_on',
             }).select().single();
-            if (data) {
-              _s.edges.push(data);
-              _s.selectedId   = data.id;
-              _s.selectedType = 'edge';
-              log('Edge created', `${fromNode.name} → ${_s.nodes.find(n=>n.id===toId)?.name}`);
+            if (edgeData) {
+              // Auto-infer rules for all source FMs
+              const toFn   = _s.fns.find(f => f.id === toId);
+              const srcFms = fromFn._fms || [];
+              const inferredRules = [];
+              for (const fm of srcFms) {
+                const effect = inferEffect(fm.failure_mode, 'depends_on');
+                const { data: ruleData } = await sb.from('fmea_propagation_rules').insert({
+                  edge_id: edgeData.id, source_fm_id: fm.id,
+                  effect_at_target: effect, severity: 5, is_inferred: true,
+                }).select().single();
+                if (ruleData) inferredRules.push(ruleData);
+              }
+              edgeData._rules = inferredRules;
+              _s.edges.push(edgeData);
+              _s.selectedId = edgeData.id;
+              _s.selType    = 'edge';
+              console.log(`[FMEA Beta] Edge created: ${fromFn.name} → ${toFn?.name} (${inferredRules.length} rules inferred)`);
             }
           }
         }
@@ -954,82 +1175,107 @@ function wire() {
     }
 
     // Node drag + select
-    const nodeEl = e.target.closest('.fb-node');
+    const nodeEl = e.target.closest('.fb-fn-node');
     if (!nodeEl) return;
     const id = nodeEl.dataset.id;
-    _s.selectedId   = id;
-    _s.selectedType = 'node';
-    renderNodeList();
+    _s.selectedId = id;
+    _s.selType    = 'fn';
+    renderFnList();
     renderProps();
 
-    const node = _s.nodes.find(n => n.id === id);
-    if (!node) return;
+    const fn = _s.fns.find(f => f.id === id);
+    if (!fn) return;
     const startX = e.clientX, startY = e.clientY;
-    const origX = node.x, origY = node.y;
-    let moved = false;
+    const pos0   = fnPos(fn);
+    let moved    = false;
 
     const onMove = mv => {
       moved = true;
-      node.x = origX + (mv.clientX - startX) / _s.zoom;
-      node.y = origY + (mv.clientY - startY) / _s.zoom;
+      const nx = pos0.x + (mv.clientX - startX) / _s.zoom;
+      const ny = pos0.y + (mv.clientY - startY) / _s.zoom;
+      if (!_s.cfgMap[fn.id]) {
+        fn._x = nx; fn._y = ny;
+      } else {
+        _s.cfgMap[fn.id].x = nx;
+        _s.cfgMap[fn.id].y = ny;
+      }
       renderGraph();
     };
     const onUp = async () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      if (moved) await sb.from('fmea_nodes').update({ x: node.x, y: node.y }).eq('id', node.id);
+      if (!moved) return;
+      const newPos = fnPos(fn);
+      if (_s.cfgMap[fn.id]) {
+        await sb.from('fmea_node_config').update({ x: newPos.x, y: newPos.y }).eq('id', _s.cfgMap[fn.id].id);
+      } else {
+        const { data } = await sb.from('fmea_node_config').upsert({
+          fn_id: fn.id, project_id: _ctx.project.id,
+          parent_type: _ctx.parentType, parent_id: _ctx.parentId,
+          x: newPos.x, y: newPos.y,
+        }, { onConflict: 'fn_id,parent_type,parent_id' }).select().single();
+        if (data) { _s.cfgMap[fn.id] = data; fn._cfg = data; }
+      }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   });
 
-  // Show/hide connection handles on node hover
+  // Show/hide handles on hover
   nodesG.addEventListener('mouseover', e => {
-    const nodeEl = e.target.closest('.fb-node');
-    if (nodeEl) nodeEl.querySelector('.fb-conn-handle')?.style.setProperty('opacity','1');
+    e.target.closest('.fb-fn-node')?.querySelector('.fb-conn-handle')?.style.setProperty('opacity','1');
   });
   nodesG.addEventListener('mouseout', e => {
-    const nodeEl = e.target.closest('.fb-node');
-    if (nodeEl) nodeEl.querySelector('.fb-conn-handle')?.style.setProperty('opacity','0');
+    e.target.closest('.fb-fn-node')?.querySelector('.fb-conn-handle')?.style.setProperty('opacity','0');
   });
 
-  // Double-click node → rename
-  nodesG.addEventListener('dblclick', e => {
-    const nodeEl = e.target.closest('.fb-node');
-    if (nodeEl) scheduleRename(nodeEl.dataset.id);
-  });
-
-  // Edge click
-  document.getElementById('fb-svg').addEventListener('click', e => {
-    const hit = e.target.closest('.fb-edge-hit');
+  // Edge click (SVG delegate)
+  svg.addEventListener('click', e => {
+    const hit = e.target.closest('.fb-edge-g');
     if (!hit) return;
-    _s.selectedId   = hit.dataset.eid;
-    _s.selectedType = 'edge';
+    _s.selectedId = hit.dataset.eid;
+    _s.selType    = 'edge';
     renderProps();
+    renderGraph();
   });
 
-  // Left panel node list click
-  document.getElementById('fb-node-list')?.addEventListener('click', e => {
-    const item = e.target.closest('.fb-nl-item');
+  // Left panel fn list click
+  document.getElementById('fb-fn-list')?.addEventListener('click', e => {
+    const item = e.target.closest('.fb-fn-item');
     if (!item) return;
-    _s.selectedId   = item.dataset.id;
-    _s.selectedType = 'node';
+    _s.selectedId = item.dataset.id;
+    _s.selType    = 'fn';
+    // Pan to node
+    const fn = _s.fns.find(f => f.id === item.dataset.id);
+    if (fn) {
+      const pos = fnPos(fn);
+      const canvas = document.getElementById('fb-canvas');
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        _s.pan.x = rect.width  / 2 - (pos.x + FN_W / 2) * _s.zoom;
+        _s.pan.y = rect.height / 2 - (pos.y + FN_H / 2) * _s.zoom;
+      }
+    }
     renderAll();
   });
 
   // Delete key
   window.addEventListener('keydown', e => {
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
     if (!_s.selectedId) return;
-    if (_s.selectedType === 'node') deleteNode(_s.selectedId);
-    else if (_s.selectedType === 'edge') {
-      const edge = _s.edges.find(e => e.id === _s.selectedId);
-      if (edge) { sb.from('fmea_edges').delete().eq('id', edge.id); _s.edges = _s.edges.filter(e2 => e2.id !== edge.id); _s.selectedId = null; renderAll(); }
+    if (_s.selType === 'edge') {
+      const edge = _s.edges.find(x => x.id === _s.selectedId);
+      if (edge) {
+        sb.from('fmea_function_edges').delete().eq('id', edge.id);
+        _s.edges = _s.edges.filter(x => x.id !== edge.id);
+        _s.selectedId = null;
+        renderAll();
+      }
     }
   });
 
-  // Topbar buttons
+  // Topbar
   document.getElementById('fb-clear-btn')?.addEventListener('click', clearInjection);
   document.getElementById('fb-gen-btn')?.addEventListener('click', () => { generateTable(); switchTab('table'); });
 
@@ -1042,35 +1288,17 @@ function switchTab(tab) {
   document.getElementById('fb-canvas').style.display     = tab === 'graph' ? '' : 'none';
   document.getElementById('fb-table-wrap').style.display = tab === 'table' ? '' : 'none';
   document.querySelectorAll('.fb-tab').forEach(b => {
-    const a = b.dataset.tab === tab;
-    b.style.cssText = tabS(a);
-    b.classList.toggle('active', a);
+    b.style.cssText = tabS(b.dataset.tab === tab);
+    b.classList.toggle('active', b.dataset.tab === tab);
   });
   if (tab === 'table') generateTable();
 }
 
-// ── Log ────────────────────────────────────────────────────────────────────────
-function log(title, detail) {
-  // Minimal console log — no bottom panel in this prototype
-  console.log(`[FMEA Beta] ${title}${detail ? ' — ' + detail : ''}`);
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-function escH(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function btnS(bg) {
-  return `background:${bg};border:1px solid ${C.border};border-radius:5px;color:${C.text};font-size:12px;font-weight:600;padding:6px 10px;cursor:pointer;`;
-}
-function tabS(active) {
-  return `background:transparent;border:none;border-bottom:2px solid ${active?C.accent:'transparent'};color:${active?C.accent:C.textMuted};font-size:12px;font-weight:${active?'700':'500'};padding:0 14px;height:38px;cursor:pointer;`;
-}
-function sectionHeader() {
-  return `padding:10px 14px 6px;font-size:10px;font-weight:700;letter-spacing:1.5px;color:${C.textMuted};text-transform:uppercase;`;
-}
-function sectionLabel() {
-  return `font-size:10px;font-weight:700;letter-spacing:1px;color:${C.textMuted};text-transform:uppercase;margin-bottom:6px;`;
-}
-function pill(text, color) {
-  return `<span style="background:${color}22;border:1px solid ${color}55;color:${color};padding:2px 7px;border-radius:3px;font-size:10px;font-weight:600;">${text}</span>`;
-}
+// ── Style helpers ──────────────────────────────────────────────────────────────
+function escH(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function btnS(bg, border) { return `background:${bg};border:1px solid ${border||C.border};border-radius:5px;color:${C.text};font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer;`; }
+function tabS(active) { return `background:transparent;border:none;border-bottom:2px solid ${active?C.primary:'transparent'};color:${active?C.primary:C.textMuted};font-size:12px;font-weight:${active?'700':'500'};padding:0 14px;height:38px;cursor:pointer;`; }
+function secHead() { return `padding:10px 14px 6px;font-size:10px;font-weight:700;letter-spacing:1.5px;color:${C.textMuted};text-transform:uppercase;flex-shrink:0;`; }
+function secLabel() { return `font-size:10px;font-weight:700;letter-spacing:1px;color:${C.textMuted};text-transform:uppercase;margin-bottom:6px;display:block;`; }
+function inpS() { return `background:${C.surface2};border:1px solid ${C.border};border-radius:4px;color:${C.text};font-size:12px;padding:5px 8px;outline:none;`; }
+function pill(text, color) { return `<span style="display:inline-block;background:${color}18;border:1px solid ${color}55;color:${color};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;">${text}</span>`; }
