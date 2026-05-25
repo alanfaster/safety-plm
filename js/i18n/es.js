@@ -78,6 +78,7 @@ export default {
   'safety.FMEA': 'FMEA',
   'safety.DFMEA': 'FMEA Funcional',
   'safety.SYS_DFMEA': 'System DFMEA',
+  'safety.FMEA_BETA': '⬡ NEW FMEA Beta',
   'safety.PHL_PHA': 'PHL/PHA',
   'safety.FHA': 'FHA',
   'safety.new_row': 'Añadir Fila',

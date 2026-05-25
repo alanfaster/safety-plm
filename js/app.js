@@ -23,6 +23,7 @@ import { renderSysDFMEA }              from './pages/safety/dfmea-system.js';
 import { renderFTA }                   from './pages/safety/fta.js';
 import { renderDFA }                   from './pages/safety/dfa.js';
 import { renderSafetyGeneric }         from './pages/safety/generic.js';
+import { renderFmeaBeta }              from './pages/safety/fmea-beta.js';
 import { renderProjectSettings }       from './pages/project-settings.js';
 import { renderTraceabilityDashboard } from './pages/traceability-dashboard.js';
 
@@ -370,6 +371,8 @@ async function renderSafetyPage(container, ctx, parentType, parentId, analysisTy
     await renderFTA(container, { ...ctx, parentType, parentId });
   } else if (analysisType === 'DFA') {
     await renderDFA(container, { ...ctx, parentType, parentId });
+  } else if (analysisType === 'FMEA_BETA') {
+    await renderFmeaBeta(container, { ...ctx, parentType, parentId });
   } else {
     await renderSafetyGeneric(container, { ...ctx, parentType, parentId, analysisType });
   }
