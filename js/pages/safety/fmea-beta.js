@@ -155,12 +155,15 @@ function buildShell(container, title) {
 
       <!-- Toolbar -->
       <div class="arch-toolbar">
-        <span style="font-size:11px;font-weight:700;color:var(--color-text-muted);letter-spacing:.5px;margin-right:4px;">FMEA</span>
-        <button id="fb-gen-btn" class="arch-tb-item" title="Generate DFMEA table">⚡ Generate DFMEA</button>
+        <span style="font-size:11px;font-weight:700;color:var(--color-text-muted);letter-spacing:.5px;margin-right:4px;">ADD</span>
+        <button class="arch-tb-item" id="fb-add-system"  title="Add System container"><span class="arch-pal-icon arch-pal-icon-assembly" style="background:#6B7280">S</span>System</button>
+        <button class="arch-tb-item" id="fb-add-group"   title="Add sub-group"><span class="arch-pal-icon arch-pal-icon-assembly">▭</span>Group</button>
+        <button class="arch-tb-item" id="fb-add-hw"      title="Add HW block"><span class="arch-pal-icon" style="background:#4A6FA5">HW</span>HW</button>
+        <button class="arch-tb-item" id="fb-add-sw"      title="Add SW block"><span class="arch-pal-icon" style="background:#3A7D5C">SW</span>SW</button>
+        <button class="arch-tb-item" id="fb-add-mech"    title="Add Mechanical block"><span class="arch-pal-icon" style="background:#7A5C2E">ME</span>Mech</button>
         <div class="arch-tb-sep"></div>
-        <span style="font-size:10px;color:var(--color-text-muted);">
-          Drag ● on function → connect · Click edge → configure · Click function → inject failure
-        </span>
+        <span style="font-size:11px;font-weight:700;color:var(--color-text-muted);letter-spacing:.5px;margin-right:4px;">FMEA</span>
+        <button id="fb-gen-btn" class="arch-tb-item" title="Generate DFMEA table">⚡ DFMEA</button>
         <div class="arch-tb-sep" style="margin-left:auto;"></div>
         <button class="arch-tb-zoom" id="btn-zoom-in"  title="Zoom in">＋</button>
         <button class="arch-tb-zoom" id="btn-zoom-out" title="Zoom out">－</button>
@@ -269,15 +272,18 @@ function renderBlocks() {
   if (!groupLayer || !compLayer) return;
 
   groupLayer.innerHTML = _s.comps.filter(c => c.comp_type === 'Group').map(g => {
+    const isAssembly = g.data?.subtype === 'assembly';
+    const stereo     = isAssembly ? 'group' : 'system';
     const sel = _s.selectedFnId && g.functions?.some(f => f.id === _s.selectedFnId);
-    return `<div class="arch-group ${sel ? 'arch-group--sel' : ''}"
+    return `<div class="arch-group ${isAssembly ? 'arch-group--assembly' : ''} ${sel ? 'arch-group--sel' : ''}"
       id="comp-${g.id}" data-id="${g.id}"
       style="left:${g.x}px;top:${g.y}px;width:${g.width}px;height:${g.height}px">
       <div class="arch-group-hdr" data-drag-id="${g.id}">
-        <span class="arch-group-stereo">«system»</span>
-        <span class="arch-group-name">${escH(g.name)}</span>
+        <span class="arch-group-stereo">«${stereo}»</span>
+        <span class="arch-group-name" id="cname-${g.id}">${escH(g.name)}</span>
       </div>
       ${fnStrip(g)}
+      <button class="arch-del-badge" data-del-id="${g.id}" title="Delete">✕</button>
       <div class="arch-resize-handle arch-resize-handle--se" data-corner="se" data-comp-id="${g.id}"></div>
       <div class="arch-resize-handle arch-resize-handle--sw" data-corner="sw" data-comp-id="${g.id}"></div>
       <div class="arch-resize-handle arch-resize-handle--ne" data-corner="ne" data-comp-id="${g.id}"></div>
@@ -294,10 +300,11 @@ function renderBlocks() {
              border-color:${c.is_safety_critical ? '#C5221F' : st.border}">
       <div class="arch-block-hdr" data-drag-id="${c.id}">
         <span class="arch-block-type-badge" style="color:${c.is_safety_critical ? '#C5221F' : st.border}">${c.comp_type}</span>
-        <span class="arch-block-name">${escH(c.name)}</span>
+        <span class="arch-block-name" id="cname-${c.id}">${escH(c.name)}</span>
         ${c.is_safety_critical ? '<span class="arch-block-safe-ico">⚠</span>' : ''}
       </div>
       ${fnStrip(c)}
+      <button class="arch-del-badge" data-del-id="${c.id}" title="Delete">✕</button>
       <div class="arch-resize-handle arch-resize-handle--se" data-corner="se" data-comp-id="${c.id}"></div>
       <div class="arch-resize-handle arch-resize-handle--sw" data-corner="sw" data-comp-id="${c.id}"></div>
       <div class="arch-resize-handle arch-resize-handle--ne" data-corner="ne" data-comp-id="${c.id}"></div>
@@ -305,28 +312,62 @@ function renderBlocks() {
     </div>`;
   }).join('');
 
-  // Wire block drag (position only — no delete/resize)
+  // Wire drag, resize, delete, rename
   compLayer.querySelectorAll('[data-drag-id]').forEach(hdr => wireBlockDrag(hdr.dataset.dragId));
   groupLayer.querySelectorAll('[data-drag-id]').forEach(hdr => wireBlockDrag(hdr.dataset.dragId));
   compLayer.querySelectorAll('.arch-resize-handle').forEach(h => wireBlockResize(h));
   groupLayer.querySelectorAll('.arch-resize-handle').forEach(h => wireBlockResize(h));
 
-  // Wire function clicks
+  // Delete badges
+  document.querySelectorAll('[data-del-id]').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); deleteComp(btn.dataset.delId); });
+  });
+
+  // Inline rename on double-click
+  document.querySelectorAll('.arch-group-name, .arch-block-name').forEach(el => {
+    el.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const id = el.id.replace('cname-', '');
+      startRename(id, el);
+    });
+  });
+
+  // Wire function clicks (delegate to avoid hitting handle/del buttons)
   document.querySelectorAll('.fb-fn-box').forEach(el => {
     el.addEventListener('click', e => {
+      if (e.target.closest('.fmea-fn-handle') || e.target.closest('.fb-del-fn')) return;
       e.stopPropagation();
       selectFn(el.dataset.fnId);
     });
   });
 
+  // Add/delete/rename function buttons
+  document.querySelectorAll('.fb-addfun-btn').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); addFn(btn.dataset.compId); });
+  });
+  document.querySelectorAll('.fb-del-fn').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); deleteFn(btn.dataset.fnId); });
+  });
+  document.querySelectorAll('.fb-fn-box .arch-fun-box-name').forEach(el => {
+    el.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const fnId = el.closest('.fb-fn-box')?.dataset.fnId;
+      if (fnId) startFnRename(fnId, el);
+    });
+  });
+
   // Wire connection handles (shown on hover)
   updateHandles();
+
+  // Sync group memberships on load
+  resyncGroupIds();
 }
 
 function fnStrip(c) {
   const fns = c.functions || [];
-  if (!fns.length) return '<div style="padding:4px 8px;font-size:10px;color:var(--color-text-muted);">No functions</div>';
-  return `<div class="arch-block-funs" id="funlist-${c.id}">
+  const isGroup = c.comp_type === 'Group';
+  const funsClass = isGroup ? 'arch-group-funs' : 'arch-block-funs';
+  return `<div class="${funsClass}" id="funlist-${c.id}">
     ${fns.map(f => {
       const prop  = _s.propagated[f.id];
       const isInj = _s.injected?.fnId === f.id;
@@ -344,6 +385,7 @@ function fnStrip(c) {
         ${prop?.cut ? '<span style="font-size:9px;color:#1a8f5c;margin-left:2px;">✓</span>' : ''}
         ${prop?.level === 3 ? '<span style="font-size:9px;color:#ef4444;margin-left:2px;">⚠</span>' : ''}
         ${f.is_safety_related ? '<span class="arch-fun-box-warn">⚠</span>' : ''}
+        <button class="arch-fun-del fb-del-fn" data-fn-id="${f.id}" data-comp-id="${c.id}" title="Remove function">✕</button>
         <!-- FMEA connection handle -->
         <span class="fmea-fn-handle" data-fn-id="${f.id}"
           style="position:absolute;right:-6px;top:50%;transform:translateY(-50%);
@@ -352,6 +394,7 @@ function fnStrip(c) {
           box-shadow:0 1px 3px rgba(0,0,0,.3);z-index:10;"></span>
       </div>`;
     }).join('')}
+    <button class="arch-addfun-btn fb-addfun-btn" data-comp-id="${c.id}">+ Add function</button>
   </div>`;
 }
 
@@ -489,7 +532,7 @@ function fitView() {
   applyViewport();
 }
 
-// ── Block drag (same as arch) ──────────────────────────────────────────────────
+// ── Block drag — groups move with all children ─────────────────────────────────
 function wireBlockDrag(compId) {
   const hdr = document.querySelector(`#comp-${compId} [data-drag-id="${compId}"]`);
   if (!hdr) return;
@@ -497,8 +540,11 @@ function wireBlockDrag(compId) {
     if (e.button !== 0) return;
     e.stopPropagation();
     const comp = _s.comps.find(c => c.id === compId); if (!comp) return;
+    const isGroup = comp.comp_type === 'Group';
+    const children = isGroup ? getGroupDescendants(compId) : [];
     const startX = e.clientX, startY = e.clientY;
     const ox = comp.x, oy = comp.y;
+    const childOffsets = children.map(c => ({ c, dx: c.x - ox, dy: c.y - oy }));
     let moved = false;
     const onMove = mv => {
       moved = true;
@@ -506,6 +552,11 @@ function wireBlockDrag(compId) {
       comp.y = oy + (mv.clientY - startY) / _s.zoom;
       const el = document.getElementById(`comp-${compId}`);
       if (el) { el.style.left = comp.x + 'px'; el.style.top = comp.y + 'px'; }
+      childOffsets.forEach(({ c, dx, dy }) => {
+        c.x = comp.x + dx; c.y = comp.y + dy;
+        const cel = document.getElementById(`comp-${c.id}`);
+        if (cel) { cel.style.left = c.x + 'px'; cel.style.top = c.y + 'px'; }
+      });
       renderFmeaEdges();
     };
     const onUp = async () => {
@@ -513,12 +564,184 @@ function wireBlockDrag(compId) {
       document.removeEventListener('pointerup',   onUp);
       if (moved) {
         await sb.from('arch_components').update({ x: comp.x, y: comp.y }).eq('id', comp.id);
+        for (const { c } of childOffsets) {
+          await sb.from('arch_components').update({ x: c.x, y: c.y }).eq('id', c.id);
+        }
         renderAll();
       }
     };
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup',   onUp);
   });
+}
+
+function getGroupDescendants(groupId) {
+  const result = [];
+  const queue = [groupId];
+  while (queue.length) {
+    const gid = queue.shift();
+    _s.comps.filter(c => c.data?.group_id === gid).forEach(c => {
+      result.push(c);
+      if (c.comp_type === 'Group') queue.push(c.id);
+    });
+  }
+  return result;
+}
+
+function resyncGroupIds() {
+  const groups   = _s.comps.filter(c => c.comp_type === 'Group');
+  const nonGroups = _s.comps.filter(c => c.comp_type !== 'Group' && c.comp_type !== 'Port');
+  const now = new Date().toISOString();
+  for (const c of nonGroups) {
+    const inside = groups.find(g =>
+      c.x + c.width  / 2 > g.x && c.x + c.width  / 2 < g.x + g.width &&
+      c.y + c.height / 2 > g.y && c.y + c.height / 2 < g.y + g.height
+    );
+    const correctGid = inside?.id || null;
+    const storedGid  = c.data?.group_id || null;
+    if (correctGid !== storedGid) {
+      c.data = { ...(c.data || {}), group_id: correctGid };
+      sb.from('arch_components').update({ data: c.data, updated_at: now }).eq('id', c.id).then();
+    }
+  }
+}
+
+// ── Create / Delete / Rename components ───────────────────────────────────────
+async function addSystem() {
+  const count = _s.comps.filter(c => c.comp_type === 'Group' && !c.data?.subtype).length;
+  const name  = `System-${String(count + 1).padStart(2, '0')}`;
+  const { data } = await sb.from('arch_components').insert({
+    parent_type: _ctx.parentType, parent_id: _ctx.parentId, project_id: _ctx.project.id,
+    name, comp_type: 'Group',
+    x: 40 + (count % 3) * 360, y: 40 + Math.floor(count / 3) * 300,
+    width: 320, height: 260, sort_order: _s.comps.length,
+    data: {},
+  }).select().single();
+  if (!data) return;
+  data.functions = [];
+  _s.comps.push(data);
+  renderAll();
+  setTimeout(() => startRename(data.id, document.getElementById(`cname-${data.id}`)), 60);
+}
+
+async function addGroup() {
+  const count = _s.comps.filter(c => c.comp_type === 'Group' && c.data?.subtype === 'assembly').length;
+  const name  = `Group-${String(count + 1).padStart(2, '0')}`;
+  const { data } = await sb.from('arch_components').insert({
+    parent_type: _ctx.parentType, parent_id: _ctx.parentId, project_id: _ctx.project.id,
+    name, comp_type: 'Group',
+    x: 60 + (count % 3) * 300, y: 100 + Math.floor(count / 3) * 240,
+    width: 260, height: 200, sort_order: _s.comps.length,
+    data: { subtype: 'assembly' },
+  }).select().single();
+  if (!data) return;
+  data.functions = [];
+  _s.comps.push(data);
+  resyncGroupIds();
+  renderAll();
+  setTimeout(() => startRename(data.id, document.getElementById(`cname-${data.id}`)), 60);
+}
+
+async function addBlock(type) {
+  const count = _s.comps.filter(c => c.comp_type === type).length;
+  const prefix = { HW: 'ECU', SW: 'SW', Mechanical: 'Mech' }[type] || type;
+  const name   = `${prefix}-${String(count + 1).padStart(2, '0')}`;
+  const { data } = await sb.from('arch_components').insert({
+    parent_type: _ctx.parentType, parent_id: _ctx.parentId, project_id: _ctx.project.id,
+    name, comp_type: type,
+    x: 80 + (count % 4) * 220, y: 80 + Math.floor(count / 4) * 180,
+    width: 200, height: 150, sort_order: _s.comps.length,
+  }).select().single();
+  if (!data) return;
+  data.functions = [];
+  _s.comps.push(data);
+  resyncGroupIds();
+  renderAll();
+  setTimeout(() => startRename(data.id, document.getElementById(`cname-${data.id}`)), 60);
+}
+
+async function deleteComp(id) {
+  const comp = _s.comps.find(c => c.id === id); if (!comp) return;
+  const descendants = comp.comp_type === 'Group' ? getGroupDescendants(id) : [];
+  const allIds = [id, ...descendants.map(c => c.id)];
+  for (const cid of allIds) {
+    await sb.from('arch_components').delete().eq('id', cid);
+  }
+  _s.comps = _s.comps.filter(c => !allIds.includes(c.id));
+  _s.fns   = _s.fns.filter(f => !allIds.includes(f.component_id));
+  _s.edges = _s.edges.filter(e => _s.fns.some(f => f.id === e.source_fn_id) && _s.fns.some(f => f.id === e.target_fn_id));
+  renderAll();
+}
+
+function startRename(compId, el) {
+  if (!el) { el = document.getElementById(`cname-${compId}`); }
+  if (!el) return;
+  const comp = _s.comps.find(c => c.id === compId); if (!comp) return;
+  const prev = el.textContent;
+  el.setAttribute('contenteditable', 'true');
+  el.focus();
+  document.execCommand('selectAll', false, null);
+  const finish = async () => {
+    el.removeAttribute('contenteditable');
+    const newName = el.textContent.trim() || prev;
+    el.textContent = newName;
+    if (newName !== prev) {
+      comp.name = newName;
+      await sb.from('arch_components').update({ name: newName }).eq('id', compId);
+    }
+  };
+  el.addEventListener('blur',    finish, { once: true });
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } if (e.key === 'Escape') { el.textContent = prev; el.blur(); } }, { once: true });
+}
+
+// ── Add / remove functions ─────────────────────────────────────────────────────
+async function addFn(compId) {
+  const count = (_s.fns.filter(f => f.component_id === compId)).length;
+  const name  = `F${String(count + 1).padStart(2, '0')}`;
+  const { data } = await sb.from('arch_functions').insert({
+    component_id: compId, project_id: _ctx.project.id,
+    name, sort_order: count,
+  }).select().single();
+  if (!data) return;
+  data._fms = [];
+  _s.fns.push(data);
+  const comp = _s.comps.find(c => c.id === compId);
+  if (comp) comp.functions = [...(comp.functions || []), data];
+  renderAll();
+  // Inline rename
+  setTimeout(() => {
+    const nameEl = document.querySelector(`.fb-fn-box[data-fn-id="${data.id}"] .arch-fun-box-name`);
+    if (nameEl) startFnRename(data.id, nameEl);
+  }, 60);
+}
+
+async function deleteFn(fnId) {
+  await sb.from('arch_functions').delete().eq('id', fnId);
+  _s.fns = _s.fns.filter(f => f.id !== fnId);
+  _s.comps.forEach(c => { if (c.functions) c.functions = c.functions.filter(f => f.id !== fnId); });
+  _s.edges = _s.edges.filter(e => e.source_fn_id !== fnId && e.target_fn_id !== fnId);
+  renderAll();
+}
+
+function startFnRename(fnId, el) {
+  if (!el) return;
+  const fn = _s.fns.find(f => f.id === fnId); if (!fn) return;
+  const prev = el.textContent;
+  el.setAttribute('contenteditable', 'true');
+  el.focus();
+  document.execCommand('selectAll', false, null);
+  const finish = async () => {
+    el.removeAttribute('contenteditable');
+    const newName = el.textContent.trim() || prev;
+    el.textContent = newName;
+    if (newName !== prev) {
+      fn.name = newName;
+      _s.comps.forEach(c => { const f = c.functions?.find(f => f.id === fnId); if (f) f.name = newName; });
+      await sb.from('arch_functions').update({ name: newName }).eq('id', fnId);
+    }
+  };
+  el.addEventListener('blur',    finish, { once: true });
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } if (e.key === 'Escape') { el.textContent = prev; el.blur(); } }, { once: true });
 }
 
 function wireBlockResize(handleEl) {
@@ -1046,6 +1269,11 @@ function showRuleForm(edge, srcFms, existingRule) {
 function wireToolbar() {
   document.getElementById('fb-clear-btn')?.addEventListener('click', clearInjection);
   document.getElementById('fb-gen-btn')?.addEventListener('click',   () => { generateTable(); switchPanelTab('table'); });
+  document.getElementById('fb-add-system')?.addEventListener('click', addSystem);
+  document.getElementById('fb-add-group')?.addEventListener('click',  addGroup);
+  document.getElementById('fb-add-hw')?.addEventListener('click',     () => addBlock('HW'));
+  document.getElementById('fb-add-sw')?.addEventListener('click',     () => addBlock('SW'));
+  document.getElementById('fb-add-mech')?.addEventListener('click',   () => addBlock('Mechanical'));
 }
 
 // ── Propagation engine ────────────────────────────────────────────────────────
