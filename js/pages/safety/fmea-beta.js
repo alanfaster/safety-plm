@@ -559,18 +559,20 @@ function buildShell(container, title) {
         <!-- Right properties panel -->
         <aside class="req-trace-panel arch-pal-wrap" id="arch-pal-wrap" style="border-right:none">
           <div class="swu-rail-tabs">
-            <button class="swu-rail-btn swu-rail-btn--active" id="arch-pal-tab">Properties</button>
+            <button class="swu-rail-btn" id="arch-pal-tab">Properties</button>
+            <button class="swu-rail-btn swu-rail-btn--active" id="fb-tab-fns">Functions</button>
             <button class="swu-rail-btn" id="fb-tab-table">DFMEA</button>
           </div>
           <div class="req-trace-panel-hdr">
-            <span class="req-trace-panel-title">Properties</span>
+            <span class="req-trace-panel-title" id="fb-panel-title">Functions</span>
             <button class="btn-icon" id="arch-pal-close" title="Collapse">✕</button>
           </div>
-          <div class="arch-props-scroll" id="pal-body-props">
+          <div class="arch-props-scroll" id="pal-body-props" style="display:none;">
             <div id="arch-props-body">
               <div class="arch-props-empty">↖ Select an element</div>
             </div>
           </div>
+          <div id="fb-fns-body" style="flex:1;overflow:auto;padding:10px 8px;font-size:12px;"></div>
           <div id="fb-table-body" style="display:none;flex:1;overflow:auto;padding:12px;font-size:12px;"></div>
         </aside><!-- end arch-pal-wrap -->
       </div>
@@ -2969,7 +2971,6 @@ function openProps(id) {
     wirePropsPortSection(id);
     wirePropsF(c, id);
     loadAndRenderFunFMs(c, id);
-    if (_s.fmeaMode) (c.functions || []).forEach(f => fmeaAppendFnSection(f.id));
     return;
   }
 
@@ -3052,10 +3053,9 @@ function openProps(id) {
   wirePropsF(c, id);
   loadAndRenderFunFMs(c, id);
   wirePropsScSection(c, id);
-  if (_s.fmeaMode) (c.functions || []).forEach(f => fmeaAppendFnSection(f.id));
 }
 
-async function loadAndRenderFunFMs(c, compId) {
+async function loadAndRenderFunFMs(c, compId, { skipPropsSection = false } = {}) {
   const fnIds=(c.functions||[]).map(f=>f.id);
   if(!fnIds.length) return;
   const {data:fms}=await sb.from('arch_function_fms')
@@ -3067,6 +3067,10 @@ async function loadAndRenderFunFMs(c, compId) {
     const el=document.getElementById(`fun-fms-${f.id}`);
     if(el) renderFunFMsInto(el,f,compId);
   });
+  if (_s?.fmeaMode && !skipPropsSection) {
+    document.querySelectorAll('.fmea-fn-section').forEach(el => el.remove());
+    c.functions?.forEach(f => fmeaAppendFnSection(f.id));
+  }
 }
 
 function renderFunFMsInto(container, f, compId){
@@ -4967,6 +4971,9 @@ export async function renderFmeaBeta(container, ctx) {
   wireFmeaLayer();
   wireFmeaToolbar();
   requestAnimationFrame(fitView);
+  // Load FMs for all components then show Functions tab
+  Promise.all(_s.components.filter(c=>c.comp_type!=='Group'&&(c.functions||[]).length).map(c=>loadAndRenderFunFMs(c,c.id,{skipPropsSection:true})))
+    .then(() => fmeaSwitchTab('fns'));
 }
 
 // ── FMEA: function box HTML (with connection handle) ──────────────────────────
@@ -5040,25 +5047,37 @@ function wireFmeaToolbar() {
   document.getElementById('fb-tab-table')?.addEventListener('click', () => {
     fmeaGenerateTable(); fmeaSwitchTab('table');
   });
+  document.getElementById('fb-tab-fns')?.addEventListener('click', () => fmeaSwitchTab('fns'));
   document.getElementById('arch-pal-tab')?.addEventListener('click', () => fmeaSwitchTab('props'));
 }
 
 function fmeaSwitchTab(tab) {
   const propsBody = document.getElementById('pal-body-props');
+  const fnsBody   = document.getElementById('fb-fns-body');
   const tableBody = document.getElementById('fb-table-body');
   const tabProps  = document.getElementById('arch-pal-tab');
+  const tabFns    = document.getElementById('fb-tab-fns');
   const tabTable  = document.getElementById('fb-tab-table');
-  const panel     = document.getElementById('arch-pal-wrap');
+  const title     = document.getElementById('fb-panel-title');
+
+  if (propsBody) propsBody.style.display = 'none';
+  if (fnsBody)   fnsBody.style.display   = 'none';
+  if (tableBody) tableBody.style.display = 'none';
+  [tabProps, tabFns, tabTable].forEach(b => b?.classList.remove('swu-rail-btn--active'));
+
   if (tab === 'props') {
     if (propsBody) propsBody.style.display = '';
-    if (tableBody) tableBody.style.display = 'none';
     tabProps?.classList.add('swu-rail-btn--active');
-    tabTable?.classList.remove('swu-rail-btn--active');
+    if (title) title.textContent = 'Properties';
+  } else if (tab === 'fns') {
+    if (fnsBody) fnsBody.style.display = '';
+    tabFns?.classList.add('swu-rail-btn--active');
+    if (title) title.textContent = 'Functions & Failure Modes';
+    fmeaRenderFnsPanel();
   } else {
-    if (propsBody) propsBody.style.display = 'none';
     if (tableBody) tableBody.style.display = '';
-    tabProps?.classList.remove('swu-rail-btn--active');
     tabTable?.classList.add('swu-rail-btn--active');
+    if (title) title.textContent = 'DFMEA Table';
   }
   panel?.classList.add('open');
 }
@@ -5366,6 +5385,8 @@ function fmeaAppendFnSection(fnId) {
     </div>`).join('');
 
   const section = document.createElement('div');
+  section.className = 'fmea-fn-section';
+  section.dataset.fnId = fnId;
   section.style.cssText = 'border-top:1px solid var(--color-border);margin-top:12px;padding-top:12px;';
   section.innerHTML = `
     <div class="arch-props-section-label" style="font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--color-text-muted);text-transform:uppercase;margin-bottom:6px;">⬡ FMEA Analysis</div>
@@ -5731,6 +5752,270 @@ function fmeaShowRuleForm(edge, srcFms, existingRule) {
     fmeaShowEdgeProps(edge);
   });
   document.getElementById('fb-rf-cancel')?.addEventListener('click', () => fmeaShowEdgeProps(edge));
+}
+
+// ── FMEA: Functions panel (master list of all functions + FMs + connections) ──
+function fmeaRefreshFnsPanel() {
+  if (document.getElementById('fb-fns-body')?.style.display !== 'none') fmeaRenderFnsPanel();
+}
+
+function fmeaRenderFnsPanel() {
+  const el = document.getElementById('fb-fns-body'); if (!el) return;
+  const allFns = _s?.components?.flatMap(c => c.functions || []) || [];
+  if (!allFns.length) {
+    el.innerHTML = `<div style="padding:16px;color:var(--color-text-muted);font-size:12px;">No functions defined yet. Add functions to components in the canvas.</div>`;
+    return;
+  }
+
+  const rowS  = `display:flex;align-items:center;gap:5px;padding:4px 6px;border-radius:3px;`;
+  const labelS= `font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--color-text-muted);margin:8px 0 3px;`;
+
+  el.innerHTML = (_s?.components || []).filter(c => c.comp_type !== 'Group' && (c.functions||[]).length).map(comp => {
+    const prop = _s?.fmeaPropagated || {};
+    const inj  = _s?.fmeaInjected;
+    return `
+    <div style="margin-bottom:12px;border:1px solid var(--color-border);border-radius:6px;overflow:hidden;">
+      <div style="background:var(--bg-hover);padding:6px 10px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--color-border);">
+        <span style="font-size:10px;font-weight:700;color:var(--color-text-muted);">${escH(comp.comp_type)}</span>
+        <span style="font-size:13px;font-weight:600;">${escH(comp.name)}</span>
+        ${comp.is_safety_critical ? '<span style="font-size:9px;color:var(--color-danger);font-weight:700;margin-left:auto;">⚠ FS</span>' : ''}
+      </div>
+      <div style="padding:6px 8px;">
+        ${(comp.functions || []).map(f => {
+          const fProp = prop[f.id];
+          const isInj = inj?.fnId === f.id;
+          const glowColor = isInj ? '#c45f00' : fProp?.cut ? '#1a8f5c' : FMEA_PROP_GLOW[fProp?.level];
+          const outEdges = (_s?.fmeaEdges||[]).filter(e=>e.source_fn_id===f.id);
+          const inEdges  = (_s?.fmeaEdges||[]).filter(e=>e.target_fn_id===f.id);
+          return `
+          <div class="fb-fn-panel-row" data-fn-id="${f.id}" data-comp-id="${comp.id}"
+            style="border:1px solid ${glowColor||'var(--color-border)'};border-radius:5px;margin-bottom:6px;${glowColor?`box-shadow:0 0 4px ${glowColor}44;`:''}" >
+            <!-- Function header -->
+            <div style="${rowS}background:${glowColor?glowColor+'12':'var(--bg-card)'};padding:6px 8px;cursor:pointer;" class="fb-fn-hdr" data-fn-id="${f.id}">
+              <span style="font-size:9px;font-weight:700;background:var(--color-primary);color:#fff;border-radius:3px;padding:1px 5px;">f</span>
+              <span style="font-size:12px;font-weight:600;flex:1;">${escH(f.name)}</span>
+              ${f.is_safety_related?`<span style="font-size:9px;color:var(--color-danger);">⚠FS</span>`:''}
+              ${isInj?`<span style="font-size:9px;color:#c45f00;font-weight:700;">⚡INJ</span>`:''}
+              ${fProp?.cut?`<span style="font-size:9px;color:#1a8f5c;font-weight:700;">✓CUT</span>`:''}
+              ${fProp?.level===3?`<span style="font-size:9px;color:#ef4444;font-weight:700;">⚠CRIT</span>`:''}
+              ${fProp?.level>=1&&fProp?.level<3?`<span style="font-size:9px;color:#f97316;font-weight:700;">→PROP</span>`:''}
+              <span class="fb-fn-toggle" data-fn-id="${f.id}" style="font-size:11px;color:var(--color-text-muted);cursor:pointer;margin-left:2px;">▼</span>
+            </div>
+            <!-- Expandable body -->
+            <div class="fb-fn-body" id="fb-fn-body-${f.id}" style="padding:6px 8px;display:none;">
+              <!-- Failure Modes -->
+              <div style="${labelS}">Failure Modes</div>
+              <div id="fb-fn-fms-${f.id}">
+                ${(f._fms||[]).length === 0
+                  ? `<div style="font-size:11px;color:var(--color-text-muted);padding:2px 0;">No failure modes yet.</div>`
+                  : (f._fms||[]).map(fm => {
+                    const isActive = inj?.fmId === fm.id;
+                    return `<div style="${rowS}${isActive?'background:#fff3e6;':''}" data-fmid="${fm.id}">
+                      <span style="color:var(--color-warning);font-size:10px;">⚠</span>
+                      <span style="font-size:11px;flex:1;">${escH(fm.failure_mode)}</span>
+                      ${fm.local_effect?`<span style="font-size:10px;color:var(--color-text-muted);">${escH(fm.local_effect)}</span>`:''}
+                      <button class="fb-panel-inject btn-sm" data-fnid="${f.id}" data-fmid="${fm.id}"
+                        style="font-size:10px;padding:1px 7px;${isActive?'background:#c45f00;color:#fff;border-color:#c45f00;':''}">
+                        ⚡ ${isActive?'Active':'Inject'}
+                      </button>
+                      <button class="fb-panel-fm-del" data-fmid="${fm.id}" data-fnid="${f.id}"
+                        style="font-size:10px;color:var(--color-danger);background:none;border:none;cursor:pointer;padding:0 3px;">✕</button>
+                    </div>`;
+                  }).join('')}
+              </div>
+              <button class="fb-panel-add-fm btn-sm" data-fnid="${f.id}" data-compid="${comp.id}"
+                style="font-size:10px;margin-top:3px;width:100%;">＋ Add Failure Mode</button>
+              <!-- Propagated effects -->
+              ${fProp?.effects?.length ? `
+              <div style="${labelS}margin-top:6px;">Propagated Effects</div>
+              ${fProp.effects.map(e=>`<div style="font-size:11px;color:var(--color-text-muted);padding:2px 4px;">→ ${escH(e)}</div>`).join('')}
+              ` : ''}
+              <!-- Connections -->
+              <div style="${labelS}margin-top:6px;">
+                Connections
+                <button class="fb-panel-add-conn btn-sm" data-fnid="${f.id}"
+                  style="font-size:10px;padding:1px 6px;margin-left:6px;font-weight:400;text-transform:none;letter-spacing:0;">＋ Connect</button>
+              </div>
+              ${[...outEdges.map(e=>{
+                const tgt=allFns.find(x=>x.id===e.target_fn_id);
+                const et=FMEA_EDGE_TYPES[e.edge_type]||FMEA_EDGE_TYPES.depends_on;
+                return `<div style="${rowS}cursor:pointer;" class="fb-panel-edge-row" data-eid="${e.id}">
+                  <span style="color:${et.color};font-size:10px;font-weight:700;min-width:70px;">${escH(et.label)}</span>
+                  <span style="color:#0090d4;font-size:10px;">→</span>
+                  <span style="font-size:11px;flex:1;">${escH(tgt?.name||'?')}</span>
+                  ${e.diagnostic_coverage?`<span style="font-size:9px;color:#1a8f5c;font-weight:700;">${e.diagnostic_coverage}%</span>`:''}
+                  <button class="fb-panel-edge-del" data-eid="${e.id}" style="font-size:10px;color:var(--color-danger);background:none;border:none;cursor:pointer;padding:0 3px;">✕</button>
+                </div>`;
+              }), ...inEdges.map(e=>{
+                const src=allFns.find(x=>x.id===e.source_fn_id);
+                const et=FMEA_EDGE_TYPES[e.edge_type]||FMEA_EDGE_TYPES.depends_on;
+                return `<div style="${rowS}">
+                  <span style="font-size:11px;flex:1;color:var(--color-text-muted);">${escH(src?.name||'?')}</span>
+                  <span style="color:#0090d4;font-size:10px;">→</span>
+                  <span style="color:${et.color};font-size:10px;font-weight:700;min-width:70px;">${escH(et.label)}</span>
+                </div>`;
+              })].join('')||`<div style="font-size:11px;color:var(--color-text-muted);">No connections yet.</div>`}
+              <!-- Cut mechanisms -->
+              ${(() => {
+                const cfg=_s?.fmeaCfgMap?.[f.id];
+                if(!cfg) return '';
+                const parts=[];
+                if(cfg.has_redundancy) parts.push(`✓ Redundancy${cfg.redundancy_desc?': '+cfg.redundancy_desc:''}`);
+                if(cfg.has_safe_state) parts.push(`✓ Safe state${cfg.safe_state_desc?': '+cfg.safe_state_desc:''}`);
+                if(cfg.fault_tolerance&&cfg.fault_tolerance!=='none') parts.push(`Fault tolerance: ${cfg.fault_tolerance}`);
+                return parts.length?`<div style="${labelS}margin-top:6px;">Cut Mechanisms</div>${parts.map(p=>`<div style="font-size:11px;color:#1a8f5c;padding:1px 4px;">⊘ ${escH(p)}</div>`).join('')}`:'';
+              })()}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Wire toggle expand/collapse
+  el.querySelectorAll('.fb-fn-hdr').forEach(hdr => {
+    hdr.addEventListener('click', e => {
+      if (e.target.closest('.fb-panel-inject,.fb-panel-fm-del,.fb-panel-add-fm,.fb-panel-add-conn,.fb-panel-edge-del,.fb-panel-edge-row')) return;
+      const body = document.getElementById(`fb-fn-body-${hdr.dataset.fnId}`);
+      const tog  = hdr.querySelector('.fb-fn-toggle');
+      if (!body) return;
+      const open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : '';
+      if (tog) tog.textContent = open ? '▼' : '▲';
+    });
+  });
+
+  // Wire inject buttons
+  el.querySelectorAll('.fb-panel-inject').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      fmeaInject(btn.dataset.fnid, btn.dataset.fmid);
+      fmeaRenderFnsPanel();
+    });
+  });
+
+  // Wire FM delete
+  el.querySelectorAll('.fb-panel-fm-del').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const fmid = btn.dataset.fmid;
+      const fnid = btn.dataset.fnid;
+      await sb.from('arch_function_fms').delete().eq('id', fmid);
+      const comp2 = _s.components.find(c=>c.functions?.some(f=>f.id===fnid));
+      const fn2   = comp2?.functions?.find(f=>f.id===fnid);
+      if (fn2) fn2._fms = (fn2._fms||[]).filter(fm=>fm.id!==fmid);
+      fmeaRenderFnsPanel();
+    });
+  });
+
+  // Wire Add FM
+  el.querySelectorAll('.fb-panel-add-fm').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const fnid   = btn.dataset.fnid;
+      const compid = btn.dataset.compid;
+      const comp2  = _s.components.find(c=>c.id===compid);
+      const fn2    = comp2?.functions?.find(f=>f.id===fnid);
+      if (!fn2) return;
+
+      const inp = document.createElement('input');
+      inp.placeholder = 'Failure mode description…';
+      inp.className = 'form-input';
+      inp.style.cssText = 'width:100%;font-size:11px;margin-bottom:3px;';
+      btn.before(inp); inp.focus();
+
+      const save = async () => {
+        const v = inp.value.trim(); inp.remove();
+        if (!v) return;
+        const { data: newFm } = await sb.from('arch_function_fms').insert({
+          function_id: fnid, failure_mode: v, sort_order: (fn2._fms||[]).length,
+        }).select().single();
+        if (newFm) { fn2._fms = [...(fn2._fms||[]), newFm]; fmeaRenderFnsPanel(); refreshArchTree(); }
+      };
+      inp.addEventListener('blur', save);
+      inp.addEventListener('keydown', ev => { if(ev.key==='Enter'){ev.preventDefault();inp.blur();} if(ev.key==='Escape')inp.remove(); });
+    });
+  });
+
+  // Wire Add Connection
+  el.querySelectorAll('.fb-panel-add-conn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const fnid  = btn.dataset.fnid;
+      const body2 = document.getElementById(`fb-fn-body-${fnid}`);
+      if (!body2) return;
+      let formDiv = body2.querySelector('.fb-panel-conn-form');
+      if (formDiv) { formDiv.remove(); return; }
+      formDiv = document.createElement('div');
+      formDiv.className = 'fb-panel-conn-form';
+      formDiv.style.cssText = 'padding:6px;background:var(--bg-hover);border:1px solid var(--color-border);border-radius:4px;margin-bottom:4px;';
+      const allFns2 = _s.components.flatMap(c=>c.functions||[]);
+      const existing = new Set((_s.fmeaEdges||[]).filter(x=>x.source_fn_id===fnid).map(x=>x.target_fn_id));
+      const avail = allFns2.filter(f=>f.id!==fnid&&!existing.has(f.id));
+      formDiv.innerHTML = `
+        <div style="font-size:11px;font-weight:600;margin-bottom:4px;">New connection from <em>${escH(allFns2.find(f=>f.id===fnid)?.name||'')}</em></div>
+        <select class="form-select fb-pcf-target" style="width:100%;font-size:11px;margin-bottom:3px;">
+          <option value="">— target function —</option>
+          ${avail.map(f=>{const c2=_s.components.find(x=>x.id===f.component_id);return `<option value="${f.id}">${escH(c2?c2.name+' / ':'')}${escH(f.name)}</option>`;}).join('')}
+        </select>
+        <select class="form-select fb-pcf-type" style="width:100%;font-size:11px;margin-bottom:3px;">
+          ${Object.entries(FMEA_EDGE_TYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
+        </select>
+        <input class="form-input fb-pcf-label" placeholder="Label / Signal (optional)" style="width:100%;font-size:11px;margin-bottom:4px;">
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-primary btn-sm fb-pcf-save" style="flex:1;font-size:11px;">Create</button>
+          <button class="btn btn-sm fb-pcf-cancel" style="font-size:11px;">✕</button>
+        </div>`;
+      btn.after(formDiv);
+      formDiv.querySelector('.fb-pcf-cancel').addEventListener('click', () => formDiv.remove());
+      formDiv.querySelector('.fb-pcf-save').addEventListener('click', async () => {
+        const toId  = formDiv.querySelector('.fb-pcf-target').value;
+        const etype = formDiv.querySelector('.fb-pcf-type').value || 'depends_on';
+        const label = formDiv.querySelector('.fb-pcf-label').value.trim() || null;
+        if (!toId) { toast('Select a target function.', 'warning'); return; }
+        formDiv.remove();
+        const fromFn2 = allFns2.find(f=>f.id===fnid);
+        const { data: edgeData } = await sb.from('fmea_function_edges').insert({
+          project_id:_s.project.id, parent_type:_s.parentType, parent_id:_s.parentId,
+          source_fn_id:fnid, target_fn_id:toId, edge_type:etype, label,
+        }).select().single();
+        if (!edgeData) return;
+        const rules=[];
+        for (const fm of fromFn2?._fms||[]) {
+          const {data:r}=await sb.from('fmea_propagation_rules').insert({
+            edge_id:edgeData.id, source_fm_id:fm.id,
+            effect_at_target:fmeaInferEffect(fm.failure_mode,etype), severity:5, is_inferred:true,
+          }).select().single();
+          if(r) rules.push(r);
+        }
+        edgeData._rules=rules;
+        _s.fmeaEdges.push(edgeData);
+        renderFmeaEdges();
+        fmeaRenderFnsPanel();
+        toast('Connection created.','success');
+      });
+    });
+  });
+
+  // Wire edge click → open edge props
+  el.querySelectorAll('.fb-panel-edge-row').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('.fb-panel-edge-del')) return;
+      const edge = _s.fmeaEdges.find(x=>x.id===row.dataset.eid);
+      if (edge) { fmeaSwitchTab('props'); fmeaShowEdgeProps(edge); }
+    });
+  });
+
+  // Wire edge delete
+  el.querySelectorAll('.fb-panel-edge-del').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      await sb.from('fmea_function_edges').delete().eq('id', btn.dataset.eid);
+      _s.fmeaEdges = _s.fmeaEdges.filter(x=>x.id!==btn.dataset.eid);
+      renderFmeaEdges();
+      fmeaRenderFnsPanel();
+    });
+  });
 }
 
 // ── FMEA: DFMEA table ─────────────────────────────────────────────────────────
