@@ -147,7 +147,6 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
   const focusLabel = isItemLevel ? 'System'    : 'Component';
   const upperLabel = isItemLevel ? 'Item'       : 'System';
   const lowerLabel = isItemLevel ? 'Component'  : 'Sub-component';
-  const syncLabel  = isItemLevel ? '⟳ Sync from Architecture' : '⟳ Sync from FHA';
 
   container.style.cssText='display:flex;flex-direction:column;height:100%;overflow:hidden';
   container.innerHTML=`
@@ -166,7 +165,7 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
         </div>
         <div class="dfmea-toolbar">
           <div class="arch-sep"></div>
-          <button class="btn btn-secondary btn-sm" id="btn-dfmea-sync">${syncLabel}</button>
+          <button class="btn btn-secondary btn-sm" id="btn-dfmea-sync">⟳ Sync</button>
           <button class="btn btn-primary   btn-sm" id="btn-dfmea-new" title="Add new row">＋ New</button>
         </div>
       </div>
@@ -189,7 +188,7 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
 
   wirePanelToggles();
   document.getElementById('btn-dfmea-new').onclick  = ()=>addFmRow();
-  document.getElementById('btn-dfmea-sync').onclick = ()=>(_ctx.isItemLevel ? syncFromArchitecture() : syncFromSystem());
+  document.getElementById('btn-dfmea-sync').onclick = ()=>syncDFMEA();
 
   await loadItems();
 }
@@ -1407,87 +1406,199 @@ function hidePill(){
   if(_pill) _pill.style.display='none';
 }
 
-// ── Sync from System ──────────────────────────────────────────────────────────
+// ── Sync ──────────────────────────────────────────────────────────────────────
 
-async function syncFromSystem(){
+async function syncDFMEA(){
   const btn=document.getElementById('btn-dfmea-sync');
-  if(btn){btn.disabled=true;btn.textContent='⟳ Syncing…';}
-  try{
-    const {data:hazards}=await sb.from('hazards').select('id,data,function_id,status').eq('parent_type',_ctx.parentType).eq('parent_id',_ctx.parentId).eq('analysis_type','FHA');
-    if(!hazards?.length){toast('No FHA hazards found to sync from.','warning');return;}
-    const compIds=[...(new Set(hazards.map(h=>h.data?.component_id).filter(Boolean)))];
-    const comps=compIds.length?(await sb.from('arch_components').select('id,name').in('id',compIds)).data||[]:[];
-    const archFns=comps.length?(await sb.from('arch_functions').select('id,component_id,name,function_ref_id').in('component_id',compIds)).data||[]:[];
-    let fnRefs={};
-    if(hazards?.some(h=>h.function_id)){
-      const fnIds=[...new Set(hazards.filter(h=>h.function_id).map(h=>h.function_id))];
-      const {data:fns}=await sb.from('functions').select('id,name').in('id',fnIds);
-      (fns||[]).forEach(f=>{fnRefs[f.id]=f;});
+  btn.disabled=true; btn.textContent='⟳ Cargando…';
+  let preview;
+  try{preview=await _fetchSyncPreview();}
+  catch(e){toast('Error al cargar preview: '+e.message,'error'); btn.disabled=false; btn.textContent='⟳ Sync'; return;}
+  btn.disabled=false; btn.textContent='⟳ Sync';
+
+  const {archGroups,archFns,newArchRows,newHazards,totalHazards}=preview;
+  const compLabel=_ctx.isItemLevel?'sistema(s)':'componente(s)';
+  const total=newArchRows.length+newHazards.length;
+
+  const row=(icon,label,count,isNew)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #F0F0F0">
+      <span style="font-size:16px;width:22px;text-align:center">${icon}</span>
+      <span style="flex:1;font-size:12px;color:#444">${label}</span>
+      <span style="font-size:12px;font-weight:600;color:${isNew?'#1E8E3E':'#9AA0A6'}">${count}</span>
+    </div>`;
+
+  const body=`
+    <p style="font-size:12px;color:#666;margin-bottom:14px">
+      Se combinarán dos fuentes. Los registros ya existentes no se modificarán.
+    </p>
+    <div style="background:#F8F9FA;border:1px solid #E0E0E0;border-radius:6px;padding:10px 14px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:#1A73E8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+        🏗 Arquitectura — estructura de ${compLabel} y funciones
+      </div>
+      ${row('🔷',''+compLabel+' encontrado(s)',archGroups.length,false)}
+      ${row('⚡','Funciones definidas',archFns.length,false)}
+      ${row('✚','Filas nuevas a crear (esqueleto)',newArchRows.length,newArchRows.length>0)}
+    </div>
+    <div style="background:#F8F9FA;border:1px solid #E0E0E0;border-radius:6px;padding:10px 14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:#E37400;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+        ⚠ FHA — modos de fallo y efectos
+      </div>
+      ${row('📋','Hazards en el FHA',totalHazards,false)}
+      ${row('✚','Modos de fallo nuevos a importar',newHazards.length,newHazards.length>0)}
+    </div>
+    ${total===0?'<p style="text-align:center;color:#1E8E3E;font-size:13px;font-weight:600">✓ Todo está ya sincronizado.</p>':''}`;
+
+  showModal({
+    title:'⟳ Sincronizar DFMEA',
+    body,
+    footer:total===0
+      ?`<button class="btn btn-secondary" id="sync-cancel">Cerrar</button>`
+      :`<button class="btn btn-secondary" id="sync-cancel">Cancelar</button>
+        <button class="btn btn-primary"   id="sync-confirm">Importar (${total} fila${total===1?'':'s'})</button>`,
+  });
+  document.getElementById('sync-cancel').onclick=()=>hideModal();
+  if(total>0) document.getElementById('sync-confirm').onclick=async()=>{hideModal(); await _doSync(preview);};
+}
+
+async function _fetchSyncPreview(){
+  const isItem=_ctx.isItemLevel;
+
+  // Architecture source
+  let archGroups=[], archFns=[];
+  if(isItem){
+    const {data}=await sb.from('arch_components')
+      .select('id,name,data').eq('project_id',_ctx.project.id).eq('comp_type','Group');
+    archGroups=(data||[]).filter(c=>c.data?.subtype!=='assembly');
+  } else {
+    const {data}=await sb.from('arch_components')
+      .select('id,name,comp_type').eq('parent_id',_ctx.parentId);
+    archGroups=(data||[]).filter(c=>c.comp_type!=='Group');
+  }
+  if(archGroups.length){
+    const {data:fns}=await sb.from('arch_functions')
+      .select('id,component_id,name,function_ref_id')
+      .in('component_id',archGroups.map(g=>g.id))
+      .order('sort_order',{ascending:true});
+    archFns=fns||[];
+  }
+
+  const existingArchKeys=new Set(
+    _items.filter(i=>rtype(i)==='fm'&&i.component_id).map(i=>`${i.component_id}__${i.function_name}`)
+  );
+  const newArchRows=[];
+  for(const g of archGroups){
+    const gFns=archFns.filter(f=>f.component_id===g.id);
+    if(!gFns.length){
+      if(!existingArchKeys.has(`${g.id}__`)) newArchRows.push({compId:g.id,compName:g.name,fnName:''});
+    } else {
+      for(const f of gFns){
+        if(!existingArchKeys.has(`${g.id}__${f.name}`)) newArchRows.push({compId:g.id,compName:g.name,fnName:f.name});
+      }
     }
-    const importedHazIds=new Set(_items.filter(i=>i.hazard_id).map(i=>i.hazard_id));
-    let created=0;
-    for(const haz of(hazards||[])){
-      if(importedHazIds.has(haz.id)) continue;
+  }
+
+  // FHA source
+  const {data:hazards}=await sb.from('hazards')
+    .select('id,data,function_id')
+    .eq('parent_type',_ctx.parentType).eq('parent_id',_ctx.parentId).eq('analysis_type','FHA');
+  const allHaz=hazards||[];
+
+  // Resolve function names
+  let hazFnRefs={}, compMapById={};
+  const fnIds=[...new Set(allHaz.filter(h=>h.function_id).map(h=>h.function_id))];
+  if(fnIds.length){
+    const {data:fns}=await sb.from('functions').select('id,name').in('id',fnIds);
+    (fns||[]).forEach(f=>{hazFnRefs[f.id]=f;});
+  }
+  const compIds=[...new Set([
+    ...archGroups.map(g=>g.id),
+    ...allHaz.map(h=>h.data?.component_id).filter(Boolean),
+  ])];
+  if(compIds.length){
+    const {data:comps}=await sb.from('arch_components').select('id,name').in('id',compIds);
+    (comps||[]).forEach(c=>{compMapById[c.id]=c;});
+  }
+
+  const existingHazIds=new Set(_items.filter(i=>i.hazard_id).map(i=>i.hazard_id));
+  const newHazards=allHaz.filter(h=>!existingHazIds.has(h.id));
+
+  return {archGroups,archFns,newArchRows,newHazards,totalHazards:allHaz.length,hazFnRefs,compMapById};
+}
+
+async function _doSync(preview){
+  const btn=document.getElementById('btn-dfmea-sync');
+  if(btn){btn.disabled=true; btn.textContent='⟳ Sincronizando…';}
+  try{
+    const {archFns,newArchRows,newHazards,hazFnRefs,compMapById}=preview;
+
+    // Phase 1: Architecture skeleton rows (silent — no re-render per row)
+    for(const row of newArchRows){
+      await _insertFmSilent({component_id:row.compId,component_name:row.compName,function_name:row.fnName});
+    }
+
+    // Phase 2: FHA rows — match existing skeleton or create new
+    for(const haz of newHazards){
       const d=haz.data||{};
-      let mComp=null,mFn=null;
-      if(haz.function_id){const fnRef=fnRefs[haz.function_id];if(fnRef){mFn=(archFns||[]).find(af=>af.function_ref_id===haz.function_id||af.name===fnRef.name);if(mFn)mComp=comps.find(c=>c.id===mFn.component_id);}}
-      const fm=await addFmRow({component_id:mComp?.id||null,component_name:mComp?.name||'',function_name:mFn?.name||(fnRefs[haz.function_id]?.name||''),failure_mode:d.failure_condition||'',hazard_id:haz.id});
+      let compId=d.component_id||null, fnName='';
+      if(haz.function_id){
+        const fnRef=hazFnRefs[haz.function_id];
+        if(fnRef){
+          const af=archFns.find(f=>f.function_ref_id===haz.function_id||f.name===fnRef.name);
+          if(af){compId=af.component_id; fnName=af.name;}
+          else fnName=fnRef.name;
+        }
+      }
+      const compName=compId?(compMapById[compId]?.name||''):(d.component_name||'');
+      const failureMode=d.failure_condition||'';
+
+      // Try to enrich a skeleton row created in Phase 1
+      const skeleton=_items.find(i=>
+        rtype(i)==='fm'&&!i.hazard_id&&i.component_id===compId&&i.function_name===fnName
+      );
+      let fm;
+      if(skeleton){
+        skeleton.failure_mode=failureMode; skeleton.hazard_id=haz.id;
+        await autosave(skeleton.id,{failure_mode:failureMode,hazard_id:haz.id});
+        fm=skeleton;
+      } else {
+        fm=await _insertFmSilent({component_id:compId,component_name:compName,function_name:fnName,failure_mode:failureMode,hazard_id:haz.id});
+      }
       if(!fm) continue;
       const efH=d.effect_system||d.effect_item||d.effect||'';
       const efL=d.effect_local||'';
-      if(efH||efL) await addEffectRow(fm).then(async()=>{const e=_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id).at(-1);if(e){e.effect_higher=efH;e.effect_local=efL;await autosave(e.id,{effect_higher:efH,effect_local:efL});}});
-      created++;
+      if(efH||efL) await _insertEffectSilent(fm,efH,efL);
     }
-    toast(created>0?`Synced ${created} new FM(s) from FHA.`:'Already up to date.','success');
-  }catch(e){toast('Sync error: '+e.message,'error');}
-  finally{if(btn){btn.disabled=false;btn.textContent='⟳ Sync from FHA';}}
+
+    renderTable(); renderChain();
+    const total=preview.newArchRows.length+preview.newHazards.length;
+    toast(`Sincronización completada: ${total} fila(s) importada(s).`,'success');
+  }catch(e){toast('Error durante la sincronización: '+e.message,'error');}
+  finally{if(btn){btn.disabled=false; btn.textContent='⟳ Sync';}}
 }
 
-// ── Sync from Architecture (item-level: Focus = System/Group) ─────────────────
+async function _insertFmSilent(prefill={}){
+  const idx=await nextIndex('dfmea_items',{parent_id:_ctx.parentId});
+  const code=buildCode('DFM',{domain:_ctx.parentType==='item'?'ITEM':'SYS',projectName:_ctx.project.name,index:idx});
+  const {data:fm,error}=await sb.from('dfmea_items').insert({
+    dfmea_code:code,parent_type:_ctx.parentType,parent_id:_ctx.parentId,
+    project_id:_ctx.project.id,row_type:'fm',
+    sort_order:_items.filter(i=>rtype(i)==='fm').length,
+    severity:5,occurrence:5,detection:5,action_status:'open',status:'draft',...prefill,
+  }).select().single();
+  if(error){toast('Error creando FM.','error');return null;}
+  _items.push(fm); return fm;
+}
 
-async function syncFromArchitecture(){
-  const btn=document.getElementById('btn-dfmea-sync');
-  if(btn){btn.disabled=true;btn.textContent='⟳ Syncing…';}
-  try{
-    // Pull Systems (Groups that are NOT assembly) for this item
-    const {data:allComps}=await sb.from('arch_components')
-      .select('id,name,comp_type,data')
-      .eq('project_id',_ctx.project.id)
-      .eq('comp_type','Group');
-    const systems=(allComps||[]).filter(c=>c.data?.subtype!=='assembly');
-    if(!systems.length){toast('No systems found in Architecture Concept.','warning');return;}
-
-    // Pull arch_functions for those systems
-    const sysIds=systems.map(s=>s.id);
-    const {data:fns}=await sb.from('arch_functions')
-      .select('id,component_id,name')
-      .in('component_id',sysIds)
-      .order('sort_order',{ascending:true});
-
-    const existingKeys=new Set(
-      _items.filter(i=>rtype(i)==='fm'&&i.component_id)
-        .map(i=>`${i.component_id}__${i.function_name}`)
-    );
-
-    let created=0;
-    for(const sys of systems){
-      const sysFns=(fns||[]).filter(f=>f.component_id===sys.id);
-      if(!sysFns.length){
-        // System has no functions — create one blank row for the system
-        const key=`${sys.id}__`;
-        if(existingKeys.has(key)) continue;
-        await addFmRow({component_id:sys.id,component_name:sys.name,function_name:''});
-        existingKeys.add(key); created++;
-      } else {
-        for(const fn of sysFns){
-          const key=`${sys.id}__${fn.name}`;
-          if(existingKeys.has(key)) continue;
-          await addFmRow({component_id:sys.id,component_name:sys.name,function_name:fn.name});
-          existingKeys.add(key); created++;
-        }
-      }
-    }
-    toast(created>0?`Synced ${created} new row(s) from Architecture.`:'Already up to date.','success');
-  }catch(e){toast('Sync error: '+e.message,'error');}
-  finally{if(btn){btn.disabled=false;btn.textContent='⟳ Sync from Architecture';}}
+async function _insertEffectSilent(fm,efH,efL){
+  const existingEffs=_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id);
+  const {data:eff,error}=await sb.from('dfmea_items').insert({
+    dfmea_code:`${fm.dfmea_code}-E${existingEffs.length+1}`,
+    parent_type:_ctx.parentType,parent_id:_ctx.parentId,project_id:_ctx.project.id,
+    row_type:'effect',parent_row_id:fm.id,
+    sort_order:existingEffs.length,
+    severity:5,occurrence:5,detection:5,action_status:'open',status:'draft',
+    effect_higher:efH,effect_local:efL,
+  }).select().single();
+  if(error){toast('Error creando Efecto.','error');return;}
+  _items.push(eff);
 }
