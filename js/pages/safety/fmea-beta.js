@@ -1754,7 +1754,7 @@ function wireCanvas() {
     });
   }
 
-  document.querySelectorAll('.arch-tb-item').forEach(btn => {
+  document.querySelectorAll('.arch-tb-item[data-type]').forEach(btn => {
     btn.addEventListener('click', () => addComp(btn.dataset.type));
   });
 
