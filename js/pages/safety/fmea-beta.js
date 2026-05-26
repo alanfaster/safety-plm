@@ -478,6 +478,9 @@ function buildShell(container, title) {
         <button class="arch-tb-item pal-item-port"     data-type="Port"       title="Add Port"><span class="arch-pal-icon arch-pal-icon-port">■</span>Port</button>
         <div class="arch-tb-sep"></div>
         <span style="font-size:11px;font-weight:700;color:var(--color-text-muted);letter-spacing:.5px;">FMEA</span>
+        <button id="fb-connect-btn" class="arch-tb-item" title="Connect mode: click a function then another to create a dependency edge" style="gap:4px;">
+          <span style="font-size:13px;">⬡</span> Connect
+        </button>
         <button id="fb-gen-btn" class="arch-tb-item" title="Generate DFMEA table">⚡ DFMEA</button>
         <div class="arch-tb-sep"></div>
         <button class="arch-tb-zoom" id="btn-zoom-in"  title="Zoom in">＋</button>
@@ -5002,8 +5005,33 @@ function wireFmeaHandles() {
   });
 }
 
-// ── FMEA: toolbar wiring (DFMEA button + clear injection) ─────────────────────
+// ── FMEA: toolbar wiring (DFMEA button + clear injection + connect mode) ────────
+let _fmeaConnectMode = false;
+let _fmeaConnectFrom = null; // fnId of first-clicked function
+
+function fmeaSetConnectMode(on) {
+  _fmeaConnectMode = on;
+  _fmeaConnectFrom = null;
+  const btn = document.getElementById('fb-connect-btn');
+  if (btn) {
+    btn.style.background    = on ? '#0090d4' : '';
+    btn.style.color         = on ? '#fff'    : '';
+    btn.style.borderColor   = on ? '#0090d4' : '';
+    btn.title = on ? 'Click a source function, then a target function — or click here to cancel' : 'Connect mode: click a function then another to create a dependency edge';
+  }
+  const canvas = document.getElementById('arch-outer');
+  if (canvas) canvas.style.cursor = on ? 'crosshair' : '';
+  // Show/hide all handles
+  document.querySelectorAll('.fmea-fn-handle').forEach(h => {
+    h.style.display  = on ? '' : 'none';
+    h.style.opacity  = on ? '0.6' : '0';
+  });
+}
+
 function wireFmeaToolbar() {
+  document.getElementById('fb-connect-btn')?.addEventListener('click', () => {
+    fmeaSetConnectMode(!_fmeaConnectMode);
+  });
   document.getElementById('fb-gen-btn')?.addEventListener('click', () => {
     fmeaGenerateTable();
     fmeaSwitchTab('table');
@@ -5140,6 +5168,33 @@ function renderFmeaEdges() {
 function wireFmeaLayer() {
   const outer = document.getElementById('arch-outer');
   if (!outer) return;
+
+  // Click-to-connect: click a function box when connect mode is active
+  document.addEventListener('click', async e => {
+    if (!_fmeaConnectMode || !_s?.fmeaMode) return;
+    const box = e.target.closest('.arch-fun-box');
+    if (!box) { fmeaSetConnectMode(false); return; }
+    const fnId = box.dataset.funId || box.dataset.fnId;
+    if (!fnId) return;
+    e.stopPropagation();
+
+    if (!_fmeaConnectFrom) {
+      _fmeaConnectFrom = fnId;
+      box.style.outline = '2.5px dashed #0090d4';
+      box.style.outlineOffset = '2px';
+      toast('Now click the target function to connect to it.', 'info');
+    } else if (_fmeaConnectFrom === fnId) {
+      document.querySelectorAll('.arch-fun-box').forEach(b => { b.style.outline = ''; b.style.outlineOffset = ''; });
+      _fmeaConnectFrom = null;
+    } else {
+      const fromId = _fmeaConnectFrom;
+      document.querySelectorAll('.arch-fun-box').forEach(b => { b.style.outline = ''; b.style.outlineOffset = ''; });
+      fmeaSetConnectMode(false);
+      const exists = _s.fmeaEdges.find(x => x.source_fn_id === fromId && x.target_fn_id === fnId);
+      if (exists) { toast('Connection already exists.', 'warning'); return; }
+      await fmeaCreateEdge(fromId, fnId);
+    }
+  }, true);
 
   document.addEventListener('pointerdown', e => {
     const handle = e.target.closest('.fmea-fn-handle');
@@ -5341,7 +5396,15 @@ function fmeaAppendFnSection(fnId) {
     <button id="fb-save-cfg" class="btn btn-primary btn-sm" style="width:100%;margin-bottom:8px;">Save FMEA config</button>
     ${prop?.effects?.length ? `
       <div class="arch-props-section-label">Propagated Effects</div>
-      ${prop.effects.map(eff => `<div style="font-size:11px;color:var(--color-text-muted);padding:2px 0;">→ ${escH(eff)}</div>`).join('')}` : ''}`;
+      ${prop.effects.map(eff => `<div style="font-size:11px;color:var(--color-text-muted);padding:2px 0;">→ ${escH(eff)}</div>`).join('')}` : ''}
+    <div style="border-top:1px solid var(--color-border);margin-top:10px;padding-top:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div class="arch-props-section-label" style="margin-bottom:0;">Functional Dependencies</div>
+        <button id="fb-add-conn-btn" class="btn btn-sm" style="font-size:10px;padding:2px 8px;">＋ Connect</button>
+      </div>
+      <div id="fb-conn-list">${fmeaConnectionListHTML(fn.id)}</div>
+      <div id="fb-conn-form" style="display:none;"></div>
+    </div>`;
   body.appendChild(section);
 
   // Wire checkboxes (re-render section on change)
@@ -5364,6 +5427,181 @@ function fmeaAppendFnSection(fnId) {
     renderAll();
   });
   fmeaWireFnInjectBtns();
+
+  // Wire connection list delete buttons
+  section.querySelectorAll('.fb-conn-del').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const eid = btn.dataset.eid;
+      await sb.from('fmea_function_edges').delete().eq('id', eid);
+      _s.fmeaEdges = _s.fmeaEdges.filter(x => x.id !== eid);
+      const list = document.getElementById('fb-conn-list');
+      if (list) list.innerHTML = fmeaConnectionListHTML(fnId);
+      renderFmeaEdges();
+      wireFmeaConnDelBtns(fnId);
+    });
+  });
+
+  // Wire "click on connection row → open edge props"
+  section.querySelectorAll('.fb-conn-row').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('.fb-conn-del')) return;
+      const edge = _s.fmeaEdges.find(x => x.id === row.dataset.eid);
+      if (edge) { fmeaSwitchTab('props'); fmeaShowEdgeProps(edge); }
+    });
+  });
+
+  // Wire "＋ Connect" button → show inline form
+  document.getElementById('fb-add-conn-btn')?.addEventListener('click', () => {
+    const formDiv = document.getElementById('fb-conn-form');
+    if (!formDiv) return;
+    if (formDiv.style.display !== 'none') { formDiv.style.display = 'none'; return; }
+    fmeaShowInlineConnForm(fnId, formDiv);
+  });
+}
+
+function wireFmeaConnDelBtns(fnId) {
+  document.querySelectorAll('.fb-conn-del').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const eid = btn.dataset.eid;
+      await sb.from('fmea_function_edges').delete().eq('id', eid);
+      _s.fmeaEdges = _s.fmeaEdges.filter(x => x.id !== eid);
+      const list = document.getElementById('fb-conn-list');
+      if (list) list.innerHTML = fmeaConnectionListHTML(fnId);
+      renderFmeaEdges();
+      wireFmeaConnDelBtns(fnId);
+    });
+  });
+  document.querySelectorAll('.fb-conn-row').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('.fb-conn-del')) return;
+      const edge = _s.fmeaEdges.find(x => x.id === row.dataset.eid);
+      if (edge) { fmeaSwitchTab('props'); fmeaShowEdgeProps(edge); }
+    });
+  });
+}
+
+function fmeaConnectionListHTML(fnId) {
+  const allFns = _s?.components?.flatMap(c => c.functions || []) || [];
+  const outEdges = (_s?.fmeaEdges || []).filter(e => e.source_fn_id === fnId);
+  const inEdges  = (_s?.fmeaEdges || []).filter(e => e.target_fn_id === fnId);
+
+  if (!outEdges.length && !inEdges.length) {
+    return `<div style="font-size:11px;color:var(--color-text-muted);padding:4px 0;">No connections yet. Use ＋ Connect or drag the blue dot on the canvas.</div>`;
+  }
+
+  const rowStyle = `display:flex;align-items:center;gap:6px;padding:5px 7px;border-radius:4px;background:var(--bg-hover);border:1px solid var(--color-border);margin-bottom:3px;cursor:pointer;`;
+  const nameStyle = `font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`;
+
+  let html = '';
+  if (outEdges.length) {
+    html += `<div style="font-size:10px;font-weight:700;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Outgoing</div>`;
+    html += outEdges.map(e => {
+      const tgt = allFns.find(f => f.id === e.target_fn_id);
+      const et  = FMEA_EDGE_TYPES[e.edge_type] || FMEA_EDGE_TYPES.depends_on;
+      return `<div class="fb-conn-row" data-eid="${e.id}" style="${rowStyle}" title="Click to edit connection">
+        <span style="color:${et.color};font-size:10px;font-weight:700;min-width:70px;">${escH(et.label)}</span>
+        <span style="color:#0090d4;font-size:10px;">→</span>
+        <span style="${nameStyle}">${escH(tgt?.name || '?')}</span>
+        ${e.label ? `<span style="font-size:10px;color:var(--color-text-muted);">(${escH(e.label)})</span>` : ''}
+        ${e.diagnostic_coverage ? `<span style="font-size:9px;color:#1a8f5c;font-weight:700;">${e.diagnostic_coverage}%DC</span>` : ''}
+        <button class="fb-conn-del" data-eid="${e.id}" style="margin-left:auto;color:var(--color-danger);background:none;border:none;cursor:pointer;font-size:11px;padding:0 2px;" title="Delete connection">✕</button>
+      </div>`;
+    }).join('');
+  }
+  if (inEdges.length) {
+    html += `<div style="font-size:10px;font-weight:700;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:.4px;margin-top:6px;margin-bottom:3px;">Incoming</div>`;
+    html += inEdges.map(e => {
+      const src = allFns.find(f => f.id === e.source_fn_id);
+      const et  = FMEA_EDGE_TYPES[e.edge_type] || FMEA_EDGE_TYPES.depends_on;
+      return `<div class="fb-conn-row" data-eid="${e.id}" style="${rowStyle}" title="Click to edit connection">
+        <span style="${nameStyle}">${escH(src?.name || '?')}</span>
+        <span style="color:#0090d4;font-size:10px;">→</span>
+        <span style="color:${et.color};font-size:10px;font-weight:700;min-width:70px;">${escH(et.label)}</span>
+        ${e.label ? `<span style="font-size:10px;color:var(--color-text-muted);">(${escH(e.label)})</span>` : ''}
+        <button class="fb-conn-del" data-eid="${e.id}" style="margin-left:auto;color:var(--color-danger);background:none;border:none;cursor:pointer;font-size:11px;padding:0 2px;" title="Delete connection">✕</button>
+      </div>`;
+    }).join('');
+  }
+  return html;
+}
+
+function fmeaShowInlineConnForm(fromFnId, container) {
+  const allFns = _s?.components?.flatMap(c => c.functions || []) || [];
+  const existingTargets = new Set((_s?.fmeaEdges||[]).filter(e=>e.source_fn_id===fromFnId).map(e=>e.target_fn_id));
+  const available = allFns.filter(f => f.id !== fromFnId && !existingTargets.has(f.id));
+
+  container.style.display = '';
+  container.innerHTML = `
+    <div style="padding:8px;background:var(--bg-hover);border:1px solid var(--color-border);border-radius:5px;margin-top:4px;">
+      <div class="arch-props-section-label" style="margin-bottom:4px;">New connection from <strong>${escH(allFns.find(f=>f.id===fromFnId)?.name||'this function')}</strong></div>
+      <div style="margin-bottom:4px;">
+        <label style="font-size:11px;color:var(--color-text-muted);">Target function</label>
+        <select id="fb-cf-target" class="form-select" style="width:100%;margin-top:2px;">
+          <option value="">— select function —</option>
+          ${available.map(f => {
+            const comp = _s.components.find(c => c.id === f.component_id);
+            return `<option value="${f.id}">${escH(comp ? comp.name + ' / ' : '')}${escH(f.name)}</option>`;
+          }).join('')}
+        </select>
+      </div>
+      <div style="margin-bottom:4px;">
+        <label style="font-size:11px;color:var(--color-text-muted);">Dependency type</label>
+        <select id="fb-cf-type" class="form-select" style="width:100%;margin-top:2px;">
+          ${Object.entries(FMEA_EDGE_TYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
+        </select>
+      </div>
+      <div style="margin-bottom:6px;">
+        <label style="font-size:11px;color:var(--color-text-muted);">Label / Signal (optional)</label>
+        <input id="fb-cf-label" class="form-input" placeholder="e.g. CAN signal, PWM…" style="width:100%;margin-top:2px;">
+      </div>
+      <div style="display:flex;gap:4px;">
+        <button id="fb-cf-save" class="btn btn-primary btn-sm" style="flex:1;">Create</button>
+        <button id="fb-cf-cancel" class="btn btn-sm">Cancel</button>
+      </div>
+      ${!available.length ? '<div style="font-size:11px;color:var(--color-text-muted);margin-top:4px;">All functions are already connected from here.</div>' : ''}
+    </div>`;
+
+  document.getElementById('fb-cf-cancel')?.addEventListener('click', () => { container.style.display = 'none'; });
+  document.getElementById('fb-cf-save')?.addEventListener('click', async () => {
+    const toId   = document.getElementById('fb-cf-target')?.value;
+    const etype  = document.getElementById('fb-cf-type')?.value || 'depends_on';
+    const label  = document.getElementById('fb-cf-label')?.value.trim() || null;
+    if (!toId) { toast('Select a target function.', 'warning'); return; }
+    container.style.display = 'none';
+
+    const allFns2 = _s.components.flatMap(c => c.functions || []);
+    const fromFn  = allFns2.find(f => f.id === fromFnId);
+    const { data: edgeData } = await sb.from('fmea_function_edges').insert({
+      project_id: _s.project.id,
+      parent_type: _s.parentType, parent_id: _s.parentId,
+      source_fn_id: fromFnId, target_fn_id: toId,
+      edge_type: etype, label,
+    }).select().single();
+    if (!edgeData) return;
+
+    const rules = [];
+    for (const fm of fromFn?._fms || []) {
+      const { data: r } = await sb.from('fmea_propagation_rules').insert({
+        edge_id: edgeData.id, source_fm_id: fm.id,
+        effect_at_target: fmeaInferEffect(fm.failure_mode, etype),
+        severity: 5, is_inferred: true,
+      }).select().single();
+      if (r) rules.push(r);
+    }
+    edgeData._rules = rules;
+    _s.fmeaEdges.push(edgeData);
+    _s.fmeaSelectedEdgeId = edgeData.id;
+
+    // Refresh connection list in section
+    const list = document.getElementById('fb-conn-list');
+    if (list) { list.innerHTML = fmeaConnectionListHTML(fromFnId); wireFmeaConnDelBtns(fromFnId); }
+    renderFmeaEdges();
+    fmeaShowEdgeProps(edgeData);
+    fmeaSwitchTab('props');
+    toast('Connection created.', 'success');
+  });
 }
 
 // ── FMEA: edge props panel ─────────────────────────────────────────────────────
