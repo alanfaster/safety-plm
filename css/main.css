@@ -3338,6 +3338,14 @@ td.req-drag-cell .req-drag-handle { cursor: grab; color: var(--color-text-muted)
 td:hover .dfmea-inline-add,.dfmea-group-cell:hover .dfmea-inline-add{display:inline-block}
 .dfmea-inline-add:hover{opacity:1;background:#E8F0FE;border-color:var(--color-primary)}
 
+/* Failure Cause autocomplete suggestion panel */
+.dfmea-suggest-panel{position:fixed;z-index:9999;background:#fff;border:1px solid #C5D9F5;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.15);max-height:220px;overflow-y:auto;font-size:12px}
+.dfmea-suggest-item{display:flex;align-items:baseline;gap:8px;padding:7px 12px;cursor:pointer;border-bottom:1px solid #F5F5F5;line-height:1.35}
+.dfmea-suggest-item:last-child{border-bottom:none}
+.dfmea-suggest-item:hover{background:#EEF4FF}
+.dfmea-suggest-text{flex:1;color:#333;word-break:break-word}
+.dfmea-suggest-src{flex-shrink:0;font-size:10px;color:#9AA0A6;font-style:italic;white-space:nowrap}
+
 /* "＋ Add Cause" placeholder when FM has no causes yet */
 .dfmea-add-first-cause{font-size:11px;padding:2px 8px;border:1px dashed var(--color-border);border-radius:3px;background:none;cursor:pointer;color:var(--color-text-subtle);transition:color 0.1s,border-color 0.1s}
 .dfmea-add-first-cause:hover{color:var(--color-primary);border-color:var(--color-primary)}

@@ -60,6 +60,8 @@ let _focusFmId   = null;
 let _rowCtx      = new WeakMap();
 let _pill        = null;
 let _activeTbody = null;
+let _crossLevelSuggestions = [];  // loaded in background after render
+let _suggestEl   = null;          // floating suggestion panel (singleton)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -223,6 +225,7 @@ async function loadItems(){
   _items=data||[];
   await refreshNamesFromSources();
   renderTable(area);
+  _loadCrossLevelSuggestions();  // background — no await
 }
 
 /**
@@ -633,7 +636,10 @@ function wireCauseCells(tr,cause,fm){
   tr.addEventListener('click',e=>{if(!e.target.closest('input,select,button')) selectRow(cause.id);});
 
   tr.querySelectorAll('.dfmea-editable').forEach(td=>{
-    if(td.dataset.field) wireTextCell(td,cause,td.dataset.field,()=>refreshMapComp(fm.component_id||fm.component_name));
+    if(!td.dataset.field) return;
+    const afterSave=()=>refreshMapComp(fm.component_id||fm.component_name);
+    const getSugg=td.dataset.field==='failure_cause'?_getFailureCauseSuggestions:null;
+    wireTextCell(td,cause,td.dataset.field,afterSave,getSugg);
   });
 
   tr.querySelectorAll('.dfmea-sod-input').forEach(inp=>{
@@ -657,7 +663,7 @@ function wireCauseCells(tr,cause,fm){
   tr.querySelector('[data-action="del-cause"]')?.addEventListener('click',()=>deleteCause(cause,fm));
 }
 
-function wireTextCell(td,it,field,afterSave){
+function wireTextCell(td,it,field,afterSave,getSuggestions=null){
   td.addEventListener('dblclick',()=>{
     if(td.querySelector('textarea')) return;
     const inner=getInner(td);
@@ -665,17 +671,126 @@ function wireTextCell(td,it,field,afterSave){
     const h=Math.max(td.offsetHeight-4,20);
     inner.innerHTML=`<textarea class="dfmea-cell-input" style="height:${h}px">${esc(cur)}</textarea>`;
     const ta=inner.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
+
+    if(getSuggestions) _showSuggestPanel(td,ta,getSuggestions);
+
     ta.addEventListener('blur',async()=>{
+      _hideSuggestPanel();
       const v=ta.value.trim(); it[field]=v;
       inner.innerHTML=cellText(v);
       if(v!==cur) await autosave(it.id,{[field]:v});
       if(afterSave) afterSave();
     });
     ta.addEventListener('keydown',e=>{
-      if(e.key==='Escape'){inner.innerHTML=cellText(cur);if(afterSave)afterSave();}
+      if(e.key==='Escape'){_hideSuggestPanel();inner.innerHTML=cellText(cur);if(afterSave)afterSave();}
       if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ta.blur();}
     });
   });
+}
+
+function _showSuggestPanel(td,ta,getSuggestions){
+  _hideSuggestPanel();
+  const items=getSuggestions(); if(!items.length) return;
+
+  _suggestEl=document.createElement('div');
+  _suggestEl.className='dfmea-suggest-panel';
+  _renderSuggestItems(items);
+  document.body.appendChild(_suggestEl);
+  _positionSuggestPanel(td);
+
+  ta.addEventListener('input',()=>{
+    const q=ta.value.toLowerCase().trim();
+    const filtered=q?items.filter(s=>s.text.toLowerCase().includes(q)):items;
+    _renderSuggestItems(filtered);
+    if(!filtered.length) _hideSuggestPanel();
+  },{once:false});
+
+  _suggestEl.addEventListener('mousedown',e=>{
+    const item=e.target.closest('.dfmea-suggest-item');
+    if(!item) return;
+    e.preventDefault();
+    ta.value=item.dataset.text;
+    ta.dispatchEvent(new Event('input'));
+    _hideSuggestPanel();
+    ta.focus();
+  });
+}
+
+function _renderSuggestItems(items){
+  if(!_suggestEl) return;
+  _suggestEl.innerHTML=items.map(s=>`
+    <div class="dfmea-suggest-item" data-text="${esc(s.text)}">
+      <span class="dfmea-suggest-text">${esc(s.text)}</span>
+      <span class="dfmea-suggest-src">${esc(s.source)}</span>
+    </div>`).join('');
+}
+
+function _positionSuggestPanel(td){
+  if(!_suggestEl) return;
+  const r=td.getBoundingClientRect();
+  _suggestEl.style.top=(r.bottom+2)+'px';
+  _suggestEl.style.left=r.left+'px';
+  _suggestEl.style.minWidth=Math.max(r.width,280)+'px';
+}
+
+function _hideSuggestPanel(){
+  _suggestEl?.remove(); _suggestEl=null;
+}
+
+function _getFailureCauseSuggestions(){
+  const seen=new Set(), out=[];
+  // From current DFMEA effects
+  _items.filter(i=>rtype(i)==='effect').forEach(eff=>{
+    [eff.effect_higher,eff.effect_local].filter(Boolean).forEach(text=>{
+      if(!seen.has(text)){seen.add(text);out.push({text,source:'Este DFMEA'});}
+    });
+  });
+  // From cross-level (loaded in background)
+  _crossLevelSuggestions.forEach(s=>{
+    if(!seen.has(s.text)){seen.add(s.text);out.push(s);}
+  });
+  return out;
+}
+
+async function _loadCrossLevelSuggestions(){
+  _crossLevelSuggestions=[];
+  try{
+    if(_ctx.isItemLevel){
+      // Item DFMEA: Failure Cause suggestions ← system-level FM descriptions
+      const compIds=[...new Set(_items.filter(i=>rtype(i)==='fm'&&i.component_id).map(i=>i.component_id))];
+      if(!compIds.length) return;
+      const {data}=await sb.from('dfmea_items')
+        .select('component_name,function_name,failure_mode')
+        .in('parent_id',compIds).eq('parent_type','system').eq('row_type','fm');
+      (data||[]).filter(r=>r.failure_mode).forEach(r=>{
+        const text=[r.component_name,r.function_name,r.failure_mode].filter(Boolean).join(' — ');
+        _crossLevelSuggestions.push({text,source:'DFMEA Sistema'});
+      });
+    } else {
+      // System DFMEA: Failure Cause suggestions ← item-level FM failure modes for this system
+      const {data:iFms}=await sb.from('dfmea_items')
+        .select('id,function_name,failure_mode')
+        .eq('parent_type','item').eq('component_id',_ctx.parentId)
+        .eq('row_type','fm').eq('project_id',_ctx.project.id);
+      (iFms||[]).filter(r=>r.failure_mode).forEach(r=>{
+        const text=[r.function_name,r.failure_mode].filter(Boolean).join(' — ');
+        _crossLevelSuggestions.push({text,source:'DFMEA Item'});
+      });
+      // Also: effect_higher from item-level effects for this system
+      const fmIds=(iFms||[]).map(r=>r.id);
+      if(fmIds.length){
+        const {data:iEffs}=await sb.from('dfmea_items')
+          .select('effect_higher,effect_local')
+          .in('parent_row_id',fmIds).eq('row_type','effect');
+        const seen=new Set(_crossLevelSuggestions.map(s=>s.text));
+        (iEffs||[]).forEach(e=>{
+          [e.effect_higher,e.effect_local].filter(Boolean).forEach(text=>{
+            if(!seen.has(text)){seen.add(text);_crossLevelSuggestions.push({text,source:'DFMEA Item'});}
+          });
+        });
+      }
+    }
+  }catch(_){}
 }
 
 // ── Refresh helpers ───────────────────────────────────────────────────────────
@@ -1416,8 +1531,9 @@ async function syncDFMEA(){
   catch(e){toast('Error al cargar preview: '+e.message,'error'); btn.disabled=false; btn.textContent='⟳ Sync'; return;}
   btn.disabled=false; btn.textContent='⟳ Sync';
 
-  const {archGroups,archFns,newArchRows,newHazards,totalHazards}=preview;
+  const {archGroups,archFns,newArchRows,newHazards,totalHazards,crossCandidates}=preview;
   const compLabel=_ctx.isItemLevel?'sistema(s)':'componente(s)';
+  const crossLabel=_ctx.isItemLevel?'inferior (DFMEA Sistema)':'superior (DFMEA Item)';
   const total=newArchRows.length+newHazards.length;
 
   const row=(icon,label,count,isNew)=>`
@@ -1425,6 +1541,20 @@ async function syncDFMEA(){
       <span style="font-size:16px;width:22px;text-align:center">${icon}</span>
       <span style="flex:1;font-size:12px;color:#444">${label}</span>
       <span style="font-size:12px;font-weight:600;color:${isNew?'#1E8E3E':'#9AA0A6'}">${count}</span>
+    </div>`;
+
+  const crossSection=`
+    <div style="background:#F0F7FF;border:1px solid #C5D9F5;border-radius:6px;padding:10px 14px">
+      <div style="font-size:11px;font-weight:700;color:#1558B0;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+        🔗 Cadena entre niveles
+      </div>
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:${crossCandidates.length?'pointer':'default'}">
+        <input type="checkbox" id="sync-cross-level" style="margin-top:2px" ${crossCandidates.length?'':'disabled'}>
+        <span style="font-size:12px;color:#333;line-height:1.5">
+          Propagar desde el nivel ${crossLabel}
+          <br><span style="color:#666;font-size:11px">${crossCandidates.length?crossCandidates.length+' campo(s) sin valor que podrían rellenarse automáticamente':'No se encontraron datos en el nivel '+crossLabel}</span>
+        </span>
+      </label>
     </div>`;
 
   const body=`
@@ -1435,29 +1565,34 @@ async function syncDFMEA(){
       <div style="font-size:11px;font-weight:700;color:#1A73E8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
         🏗 Arquitectura — estructura de ${compLabel} y funciones
       </div>
-      ${row('🔷',''+compLabel+' encontrado(s)',archGroups.length,false)}
+      ${row('🔷',compLabel+' encontrado(s)',archGroups.length,false)}
       ${row('⚡','Funciones definidas',archFns.length,false)}
       ${row('✚','Filas nuevas a crear (esqueleto)',newArchRows.length,newArchRows.length>0)}
     </div>
-    <div style="background:#F8F9FA;border:1px solid #E0E0E0;border-radius:6px;padding:10px 14px;margin-bottom:12px">
+    <div style="background:#F8F9FA;border:1px solid #E0E0E0;border-radius:6px;padding:10px 14px;margin-bottom:10px">
       <div style="font-size:11px;font-weight:700;color:#E37400;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
         ⚠ FHA — modos de fallo y efectos
       </div>
       ${row('📋','Hazards en el FHA',totalHazards,false)}
       ${row('✚','Modos de fallo nuevos a importar',newHazards.length,newHazards.length>0)}
     </div>
-    ${total===0?'<p style="text-align:center;color:#1E8E3E;font-size:13px;font-weight:600">✓ Todo está ya sincronizado.</p>':''}`;
+    ${crossSection}
+    ${total===0&&!crossCandidates.length?'<p style="text-align:center;color:#1E8E3E;font-size:13px;font-weight:600;margin-top:12px">✓ Todo está ya sincronizado.</p>':''}`;
 
   showModal({
     title:'⟳ Sincronizar DFMEA',
     body,
-    footer:total===0
-      ?`<button class="btn btn-secondary" id="sync-cancel">Cerrar</button>`
-      :`<button class="btn btn-secondary" id="sync-cancel">Cancelar</button>
-        <button class="btn btn-primary"   id="sync-confirm">Importar (${total} fila${total===1?'':'s'})</button>`,
+    footer:`<button class="btn btn-secondary" id="sync-cancel">Cancelar</button>
+            <button class="btn btn-primary" id="sync-confirm" ${total===0&&!crossCandidates.length?'disabled':''}>
+              Importar${total>0?` (${total} fila${total===1?'':'s'})`:''}
+            </button>`,
   });
   document.getElementById('sync-cancel').onclick=()=>hideModal();
-  if(total>0) document.getElementById('sync-confirm').onclick=async()=>{hideModal(); await _doSync(preview);};
+  document.getElementById('sync-confirm').onclick=async()=>{
+    const doCrossLevel=document.getElementById('sync-cross-level')?.checked;
+    hideModal();
+    await _doSync(preview,doCrossLevel);
+  };
 }
 
 async function _fetchSyncPreview(){
@@ -1522,14 +1657,60 @@ async function _fetchSyncPreview(){
   const existingHazIds=new Set(_items.filter(i=>i.hazard_id).map(i=>i.hazard_id));
   const newHazards=allHaz.filter(h=>!existingHazIds.has(h.id));
 
-  return {archGroups,archFns,newArchRows,newHazards,totalHazards:allHaz.length,hazFnRefs,compMapById};
+  // Cross-level candidates: FM rows that could get Failure Cause from the other level's DFMEA
+  const crossCandidates=await _fetchCrossLevelCandidates(archGroups.map(g=>g.id));
+
+  return {archGroups,archFns,newArchRows,newHazards,totalHazards:allHaz.length,hazFnRefs,compMapById,crossCandidates};
 }
 
-async function _doSync(preview){
+async function _fetchCrossLevelCandidates(archCompIds){
+  // Returns [{fmId, field, suggestedValue}] for FM rows that could be auto-filled from other level
+  const candidates=[];
+  try{
+    if(_ctx.isItemLevel){
+      // Failure Cause ← system-level FM descriptions
+      const compIds=[...new Set([
+        ..._items.filter(i=>rtype(i)==='fm'&&i.component_id&&!i.failure_cause).map(i=>i.component_id),
+        ...archCompIds,
+      ])];
+      if(!compIds.length) return [];
+      const {data:sysFms}=await sb.from('dfmea_items')
+        .select('parent_id,component_name,function_name,failure_mode')
+        .in('parent_id',compIds).eq('parent_type','system').eq('row_type','fm');
+      const byComp={};
+      (sysFms||[]).forEach(f=>{(byComp[f.parent_id]=byComp[f.parent_id]||[]).push(f);});
+      _items.filter(i=>rtype(i)==='fm'&&i.component_id&&!i.failure_cause).forEach(fm=>{
+        const matches=byComp[fm.component_id];
+        if(matches?.length){
+          const text=matches.map(m=>[m.component_name,m.failure_mode].filter(Boolean).join(': ')).join('; ');
+          candidates.push({fmId:fm.id,field:'failure_cause',value:text});
+        }
+      });
+    } else {
+      // effect_higher on effects ← item-level DFMEA effects for this system
+      const {data:iFms}=await sb.from('dfmea_items')
+        .select('id,function_name').eq('parent_type','item').eq('component_id',_ctx.parentId)
+        .eq('row_type','fm').eq('project_id',_ctx.project.id);
+      if(!iFms?.length) return [];
+      const {data:iEffs}=await sb.from('dfmea_items')
+        .select('effect_higher,parent_row_id')
+        .in('parent_row_id',iFms.map(f=>f.id)).eq('row_type','effect');
+      const topEffect=(iEffs||[]).find(e=>e.effect_higher)?.effect_higher;
+      if(topEffect){
+        _items.filter(i=>rtype(i)==='effect'&&!i.effect_higher).forEach(eff=>{
+          candidates.push({fmId:eff.id,field:'effect_higher',value:topEffect});
+        });
+      }
+    }
+  }catch(_){}
+  return candidates;
+}
+
+async function _doSync(preview,doCrossLevel=false){
   const btn=document.getElementById('btn-dfmea-sync');
   if(btn){btn.disabled=true; btn.textContent='⟳ Sincronizando…';}
   try{
-    const {archFns,newArchRows,newHazards,hazFnRefs,compMapById}=preview;
+    const {archFns,newArchRows,newHazards,hazFnRefs,compMapById,crossCandidates}=preview;
 
     // Phase 1: Architecture skeleton rows (silent — no re-render per row)
     for(const row of newArchRows){
@@ -1569,9 +1750,22 @@ async function _doSync(preview){
       if(efH||efL) await _insertEffectSilent(fm,efH,efL);
     }
 
+    // Phase 3: Cross-level chain propagation (optional)
+    let crossCount=0;
+    if(doCrossLevel&&crossCandidates?.length){
+      const now=new Date().toISOString();
+      for(const c of crossCandidates){
+        const it=_items.find(i=>i.id===c.fmId); if(!it) continue;
+        it[c.field]=c.value;
+        await sb.from('dfmea_items').update({[c.field]:c.value,updated_at:now}).eq('id',c.fmId);
+        crossCount++;
+      }
+    }
+
     renderTable(); renderChain();
-    const total=preview.newArchRows.length+preview.newHazards.length;
-    toast(`Sincronización completada: ${total} fila(s) importada(s).`,'success');
+    _loadCrossLevelSuggestions();
+    const total=preview.newArchRows.length+preview.newHazards.length+crossCount;
+    toast(`Sincronización completada: ${total} fila(s) importada/actualizadas.`,'success');
   }catch(e){toast('Error durante la sincronización: '+e.message,'error');}
   finally{if(btn){btn.disabled=false; btn.textContent='⟳ Sync';}}
 }
