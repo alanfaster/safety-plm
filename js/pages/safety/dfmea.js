@@ -98,25 +98,29 @@ function fmOf(it){
   return null;
 }
 
-/** Group FM rows by component_id+function_name (stable insertion order). */
+/**
+ * Two-level grouping: Component → Functions → FMs
+ * Returns: [{component_id, component_name, fnGroups:[{function_name, fms:[]}]}]
+ */
 function buildGroups(){
   const fms=_items.filter(i=>rtype(i)==='fm');
-  const order=[], map=new Map();
+  const compOrder=[], compMap=new Map();
   fms.forEach(fm=>{
-    const k=`${fm.component_id||''}__${fm.component_name||''}__${fm.function_name||''}`;
-    if(!map.has(k)){
-      const g={key:k,component_id:fm.component_id,component_name:fm.component_name,function_name:fm.function_name,fms:[]};
-      order.push(g); map.set(k,g);
+    const ck=fm.component_id||fm.component_name||'';
+    if(!compMap.has(ck)){
+      const cg={compKey:ck,component_id:fm.component_id,component_name:fm.component_name,fnGroups:[]};
+      compOrder.push(cg); compMap.set(ck,cg);
     }
-    map.get(k).fms.push(fm);
+    const cg=compMap.get(ck);
+    const fk=fm.function_name||'';
+    let fg=cg.fnGroups.find(f=>f.function_name===fk);
+    if(!fg){fg={function_name:fk,fms:[],key:`${ck}__${fk}`};cg.fnGroups.push(fg);}
+    fg.fms.push(fm);
   });
-  return order;
+  return compOrder;
 }
 
-/** Total <tr> count for one FM (its own row + effect rows + cause rows).
- *  The effect <tr> is merged with its FIRST cause, so each effect contributes
- *  max(1, causesUnderEffect) rows — not 1 + N.
- */
+/** Total <tr> count for one FM. */
 function fmRowCount(fm){
   const effects=_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id);
   const directCauses=_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===fm.id);
@@ -127,8 +131,8 @@ function fmRowCount(fm){
   return 1+effectRows+directCauses.length;
 }
 
-/** Total <tr> count for one group. */
-function groupRowCount(g){return g.fms.reduce((n,fm)=>n+fmRowCount(fm),0);}
+function fnGroupRowCount(fg){return fg.fms.reduce((n,fm)=>n+fmRowCount(fm),0);}
+function compGroupRowCount(cg){return cg.fnGroups.reduce((n,fg)=>n+fnGroupRowCount(fg),0);}
 
 // ── Entry Point ───────────────────────────────────────────────────────────────
 
@@ -291,7 +295,8 @@ function renderTable(area){
     <div class="dfmea-table-wrap">
       <table class="dfmea-table">
         <thead><tr>
-          <th class="dfmea-col-compfunc">${isItem ? 'System / Function' : 'Component / Function'}</th>
+          <th class="dfmea-col-comp">${isItem ? 'System' : 'Component'}</th>
+          <th class="dfmea-col-func">Function</th>
           <th class="dfmea-col-fm">Failure Mode</th>
           <th class="dfmea-col-maxs" title="Max Severity">Max S</th>
           <th class="dfmea-col-status">Status</th>
@@ -314,139 +319,148 @@ function renderTable(area){
     </div>`;
 
   const tbody=document.getElementById('dfmea-tbody');
-  groups.forEach(g=>renderGroup(tbody,g));
+  groups.forEach(cg=>renderCompGroup(tbody,cg));
   wireInsertHover(tbody);
 }
 
 // ── Group rendering ───────────────────────────────────────────────────────────
 
-function renderGroup(tbody,g){
-  const totalSpan=groupRowCount(g);
-  g.fms.forEach((fm,fi)=>{
-    const effects       =_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id);
-    const directCauses  =_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===fm.id);
-    const fmSpan        =fmRowCount(fm);
-    const isFirstFm     =(fi===0);
-    const isLastFm      =(fi===g.fms.length-1);
+function renderCompGroup(tbody, cg){
+  const compSpan=compGroupRowCount(cg);
+  let compCellEmitted=false;
 
-    // ── FM row ──────────────────────────────────────────────────────────────
-    const fmTr=document.createElement('tr');
-    fmTr.className=`dfmea-row dfmea-row-fm${isFirstFm?' dfmea-group-first':''}${isLastFm&&!effects.length&&!directCauses.length?' dfmea-group-last':''}`;
-    fmTr.dataset.id=fm.id; fmTr.dataset.type='fm';
+  cg.fnGroups.forEach((fg, fgi)=>{
+    const fnSpan=fnGroupRowCount(fg);
+    let fnCellEmitted=false;
+    const isLastFg=(fgi===cg.fnGroups.length-1);
 
-    // Function cell (rowspan = entire group, only on first FM)
-    if(isFirstFm){
-      const cfTd=document.createElement('td');
-      cfTd.rowSpan=totalSpan;
-      cfTd.className='dfmea-col-compfunc dfmea-group-cell';
-      cfTd.innerHTML=`<div class="dfmea-cell-wrap">
-        <button class="dfmea-corner-del" data-action="del-group" title="Delete function group">✕</button>
-        <div class="dfmea-cf-func dfmea-editable" data-field="function_name" data-fm-id="${fm.id}" title="dblclick to edit">${cellText(fm.function_name)}</div>
-        ${fm.component_name?`<div class="dfmea-cf-comp-sub">${esc(fm.component_name)}</div>`:''}
-      </div>`;
+    fg.fms.forEach((fm, fi)=>{
+      const effects      =_items.filter(i=>rtype(i)==='effect'&&i.parent_row_id===fm.id);
+      const directCauses =_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===fm.id);
+      const fmSpan       =fmRowCount(fm);
+      const isLastFm     =(fi===fg.fms.length-1);
 
-      fmTr.appendChild(cfTd);
-      cfTd.querySelector('[data-action="del-group"]')?.addEventListener('click', () => deleteGroup(g));
-      // Wire group-cell editing (edits ALL fms in group for comp/func)
-      cfTd.querySelectorAll('.dfmea-editable').forEach(el=>wireGroupCellEdit(el,g));
-    }
+      const fmTr=document.createElement('tr');
+      fmTr.className=`dfmea-row dfmea-row-fm${!compCellEmitted?' dfmea-group-first':''}${isLastFg&&isLastFm&&!effects.length&&!directCauses.length?' dfmea-group-last':''}`;
+      fmTr.dataset.id=fm.id; fmTr.dataset.type='fm';
 
-    // Failure Mode cell (rowspan = this FM's rows)
-    const fmTd=makeTd('dfmea-col-fm dfmea-editable',fmSpan);
-    fmTd.dataset.field='failure_mode';
-    wrapWithDel(fmTd,'del-fm',cellText(fm.failure_mode));
-    fmTr.appendChild(fmTd);
-
-    // Max S cell (rowspan = this FM's rows)
-    const maxSTd=makeTd('dfmea-col-maxs',fmSpan);
-    const maxS=maxSevForFm(fm);
-    maxSTd.dataset.fmId=fm.id;
-    maxSTd.className+=' dfmea-maxs-cell';
-    maxSTd.innerHTML=maxS?`<span class="dfmea-maxs-badge">${maxS}</span>`:`<span class="dfmea-placeholder">—</span>`;
-    fmTr.appendChild(maxSTd);
-
-    // Status + del immediately after maxs (rowspan cells must be contiguous for correct layout)
-    const statusTd=makeTd('dfmea-col-status',fmSpan);
-    statusTd.innerHTML=`<select class="dfmea-sel" data-field="status">${ITEM_STATUSES.map(s=>`<option value="${s}"${fm.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
-    fmTr.appendChild(statusTd);
-
-    if(!effects.length&&!directCauses.length){
-      const naEff1=naCell('dfmea-col-eff dfmea-na-editable'); naEff1.title='Double-click to add Effect';
-      naEff1.innerHTML='<span class="dfmea-placeholder">—</span>';
-      naEff1.addEventListener('dblclick',()=>addEffectRow(fm)); fmTr.appendChild(naEff1);
-      const naEff2=naCell('dfmea-col-eff dfmea-na-editable'); naEff2.title='Double-click to add Effect';
-      naEff2.innerHTML='<span class="dfmea-placeholder">—</span>';
-      naEff2.addEventListener('dblclick',()=>addEffectRow(fm)); fmTr.appendChild(naEff2);
-      fmTr.appendChild(naCell('dfmea-col-sod'));
-      const naFc=naCell('dfmea-col-fc dfmea-na-editable'); naFc.title='Double-click to add Cause';
-      naFc.innerHTML='<span class="dfmea-placeholder">—</span>';
-      naFc.addEventListener('dblclick',()=>addCauseRow(fm.id,fm)); fmTr.appendChild(naFc);
-      ['dfmea-col-ctrl','dfmea-col-sod','dfmea-col-ctrl','dfmea-col-sod','dfmea-col-ap',
-       'dfmea-col-actions','dfmea-col-resp','dfmea-col-date','dfmea-col-astatus'].forEach(c=>fmTr.appendChild(naCell(c)));
-    }
-
-    _rowCtx.set(fmTr,{type:'fm',fm,g});
-    tbody.appendChild(fmTr);
-    wireFmCells(fmTr,fmTd,statusTd,fm,g);
-
-    // ── Effect rows ────────────────────────────────────────────────────────
-    effects.forEach((eff,ei)=>{
-      const effCauses=_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===eff.id);
-      // Effect TR is merged with its first cause → actual rows = max(1, N causes)
-      const effSpan  =Math.max(1,effCauses.length);
-      const isLastEff=(ei===effects.length-1);
-
-      const effTr=document.createElement('tr');
-      effTr.className='dfmea-row dfmea-row-effect';
-      effTr.dataset.id=eff.id; effTr.dataset.type='effect';
-
-      // Effect Higher (rowspan = 1 + causes under this effect)
-      const effHTd=makeTd('dfmea-col-eff dfmea-editable',effSpan);
-      effHTd.dataset.field='effect_higher';
-      wrapWithDel(effHTd,'del-effect',cellText(eff.effect_higher));
-      effTr.appendChild(effHTd);
-
-      // Effect Local (rowspan)
-      const effLTd=makeTd('dfmea-col-eff dfmea-editable',effSpan);
-      effLTd.dataset.field='effect_local';
-      effLTd.innerHTML=cellText(eff.effect_local);
-      effTr.appendChild(effLTd);
-
-      // S (rowspan)
-      const sTd=makeTd('dfmea-col-sod',effSpan);
-      sTd.innerHTML=`<input class="dfmea-sod-input" type="number" min="1" max="10" value="${eff.severity||5}" data-field="severity">`;
-      effTr.appendChild(sTd);
-
-      // First cause inline (or NA if no causes)
-      _rowCtx.set(effTr,{type:'effect',eff,fm,g});
-      if(effCauses.length){
-        appendCauseCells(effTr,effCauses[0],fm,effCauses.length===1);
-        tbody.appendChild(effTr);
-        wireEffCells(effTr,effHTd,effLTd,sTd,eff,fm);
-        wireCauseCells(effTr,effCauses[0],fm);
-        // Remaining causes
-        effCauses.slice(1).forEach((c,ci)=>{
-          const cTr=causeTrShell(c,fm,ci===effCauses.length-2);
-          _rowCtx.set(cTr,{type:'cause',cause:c,fm,g});
-          tbody.appendChild(cTr);
-          wireCauseCells(cTr,c,fm);
-        });
-      } else {
-        appendNaCauseCells(effTr,eff.id,fm);
-        tbody.appendChild(effTr);
-        wireEffCells(effTr,effHTd,effLTd,sTd,eff,fm);
+      // Component cell (rowspan = entire component group, only first row)
+      if(!compCellEmitted){
+        compCellEmitted=true;
+        const compTd=document.createElement('td');
+        compTd.rowSpan=compSpan;
+        compTd.className='dfmea-col-comp dfmea-group-cell';
+        compTd.innerHTML=`<div class="dfmea-cell-wrap">
+          <button class="dfmea-corner-del" data-action="del-comp-group" title="Delete component group">✕</button>
+          <div class="dfmea-cf-func dfmea-editable" data-field="component_name" data-fm-id="${fm.id}" title="dblclick to edit">${cellText(cg.component_name)}</div>
+        </div>`;
+        fmTr.appendChild(compTd);
+        compTd.querySelector('[data-action="del-comp-group"]')?.addEventListener('click',()=>deleteCompGroup(cg));
+        compTd.querySelectorAll('.dfmea-editable').forEach(el=>wireCompCellEdit(el,cg));
       }
-      // Wire inline del-effect button (inside effHTd)
-      effHTd.querySelector('[data-action="del-effect"]')?.addEventListener('click',()=>deleteEffect(eff,fm));
-    });
 
-    // ── Direct causes (parent = FM) ────────────────────────────────────────
-    // Direct causes have no effect row above them → prepend NA cells for Effect Higher/Local/S
-    directCauses.forEach((c,ci)=>{
-      const cTr=causeTrShell(c,fm,ci===directCauses.length-1,true);
-      _rowCtx.set(cTr,{type:'cause',cause:c,fm,g});
-      tbody.appendChild(cTr);
-      wireCauseCells(cTr,c,fm);
+      // Function cell (rowspan = this function group's rows, only first row)
+      if(!fnCellEmitted){
+        fnCellEmitted=true;
+        const fnTd=document.createElement('td');
+        fnTd.rowSpan=fnSpan;
+        fnTd.className='dfmea-col-func dfmea-group-cell';
+        fnTd.innerHTML=`<div class="dfmea-cell-wrap">
+          <button class="dfmea-corner-del" data-action="del-fn-group" title="Delete function group">✕</button>
+          <div class="dfmea-cf-func dfmea-editable" data-field="function_name" data-fm-id="${fm.id}" title="dblclick to edit">${cellText(fg.function_name)}</div>
+        </div>`;
+        fmTr.appendChild(fnTd);
+        fnTd.querySelector('[data-action="del-fn-group"]')?.addEventListener('click',()=>deleteFnGroup(fg));
+        fnTd.querySelectorAll('.dfmea-editable').forEach(el=>wireFnCellEdit(el,fg));
+      }
+
+      // Failure Mode cell (rowspan = this FM's rows)
+      const fmTd=makeTd('dfmea-col-fm dfmea-editable',fmSpan);
+      fmTd.dataset.field='failure_mode';
+      wrapWithDel(fmTd,'del-fm',cellText(fm.failure_mode));
+      fmTr.appendChild(fmTd);
+
+      // Max S cell (rowspan = this FM's rows)
+      const maxSTd=makeTd('dfmea-col-maxs',fmSpan);
+      const maxS=maxSevForFm(fm);
+      maxSTd.dataset.fmId=fm.id;
+      maxSTd.className+=' dfmea-maxs-cell';
+      maxSTd.innerHTML=maxS?`<span class="dfmea-maxs-badge">${maxS}</span>`:`<span class="dfmea-placeholder">—</span>`;
+      fmTr.appendChild(maxSTd);
+
+      const statusTd=makeTd('dfmea-col-status',fmSpan);
+      statusTd.innerHTML=`<select class="dfmea-sel" data-field="status">${ITEM_STATUSES.map(s=>`<option value="${s}"${fm.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
+      fmTr.appendChild(statusTd);
+
+      if(!effects.length&&!directCauses.length){
+        const naEff1=naCell('dfmea-col-eff dfmea-na-editable'); naEff1.title='Double-click to add Effect';
+        naEff1.innerHTML='<span class="dfmea-placeholder">—</span>';
+        naEff1.addEventListener('dblclick',()=>addEffectRow(fm)); fmTr.appendChild(naEff1);
+        const naEff2=naCell('dfmea-col-eff dfmea-na-editable'); naEff2.title='Double-click to add Effect';
+        naEff2.innerHTML='<span class="dfmea-placeholder">—</span>';
+        naEff2.addEventListener('dblclick',()=>addEffectRow(fm)); fmTr.appendChild(naEff2);
+        fmTr.appendChild(naCell('dfmea-col-sod'));
+        const naFc=naCell('dfmea-col-fc dfmea-na-editable'); naFc.title='Double-click to add Cause';
+        naFc.innerHTML='<span class="dfmea-placeholder">—</span>';
+        naFc.addEventListener('dblclick',()=>addCauseRow(fm.id,fm)); fmTr.appendChild(naFc);
+        ['dfmea-col-ctrl','dfmea-col-sod','dfmea-col-ctrl','dfmea-col-sod','dfmea-col-ap',
+         'dfmea-col-actions','dfmea-col-resp','dfmea-col-date','dfmea-col-astatus'].forEach(c=>fmTr.appendChild(naCell(c)));
+      }
+
+      _rowCtx.set(fmTr,{type:'fm',fm,fg,cg});
+      tbody.appendChild(fmTr);
+      wireFmCells(fmTr,fmTd,statusTd,fm);
+
+      // ── Effect rows ──────────────────────────────────────────────────────
+      effects.forEach((eff,ei)=>{
+        const effCauses=_items.filter(i=>rtype(i)==='cause'&&i.parent_row_id===eff.id);
+        const effSpan  =Math.max(1,effCauses.length);
+
+        const effTr=document.createElement('tr');
+        effTr.className='dfmea-row dfmea-row-effect';
+        effTr.dataset.id=eff.id; effTr.dataset.type='effect';
+
+        const effHTd=makeTd('dfmea-col-eff dfmea-editable',effSpan);
+        effHTd.dataset.field='effect_higher';
+        wrapWithDel(effHTd,'del-effect',cellText(eff.effect_higher));
+        effTr.appendChild(effHTd);
+
+        const effLTd=makeTd('dfmea-col-eff dfmea-editable',effSpan);
+        effLTd.dataset.field='effect_local';
+        effLTd.innerHTML=cellText(eff.effect_local);
+        effTr.appendChild(effLTd);
+
+        const sTd=makeTd('dfmea-col-sod',effSpan);
+        sTd.innerHTML=`<input class="dfmea-sod-input" type="number" min="1" max="10" value="${eff.severity||5}" data-field="severity">`;
+        effTr.appendChild(sTd);
+
+        _rowCtx.set(effTr,{type:'effect',eff,fm,fg,cg});
+        if(effCauses.length){
+          appendCauseCells(effTr,effCauses[0],fm,effCauses.length===1);
+          tbody.appendChild(effTr);
+          wireEffCells(effTr,effHTd,effLTd,sTd,eff,fm);
+          wireCauseCells(effTr,effCauses[0],fm);
+          effCauses.slice(1).forEach((c,ci)=>{
+            const cTr=causeTrShell(c,fm,ci===effCauses.length-2);
+            _rowCtx.set(cTr,{type:'cause',cause:c,fm,fg,cg});
+            tbody.appendChild(cTr);
+            wireCauseCells(cTr,c,fm);
+          });
+        } else {
+          appendNaCauseCells(effTr,eff.id,fm);
+          tbody.appendChild(effTr);
+          wireEffCells(effTr,effHTd,effLTd,sTd,eff,fm);
+        }
+        effHTd.querySelector('[data-action="del-effect"]')?.addEventListener('click',()=>deleteEffect(eff,fm));
+      });
+
+      // ── Direct causes ────────────────────────────────────────────────────
+      directCauses.forEach((c,ci)=>{
+        const cTr=causeTrShell(c,fm,ci===directCauses.length-1,true);
+        _rowCtx.set(cTr,{type:'cause',cause:c,fm,fg,cg});
+        tbody.appendChild(cTr);
+        wireCauseCells(cTr,c,fm);
+      });
     });
   });
 }
@@ -516,8 +530,8 @@ function causeTrShell(cause,fm,isLast,isDirectCause=false){
 
 // ── Row wiring ────────────────────────────────────────────────────────────────
 
-/** Wire the Component/Function cell (edits propagate to all FMs in the group). */
-function wireGroupCellEdit(el,g){
+/** Wire Component cell — edits propagate to all FMs under this component group. */
+function wireCompCellEdit(el,cg){
   el.addEventListener('dblclick',()=>{
     if(el.querySelector('textarea')) return;
     const field=el.dataset.field;
@@ -530,12 +544,10 @@ function wireGroupCellEdit(el,g){
     ta.addEventListener('blur',async()=>{
       const v=ta.value.trim(); el.innerHTML=cellText(v);
       if(v===(fm[field]||'')) return;
-      // Update all FMs in this group
-      for(const gfm of g.fms){
-        gfm[field]=v;
-        await autosave(gfm.id,{[field]:v});
-      }
-      if(field==='component_name'||field==='function_name') renderChain();
+      const allFms=cg.fnGroups.flatMap(fg=>fg.fms);
+      for(const gfm of allFms){gfm[field]=v; await autosave(gfm.id,{[field]:v});}
+      cg.component_name=v;
+      renderChain();
       refreshMapComp(fm.component_id||fm.component_name);
     });
     ta.addEventListener('keydown',e=>{
@@ -545,7 +557,33 @@ function wireGroupCellEdit(el,g){
   });
 }
 
-function wireFmCells(fmTr,fmTd,statusTd,fm,g){
+/** Wire Function cell — edits propagate to all FMs in this function group. */
+function wireFnCellEdit(el,fg){
+  el.addEventListener('dblclick',()=>{
+    if(el.querySelector('textarea')) return;
+    const field=el.dataset.field;
+    const fmId =el.dataset.fmId;
+    const fm   =_items.find(i=>i.id===fmId); if(!fm) return;
+    const cur  =fm[field]||'';
+    const h=Math.max(el.closest('td')?.offsetHeight-4||40,20);
+    el.innerHTML=`<textarea class="dfmea-cell-input" style="height:${h}px">${esc(cur)}</textarea>`;
+    const ta=el.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
+    ta.addEventListener('blur',async()=>{
+      const v=ta.value.trim(); el.innerHTML=cellText(v);
+      if(v===(fm[field]||'')) return;
+      for(const gfm of fg.fms){gfm[field]=v; await autosave(gfm.id,{[field]:v});}
+      fg.function_name=v;
+      renderChain();
+      refreshMapComp(fm.component_id||fm.component_name);
+    });
+    ta.addEventListener('keydown',e=>{
+      if(e.key==='Escape') el.innerHTML=cellText(cur);
+      if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ta.blur();}
+    });
+  });
+}
+
+function wireFmCells(fmTr,fmTd,statusTd,fm){
   // Click → select
   fmTr.addEventListener('click',e=>{if(!e.target.closest('input,select,button')) selectRow(fm.id);});
 
@@ -758,17 +796,37 @@ async function addCauseRow(parentId,fm,afterCause=null){
   },50);
 }
 
-async function deleteGroup(g){
-  const allIds=g.fms.flatMap(fm=>[fm.id,..._items.filter(i=>fmOf(i)?.id===fm.id&&i.id!==fm.id).map(i=>i.id)]);
+async function deleteCompGroup(cg){
+  const allFms=cg.fnGroups.flatMap(fg=>fg.fms);
+  const allIds=allFms.flatMap(fm=>[fm.id,..._items.filter(i=>fmOf(i)?.id===fm.id&&i.id!==fm.id).map(i=>i.id)]);
   showModal({
-    title:'Delete Function Group',
-    body:`<p>Delete function <strong>${esc(g.fms[0]?.function_name||'—')}</strong> and all its failure modes, effects and causes?</p>
+    title:'Delete Component Group',
+    body:`<p>Delete component <strong>${esc(cg.component_name||'—')}</strong> and all its functions, failure modes, effects and causes?</p>
       <div class="modal-warn-box" style="margin-top:10px">⚠ This will delete ${allIds.length} row(s). Cannot be undone.</div>`,
     footer:`<button class="btn btn-secondary" id="dg-cancel">Cancel</button>
             <button class="btn btn-danger" id="dg-confirm">Delete all</button>`,
   });
   document.getElementById('dg-cancel').onclick=()=>hideModal();
   document.getElementById('dg-confirm').onclick=async()=>{
+    hideModal();
+    await sb.from('dfmea_items').delete().in('id',allIds);
+    allIds.forEach(id=>{_items=_items.filter(i=>i.id!==id);});
+    renderTable(); renderChain();
+    toast('Component group deleted.','success');
+  };
+}
+
+async function deleteFnGroup(fg){
+  const allIds=fg.fms.flatMap(fm=>[fm.id,..._items.filter(i=>fmOf(i)?.id===fm.id&&i.id!==fm.id).map(i=>i.id)]);
+  showModal({
+    title:'Delete Function Group',
+    body:`<p>Delete function <strong>${esc(fg.function_name||'—')}</strong> and all its failure modes, effects and causes?</p>
+      <div class="modal-warn-box" style="margin-top:10px">⚠ This will delete ${allIds.length} row(s). Cannot be undone.</div>`,
+    footer:`<button class="btn btn-secondary" id="dfg-cancel">Cancel</button>
+            <button class="btn btn-danger" id="dfg-confirm">Delete all</button>`,
+  });
+  document.getElementById('dfg-cancel').onclick=()=>hideModal();
+  document.getElementById('dfg-confirm').onclick=async()=>{
     hideModal();
     await sb.from('dfmea_items').delete().in('id',allIds);
     allIds.forEach(id=>{_items=_items.filter(i=>i.id!==id);});
