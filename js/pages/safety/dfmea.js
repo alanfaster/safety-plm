@@ -133,12 +133,17 @@ function groupRowCount(g){return g.fms.reduce((n,fm)=>n+fmRowCount(fm),0);}
 // ── Entry Point ───────────────────────────────────────────────────────────────
 
 export async function renderDFMEA(container, {project,item,system,parentType,parentId}){
-  _ctx={project,parentType,parentId};
+  const isItemLevel = parentType === 'item';
+  _ctx={project,parentType,parentId,isItemLevel};
   _items=[]; _selId=null; _netVisible=true; _focusFmId=null;
   _chain={components:[],functions:[],selCompId:null,selFuncId:null};
   _map={components:[],connections:[],functions:[]};
 
-  const parentName=system?.name||item?.name||'';
+  const parentName = system?.name || item?.name || '';
+  const focusLabel = isItemLevel ? 'System'    : 'Component';
+  const upperLabel = isItemLevel ? 'Item'       : 'System';
+  const lowerLabel = isItemLevel ? 'Component'  : 'Sub-component';
+  const syncLabel  = isItemLevel ? '⟳ Sync from Architecture' : '⟳ Sync from FHA';
 
   container.style.cssText='display:flex;flex-direction:column;height:100%;overflow:hidden';
   container.innerHTML=`
@@ -148,10 +153,17 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
           <h1>Functional FMEA</h1>
           <p class="page-subtitle">VDA 2019 · ${esc(parentName)}</p>
         </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+          <span style="font-size:11px;background:var(--bg-hover);border:1px solid var(--color-border);border-radius:5px;padding:3px 10px;color:var(--color-text-muted);">
+            Upper: <strong>${upperLabel}</strong>
+            &nbsp;·&nbsp; Focus: <strong style="color:var(--color-primary);">${focusLabel}</strong>
+            &nbsp;·&nbsp; Lower: <strong>${lowerLabel}</strong>
+          </span>
+        </div>
         <div class="dfmea-toolbar">
           <div class="arch-sep"></div>
-          <button class="btn btn-secondary btn-sm" id="btn-dfmea-sync">⟳ Sync from System</button>
-          <button class="btn btn-primary   btn-sm" id="btn-dfmea-new" title="Add new Function group">＋ New</button>
+          <button class="btn btn-secondary btn-sm" id="btn-dfmea-sync">${syncLabel}</button>
+          <button class="btn btn-primary   btn-sm" id="btn-dfmea-new" title="Add new row">＋ New</button>
         </div>
       </div>
     </div>
@@ -173,7 +185,7 @@ export async function renderDFMEA(container, {project,item,system,parentType,par
 
   wirePanelToggles();
   document.getElementById('btn-dfmea-new').onclick  = ()=>addFmRow();
-  document.getElementById('btn-dfmea-sync').onclick = ()=>syncFromSystem();
+  document.getElementById('btn-dfmea-sync').onclick = ()=>(_ctx.isItemLevel ? syncFromArchitecture() : syncFromSystem());
 
   await loadItems();
 }
@@ -274,18 +286,19 @@ function renderTable(area){
     return;
   }
 
+  const isItem = _ctx?.isItemLevel;
   area.innerHTML=`
     <div class="dfmea-table-wrap">
       <table class="dfmea-table">
         <thead><tr>
-          <th class="dfmea-col-compfunc">Function</th>
+          <th class="dfmea-col-compfunc">${isItem ? 'System / Function' : 'Component / Function'}</th>
           <th class="dfmea-col-fm">Failure Mode</th>
           <th class="dfmea-col-maxs" title="Max Severity">Max S</th>
           <th class="dfmea-col-status">Status</th>
-          <th class="dfmea-col-eff">Effect — Higher Level</th>
-          <th class="dfmea-col-eff">Effect — Local</th>
+          <th class="dfmea-col-eff">${isItem ? 'Effect — Item Level' : 'Effect — System Level'}</th>
+          <th class="dfmea-col-eff">${isItem ? 'Effect — System Level' : 'Effect — Local'}</th>
           <th class="dfmea-col-sod" title="Severity">S</th>
-          <th class="dfmea-col-fc">Failure Cause</th>
+          <th class="dfmea-col-fc">${isItem ? 'Failure Cause (Component)' : 'Failure Cause'}</th>
           <th class="dfmea-col-ctrl">Prevention Controls</th>
           <th class="dfmea-col-sod" title="Occurrence">O</th>
           <th class="dfmea-col-ctrl">Detection Controls</th>
@@ -1369,5 +1382,54 @@ async function syncFromSystem(){
     }
     toast(created>0?`Synced ${created} new FM(s) from FHA.`:'Already up to date.','success');
   }catch(e){toast('Sync error: '+e.message,'error');}
-  finally{if(btn){btn.disabled=false;btn.textContent='⟳ Sync from System';}}
+  finally{if(btn){btn.disabled=false;btn.textContent='⟳ Sync from FHA';}}
+}
+
+// ── Sync from Architecture (item-level: Focus = System/Group) ─────────────────
+
+async function syncFromArchitecture(){
+  const btn=document.getElementById('btn-dfmea-sync');
+  if(btn){btn.disabled=true;btn.textContent='⟳ Syncing…';}
+  try{
+    // Pull Systems (Groups that are NOT assembly) for this item
+    const {data:allComps}=await sb.from('arch_components')
+      .select('id,name,comp_type,data')
+      .eq('project_id',_ctx.project.id)
+      .eq('comp_type','Group');
+    const systems=(allComps||[]).filter(c=>c.data?.subtype!=='assembly');
+    if(!systems.length){toast('No systems found in Architecture Concept.','warning');return;}
+
+    // Pull arch_functions for those systems
+    const sysIds=systems.map(s=>s.id);
+    const {data:fns}=await sb.from('arch_functions')
+      .select('id,component_id,name')
+      .in('component_id',sysIds)
+      .order('sort_order',{ascending:true});
+
+    const existingKeys=new Set(
+      _items.filter(i=>rtype(i)==='fm'&&i.component_id)
+        .map(i=>`${i.component_id}__${i.function_name}`)
+    );
+
+    let created=0;
+    for(const sys of systems){
+      const sysFns=(fns||[]).filter(f=>f.component_id===sys.id);
+      if(!sysFns.length){
+        // System has no functions — create one blank row for the system
+        const key=`${sys.id}__`;
+        if(existingKeys.has(key)) continue;
+        await addFmRow({component_id:sys.id,component_name:sys.name,function_name:''});
+        existingKeys.add(key); created++;
+      } else {
+        for(const fn of sysFns){
+          const key=`${sys.id}__${fn.name}`;
+          if(existingKeys.has(key)) continue;
+          await addFmRow({component_id:sys.id,component_name:sys.name,function_name:fn.name});
+          existingKeys.add(key); created++;
+        }
+      }
+    }
+    toast(created>0?`Synced ${created} new row(s) from Architecture.`:'Already up to date.','success');
+  }catch(e){toast('Sync error: '+e.message,'error');}
+  finally{if(btn){btn.disabled=false;btn.textContent='⟳ Sync from Architecture';}}
 }
